@@ -22,6 +22,7 @@
     "dismiss": "关闭摘要"
   },
   "draftBadge": "草稿",
+  "sendingBadge": "发送中…",
   "msgTo": "收件人",
   "msgCc": "抄送",
   "loadingMessage": "加载邮件…",
@@ -29,6 +30,18 @@
   "attachment": {
     "fallbackName": "附件",
     "savedMock": "已保存 {{name}}（模拟）",
-    "openFailed": "无法打开附件：{{detail}}"
+    "openFailed": "无法打开附件：{{detail}}",
+    "preview": {
+      "loading": "正在加载预览…",
+      "failed": "无法预览附件：{{detail}}",
+      "openExternally": "用应用打开",
+      "unsupported": "此文件类型不支持预览，请用外部应用打开。",
+      "tooLarge": "文件太大，无法预览，请用外部应用打开。",
+      "truncated": "预览已截断",
+      "slide": "第 {{n}} 页",
+      "emptySlide": "（无文字）",
+      "sheetFallback": "工作表 {{n}}",
+      "documentTitle": "文档预览"
+    }
   }
 }

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::caldav::task::CalTaskHandle;
 use crate::sync::engine::{AccountHandle, SyncCmd};
 
 const TICK_SECS: u64 = 5;
@@ -18,6 +19,7 @@ pub fn spawn(
     db: Db,
     bus: EventBus,
     handles: Arc<RwLock<HashMap<i64, AccountHandle>>>,
+    cal_handles: Arc<RwLock<HashMap<i64, CalTaskHandle>>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut nudged_until: i64 = 0;
@@ -55,6 +57,94 @@ pub fn spawn(
                     nudged_until = now;
                     for handle in handles.read().await.values() {
                         handle.send(SyncCmd::RunActions);
+                    }
+                    for handle in cal_handles.read().await.values() {
+                        handle.nudge();
+                    }
+                }
+            }
+
+            // 3. Meeting reminders: fire once per occurrence inside the lead
+            // window. Recurring events are covered because list_events
+            // expansion is not needed here - the notified_at gate compares
+            // against each occurrence start via upcoming_for_notify + the
+            // expander below for recurring masters.
+            let lead_min = db
+                .read(|conn| Ok(repo::settings::get(conn)?.meeting_notify_lead_minutes))
+                .await
+                .unwrap_or(0);
+            if lead_min > 0 {
+                let lead_ms = lead_min * 60_000;
+                if let Ok(due) = db
+                    .read(move |conn| repo::calendar::upcoming_for_notify(conn, now, lead_ms))
+                    .await
+                {
+                    for ev in due {
+                        let event_id = ev.id;
+                        let occurrence_start = ev.starts_at;
+                        let _ = db
+                            .write(move |conn| {
+                                repo::calendar::set_notified(conn, event_id, occurrence_start)
+                            })
+                            .await;
+                        bus.emit(CoreEvent::EventReminder { event: ev, occurrence_start });
+                    }
+                }
+                // Recurring masters: check the next occurrence explicitly.
+                if let Ok(masters) = db
+                    .read(move |conn| repo::calendar::recurring_masters(conn, now + lead_ms))
+                    .await
+                {
+                    for m in masters {
+                        let Some(rrule) = m.event.rrule.clone() else { continue };
+                        let duration = m
+                            .event
+                            .ends_at
+                            .map(|e| e - m.event.starts_at)
+                            .unwrap_or(1_800_000);
+                        let Some(occs) = crate::caldav::rrule::expand(
+                            &rrule,
+                            m.event.starts_at,
+                            duration,
+                            m.ical_raw.as_deref(),
+                            now,
+                            now + lead_ms,
+                        ) else {
+                            continue;
+                        };
+                        let Some(next) = occs.first().copied() else { continue };
+                        // Gate: skip when this occurrence was already notified,
+                        // and never re-notify the master's own start (handled
+                        // by upcoming_for_notify above).
+                        let already = db
+                            .read({
+                                let id = m.event.id;
+                                move |conn| {
+                                    Ok(conn.query_row(
+                                        "SELECT COALESCE(notified_at, 0) FROM calendar_events WHERE id = ?1",
+                                        rusqlite::params![id],
+                                        |r| r.get::<_, i64>(0),
+                                    )?)
+                                }
+                            })
+                            .await
+                            .unwrap_or(i64::MAX);
+                        if already >= next.start || next.start <= m.event.starts_at {
+                            continue;
+                        }
+                        let event_id = m.event.id;
+                        let _ = db
+                            .write(move |conn| {
+                                repo::calendar::set_notified(conn, event_id, next.start)
+                            })
+                            .await;
+                        let mut ev = m.event.clone();
+                        ev.starts_at = next.start;
+                        ev.ends_at = Some(next.end);
+                        bus.emit(CoreEvent::EventReminder {
+                            event: ev,
+                            occurrence_start: next.start,
+                        });
                     }
                 }
             }

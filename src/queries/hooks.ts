@@ -6,8 +6,10 @@ import {
 } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import { call } from "../ipc/commands";
+import { errorMessage } from "../ipc/errors";
 import { onEvent } from "../ipc/events";
 import type { AskCitation, ThreadPage, ThreadSummary, View } from "../ipc/types";
+import { useUi } from "../stores/ui";
 import { queryClient } from "./client";
 
 const PAGE_SIZE = 50;
@@ -123,6 +125,100 @@ export function useCalendarEvents(startMs: number, endMs: number, enabled = true
     queryFn: () => call("list_events", { startMs, endMs }),
     enabled,
     staleTime: 30_000,
+  });
+}
+
+/** Invite events carried by one message (thread invite card). */
+export function useMessageEvents(messageId: number, enabled = true) {
+  return useQuery({
+    queryKey: ["messageEvents", messageId],
+    queryFn: () => call("events_for_message", { messageId }),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateEvent() {
+  return useMutation({
+    mutationFn: (args: import("../ipc/types").CreateEventArgs) =>
+      call("create_event", { args }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["events"] }),
+  });
+}
+
+export function useUpdateEvent() {
+  return useMutation({
+    mutationFn: (args: import("../ipc/types").UpdateEventArgs) =>
+      call("update_event", { args }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["events"] });
+      void queryClient.invalidateQueries({ queryKey: ["messageEvents"] });
+    },
+  });
+}
+
+export function useDeleteEvent() {
+  return useMutation({
+    mutationFn: (vars: { eventId: number; notify?: boolean }) => call("delete_event", vars),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["events"] });
+      void queryClient.invalidateQueries({ queryKey: ["messageEvents"] });
+    },
+  });
+}
+
+/**
+ * Drag move/resize: same backend call as useUpdateEvent, but with an
+ * optimistic patch of every cached `["events", …]` range so the block lands
+ * where it was dropped instead of snapping back until the refetch.
+ */
+export function useMoveEvent() {
+  type EventList = import("../ipc/types").CalendarEvent[];
+  return useMutation({
+    mutationFn: (args: import("../ipc/types").UpdateEventArgs) =>
+      call("update_event", { args }),
+    onMutate: async (args) => {
+      await queryClient.cancelQueries({ queryKey: ["events"] });
+      const snapshot = queryClient.getQueriesData<EventList>({ queryKey: ["events"] });
+      for (const [key, list] of snapshot) {
+        if (!list) continue;
+        queryClient.setQueryData<EventList>(
+          key,
+          list.map((ev) =>
+            ev.id === args.eventId
+              ? {
+                  ...ev,
+                  startsAt: args.startsAt,
+                  endsAt: args.endsAt,
+                  allDay: args.allDay ?? ev.allDay,
+                }
+              : ev,
+          ),
+        );
+      }
+      return { snapshot };
+    },
+    onError: (err, _args, ctx) => {
+      for (const [key, list] of ctx?.snapshot ?? []) {
+        queryClient.setQueryData(key, list);
+      }
+      useUi.getState().pushToast({ kind: "error", message: errorMessage(err) });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["events"] });
+      void queryClient.invalidateQueries({ queryKey: ["messageEvents"] });
+    },
+  });
+}
+
+export function useRsvpEvent() {
+  return useMutation({
+    mutationFn: (vars: { eventId: number; response: import("../ipc/types").RsvpResponse }) =>
+      call("rsvp_event", { args: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["events"] });
+      queryClient.invalidateQueries({ queryKey: ["messageEvents"] });
+    },
   });
 }
 

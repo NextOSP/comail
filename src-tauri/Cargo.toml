@@ -12,7 +12,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 [package]
 name = "comail"
-version = "0.1.0"
+version = "0.2.0"
 description = "Comail - a fast, offline-first, keyboard-driven email client"
 authors = ["hello@deanoss.com"]
 license = "AGPL-3.0-only"
@@ -31,6 +31,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-deep-link = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 serde.workspace = true

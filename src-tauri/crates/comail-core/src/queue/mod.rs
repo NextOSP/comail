@@ -365,6 +365,7 @@ async fn send_action(
         bcc: &bcc,
         subject: &detail.subject,
         body_text: detail.text_body.as_deref().unwrap_or(""),
+        body_html: detail.html_body.as_deref(),
         in_reply_to: in_reply_to.as_deref(),
         references: &refs,
         message_id_domain: &domain,

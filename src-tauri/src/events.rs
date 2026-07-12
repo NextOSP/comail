@@ -105,5 +105,23 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
         CoreEvent::AskDone { request_id } => {
             let _ = app.emit("ai:ask:done", json!({ "requestId": request_id }));
         }
+        CoreEvent::CalendarUpdated { account_id } => {
+            let _ = app.emit("calendar:updated", json!({ "accountId": account_id }));
+        }
+        CoreEvent::EventReminder {
+            event,
+            occurrence_start,
+        } => {
+            let _ = app.emit(
+                "calendar:reminder",
+                json!({ "event": event, "occurrenceStart": occurrence_start }),
+            );
+        }
+        CoreEvent::CalendarConflict { event_id, summary } => {
+            let _ = app.emit(
+                "calendar:conflict",
+                json!({ "eventId": event_id, "summary": summary }),
+            );
+        }
     }
 }

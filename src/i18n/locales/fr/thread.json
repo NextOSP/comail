@@ -22,6 +22,7 @@
     "dismiss": "Ignorer le résumé"
   },
   "draftBadge": "Brouillon",
+  "sendingBadge": "Envoi…",
   "msgTo": "à",
   "msgCc": "cc",
   "loadingMessage": "Chargement du message…",
@@ -29,6 +30,18 @@
   "attachment": {
     "fallbackName": "pièce jointe",
     "savedMock": "{{name}} enregistré (simulation)",
-    "openFailed": "Impossible d’ouvrir la pièce jointe : {{detail}}"
+    "openFailed": "Impossible d’ouvrir la pièce jointe : {{detail}}",
+    "preview": {
+      "loading": "Chargement de l’aperçu…",
+      "failed": "Impossible d’afficher l’aperçu : {{detail}}",
+      "openExternally": "Ouvrir dans l’app",
+      "unsupported": "Pas d’aperçu pour ce type de fichier — ouvrez-le en externe.",
+      "tooLarge": "Ce fichier est trop volumineux pour l’aperçu — ouvrez-le en externe.",
+      "truncated": "Aperçu tronqué",
+      "slide": "Diapositive {{n}}",
+      "emptySlide": "(aucun texte)",
+      "sheetFallback": "Feuille {{n}}",
+      "documentTitle": "Aperçu du document"
+    }
   }
 }

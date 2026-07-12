@@ -310,6 +310,9 @@ pub struct SaveDraftArgs {
     pub bcc: Vec<Address>,
     pub subject: String,
     pub body_text: String,
+    /// Rich body; goes out as text/html alongside the body_text fallback.
+    #[serde(default)]
+    pub body_html: Option<String>,
     pub mode: String,
     pub in_reply_to_message_id: Option<i64>,
     #[serde(default)]
@@ -378,6 +381,24 @@ pub struct SyncStatus {
     pub progress: Option<f64>,
 }
 
+/// Structured action parsed by AI from a natural-language palette query.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiIntent {
+    /// "create_event" | "compose" | "search" | "go_to" | "none"
+    pub kind: String,
+    pub summary: Option<String>,
+    pub location: Option<String>,
+    pub starts_at: Option<i64>,
+    pub ends_at: Option<i64>,
+    pub all_day: Option<bool>,
+    pub to: Option<Vec<String>>,
+    pub subject: Option<String>,
+    pub body: Option<String>,
+    pub query: Option<String>,
+    pub view: Option<String>,
+}
+
 /// Exact unread badge counts for split tabs and sidebar rows.
 /// Map keys are stringified ids (JSON object keys must be strings).
 #[derive(Debug, Clone, Serialize)]
@@ -405,6 +426,24 @@ pub struct Settings {
     pub ai_base_url: String,
     #[serde(default = "default_ai_model")]
     pub ai_model: String,
+    /// Per-tier model ids, all sharing `ai_base_url` + the stored API key. An
+    /// empty tier falls back to `ai_model`, so existing single-model setups keep
+    /// working until tiers are configured.
+    #[serde(default)]
+    pub ai_model_instant: String,
+    #[serde(default)]
+    pub ai_model_cheap: String,
+    #[serde(default)]
+    pub ai_model_intelligent: String,
+    /// Which tier each AI scenario uses: "instant" | "cheap" | "intelligent".
+    #[serde(default = "default_tier_intelligent")]
+    pub ai_tier_ask: String,
+    #[serde(default = "default_tier_intelligent")]
+    pub ai_tier_draft: String,
+    #[serde(default = "default_tier_instant")]
+    pub ai_tier_summarize: String,
+    #[serde(default = "default_tier_cheap")]
+    pub ai_tier_voice: String,
     /// OAuth app registrations supplied by the user. Env vars
     /// (COMAIL_GOOGLE_CLIENT_ID etc.) override these when set.
     #[serde(default)]
@@ -433,6 +472,9 @@ pub struct Settings {
     /// When the voice profile was last learned (ms epoch; 0 = never).
     #[serde(default)]
     pub voice_learned_at: i64,
+    /// Minutes before a meeting to fire a desktop reminder; 0 disables.
+    #[serde(default = "default_notify_lead")]
+    pub meeting_notify_lead_minutes: i64,
     /// Desktop notification on new mail.
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
@@ -442,14 +484,98 @@ pub struct Settings {
     /// Automatic Marketing/News/Social/Pitch categorization at sync time.
     #[serde(default = "default_true")]
     pub auto_labels_enabled: bool,
-    /// Per-account signature appended to new mail, keyed by account id
-    /// (stringified: JSON object keys must be strings).
+    /// Legacy plain-text signature map, keyed by stringified account id.
+    /// Superseded by `signature_list`/`signature_defaults`; retained only so old
+    /// blobs deserialize and are folded in by `migrate_signatures`.
     #[serde(default)]
     pub signatures: std::collections::HashMap<String, String>,
+    /// Rich signatures. An account may own several; the composer picks one by
+    /// mode via `signature_defaults` (or a manual override).
+    #[serde(default)]
+    pub signature_list: Vec<Signature>,
+    /// Which signature each account defaults to, keyed by stringified account id.
+    #[serde(default)]
+    pub signature_defaults: std::collections::HashMap<String, SignatureDefaults>,
+}
+
+/// A named, rich-HTML signature belonging to one account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Signature {
+    pub id: String,
+    pub account_id: i64,
+    pub name: String,
+    /// Rich body (sanitized HTML; same markup the composer emits).
+    pub html: String,
+}
+
+/// Per-account default signature choice, Gmail-style: one for new mail, one for
+/// replies/forwards. `None` means "no signature".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureDefaults {
+    #[serde(default)]
+    pub new_id: Option<String>,
+    #[serde(default)]
+    pub reply_id: Option<String>,
+}
+
+impl Settings {
+    /// Fold a legacy plain-text `signatures` map into the rich `signature_list`
+    /// on first read: one named signature per account, set as both the new-mail
+    /// and reply default. Idempotent — only runs while `signature_list` is empty
+    /// and legacy entries exist; clears `signatures` once folded so it never runs
+    /// twice.
+    pub fn migrate_signatures(&mut self) {
+        if !self.signature_list.is_empty() || self.signatures.is_empty() {
+            self.signatures.clear();
+            return;
+        }
+        // Deterministic order so ids/tests are stable across runs.
+        let mut entries: Vec<(String, String)> = self.signatures.drain().collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        for (acc_key, text) in entries {
+            if text.trim().is_empty() {
+                continue;
+            }
+            let account_id: i64 = acc_key.parse().unwrap_or(0);
+            let id = format!("sig-{acc_key}");
+            self.signature_list.push(Signature {
+                id: id.clone(),
+                account_id,
+                name: "Signature".into(),
+                html: text_to_html(&text),
+            });
+            self.signature_defaults.insert(
+                acc_key,
+                SignatureDefaults {
+                    new_id: Some(id.clone()),
+                    reply_id: Some(id),
+                },
+            );
+        }
+    }
+}
+
+/// Plain text -> minimal HTML: escape, newlines to `<br>`. Mirrors the frontend
+/// `textToHtml` (src/lib/richtext.ts) so migrated signatures render identically.
+fn text_to_html(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\n', "<br>")
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_notify_lead() -> i64 {
+    10
 }
 
 fn default_embedding_backend() -> String {
@@ -467,6 +593,15 @@ fn default_ai_base_url() -> String {
 fn default_ai_model() -> String {
     crate::ai::DEFAULT_MODEL.into()
 }
+fn default_tier_intelligent() -> String {
+    "intelligent".into()
+}
+fn default_tier_instant() -> String {
+    "instant".into()
+}
+fn default_tier_cheap() -> String {
+    "cheap".into()
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -477,6 +612,13 @@ impl Default for Settings {
             load_remote_images: false,
             ai_base_url: default_ai_base_url(),
             ai_model: default_ai_model(),
+            ai_model_instant: String::new(),
+            ai_model_cheap: String::new(),
+            ai_model_intelligent: String::new(),
+            ai_tier_ask: default_tier_intelligent(),
+            ai_tier_draft: default_tier_intelligent(),
+            ai_tier_summarize: default_tier_instant(),
+            ai_tier_voice: default_tier_cheap(),
             google_client_id: String::new(),
             google_client_secret: String::new(),
             ms_client_id: String::new(),
@@ -486,10 +628,13 @@ impl Default for Settings {
             voice_drafting: false,
             voice_profile: String::new(),
             voice_learned_at: 0,
+            meeting_notify_lead_minutes: 10,
             notifications_enabled: true,
             auto_advance: true,
             auto_labels_enabled: true,
             signatures: std::collections::HashMap::new(),
+            signature_list: Vec::new(),
+            signature_defaults: std::collections::HashMap::new(),
         }
     }
 }
@@ -547,11 +692,110 @@ pub struct CalendarEvent {
     pub summary: Option<String>,
     pub location: Option<String>,
     pub organizer: Option<String>,
+    pub description: Option<String>,
+    pub attendees: Vec<EventAttendee>,
+    pub join_url: Option<String>,
+    /// Our response to the invite: ACCEPTED | TENTATIVE | DECLINED.
+    pub rsvp_status: Option<String>,
+    /// Created in Comail (vs. parsed from an incoming invite).
+    pub is_local: bool,
+    /// CalDAV collection this event syncs with; None = local-only.
+    pub calendar_id: Option<i64>,
+    /// Raw RRULE when the event repeats (UI badges "repeats").
+    pub rrule: Option<String>,
     pub starts_at: i64,
     pub ends_at: Option<i64>,
     pub all_day: bool,
     pub status: Option<String>,
     pub method: Option<String>,
+}
+
+/// A discovered CalDAV calendar collection.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Calendar {
+    pub id: i64,
+    pub account_id: i64,
+    pub url: String,
+    pub display_name: Option<String>,
+    pub color: Option<String>,
+    pub read_only: bool,
+    pub enabled: bool,
+    pub is_default: bool,
+    pub last_synced_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventAttendee {
+    pub email: String,
+    pub name: Option<String>,
+    /// NEEDS-ACTION | ACCEPTED | TENTATIVE | DECLINED
+    pub partstat: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateEventArgs {
+    pub account_id: i64,
+    pub summary: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub join_url: Option<String>,
+    pub starts_at: i64,
+    pub ends_at: i64,
+    #[serde(default)]
+    pub all_day: bool,
+    /// Invites are emailed (ICS METHOD:REQUEST) to every attendee.
+    #[serde(default)]
+    pub attendees: Vec<Address>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RsvpEventArgs {
+    pub event_id: i64,
+    /// accepted | tentative | declined
+    pub response: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateEventArgs {
+    pub event_id: i64,
+    pub summary: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub join_url: Option<String>,
+    pub starts_at: i64,
+    pub ends_at: i64,
+    #[serde(default)]
+    pub all_day: bool,
+    #[serde(default)]
+    pub attendees: Vec<Address>,
+    /// Email an updated REQUEST ICS to attendees (organizer only).
+    #[serde(default = "default_true")]
+    pub notify: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectCalendarArgs {
+    pub account_id: i64,
+    /// "google" | "generic"
+    pub kind: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 /// Standard IMAP folder roles.

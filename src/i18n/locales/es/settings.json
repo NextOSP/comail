@@ -52,13 +52,34 @@
     "baseUrlLabel": "URL base",
     "baseUrlHint": "Endpoint compatible con OpenAI.",
     "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
-    "modelLabel": "Modelo",
-    "modelsAvailable": "{{n}} modelos disponibles en el endpoint.",
+    "modelLabel": "Modelo predeterminado",
+    "modelsAvailable": "{{n}} modelos disponibles en el endpoint. Se usa donde un nivel de abajo se deje en blanco.",
     "modelHintEmpty": "Escribe un id de modelo, o elige uno cuando cargue la lista del endpoint.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Proveedor",
     "providerHint": "Los preajustes rellenan la URL base; elige Endpoint personalizado para usar cualquier URL compatible con OpenAI. Los servidores locales no necesitan clave de API.",
-    "customProvider": "Endpoint personalizado"
+    "customProvider": "Endpoint personalizado",
+    "tiersSection": "Niveles de modelo",
+    "tiersIntro": "Asigna cada nivel a un modelo del proveedor de arriba. Deja un nivel en blanco para usar el modelo predeterminado.",
+    "tier": {
+      "instant": "Instantáneo",
+      "cheap": "Económico",
+      "intelligent": "Inteligente"
+    },
+    "tierFallback": "modelo predeterminado",
+    "tierInstantHint": "Más rápido, menor costo — tareas rápidas y de alto volumen.",
+    "tierCheapHint": "Costo equilibrado para trabajo rutinario.",
+    "tierIntelligentHint": "El más capaz — mejor calidad, mayor costo. Necesita uso de herramientas para Preguntar.",
+    "routingSection": "Enrutamiento de funciones",
+    "routingIntro": "Elige qué nivel usa cada función de IA.",
+    "routeAsk": "Preguntar (P&R)",
+    "routeAskHint": "Búsqueda agéntica en tu bandeja — se beneficia del nivel más inteligente.",
+    "routeDraft": "Redactar y responder",
+    "routeDraftHint": "Escribir y reescribir correo con tu voz.",
+    "routeSummarize": "Resumir",
+    "routeSummarizeHint": "Resúmenes de conversación — rápido y económico suele bastar.",
+    "routeVoice": "Aprender voz de escritura",
+    "routeVoiceHint": "Tarea ocasional en segundo plano que destila tu estilo."
   },
   "oauth": {
     "description": "Iniciar sesión con Google / Microsoft necesita tu propio registro de aplicación (un ID de cliente). Crea un cliente OAuth de <b>App de escritorio</b> en Google Cloud Console, o una app <b>Móvil y de escritorio</b> en Microsoft Entra con URI de redirección <code>http://localhost</code>. Guía completa a continuación.",
@@ -179,7 +200,54 @@
     "saving": "Guardando…",
     "saveChanges": "Guardar cambios",
     "create": "Crear división",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "autoLabelTabs": "Etiquetar pestañas automáticamente",
+    "autoBadge": "Auto",
+    "relabel": "Reejecutar etiquetas automáticas",
+    "relabeling": "Clasificando…",
+    "relabeled": "Etiquetas automáticas aplicadas a {{count}} mensajes"
+  },
+  "labels": {
+    "title": "Etiquetas",
+    "yourLabels": "Tus etiquetas",
+    "new": "Nueva etiqueta",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "reallyDelete": "¿Eliminar de verdad?",
+    "empty": "Aún no hay etiquetas. Crea una para etiquetar y filtrar tu correo.",
+    "nameLabel": "Nombre",
+    "namePlaceholder": "p. ej. Trabajo",
+    "colorLabel": "Color",
+    "saving": "Guardando…",
+    "saveChanges": "Guardar cambios",
+    "create": "Crear etiqueta",
+    "cancel": "Cancelar",
+    "saveFailed": "No se pudo guardar la etiqueta: {{detail}}",
+    "deleteFailed": "No se pudo eliminar la etiqueta: {{detail}}"
+  },
+  "notifications": {
+    "label": "Notificaciones de escritorio",
+    "hint": "Notificar cuando llegue correo nuevo mientras la ventana no está enfocada."
+  },
+  "autoAdvance": {
+    "label": "Avance automático",
+    "hint": "Tras Hecho/Posponer en una conversación, abre la siguiente conversación en lugar de volver a la lista."
+  },
+  "signature": {
+    "section": "Firmas",
+    "placeholder": "Saludos,\nTu nombre",
+    "add": "Añadir firma",
+    "newName": "Nueva firma",
+    "empty": "Aún no hay firmas.",
+    "forNew": "Predeterminada para correos nuevos",
+    "forReply": "Al responder / reenviar",
+    "none": "Sin firma",
+    "delete": "Eliminar",
+    "deleteConfirm": "¿Eliminar?"
+  },
+  "autoLabels": {
+    "label": "Etiquetas automáticas",
+    "hint": "Categoriza automáticamente el correo entrante como Marketing, Noticias, Social o Pitch."
   },
   "about": {
     "section": "Acerca de",
@@ -190,5 +258,28 @@
     "upToDate": "Tienes la última versión.",
     "updateAvailable": "La versión {{version}} está disponible.",
     "restartInstall": "Reiniciar e instalar"
+  },
+  "calendar": {
+    "section": "Sincronización de calendario",
+    "hint": "Sincronización bidireccional por CalDAV. Google requiere un nuevo consentimiento único; Fastmail/iCloud/servidores propios usan una contraseña de aplicación.",
+    "connected": "Calendario conectado — primera sincronización en curso",
+    "disconnected": "Calendario desconectado — los eventos permanecen en este dispositivo",
+    "syncStarted": "Sincronización de calendario iniciada",
+    "syncNow": "Sincronizar ahora",
+    "disconnect": "Desconectar",
+    "connectGoogle": "Conectar Google Calendar",
+    "connectCaldav": "Conectar CalDAV…",
+    "connect": "Conectar",
+    "urlPlaceholder": "URL del servidor, p. ej. https://caldav.fastmail.com",
+    "username": "Usuario",
+    "appPassword": "Contraseña de aplicación",
+    "default": "Predeterminado"
+  },
+  "meetingReminder": {
+    "label": "Recordatorios de reuniones",
+    "hint": "Notificación de escritorio antes de que empiece el evento; haz clic para unirte a la llamada.",
+    "off": "Desactivado",
+    "minutes_one": "{{count}} minuto antes",
+    "minutes_other": "{{count}} minutos antes"
   }
 }

@@ -7,6 +7,7 @@ import { useUi } from "../../stores/ui";
 export function TopBar() {
   const { t } = useTranslation();
   const view = useUi((s) => s.view);
+  const calendarScreen = useUi((s) => s.calendarScreen);
   const searchOpen = useUi((s) => s.searchOpen);
   const offline = useUi((s) => s.offline);
   const syncing = useUi((s) => s.syncing);
@@ -21,7 +22,7 @@ export function TopBar() {
   return (
     <header
       data-tauri-drag-region
-      className="co-hairline-b relative z-30 flex h-10 shrink-0 items-center gap-3 px-4 select-none"
+      className="co-glass relative z-30 flex h-10 shrink-0 items-center gap-3 px-4 select-none"
     >
       <button
         className="-ml-1 rounded-md p-1.5 text-ink-faint hover:bg-bg2 hover:text-ink"
@@ -59,6 +60,34 @@ export function TopBar() {
           <span className="size-1.5 rounded-full bg-danger" /> {t("common:topbar.offline")}
         </span>
       )}
+
+      <button
+        className="rounded-md p-1.5 text-ink-faint hover:bg-bg2 hover:text-ink"
+        title={calendarScreen ? t("common:topbar.mail") : t("common:topbar.calendar")}
+        aria-label={calendarScreen ? t("common:topbar.mail") : t("common:topbar.calendar")}
+        onClick={() => {
+          const s = useUi.getState();
+          s.set(
+            s.calendarScreen
+              ? { calendarScreen: false, calendarFocusDay: null }
+              : { calendarScreen: true, calendarDrawer: null, calendarFocusDay: null },
+          );
+        }}
+      >
+        {calendarScreen ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 4h16v16H4z" />
+            <path d="M4 6l8 7 8-7" />
+          </svg>
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+        )}
+      </button>
 
       <button
         className="rounded-md p-1.5 text-ink-faint hover:bg-bg2 hover:text-ink"

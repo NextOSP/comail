@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod actions;
+pub mod caldav;
 pub mod calendar;
 pub mod contacts;
 pub mod counts;

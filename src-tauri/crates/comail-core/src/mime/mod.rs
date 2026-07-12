@@ -251,12 +251,68 @@ pub struct OutgoingMessage<'a> {
     pub bcc: &'a [Address],
     pub subject: &'a str,
     pub body_text: &'a str,
+    /// Rich body. Embedded `data:` images are converted to inline CID parts.
+    pub body_html: Option<&'a str>,
     /// Message-ID of the message being replied to.
     pub in_reply_to: Option<&'a str>,
     /// Full reference chain (oldest first), including in_reply_to last.
     pub references: &'a [String],
     pub message_id_domain: &'a str,
     pub attachments: Vec<OutgoingAttachment>,
+}
+
+/// An image extracted from the HTML body, to be sent as an inline CID part.
+struct InlineImage {
+    mime_type: String,
+    cid: String,
+    bytes: Vec<u8>,
+}
+
+/// Replace `src="data:image/...;base64,..."` with `src="cid:..."` and return
+/// the decoded images. Editors embed pasted screenshots as data URIs, but
+/// many mail clients (Gmail included) strip those - CID parts survive.
+fn extract_data_uri_images(html: &str) -> (String, Vec<InlineImage>) {
+    use base64::Engine;
+    const MARKER: &str = "src=\"data:image/";
+
+    let mut out = String::with_capacity(html.len());
+    let mut images = Vec::new();
+    let mut rest = html;
+    while let Some(pos) = rest.find(MARKER) {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + 5..]; // past `src="`, starts at `data:image/`
+        let Some(endq) = after.find('"') else {
+            // unterminated attribute: keep the tail untouched
+            out.push_str(&rest[pos..]);
+            rest = "";
+            break;
+        };
+        let uri = &after[..endq];
+        let decoded = uri
+            .strip_prefix("data:")
+            .and_then(|u| u.split_once(";base64,"))
+            .and_then(|(mime, b64)| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(b64.trim())
+                    .ok()
+                    .map(|bytes| (mime.to_string(), bytes))
+            });
+        match decoded {
+            Some((mime_type, bytes)) => {
+                let cid = format!("img{}.{}", images.len() + 1, rand_token());
+                out.push_str(&format!("src=\"cid:{cid}\""));
+                images.push(InlineImage {
+                    mime_type,
+                    cid,
+                    bytes,
+                });
+            }
+            None => out.push_str(&rest[pos..pos + 5 + endq + 1]),
+        }
+        rest = &after[endq + 1..];
+    }
+    out.push_str(rest);
+    (out, images)
 }
 
 /// Build a raw RFC 5322 message. Returns (message_id, raw_bytes).
@@ -292,6 +348,16 @@ pub fn build_message(out: &OutgoingMessage) -> Result<(String, Vec<u8>)> {
         ))
         .subject(out.subject)
         .text_body(out.body_text);
+
+    if let Some(html) = out.body_html {
+        if !html.trim().is_empty() {
+            let (html, inline_images) = extract_data_uri_images(html);
+            builder = builder.html_body(html);
+            for img in inline_images {
+                builder = builder.inline(img.mime_type, img.cid, img.bytes);
+            }
+        }
+    }
 
     if !to_mb.is_empty() {
         builder = builder.to(to_mb);
@@ -385,5 +451,69 @@ mod tests {
             "alice@example.com"
         );
         assert!(parsed.text.unwrap().contains("Hello Bob"));
+    }
+
+    fn outgoing<'a>(text: &'a str, html: Option<&'a str>) -> OutgoingMessage<'a> {
+        OutgoingMessage {
+            from: Address {
+                name: Some("Me".into()),
+                email: "me@example.com".into(),
+            },
+            to: &[],
+            cc: &[],
+            bcc: &[],
+            subject: "s",
+            body_text: text,
+            body_html: html,
+            in_reply_to: None,
+            references: &[],
+            message_id_domain: "example.com",
+            attachments: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn html_body_builds_multipart_alternative() {
+        let (_, raw) = build_message(&outgoing("plain", Some("<b>rich</b>"))).unwrap();
+        let s = String::from_utf8_lossy(&raw);
+        assert!(s.contains("multipart/alternative"), "raw:\n{s}");
+        assert!(s.contains("text/html"));
+        assert!(s.contains("text/plain"));
+    }
+
+    #[test]
+    fn text_only_message_stays_plain() {
+        let (_, raw) = build_message(&outgoing("plain", None)).unwrap();
+        let s = String::from_utf8_lossy(&raw);
+        assert!(!s.contains("text/html"));
+    }
+
+    #[test]
+    fn data_uri_images_become_cid_inline_parts() {
+        // 1x1 transparent PNG
+        let png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        let html = format!(r#"before <img src="data:image/png;base64,{png_b64}" alt="dot"> after"#);
+        let (rewritten, images) = extract_data_uri_images(&html);
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].mime_type, "image/png");
+        assert!(rewritten.contains(&format!("src=\"cid:{}\"", images[0].cid)));
+        assert!(!rewritten.contains("data:image/"));
+        // PNG magic bytes survived the round-trip
+        assert_eq!(&images[0].bytes[..4], &[0x89, b'P', b'N', b'G']);
+
+        // And the full message embeds it as an inline part with a Content-ID.
+        let (_, raw) = build_message(&outgoing("plain", Some(&html))).unwrap();
+        let s = String::from_utf8_lossy(&raw);
+        assert!(s.contains("Content-ID"), "raw:\n{s}");
+        assert!(s.contains("image/png"));
+        assert!(s.contains("inline"));
+    }
+
+    #[test]
+    fn malformed_data_uri_is_left_alone() {
+        let html = r#"<img src="data:image/png;base64,@@notbase64@@">"#;
+        let (rewritten, images) = extract_data_uri_images(html);
+        assert!(images.is_empty());
+        assert_eq!(rewritten, html);
     }
 }

@@ -13,5 +13,6 @@
   "other": "出错了",
   "unknown": "出错了",
   "oauthFailed": "OAuth 登录失败",
-  "connectionFailed": "连接失败"
+  "connectionFailed": "连接失败",
+  "caldav": "日历服务器错误"
 }

@@ -26,7 +26,7 @@
   "removeNamed": "Eliminar {{name}}",
   "bodyPlaceholder": "Escribe algo… ( ;atajo expande fragmentos, {{mod}}+; para explorar )",
   "send": "Enviar",
-  "footerHints": "{{mod}}↵ enviar · {{mod}}⇧↵ enviar y hecho · {{mod}}⇧L más tarde · {{mod}}⇧A adjuntar · {{mod}}J IA",
+  "footerHints": "{{mod}}↵ enviar · {{mod}}⇧↵ enviar y hecho",
   "draftSaved": "Borrador guardado",
   "unsaved": "Sin guardar",
   "keepDraft": "¿Conservar este borrador?",
@@ -53,5 +53,24 @@
   "quotedLabel": "Mensaje citado",
   "quickReply1": "¡Entendido, gracias!",
   "quickReply2": "Perfecto, lo haré.",
-  "quickReply3": "Gracias, le echaré un vistazo."
+  "quickReply3": "Gracias, le echaré un vistazo.",
+  "signature": {
+    "label": "Firma",
+    "none": "Sin firma"
+  },
+  "fmt": {
+    "bold": "Negrita",
+    "italic": "Cursiva",
+    "underline": "Subrayado",
+    "strike": "Tachado",
+    "bullets": "Lista con viñetas",
+    "quote": "Cita",
+    "image": "Insertar imagen",
+    "link": "Insertar enlace",
+    "linkPlaceholder": "https://ejemplo.com",
+    "linkApply": "Aplicar",
+    "table": "Insertar tabla"
+  },
+  "proofread": "Revisar",
+  "proofreadClean": "Todo correcto: nada que corregir."
 }

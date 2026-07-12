@@ -14,7 +14,7 @@ export function ShortcutHelp() {
   for (const cmd of getCommands()) {
     const sc = shortcutFor(cmd);
     if (!sc) continue;
-    const title = t(cmd.titleKey, cmd.titleParams);
+    const title = cmd.title ? cmd.title() : t(cmd.titleKey, cmd.titleParams);
     const list = bySection.get(cmd.section) ?? [];
     if (!list.some((x) => x.title === title)) {
       list.push({ title, shortcut: sc });

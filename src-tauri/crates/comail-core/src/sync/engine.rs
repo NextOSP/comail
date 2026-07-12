@@ -89,6 +89,9 @@ async fn run_actor(ctx: SyncCtx, config: AccountConfig, mut rx: mpsc::UnboundedR
     let mut session: Option<Session> = None;
     let mut backoff_secs: u64 = 1;
     let mut cycle: u64 = 0;
+    // Next full cycle (folders + actions); between full cycles the actor may
+    // run cheap bodies-only cycles to drain the backfill quickly.
+    let mut full_due = tokio::time::Instant::now();
 
     loop {
         // 1. Ensure a connection.
@@ -124,34 +127,54 @@ async fn run_actor(ctx: SyncCtx, config: AccountConfig, mut rx: mpsc::UnboundedR
         }
         let mut s = session.take().unwrap();
 
-        // 2. Run one full cycle; on IMAP errors drop the session and reconnect.
-        tracing::debug!(account_id, cycle, "sync cycle start");
-        let cycle_result = run_cycle(&ctx, &config, &mut s, cycle).await;
+        // 2. Run one cycle; on IMAP errors drop the session and reconnect.
+        // Full cycles (folders + actions) run every CYCLE_SECS; while message
+        // bodies are still missing, cheap bodies-only cycles run in between so
+        // a fresh account becomes readable in minutes, not hours.
+        let full = tokio::time::Instant::now() >= full_due;
+        tracing::debug!(account_id, cycle, full, "sync cycle start");
+        let cycle_result = run_cycle(&ctx, &config, &mut s, cycle, full).await;
         tracing::debug!(
             account_id,
             cycle,
             ok = cycle_result.is_ok(),
             "sync cycle end"
         );
-        match cycle_result {
-            Ok(()) => {
+        let draining = match cycle_result {
+            Ok(more_bodies) => {
                 session = Some(s);
-                set_state(&ctx, account_id, "idle").await;
+                if full {
+                    full_due = tokio::time::Instant::now()
+                        + std::time::Duration::from_secs(CYCLE_SECS);
+                    cycle += 1;
+                }
+                set_state(&ctx, account_id, if more_bodies { "syncing" } else { "idle" }).await;
+                more_bodies
             }
             Err(CoreError::NeedsReauth) | Err(CoreError::Auth(_)) => {
                 imap::logout(s).await;
+                full_due =
+                    tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
                 set_state(&ctx, account_id, "needs_reauth").await;
+                false
             }
             Err(e) => {
                 tracing::warn!(account_id, "sync cycle error: {e}");
                 imap::logout(s).await;
+                // Keep the pre-existing pacing: don't hammer a flaky server.
+                full_due =
+                    tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
                 ctx.bus.emit(CoreEvent::NetworkState { online: false });
+                false
             }
-        }
-        cycle += 1;
+        };
 
         // 3. Wait for the next cycle or an immediate command.
-        let mut deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
+        let mut deadline = if draining {
+            tokio::time::Instant::now() + std::time::Duration::from_millis(750)
+        } else {
+            full_due
+        };
         loop {
             match tokio::time::timeout_at(deadline, rx.recv()).await {
                 Err(_) => break, // cycle timer fired
@@ -161,7 +184,11 @@ async fn run_actor(ctx: SyncCtx, config: AccountConfig, mut rx: mpsc::UnboundedR
                     }
                     return;
                 }
-                Ok(Some(SyncCmd::SyncNow)) | Ok(Some(SyncCmd::RunActions)) => break,
+                Ok(Some(SyncCmd::SyncNow)) | Ok(Some(SyncCmd::RunActions)) => {
+                    // Commands need a full cycle (folder sync / action replay).
+                    full_due = tokio::time::Instant::now();
+                    break;
+                }
                 Ok(Some(SyncCmd::FetchBody { message_id })) => {
                     if let Some(ref mut s) = session {
                         if let Err(e) = fetch_one_body(&ctx, &config, s, message_id).await {
@@ -194,13 +221,22 @@ async fn connect(ctx: &SyncCtx, config: &AccountConfig) -> Result<Session> {
     imap::connect(&config.imap_host, config.imap_port, creds).await
 }
 
+/// One sync cycle. Returns true when message bodies are still missing (the
+/// per-cycle budget was exhausted), so the actor can schedule a quick
+/// bodies-only follow-up instead of waiting a full CYCLE_SECS.
 async fn run_cycle(
     ctx: &SyncCtx,
     config: &AccountConfig,
     session: &mut Session,
     cycle: u64,
-) -> Result<()> {
+    full: bool,
+) -> Result<bool> {
     let account_id = config.id;
+
+    // Bodies-only drain cycle: no folder sync, no action replay.
+    if !full {
+        return fetch_missing_bodies(ctx, config, session).await;
+    }
 
     // Folder discovery: first cycle and then every ~30 cycles.
     if cycle % 30 == 0 {
@@ -234,14 +270,21 @@ async fn run_cycle(
         // Non-inbox folders get new-mail checks every cycle but heavy
         // reconciliation (flags/expunge) only every 5th cycle.
         let heavy = folder.role.as_deref() == Some(roles::INBOX) || cycle % 5 == 0;
+        let first_time = folder.backfill_cursor.is_none();
         if let Err(e) = sync_folder(ctx, config, session, folder, heavy).await {
             tracing::warn!(folder = %folder.imap_name, "folder sync failed: {e}");
             return Err(e); // connection likely broken; reconnect
         }
+        // Right after the inbox lands for the first time, fetch a batch of its
+        // bodies before touching other folders: recent mail becomes readable
+        // within seconds of onboarding.
+        if first_time && folder.role.as_deref() == Some(roles::INBOX) {
+            fetch_missing_bodies(ctx, config, session).await?;
+        }
     }
 
     // Body backfill for the inbox first, then everything else.
-    fetch_missing_bodies(ctx, config, session).await?;
+    let more_bodies = fetch_missing_bodies(ctx, config, session).await?;
 
     // GC old finished actions (keep 7 days).
     let _ = ctx
@@ -249,7 +292,7 @@ async fn run_cycle(
         .write(move |conn| repo::actions::gc(conn, now_ms() - 7 * 24 * 3600 * 1000))
         .await;
 
-    Ok(())
+    Ok(more_bodies)
 }
 
 async fn discover_folders(
@@ -360,14 +403,20 @@ async fn initial_backfill(
     let total = uids.len() as u64;
     let mut done: u64 = 0;
 
-    for chunk in uids.chunks(HEADER_CHUNK) {
+    // Newest chunks first: the top of the inbox fills in immediately instead
+    // of after the whole window has downloaded.
+    for chunk in uids.chunks(HEADER_CHUNK).rev() {
         let set = imap::uid_set(chunk);
         if set.is_empty() {
             continue;
         }
         let headers = imap::fetch_headers(session, &set).await?;
         done += headers.len() as u64;
-        store_headers(ctx, config, folder, headers, false).await?;
+        let thread_ids = store_headers(ctx, config, folder, headers, false).await?;
+        if !thread_ids.is_empty() {
+            // Let the UI fill in live while the backfill runs.
+            ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
+        }
         ctx.bus.emit(CoreEvent::SyncProgress(SyncProgress {
             account_id,
             folder: folder.imap_name.clone(),
@@ -410,7 +459,10 @@ async fn extend_history(
     let lo = hi.saturating_sub(HISTORY_CHUNK - 1).max(1);
     let set = format!("{lo}:{hi}");
     let headers = imap::fetch_headers(session, &set).await?;
-    store_headers(ctx, config, folder, headers, false).await?;
+    let thread_ids = store_headers(ctx, config, folder, headers, false).await?;
+    if !thread_ids.is_empty() {
+        ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
+    }
     let fid = folder.id;
     let new_cursor = lo as i64;
     ctx.db
@@ -660,11 +712,13 @@ async fn reconcile_expunges(ctx: &SyncCtx, session: &mut Session, folder: &Folde
     Ok(())
 }
 
+/// Fetch up to BODIES_PER_CYCLE missing bodies, inbox first. Returns true
+/// when the budget ran out (more bodies are still missing).
 async fn fetch_missing_bodies(
     ctx: &SyncCtx,
     config: &AccountConfig,
     session: &mut Session,
-) -> Result<()> {
+) -> Result<bool> {
     let account_id = config.id;
     let folders = ctx
         .db
@@ -707,7 +761,7 @@ async fn fetch_missing_bodies(
             total: 0,
         }));
     }
-    Ok(())
+    Ok(budget <= 0)
 }
 
 /// Priority fetch of a single message body (user opened it).

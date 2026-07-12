@@ -55,6 +55,23 @@ export function firstName(a: Address): string {
   return addressName(a).split(/\s+/)[0] ?? addressName(a);
 }
 
+/**
+ * The person this thread is "with": the first participant who isn't the
+ * current user, falling back to the first participant. Mirrors the
+ * "others first" rule in {@link participantSummary} so the contact pane and
+ * the row summary agree on who the correspondent is.
+ */
+export function primaryCorrespondent(
+  participants: Address[],
+  selfEmails: Set<string>,
+): Address | null {
+  return (
+    participants.find((p) => !selfEmails.has(p.email.toLowerCase())) ??
+    participants[0] ??
+    null
+  );
+}
+
 /** "Ana, Priya, Tom" style participant summary for a thread row. */
 export function participantSummary(participants: Address[], selfEmails: Set<string>): string {
   const others = participants.filter((p) => !selfEmails.has(p.email.toLowerCase()));

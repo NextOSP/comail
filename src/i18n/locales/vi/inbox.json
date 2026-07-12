@@ -9,5 +9,18 @@
   "split": {
     "important": "Quan trọng",
     "other": "Khác"
+  },
+  "splitPopover": {
+    "title": "Nhóm mới",
+    "fromSender": "Thư từ {{email}}",
+    "fromDomain": "Tất cả @{{domain}}",
+    "tabName": "tab: {{name}}",
+    "created": "Đã tạo nhóm \"{{name}}\""
+  },
+  "pane": {
+    "empty": "Chưa chọn cuộc trò chuyện",
+    "recent": "Cuộc trò chuyện gần đây",
+    "noRecent": "Không có cuộc trò chuyện nào khác",
+    "noSubject": "(không có chủ đề)"
   }
 }

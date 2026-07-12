@@ -150,6 +150,33 @@ export function Sidebar() {
           />
         ))}
 
+        <div className="co-hairline-b mx-4 my-2.5" />
+        <div className="px-4 pb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+          {t("common:sidebar.calendar")}
+        </div>
+        <SideRow
+          label={t("calendar:today")}
+          kbd="0"
+          onClick={() => set({ calendarDrawer: "day", calendarFocusDay: null, sidebarOpen: false })}
+        />
+        <SideRow
+          label={t("calendar:thisWeek")}
+          kbd="2"
+          onClick={() =>
+            set({
+              calendarScreen: true,
+              calendarDrawer: null,
+              calendarFocusDay: null,
+              sidebarOpen: false,
+            })
+          }
+        />
+        <SideRow
+          label={t("calendar:create.title")}
+          kbd="B"
+          onClick={() => set({ eventCreate: {}, sidebarOpen: false })}
+        />
+
         {(labels ?? []).filter((l) => !l.isAuto).length > 0 && (
           <>
             <div className="co-hairline-b mx-4 my-2.5" />
@@ -195,6 +222,7 @@ function SideRow({
   indent,
   badge,
   dotColor,
+  kbd,
   onClick,
 }: {
   label: string;
@@ -202,6 +230,8 @@ function SideRow({
   indent?: boolean;
   badge?: number;
   dotColor?: string;
+  /** keyboard hint shown on the right */
+  kbd?: string;
   onClick: () => void;
 }) {
   return (
@@ -222,6 +252,7 @@ function SideRow({
       {badge != null && badge > 0 && (
         <span className="shrink-0 text-[11.5px] text-ink-faint tabular-nums">{badge}</span>
       )}
+      {kbd && <span className="co-kbd shrink-0">{kbd}</span>}
     </button>
   );
 }

@@ -52,13 +52,34 @@
     "baseUrlLabel": "基础 URL",
     "baseUrlHint": "兼容 OpenAI 的端点。",
     "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
-    "modelLabel": "模型",
-    "modelsAvailable": "端点提供 {{n}} 个可用模型。",
+    "modelLabel": "默认模型",
+    "modelsAvailable": "端点提供 {{n}} 个可用模型。当下方某档留空时会使用此模型。",
     "modelHintEmpty": "输入模型 id，或在端点列表加载后从中选择。",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "服务商",
     "providerHint": "预设会自动填入基础 URL；选择自定义端点可使用任何兼容 OpenAI 的 URL。本地服务器无需 API 密钥。",
-    "customProvider": "自定义端点"
+    "customProvider": "自定义端点",
+    "tiersSection": "模型档位",
+    "tiersIntro": "为每个档位指定上方服务商的一个模型。留空某档位则使用默认模型。",
+    "tier": {
+      "instant": "即时",
+      "cheap": "经济",
+      "intelligent": "智能"
+    },
+    "tierFallback": "默认模型",
+    "tierInstantHint": "最快、成本最低 — 适合快速、大批量任务。",
+    "tierCheapHint": "适合日常工作的均衡成本。",
+    "tierIntelligentHint": "能力最强 — 质量最佳，成本更高。“问一问”功能需要工具调用能力。",
+    "routingSection": "功能路由",
+    "routingIntro": "选择每个 AI 功能使用的档位。",
+    "routeAsk": "问一问（问答）",
+    "routeAskHint": "在你的邮箱中进行智能体式搜索 — 使用最智能的档位效果更佳。",
+    "routeDraft": "起草与回复",
+    "routeDraftHint": "以你的语气撰写和改写邮件。",
+    "routeSummarize": "总结",
+    "routeSummarizeHint": "会话摘要 — 通常快速且经济的档位就够用。",
+    "routeVoice": "学习写作风格",
+    "routeVoiceHint": "偶尔在后台运行、用于提炼你写作风格的任务。"
   },
   "oauth": {
     "description": "使用 Google / Microsoft 登录需要您自己的应用注册（一个客户端 ID）。请在 Google Cloud Console 中创建 <b>桌面应用</b> OAuth 客户端，或在 Microsoft Entra 中创建 <b>移动和桌面</b> 应用，并将重定向 URI 设为 <code>http://localhost</code>。完整操作步骤见下方。",
@@ -179,7 +200,54 @@
     "saving": "保存中…",
     "saveChanges": "保存更改",
     "create": "创建分组",
-    "cancel": "取消"
+    "cancel": "取消",
+    "autoLabelTabs": "自动标记标签页",
+    "autoBadge": "自动",
+    "relabel": "重新运行自动标签",
+    "relabeling": "分类中…",
+    "relabeled": "已为 {{count}} 封邮件应用自动标签"
+  },
+  "labels": {
+    "title": "标签",
+    "yourLabels": "你的标签",
+    "new": "新建标签",
+    "edit": "编辑",
+    "delete": "删除",
+    "reallyDelete": "确定要删除吗？",
+    "empty": "还没有标签。创建一个来标记和筛选你的邮件。",
+    "nameLabel": "名称",
+    "namePlaceholder": "例如：工作",
+    "colorLabel": "颜色",
+    "saving": "保存中…",
+    "saveChanges": "保存更改",
+    "create": "创建标签",
+    "cancel": "取消",
+    "saveFailed": "无法保存标签：{{detail}}",
+    "deleteFailed": "无法删除标签：{{detail}}"
+  },
+  "notifications": {
+    "label": "桌面通知",
+    "hint": "窗口未获得焦点时，有新邮件到达则通知。"
+  },
+  "autoAdvance": {
+    "label": "自动前进",
+    "hint": "在会话中完成/暂停后，打开下一个会话，而不是返回列表。"
+  },
+  "signature": {
+    "section": "签名",
+    "placeholder": "此致,\n你的名字",
+    "add": "添加签名",
+    "newName": "新签名",
+    "empty": "暂无签名。",
+    "forNew": "新邮件默认",
+    "forReply": "回复 / 转发时",
+    "none": "无签名",
+    "delete": "删除",
+    "deleteConfirm": "确认删除？"
+  },
+  "autoLabels": {
+    "label": "自动标签",
+    "hint": "自动将收到的邮件分类为营销、新闻、社交或推广。"
   },
   "about": {
     "section": "关于",
@@ -190,5 +258,28 @@
     "upToDate": "已是最新版本。",
     "updateAvailable": "版本 {{version}} 可用。",
     "restartInstall": "重启并安装"
+  },
+  "calendar": {
+    "section": "日历同步",
+    "hint": "通过 CalDAV 双向同步。Google 需要一次性重新授权；Fastmail/iCloud/自建服务器使用应用专用密码。",
+    "connected": "日历已连接 — 正在进行首次同步",
+    "disconnected": "日历已断开 — 日程保留在本设备上",
+    "syncStarted": "日历同步已开始",
+    "syncNow": "立即同步",
+    "disconnect": "断开连接",
+    "connectGoogle": "连接 Google 日历",
+    "connectCaldav": "连接 CalDAV…",
+    "connect": "连接",
+    "urlPlaceholder": "服务器地址，如 https://caldav.fastmail.com",
+    "username": "用户名",
+    "appPassword": "应用专用密码",
+    "default": "默认"
+  },
+  "meetingReminder": {
+    "label": "会议提醒",
+    "hint": "日程开始前发送桌面通知；点击即可加入会议。",
+    "off": "关闭",
+    "minutes_one": "提前 {{count}} 分钟",
+    "minutes_other": "提前 {{count}} 分钟"
   }
 }

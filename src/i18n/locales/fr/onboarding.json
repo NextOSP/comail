@@ -1,4 +1,12 @@
 {
+  "intro": {
+    "skipHint": "Appuyez sur une touche pour passer",
+    "lines": [
+      "Bienvenue.",
+      "L'e-mail, à la vitesse de la pensée.",
+      "Commençons la configuration."
+    ]
+  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",

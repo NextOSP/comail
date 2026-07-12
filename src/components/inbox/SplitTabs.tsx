@@ -38,7 +38,7 @@ export function SplitTabs() {
           : "important";
 
   return (
-    <div className="co-hairline-b flex shrink-0 items-center gap-1 overflow-x-auto px-4">
+    <div className="co-glass relative z-10 flex shrink-0 items-center gap-1 overflow-x-auto px-4">
       {tabs.map((tab) => (
         <SplitTab
           key={tab.key}

@@ -10,6 +10,12 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  // Keep all build output under build/ (installers are staged there too).
+  build: {
+    outDir: "build/dist",
+    emptyOutDir: true,
+  },
+
   // Exposed so mock/browser dev can show a version without the Tauri app API.
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(pkg.version),

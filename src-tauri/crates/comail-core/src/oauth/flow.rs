@@ -50,6 +50,17 @@ pub async fn authorize(
     provider: Provider,
     open_url: impl FnOnce(String) + Send,
 ) -> Result<OAuthOutcome> {
+    authorize_with(provider, &[], None, open_url).await
+}
+
+/// Like `authorize` but with additional scopes (incremental consent, e.g.
+/// Google Calendar) and a login hint so re-consent lands on the right account.
+pub async fn authorize_with(
+    provider: Provider,
+    extra_scopes: &[&str],
+    login_hint: Option<&str>,
+    open_url: impl FnOnce(String) + Send,
+) -> Result<OAuthOutcome> {
     let cfg = for_provider(provider)
         .ok_or_else(|| CoreError::Auth("provider does not use oauth".into()))?;
     let (client_id, client_secret) = crate::oauth::providers::resolve_credentials(provider)?;
@@ -62,7 +73,13 @@ pub async fn authorize(
     let server = LoopbackServer::bind().await?;
     let redirect_uri = server.redirect_uri();
 
-    let scopes = cfg.scopes.join(" ");
+    let mut scopes = cfg.scopes.join(" ");
+    for extra in extra_scopes {
+        if !scopes.contains(extra) {
+            scopes.push(' ');
+            scopes.push_str(extra);
+        }
+    }
     let mut auth_url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
         cfg.auth_url,
@@ -74,6 +91,9 @@ pub async fn authorize(
     );
     if provider == Provider::Gmail {
         auth_url.push_str("&access_type=offline&prompt=consent");
+    }
+    if let Some(hint) = login_hint {
+        auth_url.push_str(&format!("&login_hint={}", urlencode(hint)));
     }
 
     open_url(auth_url);

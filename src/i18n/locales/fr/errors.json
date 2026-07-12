@@ -13,5 +13,6 @@
   "other": "Une erreur s’est produite",
   "unknown": "Une erreur s’est produite",
   "oauthFailed": "Échec de la connexion OAuth",
-  "connectionFailed": "Échec de la connexion"
+  "connectionFailed": "Échec de la connexion",
+  "caldav": "Erreur du serveur de calendrier"
 }
