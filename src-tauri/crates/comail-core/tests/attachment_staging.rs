@@ -39,6 +39,7 @@ fn draft_args(account_id: i64, atts: Vec<DraftAttachmentIn>) -> SaveDraftArgs {
         bcc: vec![],
         subject: "hello".into(),
         body_text: "body".into(),
+        body_html: None,
         mode: "new".into(),
         in_reply_to_message_id: None,
         attachments: atts,

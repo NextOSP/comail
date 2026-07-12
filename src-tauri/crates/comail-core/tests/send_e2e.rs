@@ -123,6 +123,7 @@ async fn reply_send_reaches_smtp_and_sent_folder() {
             bcc: vec![],
             subject: "Re: Quarterly report draft".into(),
             body_text: "Reviewed - the revenue section looks solid. Ship it.".into(),
+            body_html: Some("Reviewed - the revenue section looks <b>solid</b>. Ship it.".into()),
             mode: "reply".into(),
             in_reply_to_message_id: Some(parent.id),
             attachments: vec![],

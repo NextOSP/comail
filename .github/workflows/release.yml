@@ -11,6 +11,13 @@ jobs:
     name: Build & release (${{ matrix.name }})
     permissions:
       contents: write
+    # Gate the updater SIGNING KEY behind a protected environment. Create an
+    # environment named "release" in repo Settings -> Environments, add required
+    # reviewer(s), and store TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] as *environment*
+    # secrets (not repo secrets). Then a pushed tag can't sign & ship an update
+    # until a human approves the run - so a malicious tag/commit can't reach the
+    # auto-updater on its own.
+    environment: release
     strategy:
       fail-fast: false
       matrix:
@@ -27,7 +34,7 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux system deps
         if: matrix.runner == 'ubuntu-22.04'
@@ -38,13 +45,13 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf \
             libssl-dev libdbus-1-dev build-essential curl wget file pkg-config
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
@@ -62,7 +69,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Signs the updater artifacts and uploads latest.json to the release.

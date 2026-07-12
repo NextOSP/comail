@@ -13,5 +13,6 @@
   "other": "Đã xảy ra lỗi",
   "unknown": "Đã xảy ra lỗi",
   "oauthFailed": "Đăng nhập OAuth thất bại",
-  "connectionFailed": "Kết nối thất bại"
+  "connectionFailed": "Kết nối thất bại",
+  "caldav": "Lỗi máy chủ lịch"
 }

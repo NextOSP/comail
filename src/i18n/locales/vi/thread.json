@@ -22,6 +22,7 @@
     "dismiss": "Bỏ tóm tắt"
   },
   "draftBadge": "Bản nháp",
+  "sendingBadge": "Đang gửi…",
   "msgTo": "đến",
   "msgCc": "cc",
   "loadingMessage": "Đang tải thư…",
@@ -29,6 +30,18 @@
   "attachment": {
     "fallbackName": "tệp đính kèm",
     "savedMock": "Đã lưu {{name}} (mock)",
-    "openFailed": "Không thể mở tệp đính kèm: {{detail}}"
+    "openFailed": "Không thể mở tệp đính kèm: {{detail}}",
+    "preview": {
+      "loading": "Đang tải bản xem trước…",
+      "failed": "Không thể xem trước tệp đính kèm: {{detail}}",
+      "openExternally": "Mở bằng ứng dụng",
+      "unsupported": "Không có bản xem trước cho loại tệp này — hãy mở bằng ứng dụng ngoài.",
+      "tooLarge": "Tệp quá lớn để xem trước — hãy mở bằng ứng dụng ngoài.",
+      "truncated": "Bản xem trước đã bị cắt bớt",
+      "slide": "Trang {{n}}",
+      "emptySlide": "(không có chữ)",
+      "sheetFallback": "Trang tính {{n}}",
+      "documentTitle": "Xem trước tài liệu"
+    }
   }
 }

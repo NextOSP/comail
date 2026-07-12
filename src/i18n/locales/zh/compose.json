@@ -26,7 +26,7 @@
   "removeNamed": "移除 {{name}}",
   "bodyPlaceholder": "写点什么…（ ;快捷词 展开片段，{{mod}}+; 浏览 ）",
   "send": "发送",
-  "footerHints": "{{mod}}↵ 发送 · {{mod}}⇧↵ 发送并完成 · {{mod}}⇧L 稍后 · {{mod}}⇧A 附件 · {{mod}}J AI",
+  "footerHints": "{{mod}}↵ 发送 · {{mod}}⇧↵ 发送并完成",
   "draftSaved": "草稿已保存",
   "unsaved": "未保存",
   "keepDraft": "保留此草稿？",
@@ -53,5 +53,24 @@
   "quotedLabel": "引用的邮件",
   "quickReply1": "收到，谢谢！",
   "quickReply2": "好的，没问题。",
-  "quickReply3": "谢谢，我看一下。"
+  "quickReply3": "谢谢，我看一下。",
+  "signature": {
+    "label": "签名",
+    "none": "无签名"
+  },
+  "fmt": {
+    "bold": "加粗",
+    "italic": "斜体",
+    "underline": "下划线",
+    "strike": "删除线",
+    "bullets": "项目符号列表",
+    "quote": "引用",
+    "image": "插入图片",
+    "link": "插入链接",
+    "linkPlaceholder": "https://example.com",
+    "linkApply": "应用",
+    "table": "插入表格"
+  },
+  "proofread": "校对",
+  "proofreadClean": "看起来不错——无需修改。"
 }

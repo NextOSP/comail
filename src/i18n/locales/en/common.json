@@ -44,7 +44,9 @@
     "settings": "Settings",
     "settingsWithShortcut": "Settings ({{shortcut}})",
     "allAccounts": "All accounts",
-    "menu": "Mailboxes"
+    "menu": "Mailboxes",
+    "calendar": "Calendar (0 today, 2 week)",
+    "mail": "Mail"
   },
   "loading": "Loading…",
   "selectedCount": "{{count}} selected",
@@ -57,7 +59,8 @@
     "placeholder": "Search mail…",
     "try": "Try",
     "emptyHint": "Search across every account, folder, and message.",
-    "noResults": "No results for “{{query}}”"
+    "noResults": "No results for “{{query}}”",
+    "toggleHint": "Switch Search / Ask — ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Keyboard shortcuts",
@@ -115,7 +118,8 @@
     "labels": "Labels",
     "manageLabels": "Manage labels",
     "settings": "Settings",
-    "accountSettings": "Account settings"
+    "accountSettings": "Account settings",
+    "calendar": "Calendar"
   },
   "notification": {
     "newMessages": "{{count}} new messages"

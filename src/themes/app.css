@@ -28,6 +28,7 @@
   --elev-2: 0 4px 24px rgb(32 30 27 / 0.10), 0 1px 3px rgb(32 30 27 / 0.06);
   --row-hover: rgb(var(--ink) / 0.035);
   --selected-bg: color-mix(in srgb, var(--accent) 7%, transparent);
+  --checked-bg: color-mix(in srgb, var(--accent) 14%, transparent);
   --iframe-scheme: light;
 }
 
@@ -53,6 +54,7 @@
   --elev-2: 0 8px 32px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.35);
   --row-hover: rgb(var(--ink) / 0.045);
   --selected-bg: color-mix(in srgb, var(--accent) 11%, transparent);
+  --checked-bg: color-mix(in srgb, var(--accent) 22%, transparent);
   --iframe-scheme: dark;
 }
 
@@ -152,16 +154,6 @@ textarea {
     opacity: 1;
   }
 }
-@keyframes co-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateY(24px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
 @keyframes co-toast-in {
   from {
     opacity: 0;
@@ -194,9 +186,6 @@ textarea {
 
 .co-pop-in {
   animation: co-pop-in 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.co-sheet-in {
-  animation: co-sheet-in 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .co-fade-in {
   animation: co-fade-in 150ms ease-out;
@@ -260,6 +249,21 @@ textarea {
 .co-row[data-selected="true"]::before {
   background: var(--accent);
 }
+/* Multi-select: highlight the whole row, and run the left bar full-height so
+   adjacent selected rows join into one continuous line. Placed after :hover and
+   [data-selected] so the checked state wins on rows that are also hovered/cursored. */
+.co-row[data-checked="true"] {
+  background: var(--checked-bg);
+}
+.co-row[data-checked="true"]:hover {
+  background: var(--checked-bg);
+}
+.co-row[data-checked="true"]::before {
+  top: 0;
+  bottom: 0;
+  border-radius: 0;
+  background: var(--accent);
+}
 
 .co-kbd {
   display: inline-flex;
@@ -282,21 +286,196 @@ textarea {
   border-bottom: 1px solid var(--hairline);
 }
 
-/* Inbox-zero aurora */
-.co-aurora {
-  position: absolute;
-  inset: -25%;
-  filter: blur(60px);
-  opacity: 0.5;
-  /* Static on purpose: animating this blurred oversized layer forces WebKitGTK
-     to re-blur every frame (100% CPU under software compositing). */
-  background:
-    radial-gradient(38% 45% at 28% 32%, color-mix(in srgb, var(--accent) 42%, transparent), transparent 70%),
-    radial-gradient(42% 48% at 72% 28%, color-mix(in srgb, var(--info) 36%, transparent), transparent 70%),
-    radial-gradient(40% 44% at 55% 75%, color-mix(in srgb, var(--star) 22%, transparent), transparent 70%);
+/* Composer: typing fields must not glow (the big ring reads as clutter);
+   buttons and links keep the global keyboard focus ring. */
+.co-composer :is(textarea, input, [contenteditable]):focus-visible {
+  outline: none;
 }
-:root[data-theme="carbon"] .co-aurora {
-  opacity: 0.34;
+
+/* Rich body editor */
+.co-richbody {
+  cursor: text;
+}
+.co-richbody[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.co-richbody blockquote {
+  margin: 4px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--hairline-strong);
+  color: var(--text-muted);
+}
+.co-richbody ul,
+.co-richbody ol {
+  padding-left: 1.4em;
+  list-style: revert;
+}
+.co-richbody img {
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 4px 0;
+}
+.co-richbody a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.co-richbody table {
+  border-collapse: collapse;
+  margin: 4px 0;
+}
+.co-richbody td,
+.co-richbody th {
+  border: 1px solid var(--hairline-strong);
+  padding: 6px 8px;
+  min-width: 48px;
+}
+
+/* --------------------------------------------------------------------------
+   Ambient animated backdrop
+
+   Softness comes from each blob's *own* radial-gradient alpha falloff, never
+   from `filter: blur` — blurring an oversized layer (or any backdrop-filter)
+   pins WebKitGTK's software compositor at 100% CPU because it re-rasterises
+   every frame. Here the blob bitmaps are cached and the compositor only moves
+   them (translate3d/scale = GPU transform), so motion stays cheap.
+-------------------------------------------------------------------------- */
+.co-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.co-blob {
+  position: absolute;
+  width: 78vw;
+  height: 78vw;
+  max-width: 1100px;
+  max-height: 1100px;
+  border-radius: 50%;
+  opacity: 0.6;
+  will-change: transform;
+  transform: translateZ(0);
+}
+:root[data-theme="carbon"] .co-blob {
+  opacity: 0.42;
+}
+.co-blob--1 {
+  top: -24%;
+  left: -14%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 60%, transparent), transparent 66%);
+  animation: co-float-1 28s ease-in-out infinite;
+}
+.co-blob--2 {
+  top: -20%;
+  right: -16%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--info) 52%, transparent), transparent 66%);
+  animation: co-float-2 34s ease-in-out infinite;
+}
+.co-blob--3 {
+  bottom: -28%;
+  left: 26%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--star) 40%, transparent), transparent 66%);
+  animation: co-float-3 40s ease-in-out infinite;
+}
+
+@keyframes co-float-1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(14%, 10%, 0) scale(1.14); }
+  66% { transform: translate3d(5%, 20%, 0) scale(0.94); }
+}
+@keyframes co-float-2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  40% { transform: translate3d(-16%, 12%, 0) scale(1.1); }
+  72% { transform: translate3d(-7%, 3%, 0) scale(1.18); }
+}
+@keyframes co-float-3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-12%, -14%, 0) scale(0.9); }
+}
+
+/* Frosted, translucent chrome — the moving backdrop reads through it.
+   Deliberately no backdrop-filter (blur is the expensive path on WebKitGTK);
+   translucency + a hairline top sheen carries the "matte glass" look. */
+.co-glass {
+  background: color-mix(in srgb, var(--bg0) 38%, transparent);
+  border-bottom: 1px solid var(--hairline);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
+}
+:root[data-theme="carbon"] .co-glass {
+  background: color-mix(in srgb, var(--bg0) 46%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+/* Soft halo that seats centred content (e.g. inbox-zero text) over the backdrop. */
+.co-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 660px;
+  height: 440px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--bg0) 80%, transparent), transparent 100%);
+}
+
+/* First-run "into space" intro: full-bleed canvas layer. The canvas paints its
+   own deep-space background; z-index is toggled inline (cover during the warp,
+   drop behind the welcome card once settled). No blur here on purpose - the
+   starfield motion is done entirely on the canvas (see SpaceIntro.tsx). */
+.co-space-intro {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  /* Deep-space base under the canvas - guarantees the intro is never a white
+     flash even for the first frame or if the canvas is briefly unsized. */
+  background: #06060a;
+}
+/* Fill explicitly (not via % height, which needs a definite-height chain) so the
+   starfield always covers the viewport. */
+.co-space-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Story stage: one full-screen line at a time, centered. Opacity + translateY
+   are driven per-frame from SpaceIntro.tsx (kept in sync with the starfield),
+   so there's no CSS animation here - just typography. */
+.co-intro-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  pointer-events: none;
+}
+.co-intro-mark {
+  width: clamp(66px, 9vw, 96px);
+  height: clamp(66px, 9vw, 96px);
+  transform-origin: center;
+  will-change: opacity, transform;
+}
+.co-intro-line {
+  max-width: 84vw;
+  padding: 0 6vw;
+  text-align: center;
+  font-size: clamp(30px, 5.2vw, 56px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: rgba(245, 244, 250, 0.94);
+  text-shadow: 0 2px 34px rgba(0, 0, 0, 0.55);
+  will-change: opacity, transform;
+}
+.co-intro-hint {
+  animation: co-fade-in 400ms ease-out;
 }
 
 .co-chip {

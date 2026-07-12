@@ -17,7 +17,9 @@
     "moveToTrash": "Move to trash",
     "markAsSpam": "Mark as spam",
     "selectThread": "Select thread",
-    "selectAllFromHere": "Select All From Here",
+    "selectAll": "Select all",
+    "extendSelectionDown": "Extend selection down",
+    "extendSelectionUp": "Extend selection up",
     "moveToFolder": "Move to folder…",
     "label": "Label…",
     "unsubscribe": "Unsubscribe",
@@ -53,6 +55,14 @@
     "aiSummarize": "AI: Summarize thread",
     "calendarToday": "Calendar: Today",
     "calendarWeek": "Calendar: This Week",
+    "calendarMonth": "Calendar: Month view",
+    "calendarBackInbox": "Calendar: Back to inbox",
+    "createEvent": "Calendar: Create event",
+    "calendarPrev": "Calendar: Previous",
+    "calendarNext": "Calendar: Next",
+    "calendarJumpToday": "Calendar: Jump to today",
+    "joinNextMeeting": "Calendar: Join next meeting",
+    "shareAvailability": "Share availability…",
     "switchAccountAll": "Switch account: All accounts",
     "switchAccount": "Switch account: account {{n}}",
     "palette": "Command palette",
@@ -66,13 +76,21 @@
     "themeSnow": "Theme: Snow",
     "themeCarbon": "Theme: Carbon",
     "themeSystem": "Theme: System",
-    "splitBySender": "Split by sender"
+    "splitBySender": "Split by sender",
+    "goLabel": "Go to label: {{name}}",
+    "askAi": "Ask AI about your inbox",
+    "relabelAuto": "Re-run auto labels",
+    "openAiSettings": "AI settings",
+    "openAccountSettings": "Account settings",
+    "toggleSidebar": "Show mailboxes menu",
+    "aiProofread": "Proofread with AI"
   },
   "toast": {
     "syncing": "Syncing…",
     "noUnsubscribeLink": "No unsubscribe link",
     "unsubscribeWouldOpen": "Unsubscribe: would open {{url}}",
-    "couldNotOpenLink": "Couldn't open link: {{detail}}"
+    "couldNotOpenLink": "Couldn't open link: {{detail}}",
+    "noMeetingToJoin": "No upcoming meeting with a join link"
   },
   "actionLabel": {
     "markedDone": "Marked done",
@@ -94,5 +112,11 @@
     "undone": "Undone",
     "nothingToUndo": "Nothing to undo"
   },
-  "actionFailed": "Action failed: {{detail}}"
+  "actionFailed": "Action failed: {{detail}}",
+  "aiIntent": {
+    "badge": "AI",
+    "row": "Ask AI to do: “{{query}}”",
+    "notUnderstood": "AI couldn't turn that into an action. Try rephrasing.",
+    "locationNote": "Location: {{location}}"
+  }
 }

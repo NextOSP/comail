@@ -10,9 +10,13 @@ pub fn get(conn: &Connection) -> Result<Settings> {
             |r| r.get(0),
         )
         .optional()?;
-    Ok(json
+    let mut settings: Settings = json
         .and_then(|j| serde_json::from_str(&j).ok())
-        .unwrap_or_default())
+        .unwrap_or_default();
+    // Fold any legacy plain-text signatures into the rich model. Migrated data is
+    // persisted on the next `set()`.
+    settings.migrate_signatures();
+    Ok(settings)
 }
 
 pub fn set(conn: &Connection, settings: &Settings) -> Result<()> {
@@ -40,13 +44,52 @@ mod tests {
         let mut s = d.clone();
         s.theme = "carbon".into();
         s.notifications_enabled = false;
-        s.signatures.insert("1".into(), "Best,\nDean".into());
+        s.signature_list.push(crate::models::Signature {
+            id: "a".into(),
+            account_id: 1,
+            name: "Work".into(),
+            html: "<b>Dean</b>".into(),
+        });
+        s.signature_defaults.insert(
+            "1".into(),
+            crate::models::SignatureDefaults {
+                new_id: Some("a".into()),
+                reply_id: None,
+            },
+        );
         set(&c, &s).unwrap();
 
         let back = get(&c).unwrap();
         assert_eq!(back.theme, "carbon");
         assert!(!back.notifications_enabled);
-        assert_eq!(back.signatures.get("1").map(String::as_str), Some("Best,\nDean"));
+        assert_eq!(back.signature_list.len(), 1);
+        assert_eq!(back.signature_list[0].html, "<b>Dean</b>");
+        assert_eq!(
+            back.signature_defaults.get("1").and_then(|d| d.new_id.as_deref()),
+            Some("a")
+        );
+    }
+
+    /// A legacy plain-text `signatures` blob is folded into the rich model on
+    /// read: one named signature per account, set as both new and reply default.
+    #[test]
+    fn legacy_signatures_migrate_on_read() {
+        let c = testutil::conn();
+        c.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('settings',
+             '{\"theme\":\"snow\",\"undoSendSeconds\":10,\"loadRemoteImages\":false,\"signatures\":{\"1\":\"Best,\\nDean\"}}')",
+            [],
+        )
+        .unwrap();
+        let s = get(&c).unwrap();
+        assert!(s.signatures.is_empty(), "legacy field cleared after fold");
+        assert_eq!(s.signature_list.len(), 1);
+        let sig = &s.signature_list[0];
+        assert_eq!(sig.account_id, 1);
+        assert_eq!(sig.html, "Best,<br>Dean");
+        let def = s.signature_defaults.get("1").unwrap();
+        assert_eq!(def.new_id.as_deref(), Some(sig.id.as_str()));
+        assert_eq!(def.reply_id.as_deref(), Some(sig.id.as_str()));
     }
 
     /// Blobs written before new fields existed must deserialize with defaults.

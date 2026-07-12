@@ -1,4 +1,12 @@
 {
+  "intro": {
+    "skipHint": "Press any key to skip",
+    "lines": [
+      "Welcome.",
+      "Email, at the speed of thought.",
+      "Let's get you set up."
+    ]
+  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",

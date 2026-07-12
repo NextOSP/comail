@@ -1,14 +1,19 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarDrawer } from "./components/calendar/CalendarDrawer";
+import { CalendarScreen } from "./components/calendar/CalendarScreen";
+import { EventCreate } from "./components/calendar/EventCreate";
+import { EventDetailPopover } from "./components/calendar/EventDetailPopover";
 import { CommandPalette } from "./components/palette/CommandPalette";
 import { Composer } from "./components/compose/Composer";
+import { AttachmentPreviewModal } from "./components/thread/AttachmentPreviewModal";
 import { ConversationScreen } from "./components/thread/ConversationScreen";
 import { FpsMeter } from "./components/common/FpsMeter";
 import { InboxScreen } from "./components/inbox/InboxScreen";
 import { MovePopover } from "./components/common/MovePopover";
 import { LabelPopover } from "./components/common/LabelPopover";
 import { Onboarding } from "./components/onboarding/Onboarding";
+import { SpaceIntro } from "./components/onboarding/SpaceIntro";
 import { SearchScreen } from "./components/search/SearchScreen";
 import { Sidebar } from "./components/common/Sidebar";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -24,11 +29,26 @@ import { setLanguage } from "./i18n";
 import { ALL_COMMANDS } from "./keyboard/commands";
 import { installKeyboard, registerCommands } from "./keyboard/registry";
 import { checkForUpdate, installUpdate } from "./ipc/updater";
+import { hasSeenIntro, markIntroSeen } from "./lib/intro";
 import { useBackendEvents } from "./queries/events";
 import { flattenThreads, useAccounts, useSearch, useSettings, useThreads } from "./queries/hooks";
 import { useUi, type Screen } from "./stores/ui";
 
 registerCommands(ALL_COMMANDS);
+
+/**
+ * Preview flag: force the first-run "into space" intro + onboarding, regardless
+ * of saved accounts or whether the intro was already seen. Enable it by baking
+ * `VITE_INTRO=1` into the build/run - works in dev (`VITE_INTRO=1 pnpm dev`) and
+ * in a test build (`VITE_INTRO=1 pnpm tauri build`) so the packaged app can show
+ * it on demand. A normal shipping build (no VITE_INTRO) leaves this off, so the
+ * intro only plays on a genuine first run. In dev, `?intro` on the URL also works.
+ */
+const PREVIEW_INTRO =
+  import.meta.env.VITE_INTRO === "1" ||
+  (import.meta.env.DEV &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("intro"));
 
 export default function App() {
   useBackendEvents();
@@ -41,41 +61,65 @@ export default function App() {
   const openThreadId = useUi((s) => s.openThreadId);
   const searchOpen = useUi((s) => s.searchOpen);
   const composer = useUi((s) => s.composer);
+  const calendarScreen = useUi((s) => s.calendarScreen);
 
-  const screen: Screen = !accountsLoading && accounts?.length === 0
+  // First-run "into space" intro. Space is only the intro: it plays, then an exit
+  // warp fades the scene out to reveal the onboarding on its gradient backdrop.
+  // `cardReady` mounts the card (under the fading space) at reveal; `showIntro`
+  // drops the intro once the fade completes.
+  const [showIntro, setShowIntro] = useState(() => PREVIEW_INTRO || !hasSeenIntro());
+  const [cardReady, setCardReady] = useState(false);
+
+  // Replies/forwards render inside the conversation (thread stays visible);
+  // only a brand-new message takes over the screen as its own compose view.
+  const screen: Screen = PREVIEW_INTRO || (!accountsLoading && accounts?.length === 0)
     ? "onboarding"
-    : openThreadId != null
-      ? "conversation"
-      : searchOpen
-        ? "search"
-        : "inbox";
+    : composer != null && composer.replyTo == null
+      ? "compose"
+      : calendarScreen
+        ? "calendar"
+        : openThreadId != null
+          ? "conversation"
+          : searchOpen
+            ? "search"
+            : "inbox";
 
   return (
-    <div className="relative flex h-full flex-col bg-bg0 text-ink">
+    <div className="relative isolate flex h-full flex-col bg-bg0 text-ink">
       <ThreadOrderSync />
+      {(screen === "inbox" || screen === "onboarding") && <AppBackdrop />}
       {screen !== "onboarding" && <TopBar />}
 
-      {accountsLoading ? (
+      {accountsLoading && !PREVIEW_INTRO ? (
         <div className="flex flex-1 items-center justify-center">
           <span className="co-spinner size-5 rounded-full border-2 border-hairline-strong border-t-accent" />
         </div>
       ) : screen === "onboarding" ? (
-        <Onboarding />
+        <>
+          {showIntro && (
+            <SpaceIntro
+              onReveal={() => {
+                if (!PREVIEW_INTRO) markIntroSeen();
+                setCardReady(true);
+              }}
+              onFinished={() => setShowIntro(false)}
+            />
+          )}
+          {(!showIntro || cardReady) && <Onboarding />}
+        </>
+      ) : screen === "compose" ? (
+        <Composer
+          key={`${composer!.mode}-${composer!.replyTo?.id ?? "new"}-${composer!.draftId ?? 0}`}
+          state={composer!}
+        />
+      ) : screen === "calendar" ? (
+        <CalendarScreen />
       ) : screen === "conversation" ? (
         <ConversationScreen threadId={openThreadId!} />
       ) : screen === "search" ? (
         <SearchScreen />
       ) : (
         <InboxScreen />
-      )}
-
-      {/* global overlays; replies to the open thread render inline in the
-          conversation instead of as a bottom sheet */}
-      {composer && composer.replyTo?.threadId !== openThreadId && (
-        <Composer
-          key={`${composer.mode}-${composer.replyTo?.id ?? "new"}-${composer.draftId ?? 0}`}
-          state={composer}
-        />
       )}
       {screen !== "onboarding" && <Sidebar />}
       <CommandPalette />
@@ -84,6 +128,9 @@ export default function App() {
       <LabelPopover />
       <SplitPopover />
       {screen !== "onboarding" && <CalendarDrawer />}
+      {screen !== "onboarding" && <EventCreate />}
+      {screen !== "onboarding" && <EventDetailPopover />}
+      <AttachmentPreviewModal />
       <ShortcutHelp />
       <SettingsPanel />
       <SnippetsPanel />
@@ -126,6 +173,23 @@ function useStartupUpdateCheck() {
       cancelled = true;
     };
   }, [t, pushToast]);
+}
+
+/**
+ * Ambient animated backdrop behind the inbox. Three slow-drifting colour blobs
+ * (theme accent/info/star) whose softness is baked into their radial-gradient
+ * alpha — motion is pure GPU transform, so unlike a blurred layer it doesn't
+ * pin WebKitGTK's compositor. Sits at z-0 under the z-10 content and shows
+ * through the translucent glass chrome and inbox-zero screen.
+ */
+function AppBackdrop() {
+  return (
+    <div className="co-backdrop" aria-hidden>
+      <div className="co-blob co-blob--1" />
+      <div className="co-blob co-blob--2" />
+      <div className="co-blob co-blob--3" />
+    </div>
+  );
 }
 
 /** Add-account (onboarding form) shown as a modal on demand from Settings. */

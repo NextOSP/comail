@@ -1,30 +1,39 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAccounts, useAsk, useContactSuggestions, useSearch } from "../../queries/hooks";
+import { useAccounts, useAsk, useContactSuggestions, useLabels, useSearch } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
-import { ThreadRow } from "../inbox/ThreadRow";
+import { ThreadList } from "../inbox/ThreadList";
 
 const OPERATORS = ["from:", "in:", "is:unread", "has:attachment"];
 
 export function SearchScreen() {
   const { t } = useTranslation();
   const storedQuery = useUi((s) => s.searchQuery);
-  const selectedThreadId = useUi((s) => s.selectedThreadId);
-  const selection = useUi((s) => s.selection);
   const set = useUi((s) => s.set);
   const openThread = useUi((s) => s.openThread);
-  const toggleSelect = useUi((s) => s.toggleSelect);
-  const setSelection = useUi((s) => s.setSelection);
   const selectThread = useUi((s) => s.selectThread);
 
   const [input, setInput] = useState(storedQuery);
   const [mode, setMode] = useState<"search" | "ask">("search");
+  // Enter guard: false while typing, so Enter never opens an email until you
+  // arrow into the list. Arrowing moves the shared cursor (highlight and
+  // scrolling live in ThreadList, same as the inbox).
+  const [enterArmed, setEnterArmed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const ask = useAsk();
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Adopt a one-shot mode request (palette "Ask AI" opens straight into Ask).
+  const modeRequest = useUi((s) => s.searchModeRequest);
+  useEffect(() => {
+    if (modeRequest) {
+      setMode(modeRequest);
+      useUi.getState().set({ searchModeRequest: null });
+    }
+  }, [modeRequest]);
 
   // 150ms debounce into the store (which keys the query)
   useEffect(() => {
@@ -33,33 +42,37 @@ export function SearchScreen() {
   }, [input, set]);
 
   const { data: results, isFetching } = useSearch(storedQuery);
+
+  // Typing (or switching mode) disarms Enter so refining a query can't open a
+  // stale row.
+  useEffect(() => setEnterArmed(false), [storedQuery, mode]);
   const { data: contactHits } = useContactSuggestions(
     mode === "search" && !storedQuery.includes("from:") ? storedQuery : "",
   );
   const { data: accounts } = useAccounts();
+  const { data: labels } = useLabels();
   const selfEmails = useMemo(
     () => new Set((accounts ?? []).map((a) => a.email.toLowerCase())),
     [accounts],
   );
+  const labelMap = useMemo(() => new Map((labels ?? []).map((l) => [l.id, l])), [labels]);
 
   const rows = results ?? [];
 
-  // Shift = range (computed over the visible results), Cmd/Ctrl = toggle, plain = open.
-  const handleRowClick = (id: number, index: number, e: ReactMouseEvent) => {
-    if (e.shiftKey) {
-      const anchorId = useUi.getState().selectAnchorId ?? selectedThreadId ?? id;
-      const ai = rows.findIndex((r) => r.id === anchorId);
-      if (ai < 0) {
-        toggleSelect(id);
-        return;
-      }
-      const range = rows.slice(Math.min(ai, index), Math.max(ai, index) + 1).map((r) => r.id);
-      setSelection([...selection, ...range]);
-    } else if (e.metaKey || e.ctrlKey) {
-      toggleSelect(id);
-    } else {
-      openThread(id);
+  // Arrow keys from the input move the shared cursor through the results.
+  const moveCursor = (delta: 1 | -1) => {
+    if (rows.length === 0) return;
+    const cur = enterArmed
+      ? rows.findIndex((r) => r.id === useUi.getState().selectedThreadId)
+      : -1;
+    const next = cur + delta;
+    if (next < 0) {
+      setEnterArmed(false);
+      return;
     }
+    const idx = Math.min(rows.length - 1, next);
+    setEnterArmed(true);
+    selectThread(idx, rows[idx].id);
   };
 
   return (
@@ -76,12 +89,42 @@ export function SearchScreen() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
+                // Cmd/Ctrl+J flips between keyword Search and AI Ask without
+                // leaving the field. Stop it here so the global registry's
+                // composer-only mod+j binding never sees it.
+                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMode((m) => (m === "search" ? "ask" : "search"));
+                  return;
+                }
+                if (mode === "search" && rows.length > 0) {
+                  // Arrow keys move the highlight through the results; Enter
+                  // opens the highlighted one. Until you arrow in, Enter does
+                  // nothing so plain typing never jumps to an email.
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    moveCursor(1);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    moveCursor(-1);
+                    return;
+                  }
+                  if (e.key === "Enter" && enterArmed) {
+                    e.preventDefault();
+                    const id = useUi.getState().selectedThreadId;
+                    if (id != null) openThread(id);
+                    return;
+                  }
+                }
                 if (e.key !== "Enter") return;
-                e.preventDefault();
+                // Ask mode: Enter runs the question. Search mode with no
+                // highlight: nothing — never yank into an email while typing.
                 if (mode === "ask") {
+                  e.preventDefault();
                   if (input.trim()) ask.run(input.trim());
-                } else if (rows.length > 0) {
-                  openThread(selectedThreadId ?? rows[0].id);
                 }
               }}
               placeholder={mode === "ask" ? "Ask anything about your mailbox…" : t("common:search.placeholder")}
@@ -96,6 +139,7 @@ export function SearchScreen() {
                 <button
                   key={m}
                   type="button"
+                  title={t("common:search.toggleHint")}
                   onClick={() => {
                     setMode(m);
                     inputRef.current?.focus();
@@ -130,8 +174,8 @@ export function SearchScreen() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {mode === "ask" ? (
+      {mode === "ask" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[860px] px-6 py-6">
             {ask.status === "idle" ? (
               <p className="text-[13px] text-ink-faint">
@@ -179,10 +223,11 @@ export function SearchScreen() {
               </div>
             )}
           </div>
-        ) : (
-        <div className="mx-auto max-w-[1040px]">
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
           {(contactHits?.length ?? 0) > 0 && storedQuery.trim() !== "" && (
-            <div className="co-hairline-b flex flex-wrap items-center gap-2 px-6 py-2.5">
+            <div className="co-hairline-b flex shrink-0 flex-wrap items-center gap-2 px-6 py-2.5">
               {contactHits!.map((c) => (
                 <button
                   key={c.email}
@@ -209,26 +254,10 @@ export function SearchScreen() {
               {t("common:search.noResults", { query: storedQuery })}
             </p>
           ) : (
-            rows.map((t, i) => (
-              <div key={t.id} style={{ height: 42 }}>
-                <ThreadRow
-                  thread={t}
-                  selected={t.id === selectedThreadId && selection.length === 0}
-                  checked={selection.includes(t.id)}
-                  selectionMode={selection.length > 0}
-                  selfEmails={selfEmails}
-                  onRowClick={(id, e) => handleRowClick(id, i, e)}
-                  onToggleCheck={() => toggleSelect(t.id)}
-                  onHover={() => {
-                    if (t.id !== selectedThreadId) selectThread(i, t.id);
-                  }}
-                />
-              </div>
-            ))
+            <ThreadList threads={rows} selfEmails={selfEmails} labelMap={labelMap} />
           )}
         </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

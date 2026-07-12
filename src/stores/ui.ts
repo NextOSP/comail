@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type {
   Address,
+  AttachmentMeta,
+  CalendarEvent,
   ComposeMode,
   DraftAttachment,
   MessageDetail,
@@ -8,7 +10,7 @@ import type {
   View,
 } from "../ipc/types";
 
-export type Screen = "onboarding" | "inbox" | "conversation" | "search";
+export type Screen = "onboarding" | "inbox" | "conversation" | "search" | "compose" | "calendar";
 
 /** Management panels opened from the command palette. */
 export type PanelKind = "settings" | "snippets" | "splits" | "labels";
@@ -37,7 +39,10 @@ export interface ComposerState {
     cc?: Address[];
     bcc?: Address[];
     subject?: string;
+    /** plain-text body (legacy drafts, mailto prefills) */
     body?: string;
+    /** rich body; wins over `body` when present */
+    bodyHtml?: string;
     attachments?: DraftAttachment[];
   };
 }
@@ -89,6 +94,8 @@ interface UiState {
   composer: ComposerState | null;
   composerDirty: boolean;
   composerConfirmOpen: boolean;
+  /** id of the draft the open composer is editing (set on first save; hides its card in the thread) */
+  editingDraftId: number | null;
   /** thread ids the snooze popover targets; null = closed */
   snoozeTarget: number[] | null;
   /** thread ids the move-to-folder popover targets; null = closed */
@@ -97,10 +104,43 @@ interface UiState {
   labelTarget: number[] | null;
   /** calendar peek drawer: today / next 7 days */
   calendarDrawer: "day" | "week" | null;
+  /** full-screen week calendar (the `2` view) */
+  calendarScreen: boolean;
+  /** layout of the full-screen calendar (`m` toggles month) */
+  calendarView: "week" | "month";
+  /** day the drawer anchors on (ms day-start); null = today */
+  calendarFocusDay: number | null;
+  /** event-create modal; `prefill` seeds the form (create-from-email);
+   *  `eventId` switches it into edit mode for that event */
+  eventCreate: {
+    eventId?: number;
+    prefill?: {
+      summary?: string;
+      attendees?: Address[];
+      startsAt?: number;
+      endsAt?: number;
+      description?: string;
+      location?: string;
+      joinUrl?: string;
+      allDay?: boolean;
+      accountId?: number;
+    };
+  } | null;
+  /** event-detail popover, anchored near the clicked rect when given */
+  eventDetail: {
+    event: CalendarEvent;
+    anchor?: { x: number; y: number; w: number; h: number };
+  } | null;
+  /** share-availability picker (inserts free times into the open composer) */
+  availabilityOpen: boolean;
+  /** attachment being previewed in the safe in-app viewer; null = closed */
+  attachmentPreview: AttachmentMeta | null;
   /** AI thread summaries cached per thread id (kept until dismissed) */
   aiSummaries: Record<number, { pending: boolean; text?: string }>;
 
   searchOpen: boolean;
+  /** open the search screen in this mode once (consumed by SearchScreen) */
+  searchModeRequest: "search" | "ask" | null;
   searchQuery: string;
 
   theme: Settings["theme"];
@@ -122,6 +162,8 @@ interface UiState {
   setSelection: (ids: number[]) => void;
   /** Select the contiguous range from the anchor to targetId (over visibleThreadIds). */
   selectRange: (targetId: number, additive: boolean) => void;
+  /** Shift+Arrow: move the cursor by delta and select the range from the anchor. */
+  extendSelection: (delta: 1 | -1) => void;
   clearSelection: () => void;
   openComposer: (c: ComposerState) => void;
   closeComposer: () => void;
@@ -154,12 +196,21 @@ export const useUi = create<UiState>((set, get) => ({
   composer: null,
   composerDirty: false,
   composerConfirmOpen: false,
+  editingDraftId: null,
   snoozeTarget: null,
   moveTarget: null,
   labelTarget: null,
   calendarDrawer: null,
+  calendarScreen: false,
+  calendarView: "week",
+  calendarFocusDay: null,
+  eventCreate: null,
+  eventDetail: null,
+  availabilityOpen: false,
+  attachmentPreview: null,
   aiSummaries: {},
   searchOpen: false,
+  searchModeRequest: null,
   searchQuery: "",
   theme: "system",
   keySequence: "",
@@ -231,14 +282,46 @@ export const useUi = create<UiState>((set, get) => ({
     }
     const range = order.slice(Math.min(ai, ti), Math.max(ai, ti) + 1);
     const base = additive ? s.selection : [];
-    // Keep selectAnchorId so repeated Shift+clicks re-extend from the same anchor.
-    set({ selection: [...new Set([...base, ...range])] });
+    // Persist the anchor so repeated Shift+clicks re-extend the range from the
+    // same origin instead of re-anchoring to each freshly hovered row.
+    set({ selection: [...new Set([...base, ...range])], selectAnchorId: anchor });
+  },
+
+  extendSelection: (delta) => {
+    const s = get();
+    const order = s.visibleThreadIds;
+    if (order.length === 0) return;
+    const curIdx = s.selectedThreadId != null ? order.indexOf(s.selectedThreadId) : s.selectedIndex;
+    const base = curIdx < 0 ? 0 : curIdx;
+    // With an active selection, keep extending from its anchor; otherwise start
+    // fresh at the cursor (so a stale anchor can't select a surprise range).
+    const anchorId =
+      s.selection.length > 0 && s.selectAnchorId != null
+        ? s.selectAnchorId
+        : s.selectedThreadId ?? order[base];
+    const ai = order.indexOf(anchorId);
+    const anchorIdx = ai < 0 ? base : ai;
+    const nextIdx = Math.min(order.length - 1, Math.max(0, base + delta));
+    const range = order.slice(Math.min(anchorIdx, nextIdx), Math.max(anchorIdx, nextIdx) + 1);
+    set({
+      selection: [...new Set(range)],
+      selectAnchorId: order[anchorIdx],
+      selectedThreadId: order[nextIdx],
+      selectedIndex: nextIdx,
+    });
   },
 
   clearSelection: () => set({ selection: [], selectAnchorId: null }),
 
-  openComposer: (c) => set({ composer: c, composerDirty: false, composerConfirmOpen: false }),
-  closeComposer: () => set({ composer: null, composerDirty: false, composerConfirmOpen: false }),
+  openComposer: (c) =>
+    set({
+      composer: c,
+      composerDirty: false,
+      composerConfirmOpen: false,
+      editingDraftId: c.draftId ?? null,
+    }),
+  closeComposer: () =>
+    set({ composer: null, composerDirty: false, composerConfirmOpen: false, editingDraftId: null }),
 
   pushToast: ({ durationMs = 5000, ...t }) => {
     const id = toastSeq++;

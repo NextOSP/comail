@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitQuotedTail } from "./quotes";
+import { splitQuotedTail, stripQuoteMarkers } from "./quotes";
 
 describe("splitQuotedTail", () => {
   it("returns the whole text when there is no quote", () => {
@@ -60,5 +60,32 @@ describe("splitQuotedTail", () => {
     const [visible, quoted] = splitQuotedTail(body);
     expect(visible).toBe("FYI");
     expect(quoted).toContain("Forwarded message");
+  });
+});
+
+describe("stripQuoteMarkers", () => {
+  it("removes single-level markers but keeps the attribution line", () => {
+    const quoted = [
+      "On Mon, Jul 7, 2026, Alice <a@x.com> wrote:",
+      "> Are we still on for Friday?",
+      "> Let me know.",
+    ].join("\n");
+    expect(stripQuoteMarkers(quoted)).toBe(
+      "On Mon, Jul 7, 2026, Alice <a@x.com> wrote:\nAre we still on for Friday?\nLet me know.",
+    );
+  });
+
+  it("flattens nested >> markers", () => {
+    expect(stripQuoteMarkers("> earlier reply\n>\n>> original question")).toBe(
+      "earlier reply\n\noriginal question",
+    );
+  });
+
+  it("collapses runs of blank quote lines", () => {
+    expect(stripQuoteMarkers("> a\n>\n>\n>\n> b")).toBe("a\n\nb");
+  });
+
+  it("leaves unquoted text untouched", () => {
+    expect(stripQuoteMarkers("plain text\nsecond line")).toBe("plain text\nsecond line");
   });
 });

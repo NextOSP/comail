@@ -26,7 +26,7 @@
   "removeNamed": "Remove {{name}}",
   "bodyPlaceholder": "Write something… ( ;shortcut expands snippets, {{mod}}+; to browse )",
   "send": "Send",
-  "footerHints": "{{mod}}↵ send · {{mod}}⇧↵ send & done · {{mod}}⇧L later · {{mod}}⇧A attach · {{mod}}J AI",
+  "footerHints": "{{mod}}↵ send · {{mod}}⇧↵ send & done",
   "draftSaved": "Draft saved",
   "unsaved": "Unsaved",
   "keepDraft": "Keep this draft?",
@@ -53,5 +53,24 @@
   "quotedLabel": "Quoted message",
   "quickReply1": "Got it, thanks!",
   "quickReply2": "Sounds good, will do.",
-  "quickReply3": "Thanks, I'll take a look."
+  "quickReply3": "Thanks, I'll take a look.",
+  "signature": {
+    "label": "Signature",
+    "none": "No signature"
+  },
+  "fmt": {
+    "bold": "Bold",
+    "italic": "Italic",
+    "underline": "Underline",
+    "strike": "Strikethrough",
+    "bullets": "Bulleted list",
+    "quote": "Quote",
+    "image": "Insert image",
+    "link": "Insert link",
+    "linkPlaceholder": "https://example.com",
+    "linkApply": "Apply",
+    "table": "Insert table"
+  },
+  "proofread": "Proofread",
+  "proofreadClean": "Looks good - nothing to fix."
 }

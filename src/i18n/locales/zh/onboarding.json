@@ -1,4 +1,12 @@
 {
+  "intro": {
+    "skipHint": "按任意键跳过",
+    "lines": [
+      "欢迎。",
+      "邮件，快如所想。",
+      "开始设置吧。"
+    ]
+  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",

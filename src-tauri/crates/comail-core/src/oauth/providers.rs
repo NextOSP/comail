@@ -1,5 +1,9 @@
 use crate::error::{CoreError, Result};
 use crate::models::Provider;
+
+/// Incremental-consent scope for Google Calendar (CalDAV access). Not in
+/// the default GOOGLE scopes: mail-only accounts should not be asked for it.
+pub const GOOGLE_CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar";
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 

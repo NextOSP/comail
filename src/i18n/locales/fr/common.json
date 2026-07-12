@@ -43,7 +43,10 @@
     "waitingForChord": "En attente d’un raccourci",
     "settings": "Paramètres",
     "settingsWithShortcut": "Paramètres ({{shortcut}})",
-    "allAccounts": "Tous les comptes"
+    "allAccounts": "Tous les comptes",
+    "menu": "Boîtes aux lettres",
+    "calendar": "Calendrier (0 aujourd’hui, 2 semaine)",
+    "mail": "Courrier"
   },
   "loading": "Chargement…",
   "selectedCount": "{{count}} sélectionné(s)",
@@ -56,7 +59,8 @@
     "placeholder": "Rechercher dans les messages…",
     "try": "Essayez",
     "emptyHint": "Recherchez dans tous les comptes, dossiers et messages.",
-    "noResults": "Aucun résultat pour « {{query}} »"
+    "noResults": "Aucun résultat pour « {{query}} »",
+    "toggleHint": "Basculer Recherche / Question — ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Raccourcis clavier",
@@ -69,6 +73,13 @@
     "noMatches": "Aucun dossier correspondant",
     "loading": "Chargement des dossiers…",
     "movedTo": "Déplacé vers {{folder}}"
+  },
+  "label": {
+    "title": "Libellés",
+    "placeholder": "Filtrer ou créer un libellé…",
+    "none": "Aucun libellé pour l’instant",
+    "create": "Créer « {{name}} »",
+    "createFailed": "Impossible de créer le libellé"
   },
   "snoozePopover": {
     "snoozeUntil": "Reporter jusqu’à",
@@ -100,5 +111,17 @@
     "starred": "Suivi",
     "select": "Sélectionner",
     "deselect": "Désélectionner"
+  },
+  "sidebar": {
+    "snippets": "Extraits",
+    "splits": "Règles de boîte divisée",
+    "labels": "Libellés",
+    "manageLabels": "Gérer les libellés",
+    "settings": "Paramètres",
+    "accountSettings": "Paramètres du compte",
+    "calendar": "Calendrier"
+  },
+  "notification": {
+    "newMessages": "{{count}} nouveaux messages"
   }
 }

@@ -30,44 +30,57 @@ pub fn parse(input: &str) -> ParsedQuery {
     let mut text_terms: Vec<String> = Vec::new();
 
     for token in input.split_whitespace() {
-        if let Some(v) = token.strip_prefix("from:") {
-            if !v.is_empty() {
-                q.from = Some(v.to_string());
+        // Operators are case-insensitive on both the key ("In:" == "in:") and
+        // the value ("in:Sent" == "in:sent"); users type them however they like.
+        let (key, value) = match token.split_once(':') {
+            Some((k, v)) => (k.to_ascii_lowercase(), v),
+            None => (String::new(), ""),
+        };
+        match key.as_str() {
+            // Address operators keep the value's original case (matched
+            // case-insensitively downstream); a bare "from:" is a no-op.
+            "from" => {
+                if !value.is_empty() {
+                    q.from = Some(value.to_string());
+                }
             }
-        } else if let Some(v) = token.strip_prefix("to:") {
-            if !v.is_empty() {
-                q.to = Some(v.to_string());
+            "to" => {
+                if !value.is_empty() {
+                    q.to = Some(value.to_string());
+                }
             }
-        } else if let Some(v) = token.strip_prefix("in:") {
-            let role = match v {
-                "inbox" => "inbox",
-                "sent" => "sent",
-                "drafts" => "drafts",
-                "trash" => "trash",
-                "spam" => "spam",
-                "archive" | "done" => "archive",
-                _ => continue,
-            };
-            q.in_folder = Some(role.to_string());
-        } else if let Some(v) = token.strip_prefix("is:") {
-            match v {
+            "in" => {
+                match value.to_ascii_lowercase().as_str() {
+                    "inbox" => q.in_folder = Some("inbox".into()),
+                    "sent" => q.in_folder = Some("sent".into()),
+                    "drafts" => q.in_folder = Some("drafts".into()),
+                    "trash" => q.in_folder = Some("trash".into()),
+                    "spam" => q.in_folder = Some("spam".into()),
+                    "archive" | "done" => q.in_folder = Some("archive".into()),
+                    _ => {} // unknown folder: ignore the operator, drop the token
+                }
+            }
+            "is" => match value.to_ascii_lowercase().as_str() {
                 "unread" => q.is_unread = Some(true),
                 "starred" => q.is_starred = Some(true),
                 _ => {}
+            },
+            "has" => {
+                if value.eq_ignore_ascii_case("attachment") {
+                    q.has_attachment = Some(true);
+                }
             }
-        } else if let Some(v) = token.strip_prefix("has:") {
-            if v == "attachment" {
-                q.has_attachment = Some(true);
-            }
-        } else {
-            // Escape FTS special syntax by quoting; add * for prefix matching.
-            let clean: String = token
-                .chars()
-                .filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_')
-                .collect();
-            if !clean.is_empty() {
-                fts_terms.push(fts_term(&clean));
-                text_terms.push(clean);
+            // Not an operator (includes non-operator tokens with ':' like "12:30").
+            _ => {
+                // Escape FTS special syntax by quoting; add * for prefix matching.
+                let clean: String = token
+                    .chars()
+                    .filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_')
+                    .collect();
+                if !clean.is_empty() {
+                    fts_terms.push(fts_term(&clean));
+                    text_terms.push(clean);
+                }
             }
         }
     }
@@ -104,6 +117,26 @@ mod tests {
         assert_eq!(q.is_unread, Some(true));
         assert_eq!(q.has_attachment, Some(true));
         assert_eq!(q.fts, "\"quarterly\"* AND \"report\"*");
+    }
+
+    #[test]
+    fn operators_are_case_insensitive() {
+        // "in:Sent" (capitalised) must resolve the same as "in:sent".
+        let q = parse("in:Sent");
+        assert_eq!(q.in_folder.as_deref(), Some("sent"));
+        assert!(q.fts.is_empty(), "operator token must not leak into FTS");
+
+        let q = parse("IN:INBOX IS:Unread HAS:Attachment");
+        assert_eq!(q.in_folder.as_deref(), Some("inbox"));
+        assert_eq!(q.is_unread, Some(true));
+        assert_eq!(q.has_attachment, Some(true));
+    }
+
+    #[test]
+    fn non_operator_colon_token_is_free_text() {
+        // A time like "12:30" is not an operator and stays searchable.
+        let q = parse("12:30");
+        assert_eq!(q.fts, "\"1230\"*");
     }
 
     #[test]

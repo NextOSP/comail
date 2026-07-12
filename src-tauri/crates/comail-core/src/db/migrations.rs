@@ -9,6 +9,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/005_labels.sql"),
     include_str!("migrations/006_contact_fold.sql"),
     include_str!("migrations/007_auto_labels.sql"),
+    include_str!("migrations/008_calendar_rsvp.sql"),
+    include_str!("migrations/009_caldav.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {

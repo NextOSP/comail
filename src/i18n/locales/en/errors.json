@@ -13,5 +13,6 @@
   "other": "Something went wrong",
   "unknown": "Something went wrong",
   "oauthFailed": "OAuth sign-in failed",
-  "connectionFailed": "Connection failed"
+  "connectionFailed": "Connection failed",
+  "caldav": "Calendar server error"
 }

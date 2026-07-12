@@ -23,3 +23,14 @@ export function splitQuotedTail(text: string): [string, string | null] {
   if (!quoted) return [text, null];
   return [visible, quoted];
 }
+
+/** Strip leading ">"/">>" markers for display. The wire format keeps
+ *  standard quoting; the UI shows the earlier message as clean text. */
+export function stripQuoteMarkers(text: string): string {
+  return text
+    .split("\n")
+    .map((l) => l.replace(/^\s*>+\s?/, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

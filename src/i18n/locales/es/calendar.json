@@ -6,10 +6,93 @@
   "hintToday": "0 para hoy",
   "escCloses": "Esc cierra",
   "closeAria": "Cerrar calendario",
+  "prevAria": "Anterior",
+  "nextAria": "Siguiente",
+  "createAria": "Crear evento",
   "noEventsToday": "No hay eventos hoy",
   "noEventsWeek": "No hay eventos esta semana",
   "allDay": "Todo el día",
   "noTitle": "(sin título)",
   "cancelled": "Cancelado",
-  "byOrganizer": "por {{organizer}}"
+  "byOrganizer": "por {{organizer}}",
+  "join": "Unirse",
+  "going": "¿Asistirás?",
+  "viewDay": "Ver el día",
+  "conflict": "Coincide con otro evento",
+  "week": "Semana",
+  "month": "Mes",
+  "moreEvents_one": "+{{count}} más",
+  "moreEvents_other": "+{{count}} más",
+  "rsvp": {
+    "yes": "Sí",
+    "maybe": "Quizás",
+    "no": "No"
+  },
+  "rsvpSent": {
+    "accepted": "Aceptado — respuesta enviada al organizador",
+    "tentative": "Marcado como provisional — respuesta enviada al organizador",
+    "declined": "Rechazado — respuesta enviada al organizador"
+  },
+  "create": {
+    "title": "Crear evento",
+    "saveHint": "⌘/Ctrl+Entrar guarda",
+    "quickPlaceholder": "Prueba: comida con sam mañana 1pm 45m",
+    "quickApply": "Entrar rellena el formulario",
+    "summary": "Título",
+    "date": "Fecha",
+    "time": "Hora",
+    "duration": "Duración",
+    "attendees": "Asistentes",
+    "attendeesPlaceholder": "correos separados por comas — cada uno recibe una invitación",
+    "location": "Ubicación",
+    "joinUrl": "Enlace de la reunión",
+    "description": "Descripción",
+    "save": "Guardar",
+    "saveInvite": "Guardar y enviar invitaciones",
+    "quickAiPending": "Preguntando a la IA…",
+    "quickAiHint": "Entrar · deja que la IA lo analice (en cualquier idioma)",
+    "quickAiMiss": "La IA no pudo extraer un evento de eso. Intenta añadir un día u hora."
+  },
+  "created": {
+    "plain": "Evento añadido a tu calendario",
+    "withInvites_one": "Evento creado — invitación en cola para {{count}} asistente",
+    "withInvites_other": "Evento creado — invitaciones en cola para {{count}} asistentes"
+  },
+  "edit": {
+    "title": "Editar evento",
+    "save": "Guardar cambios",
+    "saveInvite": "Guardar y enviar actualizaciones"
+  },
+  "updated": {
+    "plain": "Evento actualizado",
+    "withInvites_one": "Evento actualizado — actualización enviada a {{count}} asistente",
+    "withInvites_other": "Evento actualizado — actualizaciones enviadas a {{count}} asistentes"
+  },
+  "deleted": {
+    "plain": "Evento eliminado",
+    "withInvites_one": "Evento cancelado — cancelación enviada a {{count}} asistente",
+    "withInvites_other": "Evento cancelado — cancelaciones enviadas a {{count}} asistentes"
+  },
+  "detail": {
+    "organizerHint": "Organizado por {{organizer}} — responde arriba",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "confirmDelete": "¿Eliminar este evento?",
+    "confirmCancel_one": "¿Cancelar este evento? Se enviará un correo de cancelación a {{count}} asistente.",
+    "confirmCancel_other": "¿Cancelar este evento? Se enviará un correo de cancelación a {{count}} asistentes."
+  },
+  "availability": {
+    "title": "Compartir disponibilidad",
+    "days": "Días a la vista",
+    "daysOption_one": "{{count}} día",
+    "daysOption_other": "{{count}} días",
+    "hint": "Horas libres según tu calendario. Haz clic en un hueco para excluirlo y luego insértalos.",
+    "none": "No se encontraron huecos libres en este periodo",
+    "insert_one": "Insertar {{count}} hora",
+    "insert_other": "Insertar {{count}} horas",
+    "leadIn": "¿Te vendría bien alguno de estos horarios?"
+  },
+  "screenHint": "Esc o 1 para volver · haz clic en un hueco para crear",
+  "reminderBody": "Empieza a las {{time}}",
+  "syncConflict": "«{{summary}}» cambió en el servidor — tu edición se guardó como copia"
 }

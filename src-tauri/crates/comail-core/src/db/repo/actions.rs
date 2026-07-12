@@ -59,9 +59,11 @@ pub fn enqueue(
 
 /// Due actions for one account, oldest first.
 pub fn due(conn: &Connection, account_id: i64, now: i64, limit: i64) -> Result<Vec<PendingAction>> {
+    // cal_% actions belong to the CalDAV task, not the IMAP executor.
     let mut stmt = conn.prepare(
         "SELECT * FROM pending_actions
          WHERE account_id = ?1 AND state = 'pending' AND (not_before IS NULL OR not_before <= ?2)
+           AND kind NOT LIKE 'cal!_%' ESCAPE '!'
          ORDER BY created_at ASC LIMIT ?3",
     )?;
     let rows = stmt
@@ -71,6 +73,25 @@ pub fn due(conn: &Connection, account_id: i64, now: i64, limit: i64) -> Result<V
 }
 
 /// Earliest future not_before across pending actions (for the scheduler).
+/// Due CalDAV write actions (the calendar task's slice of the queue).
+pub fn due_calendar(
+    conn: &Connection,
+    account_id: i64,
+    now: i64,
+    limit: i64,
+) -> Result<Vec<PendingAction>> {
+    let mut stmt = conn.prepare(
+        "SELECT * FROM pending_actions
+         WHERE account_id = ?1 AND state = 'pending' AND (not_before IS NULL OR not_before <= ?2)
+           AND kind LIKE 'cal!_%' ESCAPE '!'
+         ORDER BY created_at ASC LIMIT ?3",
+    )?;
+    let rows = stmt
+        .query_map(params![account_id, now, limit], from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn next_due_at(conn: &Connection) -> Result<Option<i64>> {
     Ok(conn
         .query_row(

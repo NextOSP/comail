@@ -17,8 +17,11 @@
     "moveToTrash": "Mettre à la corbeille",
     "markAsSpam": "Marquer comme spam",
     "selectThread": "Sélectionner la conversation",
-    "selectAllFromHere": "Tout sélectionner à partir d’ici",
+    "selectAll": "Tout sélectionner",
+    "extendSelectionDown": "Étendre la sélection vers le bas",
+    "extendSelectionUp": "Étendre la sélection vers le haut",
     "moveToFolder": "Déplacer vers un dossier…",
+    "label": "Libellé…",
     "unsubscribe": "Se désabonner",
     "undo": "Annuler",
     "nextThread": "Conversation suivante",
@@ -52,6 +55,14 @@
     "aiSummarize": "IA : Résumer la conversation",
     "calendarToday": "Calendrier : Aujourd’hui",
     "calendarWeek": "Calendrier : Cette semaine",
+    "calendarMonth": "Calendrier : Vue mois",
+    "calendarBackInbox": "Calendrier : Retour à la boîte de réception",
+    "createEvent": "Calendrier : Créer un événement",
+    "calendarPrev": "Calendrier : Précédent",
+    "calendarNext": "Calendrier : Suivant",
+    "calendarJumpToday": "Calendrier : Revenir à aujourd’hui",
+    "joinNextMeeting": "Calendrier : Rejoindre la prochaine réunion",
+    "shareAvailability": "Partager mes disponibilités…",
     "switchAccountAll": "Changer de compte : Tous les comptes",
     "switchAccount": "Changer de compte : compte {{n}}",
     "palette": "Palette de commandes",
@@ -64,13 +75,22 @@
     "editSplits": "Modifier les divisions",
     "themeSnow": "Thème : Snow",
     "themeCarbon": "Thème : Carbon",
-    "themeSystem": "Thème : Système"
+    "themeSystem": "Thème : Système",
+    "splitBySender": "Diviser par expéditeur",
+    "goLabel": "Aller au libellé : {{name}}",
+    "askAi": "Interroger l’IA sur votre boîte de réception",
+    "relabelAuto": "Relancer les libellés automatiques",
+    "openAiSettings": "Paramètres IA",
+    "openAccountSettings": "Paramètres du compte",
+    "toggleSidebar": "Afficher le menu des boîtes aux lettres",
+    "aiProofread": "Corriger avec l'IA"
   },
   "toast": {
     "syncing": "Synchronisation…",
     "noUnsubscribeLink": "Aucun lien de désabonnement",
     "unsubscribeWouldOpen": "Désabonnement : ouvrirait {{url}}",
-    "couldNotOpenLink": "Impossible d’ouvrir le lien : {{detail}}"
+    "couldNotOpenLink": "Impossible d’ouvrir le lien : {{detail}}",
+    "noMeetingToJoin": "Aucune réunion à venir avec un lien de connexion"
   },
   "actionLabel": {
     "markedDone": "Marqué terminé",
@@ -92,5 +112,11 @@
     "undone": "Annulé",
     "nothingToUndo": "Rien à annuler"
   },
-  "actionFailed": "Échec de l’action : {{detail}}"
+  "actionFailed": "Échec de l’action : {{detail}}",
+  "aiIntent": {
+    "badge": "IA",
+    "row": "Demander à l’IA de faire : « {{query}} »",
+    "notUnderstood": "L’IA n’a pas pu transformer cela en action. Essayez de reformuler.",
+    "locationNote": "Lieu : {{location}}"
+  }
 }

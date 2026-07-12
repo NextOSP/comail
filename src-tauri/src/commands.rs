@@ -149,6 +149,20 @@ pub async fn get_attachment(state: State<'_, AppState>, attachment_id: i64) -> C
     state.core.get_attachment(attachment_id).await.map_err(err)
 }
 
+/// Converts the attachment to a safe in-app preview payload (sanitized
+/// HTML / text / cell grid / base64 media) without touching the disk.
+#[tauri::command]
+pub async fn preview_attachment(
+    state: State<'_, AppState>,
+    attachment_id: i64,
+) -> CmdResult<comail_core::preview::AttachmentPreview> {
+    state
+        .core
+        .preview_attachment(attachment_id)
+        .await
+        .map_err(err)
+}
+
 #[tauri::command]
 pub async fn list_contacts(
     state: State<'_, AppState>,
@@ -186,6 +200,112 @@ pub async fn list_events(
     state.core.list_events(start_ms, end_ms).await.map_err(err)
 }
 
+#[tauri::command]
+pub async fn events_for_message(
+    state: State<'_, AppState>,
+    message_id: i64,
+) -> CmdResult<Vec<CalendarEvent>> {
+    state
+        .core
+        .events_for_message(message_id)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn create_event(
+    state: State<'_, AppState>,
+    args: CreateEventArgs,
+) -> CmdResult<CalendarEvent> {
+    state.core.create_event(args).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn rsvp_event(
+    state: State<'_, AppState>,
+    args: RsvpEventArgs,
+) -> CmdResult<CalendarEvent> {
+    state.core.rsvp_event(args).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn update_event(
+    state: State<'_, AppState>,
+    args: UpdateEventArgs,
+) -> CmdResult<CalendarEvent> {
+    state.core.update_event(args).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn delete_event(
+    state: State<'_, AppState>,
+    event_id: i64,
+    notify: Option<bool>,
+) -> CmdResult<()> {
+    state
+        .core
+        .delete_event(event_id, notify.unwrap_or(true))
+        .await
+        .map_err(err)
+}
+
+// ---------- caldav ----------
+
+#[tauri::command]
+pub async fn connect_calendar(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    args: ConnectCalendarArgs,
+) -> CmdResult<Vec<Calendar>> {
+    if args.kind == "google" {
+        let account_id = args.account_id;
+        state
+            .core
+            .connect_google_calendar(account_id, move |url| {
+                let _ = app.opener().open_url(url, None::<String>);
+            })
+            .await
+            .map_err(err)
+    } else {
+        state.core.connect_calendar(args).await.map_err(err)
+    }
+}
+
+#[tauri::command]
+pub async fn disconnect_calendar(state: State<'_, AppState>, account_id: i64) -> CmdResult<()> {
+    state.core.disconnect_calendar(account_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn list_calendars(
+    state: State<'_, AppState>,
+    account_id: Option<i64>,
+) -> CmdResult<Vec<Calendar>> {
+    state.core.list_calendars(account_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_calendar_enabled(
+    state: State<'_, AppState>,
+    calendar_id: i64,
+    enabled: bool,
+) -> CmdResult<()> {
+    state
+        .core
+        .set_calendar_enabled(calendar_id, enabled)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn calendar_sync_now(
+    state: State<'_, AppState>,
+    account_id: Option<i64>,
+) -> CmdResult<()> {
+    state.core.calendar_sync_now(account_id).await;
+    Ok(())
+}
+
 // ---------- AI ----------
 
 #[tauri::command]
@@ -201,6 +321,11 @@ pub async fn set_ai_key(state: State<'_, AppState>, api_key: String) -> CmdResul
 #[tauri::command]
 pub async fn ai_list_models(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
     state.core.ai_list_models().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn ai_command(state: State<'_, AppState>, query: String) -> CmdResult<AiIntent> {
+    state.core.ai_command(query).await.map_err(err)
 }
 
 #[tauri::command]
@@ -228,6 +353,11 @@ pub async fn ai_draft(
         )
         .await
         .map_err(err)
+}
+
+#[tauri::command]
+pub async fn ai_proofread(state: State<'_, AppState>, body: String) -> CmdResult<String> {
+    state.core.ai_proofread(body).await.map_err(err)
 }
 
 #[tauri::command]

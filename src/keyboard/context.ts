@@ -147,6 +147,7 @@ export function buildCommandContext(): CommandCtx {
         const { cancelled } = await call("cancel_send", { actionId: last.actionId });
         if (cancelled) {
           state.openComposer(last.reopen);
+          if (last.reopen.replyTo) state.openThread(last.reopen.replyTo.threadId);
         } else {
           state.pushToast({ kind: "error", message: i18n.t("commands:undo.tooLate") });
         }
@@ -277,23 +278,38 @@ export function buildCommandContext(): CommandCtx {
     }
     const threadId = state.openThreadId ?? state.selectedThreadId;
     if (threadId == null) return;
-    const detail = queryClient.getQueryData<ThreadDetail>(["thread", threadId]);
-    const msgs = detail?.messages.filter((m) => !m.isDraft) ?? [];
-    const replyTo: MessageDetail | undefined =
-      [...msgs].reverse().find((m) => !m.isOutgoing) ?? msgs[msgs.length - 1];
-    if (!replyTo) return;
-    state.openComposer({ mode, replyTo, accountId: replyTo.accountId });
+    void (async () => {
+      // From the list the detail usually isn't cached yet - fetch it so
+      // replying from anywhere works.
+      const detail = await queryClient.fetchQuery<ThreadDetail>({
+        queryKey: ["thread", threadId],
+        queryFn: () => call("get_thread", { threadId }),
+        staleTime: 15_000,
+      });
+      const msgs = detail?.messages.filter((m) => !m.isDraft) ?? [];
+      const replyTo: MessageDetail | undefined =
+        [...msgs].reverse().find((m) => !m.isOutgoing) ?? msgs[msgs.length - 1];
+      if (!replyTo) return;
+      const ui = useUi.getState();
+      ui.openComposer({ mode, replyTo, accountId: replyTo.accountId });
+      // Replies live at the bottom of the thread, so make sure it's open.
+      if (ui.openThreadId !== threadId) ui.openThread(threadId);
+    })();
   };
 
   const escape = () => {
     const state = useUi.getState();
-    // esc-stack: palette > snooze/move/help > calendar > add-account > panel > composer > conversation > search > selection
+    // esc-stack: palette > event-detail > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection
     if (state.paletteOpen) return state.set({ paletteOpen: false });
+    if (state.eventDetail) return state.set({ eventDetail: null });
     if (state.snoozeTarget) return state.set({ snoozeTarget: null });
     if (state.moveTarget) return state.set({ moveTarget: null });
     if (state.labelTarget) return state.set({ labelTarget: null });
     if (state.helpOpen) return state.set({ helpOpen: false });
-    if (state.calendarDrawer) return state.set({ calendarDrawer: null });
+    if (state.eventCreate) return state.set({ eventCreate: null });
+    if (state.availabilityOpen) return state.set({ availabilityOpen: false });
+    if (state.calendarDrawer) return state.set({ calendarDrawer: null, calendarFocusDay: null });
+    if (state.calendarScreen) return state.set({ calendarScreen: false, calendarFocusDay: null });
     if (state.addAccountOpen) return state.set({ addAccountOpen: false });
     if (state.panel) return state.set({ panel: null });
     if (state.composer) {
@@ -316,6 +332,13 @@ export function buildCommandContext(): CommandCtx {
         loadRemoteImages: false,
         aiBaseUrl: "",
         aiModel: "",
+        aiModelInstant: "",
+        aiModelCheap: "",
+        aiModelIntelligent: "",
+        aiTierAsk: "intelligent",
+        aiTierDraft: "intelligent",
+        aiTierSummarize: "instant",
+        aiTierVoice: "cheap",
         googleClientId: "",
         googleClientSecret: "",
         msClientId: "",
@@ -325,10 +348,13 @@ export function buildCommandContext(): CommandCtx {
         voiceDrafting: false,
         voiceProfile: "",
         voiceLearnedAt: 0,
+        meetingNotifyLeadMinutes: 10,
         notificationsEnabled: true,
         autoAdvance: true,
         autoLabelsEnabled: true,
         signatures: {},
+        signatureList: [],
+        signatureDefaults: {},
         ...settings,
         theme,
       },
@@ -344,7 +370,7 @@ export function buildCommandContext(): CommandCtx {
     inSearch: ui.searchOpen,
     composerOpen: ui.composer != null,
     paletteOpen: ui.paletteOpen,
-    panelOpen: ui.panel != null || ui.addAccountOpen,
+    panelOpen: ui.panel != null || ui.addAccountOpen || ui.attachmentPreview != null,
     hasTargets: targets.length > 0,
     targets,
     act,

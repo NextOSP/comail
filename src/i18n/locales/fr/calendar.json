@@ -6,10 +6,93 @@
   "hintToday": "0 pour aujourd’hui",
   "escCloses": "Esc ferme",
   "closeAria": "Fermer le calendrier",
+  "prevAria": "Précédent",
+  "nextAria": "Suivant",
+  "createAria": "Créer un événement",
   "noEventsToday": "Aucun événement aujourd’hui",
   "noEventsWeek": "Aucun événement cette semaine",
   "allDay": "Toute la journée",
   "noTitle": "(sans titre)",
   "cancelled": "Annulé",
-  "byOrganizer": "par {{organizer}}"
+  "byOrganizer": "par {{organizer}}",
+  "join": "Rejoindre",
+  "going": "Participez-vous ?",
+  "viewDay": "Voir la journée",
+  "conflict": "En conflit avec un autre événement",
+  "week": "Semaine",
+  "month": "Mois",
+  "moreEvents_one": "+{{count}} de plus",
+  "moreEvents_other": "+{{count}} de plus",
+  "rsvp": {
+    "yes": "Oui",
+    "maybe": "Peut-être",
+    "no": "Non"
+  },
+  "rsvpSent": {
+    "accepted": "Accepté — réponse envoyée à l’organisateur",
+    "tentative": "Marqué provisoire — réponse envoyée à l’organisateur",
+    "declined": "Refusé — réponse envoyée à l’organisateur"
+  },
+  "create": {
+    "title": "Créer un événement",
+    "saveHint": "⌘/Ctrl+Entrée enregistre",
+    "quickPlaceholder": "Essayez : déjeuner avec sam demain 13:00 45m",
+    "quickApply": "Entrée remplit le formulaire",
+    "summary": "Titre",
+    "date": "Date",
+    "time": "Heure",
+    "duration": "Durée",
+    "attendees": "Participants",
+    "attendeesPlaceholder": "e-mails séparés par des virgules — chacun reçoit une invitation",
+    "location": "Lieu",
+    "joinUrl": "Lien de réunion",
+    "description": "Description",
+    "save": "Enregistrer",
+    "saveInvite": "Enregistrer et envoyer les invitations",
+    "quickAiPending": "Interrogation de l’IA…",
+    "quickAiHint": "Entrée · laisser l’IA analyser (toute langue)",
+    "quickAiMiss": "L’IA n’a pas pu en tirer un événement. Essayez d’ajouter un jour ou une heure."
+  },
+  "created": {
+    "plain": "Événement ajouté à votre calendrier",
+    "withInvites_one": "Événement créé — invitation en file pour {{count}} participant",
+    "withInvites_other": "Événement créé — invitations en file pour {{count}} participants"
+  },
+  "edit": {
+    "title": "Modifier l’événement",
+    "save": "Enregistrer les modifications",
+    "saveInvite": "Enregistrer et envoyer les mises à jour"
+  },
+  "updated": {
+    "plain": "Événement mis à jour",
+    "withInvites_one": "Événement mis à jour — mise à jour envoyée à {{count}} participant",
+    "withInvites_other": "Événement mis à jour — mises à jour envoyées à {{count}} participants"
+  },
+  "deleted": {
+    "plain": "Événement supprimé",
+    "withInvites_one": "Événement annulé — annulation envoyée à {{count}} participant",
+    "withInvites_other": "Événement annulé — annulations envoyées à {{count}} participants"
+  },
+  "detail": {
+    "organizerHint": "Organisé par {{organizer}} — répondez ci-dessus",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "confirmDelete": "Supprimer cet événement ?",
+    "confirmCancel_one": "Annuler cet événement ? Un e-mail d’annulation sera envoyé à {{count}} participant.",
+    "confirmCancel_other": "Annuler cet événement ? Un e-mail d’annulation sera envoyé à {{count}} participants."
+  },
+  "availability": {
+    "title": "Partager mes disponibilités",
+    "days": "Jours à venir",
+    "daysOption_one": "{{count}} jour",
+    "daysOption_other": "{{count}} jours",
+    "hint": "Créneaux libres d’après votre calendrier. Cliquez sur un créneau pour l’exclure, puis insérez.",
+    "none": "Aucun créneau libre trouvé sur cette période",
+    "insert_one": "Insérer {{count}} créneau",
+    "insert_other": "Insérer {{count}} créneaux",
+    "leadIn": "L’un de ces créneaux vous conviendrait-il ?"
+  },
+  "screenHint": "Échap ou 1 pour revenir · cliquez sur un créneau pour créer",
+  "reminderBody": "Commence à {{time}}",
+  "syncConflict": "« {{summary}} » a changé sur le serveur — votre modification a été conservée en copie"
 }

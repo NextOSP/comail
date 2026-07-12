@@ -16,5 +16,11 @@
     "fromDomain": "Everyone @{{domain}}",
     "tabName": "tab: {{name}}",
     "created": "Split \"{{name}}\" created"
+  },
+  "pane": {
+    "empty": "No conversation selected",
+    "recent": "Recent conversations",
+    "noRecent": "No other conversations",
+    "noSubject": "(no subject)"
   }
 }

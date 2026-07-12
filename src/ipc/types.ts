@@ -77,6 +77,23 @@ export interface AttachmentMeta {
   isInline: boolean;
 }
 
+export interface SheetPreview {
+  name: string;
+  rows: string[][];
+  truncated: boolean;
+}
+
+/** Safe preview payload built in Rust (see comail-core/src/preview.rs).
+ *  `html` variants are ammonia-sanitized; render them in a sandboxed iframe. */
+export type AttachmentPreview =
+  | { kind: "image"; dataUri: string }
+  | { kind: "pdf"; base64: string }
+  | { kind: "html"; html: string }
+  | { kind: "sheet"; sheets: SheetPreview[] }
+  | { kind: "slides"; slides: { lines: string[] }[] }
+  | { kind: "text"; text: string; truncated: boolean }
+  | { kind: "unsupported"; reason: string };
+
 export interface MessageDetail {
   id: number;
   threadId: number;
@@ -169,6 +186,8 @@ export interface SaveDraftArgs {
   bcc: Address[];
   subject: string;
   bodyText: string;
+  /** rich body; sent as text/html alongside the bodyText fallback */
+  bodyHtml?: string | null;
   mode: ComposeMode;
   /** message being replied to / forwarded, for References headers + quoting */
   inReplyToMessageId: number | null;
@@ -238,6 +257,25 @@ export interface UnreadCounts {
   views: Record<string, number>;
 }
 
+/** A named, rich-HTML signature belonging to one account. */
+export interface Signature {
+  id: string;
+  accountId: number;
+  name: string;
+  /** Rich body (same HTML the composer emits). */
+  html: string;
+}
+
+/** Per-account default signature choice: one for new mail, one for reply/forward.
+ *  null/undefined means "no signature". */
+export interface SignatureDefaults {
+  newId?: string | null;
+  replyId?: string | null;
+}
+
+/** AI model tier a scenario routes to. */
+export type AiTier = "instant" | "cheap" | "intelligent";
+
 export interface Settings {
   theme: "snow" | "carbon" | "system";
   /** UI language: "system" follows the OS locale, otherwise a code like "en". */
@@ -246,6 +284,15 @@ export interface Settings {
   loadRemoteImages: boolean;
   aiBaseUrl: string;
   aiModel: string;
+  /** Per-tier model ids (shared base URL + key). Empty falls back to `aiModel`. */
+  aiModelInstant: string;
+  aiModelCheap: string;
+  aiModelIntelligent: string;
+  /** Which tier each AI scenario uses. */
+  aiTierAsk: AiTier;
+  aiTierDraft: AiTier;
+  aiTierSummarize: AiTier;
+  aiTierVoice: AiTier;
   /** OAuth app registrations; env vars (COMAIL_GOOGLE_CLIENT_ID…) override. */
   googleClientId: string;
   googleClientSecret: string;
@@ -258,8 +305,13 @@ export interface Settings {
   autoAdvance: boolean;
   /** Automatic Marketing/News/Social/Pitch categorization at sync time. */
   autoLabelsEnabled: boolean;
-  /** Per-account signature appended to new mail, keyed by stringified account id. */
+  /** Legacy plain-text signature map; superseded by signatureList/Defaults and
+   *  folded in by the backend on read. Kept for type/serde compatibility. */
   signatures: Record<string, string>;
+  /** Rich signatures across all accounts (an account may own several). */
+  signatureList: Signature[];
+  /** Which signature each account defaults to, keyed by stringified account id. */
+  signatureDefaults: Record<string, SignatureDefaults>;
   /** Semantic-search backend: "local" runs a small on-device model, "off" is keyword-only. */
   embeddingBackend: "local" | "off";
   /** Registry key of the local embedding model. */
@@ -270,6 +322,8 @@ export interface Settings {
   voiceProfile: string;
   /** When the voice profile was last learned (ms epoch; 0 = never). */
   voiceLearnedAt: number;
+  /** Minutes before a meeting to fire a desktop reminder; 0 disables. */
+  meetingNotifyLeadMinutes: number;
 }
 
 export interface CalendarEvent {
@@ -279,6 +333,17 @@ export interface CalendarEvent {
   summary: string | null;
   location: string | null;
   organizer: string | null;
+  description: string | null;
+  attendees: EventAttendee[];
+  joinUrl: string | null;
+  /** Our response to the invite: ACCEPTED | TENTATIVE | DECLINED. */
+  rsvpStatus: string | null;
+  /** Created in Comail (vs. parsed from an incoming invite). */
+  isLocal: boolean;
+  /** CalDAV collection this event syncs with; null = local-only. */
+  calendarId: number | null;
+  /** Raw RRULE when the event repeats. */
+  rrule: string | null;
   startsAt: number;
   endsAt: number | null;
   allDay: boolean;
@@ -286,10 +351,67 @@ export interface CalendarEvent {
   method: string | null;
 }
 
+/** A discovered CalDAV calendar collection. */
+export interface Calendar {
+  id: number;
+  accountId: number;
+  url: string;
+  displayName: string | null;
+  color: string | null;
+  readOnly: boolean;
+  enabled: boolean;
+  isDefault: boolean;
+  lastSyncedAt: number | null;
+}
+
+export interface EventAttendee {
+  email: string;
+  name: string | null;
+  /** NEEDS-ACTION | ACCEPTED | TENTATIVE | DECLINED */
+  partstat: string | null;
+}
+
+export interface CreateEventArgs {
+  accountId: number;
+  summary: string;
+  description?: string | null;
+  location?: string | null;
+  joinUrl?: string | null;
+  startsAt: number;
+  endsAt: number;
+  allDay?: boolean;
+  /** Invites are emailed (ICS METHOD:REQUEST) to every attendee. */
+  attendees?: Address[];
+}
+
+export type RsvpResponse = "accepted" | "tentative" | "declined";
+
+export interface UpdateEventArgs extends CreateEventArgs {
+  eventId: number;
+  /** Email an updated REQUEST ICS to attendees (default true). */
+  notify?: boolean;
+}
+
 export interface AiStatus {
   configured: boolean;
   model: string;
   baseUrl: string;
+}
+
+/** Structured action parsed by AI from a natural-language palette query. */
+export interface AiIntent {
+  /** "create_event" | "compose" | "search" | "go_to" | "none" */
+  kind: string;
+  summary: string | null;
+  location: string | null;
+  startsAt: number | null;
+  endsAt: number | null;
+  allDay: boolean | null;
+  to: string[] | null;
+  subject: string | null;
+  body: string | null;
+  query: string | null;
+  view: string | null;
 }
 
 export interface SearchArgs {
@@ -378,6 +500,22 @@ export interface AskDoneEvent {
   requestId: string;
 }
 
+export interface CalendarUpdatedEvent {
+  accountId: number;
+}
+
+/** Desktop reminder for an upcoming meeting (per occurrence for recurrences). */
+export interface CalendarReminderEvent {
+  event: CalendarEvent;
+  occurrenceStart: number;
+}
+
+/** A local edit lost a CalDAV conflict (server won; edit kept as a copy). */
+export interface CalendarConflictEvent {
+  eventId: number;
+  summary: string | null;
+}
+
 export interface EventMap {
   "sync:progress": SyncProgressEvent;
   "mail:new": MailNewEvent;
@@ -389,6 +527,11 @@ export interface EventMap {
   "ai:ask:citations": AskCitationsEvent;
   "ai:ask:token": AskTokenEvent;
   "ai:ask:done": AskDoneEvent;
+  "calendar:updated": CalendarUpdatedEvent;
+  "calendar:reminder": CalendarReminderEvent;
+  "calendar:conflict": CalendarConflictEvent;
+  /** OS mailto: deep link; payload is the raw mailto URL. */
+  "deeplink:mailto": string;
 }
 
 // ---------- Command signatures ----------
@@ -412,6 +555,8 @@ export interface Commands {
   get_body(args: { messageId: number }): Promise<MessageDetail>;
   /** Extracts the attachment to disk and returns the file path. */
   get_attachment(args: { attachmentId: number }): Promise<string>;
+  /** Converts the attachment to a safe in-app preview payload. */
+  preview_attachment(args: { attachmentId: number }): Promise<AttachmentPreview>;
   list_folders(args: { accountId?: number | null }): Promise<FolderInfo[]>;
 
   perform_action(args: { args: PerformActionArgs }): Promise<ActionResult>;
@@ -452,11 +597,31 @@ export interface Commands {
   set_settings(args: { settings: Settings }): Promise<void>;
 
   list_events(args: { startMs: number; endMs: number }): Promise<CalendarEvent[]>;
+  /** Invite events carried by one message (the thread invite card). */
+  events_for_message(args: { messageId: number }): Promise<CalendarEvent[]>;
+  /** Create a meeting; attendees get an emailed ICS invite. */
+  create_event(args: { args: CreateEventArgs }): Promise<CalendarEvent>;
+  /** Answer an invite; the organizer gets an emailed ICS reply. */
+  rsvp_event(args: { args: { eventId: number; response: RsvpResponse } }): Promise<CalendarEvent>;
+  /** Edit an event we organize; attendees get an updated ICS when notify. */
+  update_event(args: { args: UpdateEventArgs }): Promise<CalendarEvent>;
+  /** Delete an event; organized events email METHOD:CANCEL when notify. */
+  delete_event(args: { eventId: number; notify?: boolean }): Promise<void>;
+  /** Connect a CalDAV server (kind "google" runs OAuth re-consent first). */
+  connect_calendar(args: {
+    args: { accountId: number; kind: "google" | "generic"; url?: string; username?: string; password?: string };
+  }): Promise<Calendar[]>;
+  disconnect_calendar(args: { accountId: number }): Promise<void>;
+  list_calendars(args: { accountId?: number | null }): Promise<Calendar[]>;
+  set_calendar_enabled(args: { calendarId: number; enabled: boolean }): Promise<void>;
+  calendar_sync_now(args: { accountId?: number | null }): Promise<void>;
 
   ai_status(args: Record<string, never>): Promise<AiStatus>;
   /** Model ids from the endpoint's GET /models (OpenAI-compatible). */
   ai_list_models(args: Record<string, never>): Promise<string[]>;
   set_ai_key(args: { apiKey: string }): Promise<void>;
+  /** Parse a natural-language palette query into an executable intent. */
+  ai_command(args: { query: string }): Promise<AiIntent>;
   ai_summarize(args: { threadId: number }): Promise<string>;
   ai_draft(args: {
     threadId: number | null;
@@ -467,6 +632,8 @@ export interface Commands {
     /** Write in the user's learned voice; falls back to the saved setting when omitted. */
     voice?: boolean;
   }): Promise<string>;
+  /** Copy-edit a draft (plain text or simple HTML); returns the corrected draft. */
+  ai_proofread(args: { body: string }): Promise<string>;
   /** Learn the user's writing voice from their sent mail; returns the profile text. */
   ai_learn_voice(args: Record<string, never>): Promise<string>;
   /** RAG: answer a question grounded in the most relevant messages, with citations. */

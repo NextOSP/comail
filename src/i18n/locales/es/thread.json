@@ -22,6 +22,7 @@
     "dismiss": "Descartar resumen"
   },
   "draftBadge": "Borrador",
+  "sendingBadge": "Enviando…",
   "msgTo": "para",
   "msgCc": "cc",
   "loadingMessage": "Cargando mensaje…",
@@ -29,6 +30,18 @@
   "attachment": {
     "fallbackName": "adjunto",
     "savedMock": "{{name}} guardado (simulado)",
-    "openFailed": "No se pudo abrir el adjunto: {{detail}}"
+    "openFailed": "No se pudo abrir el adjunto: {{detail}}",
+    "preview": {
+      "loading": "Cargando vista previa…",
+      "failed": "No se pudo previsualizar el adjunto: {{detail}}",
+      "openExternally": "Abrir en la app",
+      "unsupported": "No hay vista previa para este tipo de archivo; ábrelo externamente.",
+      "tooLarge": "Este archivo es demasiado grande para previsualizarlo; ábrelo externamente.",
+      "truncated": "Vista previa truncada",
+      "slide": "Diapositiva {{n}}",
+      "emptySlide": "(sin texto)",
+      "sheetFallback": "Hoja {{n}}",
+      "documentTitle": "Vista previa del documento"
+    }
   }
 }

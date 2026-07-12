@@ -11,6 +11,8 @@ pub enum Slot {
     AccessToken,
     /// App-level AI API key (stored under account id 0).
     AiApiKey,
+    /// Generic-CalDAV app password (Google CalDAV reuses the OAuth tokens).
+    CaldavPassword,
 }
 
 impl Slot {
@@ -20,6 +22,7 @@ impl Slot {
             Slot::RefreshToken => "refresh_token",
             Slot::AccessToken => "access_token",
             Slot::AiApiKey => "ai_api_key",
+            Slot::CaldavPassword => "caldav_password",
         }
     }
 }
@@ -93,7 +96,12 @@ pub fn delete_all(account_id: i64) {
         let _ = file_save(&path, &map);
         return;
     }
-    for slot in [Slot::Password, Slot::RefreshToken, Slot::AccessToken] {
+    for slot in [
+        Slot::Password,
+        Slot::RefreshToken,
+        Slot::AccessToken,
+        Slot::CaldavPassword,
+    ] {
         if let Ok(e) = entry(account_id, &slot) {
             let _ = e.delete_credential();
         }

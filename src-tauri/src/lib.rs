@@ -5,7 +5,7 @@ use comail_core::config::Paths;
 use comail_core::Core;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -13,6 +13,39 @@ fn show_main(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+}
+
+/// True for a `mailto:` deep link (case-insensitive, tolerant of leading space).
+fn is_mailto(s: &str) -> bool {
+    s.trim_start().to_ascii_lowercase().starts_with("mailto:")
+}
+
+/// First `mailto:` argument in a process arg list, if any.
+fn mailto_from_args<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
+    args.into_iter().find(|a| is_mailto(a))
+}
+
+/// Bring the window forward and hand a `mailto:` link to the frontend (which
+/// opens a prefilled composer). De-duplicated because the same link can arrive
+/// twice on a cold start (launch argv *and* the deep-link plugin's callback).
+fn forward_mailto(app: &tauri::AppHandle, url: &str) {
+    if !is_mailto(url) {
+        return;
+    }
+    static LAST: std::sync::LazyLock<std::sync::Mutex<Option<(String, std::time::Instant)>>> =
+        std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+    {
+        let mut last = LAST.lock().unwrap();
+        let now = std::time::Instant::now();
+        if let Some((u, t)) = last.as_ref() {
+            if u == url && now.duration_since(*t) < std::time::Duration::from_millis(1500) {
+                return;
+            }
+        }
+        *last = Some((url.to_string(), now));
+    }
+    show_main(app);
+    let _ = app.emit("deeplink:mailto", url);
 }
 
 /// Resolve a persisted language setting ("system" | a code) to a concrete code.
@@ -111,12 +144,39 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // Single-instance must be registered before deep-link so a mailto click
+        // while the app runs focuses the existing window instead of spawning a
+        // second copy; the forwarded argv carries the link on Linux/Windows.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.set_focus();
             }
+            if let Some(url) = mailto_from_args(args) {
+                forward_mailto(app, &url);
+            }
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                // Register as a mailto handler at runtime (needed for dev and for
+                // Linux/Windows); bundled installers also declare it via the
+                // deep-link `schemes` in tauri.conf.json.
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
+                let _ = app.deep_link().register("mailto");
+                // macOS delivers links via this callback; on Linux/Windows it
+                // carries cold-start argv links too.
+                let dl_handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        forward_mailto(&dl_handle, url.as_str());
+                    }
+                });
+            }
+            // Cold start: a mailto passed straight on the command line.
+            if let Some(url) = mailto_from_args(std::env::args()) {
+                forward_mailto(&app.handle(), &url);
+            }
             let handle = app.handle().clone();
             // Expose the bundle resource dir to comail-core (which is Tauri-free)
             // so it can copy the bundled default embedding model on first run.
@@ -179,6 +239,7 @@ pub fn run() {
             commands::get_thread,
             commands::get_body,
             commands::get_attachment,
+            commands::preview_attachment,
             commands::list_folders,
             commands::perform_action,
             commands::undo_last,
@@ -206,11 +267,23 @@ pub fn run() {
             commands::get_settings,
             commands::set_settings,
             commands::list_events,
+            commands::events_for_message,
+            commands::create_event,
+            commands::rsvp_event,
+            commands::update_event,
+            commands::delete_event,
+            commands::connect_calendar,
+            commands::disconnect_calendar,
+            commands::list_calendars,
+            commands::set_calendar_enabled,
+            commands::calendar_sync_now,
             commands::ai_status,
             commands::ai_list_models,
             commands::set_ai_key,
+            commands::ai_command,
             commands::ai_summarize,
             commands::ai_draft,
+            commands::ai_proofread,
             commands::ai_learn_voice,
             commands::ai_ask,
             commands::embedding_status,

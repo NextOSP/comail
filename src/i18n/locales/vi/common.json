@@ -43,7 +43,10 @@
     "waitingForChord": "Đang chờ tổ hợp phím",
     "settings": "Cài đặt",
     "settingsWithShortcut": "Cài đặt ({{shortcut}})",
-    "allAccounts": "Tất cả tài khoản"
+    "allAccounts": "Tất cả tài khoản",
+    "menu": "Hộp thư",
+    "calendar": "Lịch (0 hôm nay, 2 tuần)",
+    "mail": "Thư"
   },
   "loading": "Đang tải…",
   "selectedCount": "Đã chọn {{count}}",
@@ -56,7 +59,8 @@
     "placeholder": "Tìm thư…",
     "try": "Thử",
     "emptyHint": "Tìm trên mọi tài khoản, thư mục và tin nhắn.",
-    "noResults": "Không có kết quả cho “{{query}}”"
+    "noResults": "Không có kết quả cho “{{query}}”",
+    "toggleHint": "Chuyển Tìm kiếm / Hỏi — ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Phím tắt",
@@ -69,6 +73,13 @@
     "noMatches": "Không có thư mục phù hợp",
     "loading": "Đang tải thư mục…",
     "movedTo": "Đã chuyển đến {{folder}}"
+  },
+  "label": {
+    "title": "Nhãn",
+    "placeholder": "Lọc hoặc tạo nhãn…",
+    "none": "Chưa có nhãn nào",
+    "create": "Tạo “{{name}}”",
+    "createFailed": "Không thể tạo nhãn"
   },
   "snoozePopover": {
     "snoozeUntil": "Tạm ẩn đến",
@@ -100,5 +111,17 @@
     "starred": "Gắn sao",
     "select": "Chọn",
     "deselect": "Bỏ chọn"
+  },
+  "sidebar": {
+    "snippets": "Mẫu văn bản",
+    "splits": "Quy tắc hộp thư chia cột",
+    "labels": "Nhãn",
+    "manageLabels": "Quản lý nhãn",
+    "settings": "Cài đặt",
+    "accountSettings": "Cài đặt tài khoản",
+    "calendar": "Lịch"
+  },
+  "notification": {
+    "newMessages": "{{count}} thư mới"
   }
 }

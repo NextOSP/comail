@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { runAiCommand } from "../../lib/aiCommand";
 import { commandScore } from "../../keyboard/commandScore";
 import { buildCommandContext } from "../../keyboard/context";
 import { getCommands, shortcutFor, type Command } from "../../keyboard/registry";
@@ -31,6 +32,7 @@ export function CommandPalette() {
   const set = useUi((s) => s.set);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
+  const [aiPending, setAiPending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -38,6 +40,7 @@ export function CommandPalette() {
     if (open) {
       setQuery("");
       setCursor(0);
+      setAiPending(false);
       // focus after mount
       requestAnimationFrame(() => inputRef.current?.focus());
     }
@@ -60,7 +63,7 @@ export function CommandPalette() {
     return available
       .map((c) => {
         const base = Math.max(
-          commandScore(t(c.titleKey, c.titleParams), q),
+          commandScore(c.title ? c.title() : t(c.titleKey, c.titleParams), q),
           ...c.aliases.map((a) => commandScore(a, q) * 0.98),
         );
         // recent/usage boost, gentle
@@ -72,6 +75,12 @@ export function CommandPalette() {
       .slice(0, 10)
       .map((r) => r.c);
   }, [open, query, t]);
+
+  // Natural-language fallback: when nothing matches (or the query reads like a
+  // sentence), offer to let the AI turn it into an action.
+  const showAiRow = query.trim().length >= 3 && (results.length === 0 || /\s/.test(query.trim()));
+  const rowCount = results.length + (showAiRow ? 1 : 0);
+  const aiRowIndex = results.length;
 
   useEffect(() => {
     setCursor(0);
@@ -92,6 +101,17 @@ export function CommandPalette() {
     cmd.run(buildCommandContext());
   };
 
+  const runAi = async () => {
+    if (aiPending) return;
+    setAiPending(true);
+    try {
+      // runAiCommand closes the palette itself on success paths
+      await runAiCommand(query.trim());
+    } finally {
+      setAiPending(false);
+    }
+  };
+
   return (
     <div className="co-overlay flex items-start justify-center pt-[16vh]" onMouseDown={() => set({ paletteOpen: false })}>
       <div
@@ -106,12 +126,16 @@ export function CommandPalette() {
           onKeyDown={(e) => {
             if (e.key === "ArrowDown") {
               e.preventDefault();
-              setCursor((c) => Math.min(results.length - 1, c + 1));
+              setCursor((c) => Math.min(rowCount - 1, c + 1));
             } else if (e.key === "ArrowUp") {
               e.preventDefault();
               setCursor((c) => Math.max(0, c - 1));
             } else if (e.key === "Enter") {
               e.preventDefault();
+              if (showAiRow && cursor === aiRowIndex) {
+                void runAi();
+                return;
+              }
               const cmd = results[cursor];
               if (cmd) run(cmd);
             }
@@ -121,7 +145,7 @@ export function CommandPalette() {
           spellCheck={false}
         />
         <div ref={listRef} className="max-h-[46vh] overflow-y-auto p-1.5">
-          {results.length === 0 && (
+          {rowCount === 0 && (
             <div className="px-4 py-6 text-center text-[13px] text-ink-faint">{t("common:palette.empty")}</div>
           )}
           {results.map((cmd, i) => (
@@ -135,7 +159,7 @@ export function CommandPalette() {
               onClick={() => run(cmd)}
             >
               <span className="flex items-baseline gap-2.5 truncate">
-                <span className={`text-[14px] ${i === cursor ? "text-ink" : "text-ink"}`}>{t(cmd.titleKey, cmd.titleParams)}</span>
+                <span className={`text-[14px] ${i === cursor ? "text-ink" : "text-ink"}`}>{cmd.title ? cmd.title() : t(cmd.titleKey, cmd.titleParams)}</span>
                 <span className="text-[11.5px] text-ink-faint">{t(`commands:section.${cmd.section}`)}</span>
               </span>
               {shortcutFor(cmd) && (
@@ -152,6 +176,32 @@ export function CommandPalette() {
               )}
             </button>
           ))}
+          {showAiRow && (
+            <button
+              data-idx={aiRowIndex}
+              data-testid="palette-ai-row"
+              disabled={aiPending}
+              className={`flex w-full items-center justify-between gap-4 rounded-lg px-3.5 py-2 text-left ${
+                cursor === aiRowIndex ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
+              }`}
+              onMouseMove={() => setCursor(aiRowIndex)}
+              onClick={() => void runAi()}
+            >
+              <span className="flex min-w-0 items-baseline gap-2.5">
+                <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10.5px] font-semibold tracking-wide text-accent uppercase">
+                  {t("commands:aiIntent.badge")}
+                </span>
+                <span className="truncate text-[14px] text-ink">
+                  {t("commands:aiIntent.row", { query: query.trim() })}
+                </span>
+              </span>
+              {aiPending ? (
+                <span className="co-spinner size-3.5 shrink-0 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+              ) : (
+                <kbd className="co-kbd shrink-0">↵</kbd>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

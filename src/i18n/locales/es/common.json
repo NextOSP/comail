@@ -43,7 +43,10 @@
     "waitingForChord": "Esperando combinación",
     "settings": "Ajustes",
     "settingsWithShortcut": "Ajustes ({{shortcut}})",
-    "allAccounts": "Todas las cuentas"
+    "allAccounts": "Todas las cuentas",
+    "menu": "Buzones",
+    "calendar": "Calendario (0 hoy, 2 semana)",
+    "mail": "Correo"
   },
   "loading": "Cargando…",
   "selectedCount": "{{count}} seleccionados",
@@ -56,7 +59,8 @@
     "placeholder": "Buscar en el correo…",
     "try": "Prueba",
     "emptyHint": "Busca en cada cuenta, carpeta y mensaje.",
-    "noResults": "Sin resultados para “{{query}}”"
+    "noResults": "Sin resultados para “{{query}}”",
+    "toggleHint": "Cambiar Buscar / Preguntar — ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Atajos de teclado",
@@ -69,6 +73,13 @@
     "noMatches": "No hay carpetas coincidentes",
     "loading": "Cargando carpetas…",
     "movedTo": "Movido a {{folder}}"
+  },
+  "label": {
+    "title": "Etiquetas",
+    "placeholder": "Filtrar o crear una etiqueta…",
+    "none": "Aún no hay etiquetas",
+    "create": "Crear “{{name}}”",
+    "createFailed": "No se pudo crear la etiqueta"
   },
   "snoozePopover": {
     "snoozeUntil": "Posponer hasta",
@@ -100,5 +111,17 @@
     "starred": "Destacado",
     "select": "Seleccionar",
     "deselect": "Deseleccionar"
+  },
+  "sidebar": {
+    "snippets": "Fragmentos",
+    "splits": "Reglas de bandeja dividida",
+    "labels": "Etiquetas",
+    "manageLabels": "Gestionar etiquetas",
+    "settings": "Ajustes",
+    "accountSettings": "Ajustes de la cuenta",
+    "calendar": "Calendario"
+  },
+  "notification": {
+    "newMessages": "{{count}} mensajes nuevos"
   }
 }
