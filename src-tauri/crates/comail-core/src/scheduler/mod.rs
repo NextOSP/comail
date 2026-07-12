@@ -87,7 +87,10 @@ pub fn spawn(
                                 repo::calendar::set_notified(conn, event_id, occurrence_start)
                             })
                             .await;
-                        bus.emit(CoreEvent::EventReminder { event: ev, occurrence_start });
+                        bus.emit(CoreEvent::EventReminder {
+                            event: ev,
+                            occurrence_start,
+                        });
                     }
                 }
                 // Recurring masters: check the next occurrence explicitly.
@@ -96,7 +99,9 @@ pub fn spawn(
                     .await
                 {
                     for m in masters {
-                        let Some(rrule) = m.event.rrule.clone() else { continue };
+                        let Some(rrule) = m.event.rrule.clone() else {
+                            continue;
+                        };
                         let duration = m
                             .event
                             .ends_at
@@ -112,7 +117,9 @@ pub fn spawn(
                         ) else {
                             continue;
                         };
-                        let Some(next) = occs.first().copied() else { continue };
+                        let Some(next) = occs.first().copied() else {
+                            continue;
+                        };
                         // Gate: skip when this occurrence was already notified,
                         // and never re-notify the master's own start (handled
                         // by upcoming_for_notify above).

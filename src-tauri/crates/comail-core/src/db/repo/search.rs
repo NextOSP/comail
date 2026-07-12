@@ -93,7 +93,11 @@ fn structured_thread_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Result
         return Ok(Vec::new());
     }
 
-    let rank_expr = if q.fts.is_empty() { "0.0" } else { "f.fts_rank" };
+    let rank_expr = if q.fts.is_empty() {
+        "0.0"
+    } else {
+        "f.fts_rank"
+    };
     let where_sql = if where_clauses.is_empty() {
         String::new()
     } else {
@@ -230,11 +234,7 @@ fn rrf(lists: &[Vec<i64>]) -> Vec<(i64, f32)> {
 /// outranks equally-matching noise. Bonus weights live on the RRF scale -
 /// a single-list top rank scores 1/61 ≈ 0.016 - sized so a strong personal
 /// signal can lift a mid-list hit to the top without burying exact matches.
-fn apply_personal_boosts(
-    conn: &Connection,
-    scored: &mut [(i64, f32)],
-    now_ms: i64,
-) -> Result<()> {
+fn apply_personal_boosts(conn: &Connection, scored: &mut [(i64, f32)], now_ms: i64) -> Result<()> {
     if scored.is_empty() {
         return Ok(());
     }

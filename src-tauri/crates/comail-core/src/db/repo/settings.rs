@@ -65,7 +65,9 @@ mod tests {
         assert_eq!(back.signature_list.len(), 1);
         assert_eq!(back.signature_list[0].html, "<b>Dean</b>");
         assert_eq!(
-            back.signature_defaults.get("1").and_then(|d| d.new_id.as_deref()),
+            back.signature_defaults
+                .get("1")
+                .and_then(|d| d.new_id.as_deref()),
             Some("a")
         );
     }

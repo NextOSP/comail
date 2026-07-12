@@ -101,7 +101,9 @@ fn configure_linux_renderer() {
     }
 
     let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE").map(|s| s == "wayland").unwrap_or(false);
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|s| s == "wayland")
+            .unwrap_or(false);
     // The proprietary driver exposes this file; nouveau does not.
     let nvidia_proprietary = Path::new("/proc/driver/nvidia/version").exists();
 

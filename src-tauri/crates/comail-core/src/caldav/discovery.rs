@@ -39,7 +39,9 @@ async fn propfind(
     depth: &str,
     body: String,
 ) -> Result<xml::Multistatus> {
-    let resp = t.request("PROPFIND", url, Some(depth), &[], Some(body)).await?;
+    let resp = t
+        .request("PROPFIND", url, Some(depth), &[], Some(body))
+        .await?;
     if resp.status != 207 {
         return Err(err(format!("PROPFIND {url}: HTTP {}", resp.status)));
     }
@@ -68,7 +70,10 @@ pub async fn discover(t: &dyn Transport, base_url: &str) -> Result<Discovery> {
 
     // Find the principal: the given URL first, then /.well-known/caldav.
     let mut principal: Option<String> = None;
-    for candidate in [base_url.to_string(), resolve(base_url, "/.well-known/caldav")?] {
+    for candidate in [
+        base_url.to_string(),
+        resolve(base_url, "/.well-known/caldav")?,
+    ] {
         match propfind(t, &candidate, "0", xml::propfind_principal()).await {
             Ok(ms) => {
                 if let Some(p) = ms
@@ -149,7 +154,10 @@ mod tests {
             ms(COLLECTIONS),
         ]);
         let d = discover(&t, "https://dav.example.com/").await.unwrap();
-        assert_eq!(d.principal_url.as_deref(), Some("https://dav.example.com/principals/me/"));
+        assert_eq!(
+            d.principal_url.as_deref(),
+            Some("https://dav.example.com/principals/me/")
+        );
         assert_eq!(d.home_set_url, "https://dav.example.com/cal/me/");
         assert_eq!(d.calendars.len(), 1);
         assert_eq!(d.calendars[0].url, "https://dav.example.com/cal/me/work/");
@@ -164,6 +172,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(d.calendars.len(), 1);
-        assert_eq!(d.calendars[0].url, "https://dav.example.com/cal/me/personal/");
+        assert_eq!(
+            d.calendars[0].url,
+            "https://dav.example.com/cal/me/personal/"
+        );
     }
 }

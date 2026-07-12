@@ -35,8 +35,18 @@ fn list_sent_bodies_returns_only_sent_nondraft() {
     assert!(rows[0].2.contains("Tuesday at noon"));
 
     // Account scoping works too.
-    assert_eq!(repo::messages::list_sent_bodies(&conn, Some(1), 10).unwrap().len(), 1);
-    assert_eq!(repo::messages::list_sent_bodies(&conn, Some(999), 10).unwrap().len(), 0);
+    assert_eq!(
+        repo::messages::list_sent_bodies(&conn, Some(1), 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        repo::messages::list_sent_bodies(&conn, Some(999), 10)
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 #[test]
