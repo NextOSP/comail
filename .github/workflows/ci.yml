@@ -108,6 +108,8 @@ jobs:
           workspaces: src-tauri
 
       # Full package to catch bundling breakage. deb exercises the same release
-      # build as appimage; skip appimage here to save minutes.
+      # build as appimage; skip appimage here to save minutes. Updater artifacts
+      # are disabled: signing them needs the private key, which this check job
+      # (and fork PRs) must not have — release.yml signs the real ones.
       - name: Build (deb)
-        run: pnpm tauri build --bundles deb
+        run: pnpm tauri build --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
