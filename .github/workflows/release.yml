@@ -27,7 +27,10 @@ jobs:
             args: "--bundles deb,appimage"
           - name: macos-universal
             runner: macos-14
-            args: "--target universal-apple-darwin"
+            # `app` produces Comail.app plus the .app.tar.gz updater artifact;
+            # without an explicit list the config's Linux-only targets apply
+            # and macOS bundles nothing.
+            args: "--target universal-apple-darwin --bundles app,dmg"
           - name: windows-x64
             runner: windows-latest
             args: "--bundles msi,nsis"
