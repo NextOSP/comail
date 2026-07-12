@@ -20,6 +20,7 @@ impl LoopbackServer {
     pub async fn bind() -> Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
         let port = listener.local_addr()?.port();
+        tracing::debug!(port, "oauth: loopback redirect server listening");
         Ok(LoopbackServer { listener, port })
     }
 
@@ -33,7 +34,18 @@ impl LoopbackServer {
             loop {
                 let (mut stream, _) = self.listener.accept().await?;
                 let mut buf = vec![0u8; 8192];
-                let n = stream.read(&mut buf).await?;
+                // Browsers open speculative connections to localhost and drop
+                // them without sending anything; a reset or empty read must
+                // not abort the whole sign-in (it used to surface as a bogus
+                // "File system error" toast).
+                let n = match stream.read(&mut buf).await {
+                    Ok(0) => continue,
+                    Ok(n) => n,
+                    Err(e) => {
+                        tracing::debug!(error = %e, "oauth: ignoring dropped loopback connection");
+                        continue;
+                    }
+                };
                 let req = String::from_utf8_lossy(&buf[..n]);
                 let first_line = req.lines().next().unwrap_or("");
                 // GET /callback?code=...&state=... HTTP/1.1
@@ -70,6 +82,7 @@ impl LoopbackServer {
                 let _ = stream.shutdown().await;
 
                 if let Some(e) = error {
+                    tracing::warn!(error = %e, "oauth: provider redirected back with an error");
                     return Err(CoreError::Auth(format!("oauth error: {e}")));
                 }
                 if let Some(code) = code {

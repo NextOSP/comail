@@ -65,29 +65,80 @@ XOAUTH2 doesn't go through it.
 
 ## Part 2 - Microsoft (Outlook.com / Microsoft 365)
 
+What you'll end up with: one **Application (client) ID**. That's it. There is
+no client secret, no certificate, and no API key for the Microsoft setup -
+Comail is a desktop app, which Microsoft treats as a *public client* that
+cannot keep a secret. If a guide or the portal nudges you toward
+**Certificates & secrets**, skip it; Comail never asks for a secret.
+
 ### 1. Register an app in Entra
 1. Open <https://entra.microsoft.com/> → **Identity → Applications →
    App registrations → New registration**.
    (Same thing lives at portal.azure.com → "App registrations".)
-2. Name: `Comail`.
-3. Supported account types: **Accounts in any organizational directory and
-   personal Microsoft accounts** - this covers both Outlook.com and
-   work/school mailboxes.
-4. Redirect URI: platform **Public client/native (mobile & desktop)**, value
-   `http://localhost`. (Loopback redirects on any port are then accepted.)
-5. **Register**, then copy the **Application (client) ID** from the Overview
-   page. No client secret - desktop apps are public clients.
+2. Name: `Comail`. Users see this name on the sign-in consent screen, so
+   spell it the way you want it shown.
+3. Supported account types: pick the third option, **Accounts in any
+   organizational directory (Any Microsoft Entra ID tenant - Multitenant)
+   and personal Microsoft accounts (e.g. Skype, Xbox)**.
+
+   This one is not a preference - Comail signs users in through the shared
+   `login.microsoftonline.com/common` endpoint, which only accepts apps
+   registered for **multitenant + personal**. The other choices break in
+   predictable ways:
+
+   | Option | What happens with Comail |
+   |---|---|
+   | Single tenant (my org only) | Sign-in fails with `AADSTS50194` (app not configured as multi-tenant) |
+   | Any org directory, no personal | Work/school mailboxes sign in, personal Outlook.com fails with `AADSTS9002331` |
+   | Personal accounts only | Outlook.com works, org mailboxes fail |
+   | **Multitenant + personal** | **Everything works - use this** |
+
+   Yes, even if you only care about your own Microsoft 365 org today:
+   multitenant costs nothing, and "who can actually sign in" is still
+   controlled by each mailbox's own credentials and your tenant's policies,
+   not by this switch.
+4. Redirect URI: choose platform **Public client/native (mobile & desktop)**
+   and enter `http://localhost`. (Loopback redirects on any port are then
+   accepted - Comail picks a free port at sign-in time.) Do **not** add it as
+   a "Web" platform; that variant expects a client secret and fails with a
+   redirect mismatch.
+5. **Register**, then copy the **Application (client) ID** shown on the
+   Overview page.
 
 ### 2. Add API permissions
-1. In the app: **API permissions → Add a permission → Microsoft Graph →
-   Delegated permissions**.
-2. Add: `IMAP.AccessAsUser.All`, `SMTP.Send`, `offline_access`, `openid`,
-   `email`.
-3. No admin consent is needed for personal accounts; work/school tenants may
-   require an admin to consent depending on tenant policy.
+1. In the app: **API permissions → Add a permission → Microsoft Graph**.
+2. You now get two big boxes: **Delegated permissions** and **Application
+   permissions**. Pick **Delegated** - Comail accesses mail *as the signed-in
+   user*. (If you pick Application by mistake, the permission list looks
+   completely different - searching "email" turns up AccessReview, Agent\*,
+   and other unrelated Graph APIs, and none of the ones below exist. That's
+   the tell you're in the wrong box.)
+3. Use the search field to find and tick each of these five:
+   - `IMAP.AccessAsUser.All` - read and manage mail over IMAP
+   - `SMTP.Send` - send mail
+   - `offline_access` - refresh token, so you aren't re-prompted to sign in
+   - `openid` - sign-in itself
+   - `email` - lets Comail read the account's address to label the account
+4. Click **Add permissions**. The default `User.Read` that Entra adds on
+   registration is harmless - leave it.
 
-### 3. Enter the value in Comail
-Settings (`Cmd/Ctrl+,`) → **OAuth apps** → paste into **Microsoft client ID**.
+### 3. Admin consent - who needs it?
+- **Personal Outlook.com accounts:** nobody. The user just accepts the
+  consent prompt at first sign-in. Ignore the "Grant admin consent" button
+  and the warning banner about it.
+- **Your own Microsoft 365 tenant:** none of the five permissions requires
+  admin consent by default, but many tenants set a policy that requires admin
+  approval for *any* new app. If sign-in ends with "Need admin approval",
+  have a tenant admin either click **Grant admin consent for &lt;tenant&gt;**
+  on this app's API permissions page, or approve it once through the consent
+  request that Microsoft emails them.
+- **Other people's tenants** (you're distributing your build): their admins
+  may need to do the same on their side; nothing you can pre-configure here.
+
+### 4. Enter the value in Comail
+Settings (`Cmd/Ctrl+,`) → **OAuth apps** → paste the Application (client) ID
+into **Microsoft client ID**. Then Settings → **Accounts** → **Sign in with
+Microsoft**.
 
 > **Microsoft 365 note:** some tenants disable IMAP/SMTP AUTH per-mailbox.
 > If sign-in succeeds but sync errors, the tenant admin needs to enable
@@ -136,6 +187,16 @@ Settings (`Cmd/Ctrl+,`) → **OAuth apps** → paste into **Microsoft client ID*
 - **`AADSTS50011` redirect mismatch (Microsoft)** - the `http://localhost`
   redirect URI is missing, or was added under "Web" instead of
   "Mobile and desktop applications".
+- **`AADSTS50194` "not configured as multi-tenant" (Microsoft)** - the app
+  registration's supported account types is Single tenant. Comail signs in
+  through the `/common` endpoint, which needs **multitenant + personal**
+  (Part 2, step 1). Fix under the app's **Authentication → Supported account
+  types**, or in the **Manifest** set `signInAudience` to
+  `AzureADandPersonalMicrosoftAccount`.
+- **`AADSTS9002331` (Microsoft, personal account)** - the registration
+  excludes personal Microsoft accounts; same fix as above.
+- **"Need admin approval" (Microsoft work account)** - the tenant requires
+  admin consent for new apps; see Part 2, step 3.
 - **Account works, then dies after ~7 days (Google)** - consent screen still
   in Testing. Publish to Production (Part 1, step 2 note).
 - **Browser never opens** - the URL is also logged; check the terminal

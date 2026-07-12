@@ -106,11 +106,12 @@
       "g6": "Khi hoạt động, hãy xuất bản màn hình chấp thuận lên Production. Ở trạng thái Testing, Google làm hết hạn đăng nhập sau 7 ngày.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Mở Microsoft Entra",
-      "m1": "Tại entra.microsoft.com vào App registrations, New registration.",
-      "m2": "Loại tài khoản được hỗ trợ: mọi thư mục tổ chức và tài khoản Microsoft cá nhân.",
-      "m3": "URI chuyển hướng: nền tảng Mobile and desktop applications, giá trị http://localhost.",
-      "m4": "Quyền API: Microsoft Graph, Delegated: IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
-      "m5": "Sao chép ID ứng dụng (client) vào ô bên dưới. Để trống secret cho loại ứng dụng này."
+      "m1": "Tại entra.microsoft.com vào App registrations, New registration. Đặt tên Comail: người dùng sẽ thấy tên này trên màn hình cấp quyền.",
+      "m2": "Loại tài khoản được hỗ trợ: chọn tùy chọn multitenant có kèm tài khoản Microsoft cá nhân. Bắt buộc: Comail đăng nhập qua endpoint dùng chung /common, ứng dụng single-tenant sẽ lỗi AADSTS50194. Có thể sửa sau trong mục Authentication.",
+      "m3": "URI chuyển hướng: nền tảng Mobile and desktop applications (không phải Web), giá trị http://localhost.",
+      "m4": "Quyền API: Add a permission, Microsoft Graph, rồi chọn Delegated permissions (không phải Application permissions; nếu danh sách trông lạ nghĩa là bạn đang ở nhầm ô). Tích IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid và email.",
+      "m5": "Không cần tạo key hay secret nào cho Microsoft; bỏ qua mục Certificates & secrets. Chỉ cần sao chép Application (client) ID từ trang Overview vào ô bên dưới.",
+      "m6": "Chỉ với hộp thư công ty hoặc trường học: nếu đăng nhập báo \"Cần quản trị viên phê duyệt\", quản trị viên tenant phải đồng ý một lần bằng Grant admin consent trên trang API permissions. Tài khoản Outlook.com cá nhân không bao giờ cần."
     }
   },
   "accounts": {
@@ -130,6 +131,7 @@
     "waitingGoogle": "Đang chờ Google…",
     "signInGoogle": "Đăng nhập bằng Google",
     "waitingMicrosoft": "Đang chờ Microsoft…",
+    "cancelWaiting": "{{waiting}} (bấm để hủy)",
     "signInMicrosoft": "Đăng nhập bằng Microsoft"
   },
   "snippets": {

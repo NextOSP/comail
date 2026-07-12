@@ -542,6 +542,7 @@ export interface Commands {
   test_connection(args: { args: AddPasswordAccountArgs }): Promise<ConnectionTestResult>;
   remove_account(args: { accountId: number }): Promise<void>;
   start_oauth(args: { provider: Provider }): Promise<Account>;
+  cancel_oauth(args: Record<string, never>): Promise<void>;
 
   list_threads(args: {
     view: View;
