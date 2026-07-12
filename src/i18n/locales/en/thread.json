@@ -22,6 +22,7 @@
     "dismiss": "Dismiss summary"
   },
   "draftBadge": "Draft",
+  "sendingBadge": "Sending…",
   "msgTo": "to",
   "msgCc": "cc",
   "loadingMessage": "Loading message…",
@@ -29,6 +30,18 @@
   "attachment": {
     "fallbackName": "attachment",
     "savedMock": "Saved {{name}} (mock)",
-    "openFailed": "Couldn't open attachment: {{detail}}"
+    "openFailed": "Couldn't open attachment: {{detail}}",
+    "preview": {
+      "loading": "Loading preview…",
+      "failed": "Couldn't preview attachment: {{detail}}",
+      "openExternally": "Open in app",
+      "unsupported": "No preview for this file type — open it externally.",
+      "tooLarge": "This file is too large to preview — open it externally.",
+      "truncated": "Preview truncated",
+      "slide": "Slide {{n}}",
+      "emptySlide": "(no text)",
+      "sheetFallback": "Sheet {{n}}",
+      "documentTitle": "Document preview"
+    }
   }
 }

@@ -10,11 +10,16 @@ import { RecipientField } from "./RecipientField";
 import { onComposerAction } from "../../keyboard/commands";
 import { advanceAfter, buildCommandContext } from "../../keyboard/context";
 import { addressName, longTime, MOD_LABEL } from "../../lib/format";
+import { stripQuoteMarkers } from "../../lib/quotes";
+import { decodeEntities, escapeHtml, htmlToText, isHtmlEmpty, textToHtml } from "../../lib/richtext";
+import { pickSignature, signaturesForAccount, type ComposeMode } from "../../lib/signatures";
+import { RichBody, type RichBodyHandle } from "./RichBody";
 import { performThreadAction } from "../../queries/actions";
 import { queryClient } from "../../queries/client";
 import { useAccounts, useSettings, useSnippets } from "../../queries/hooks";
 import { useUi, type ComposerState } from "../../stores/ui";
 import { TimePopover } from "../common/TimePopover";
+import { AvailabilityPicker } from "../calendar/AvailabilityPicker";
 
 function quote(m: MessageDetail): string {
   const body = (m.textBody ?? m.snippet)
@@ -63,13 +68,13 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
       cc: c.initial.cc ?? [],
       bcc: c.initial.bcc ?? [],
       subject: c.initial.subject ?? "",
-      body,
+      bodyHtml: c.initial.bodyHtml ?? textToHtml(body),
       quote: q,
     };
   }
   const m = c.replyTo;
   if (!m || c.mode === "new") {
-    return { to: [], cc: [], bcc: [], subject: "", body: "", quote: "" };
+    return { to: [], cc: [], bcc: [], subject: "", bodyHtml: "", quote: "" };
   }
   const notSelf = (a: Address) => !selfEmails.has(a.email.toLowerCase());
   const reSubject = /^re:/i.test(m.subject)
@@ -83,7 +88,7 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
       subject: /^fwd:/i.test(m.subject)
         ? m.subject
         : i18n.t("compose:forwardPrefix", { subject: m.subject }),
-      body: "",
+      bodyHtml: "",
       quote: forwardBlock(m),
     };
   }
@@ -94,7 +99,7 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
       cc: [],
       bcc: [],
       subject: reSubject,
-      body: "",
+      bodyHtml: "",
       quote: quote(m),
     };
   }
@@ -106,9 +111,17 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
     cc: m.cc.filter(notSelf),
     bcc: [],
     subject: reSubject,
-    body: "",
+    bodyHtml: "",
     quote: quote(m),
   };
+}
+
+/** The plain-text wire quote rendered as HTML: attribution line + blockquote. */
+function quoteToHtml(quoteText: string): string {
+  const lines = quoteText.split("\n");
+  const header = lines[0] ?? "";
+  const rest = stripQuoteMarkers(lines.slice(1).join("\n"));
+  return `<div>${escapeHtml(header)}</div><blockquote>${textToHtml(rest)}</blockquote>`;
 }
 
 export function Composer({ state, inline }: { state: ComposerState; inline?: boolean }) {
@@ -121,6 +134,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const set = useUi((s) => s.set);
   const closeComposer = useUi((s) => s.closeComposer);
   const pushToast = useUi((s) => s.pushToast);
+  const availabilityOpen = useUi((s) => s.availabilityOpen);
 
   const selfEmails = useMemo(
     () => new Set((accounts ?? []).map((a) => a.email.toLowerCase())),
@@ -135,7 +149,8 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const [cc, setCc] = useState<Address[]>(init.cc);
   const [bcc, setBcc] = useState<Address[]>(init.bcc);
   const [subject, setSubject] = useState(init.subject);
-  const [body, setBody] = useState(init.body);
+  /** rich HTML body (plain-text fallback is derived at save/send time) */
+  const [body, setBody] = useState(init.bodyHtml);
   const [showCc, setShowCc] = useState(init.cc.length > 0 || init.bcc.length > 0);
   const [draftId, setDraftId] = useState<number | null>(state.draftId ?? null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -158,9 +173,10 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const [aiVoice, setAiVoice] = useState<boolean | null>(null);
   /** one-shot undo: body as it was before the last AI replacement */
   const [aiPrevBody, setAiPrevBody] = useState<string | null>(null);
+  const [proofPending, setProofPending] = useState(false);
   const aiInputRef = useRef<HTMLInputElement>(null);
 
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<RichBodyHandle>(null);
   const dirtyRef = useRef(false);
   const fieldsRef = useRef({
     accountId, to, cc, bcc, subject, body, draftId, attachments,
@@ -177,24 +193,52 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     }
   }, [accounts, accountId]);
 
-  // Append the sending account's signature while the body is still pristine
-  // (fresh composes only; reopened drafts keep their content untouched).
+  // Manual signature override for this compose: undefined = follow the mode
+  // default, null = explicitly none, string = a specific signature id.
+  const [manualSigId, setManualSigId] = useState<string | null | undefined>(undefined);
+  // A manual pick belongs to the account it was made on; reset when it changes.
+  useEffect(() => setManualSigId(undefined), [accountId]);
+
+  const accountSigs = useMemo(
+    () => (aiSettings ? signaturesForAccount(aiSettings, accountId) : []),
+    [aiSettings, accountId],
+  );
+
+  const activeSig = useMemo(() => {
+    if (!aiSettings) return null;
+    if (manualSigId === null) return null;
+    if (manualSigId !== undefined) {
+      return accountSigs.find((s) => s.id === manualSigId) ?? null;
+    }
+    return pickSignature(aiSettings, accountId, state.mode as ComposeMode);
+  }, [aiSettings, accountId, manualSigId, accountSigs, state.mode]);
+
+  // Insert the active signature while the body is still pristine (fresh composes
+  // only; reopened drafts keep their content untouched). Also swaps cleanly when
+  // the account, mode default, or manual pick changes.
   const lastSigBodyRef = useRef<string | null>(null);
   useEffect(() => {
     if (state.initial) return;
-    const sig = (aiSettings?.signatures?.[String(accountId)] ?? "").trim();
+    const sigHtml = (activeSig?.html ?? "").trim();
     const cur = fieldsRef.current.body;
-    const pristine = cur === init.body || cur === lastSigBodyRef.current || cur.trim() === "";
+    const pristine =
+      cur === init.bodyHtml || cur === lastSigBodyRef.current || isHtmlEmpty(cur);
     if (!pristine) return;
-    const next = sig ? (init.body ? `${init.body}\n\n${sig}` : `\n\n${sig}`) : init.body;
+    const next = sigHtml
+      ? init.bodyHtml
+        ? `${init.bodyHtml}<br><br>${sigHtml}`
+        : `<br><br>${sigHtml}`
+      : init.bodyHtml;
     if (next !== cur) {
       setBody(next);
       lastSigBodyRef.current = next;
       // keep the caret at the top for replies so typing lands above the signature
-      requestAnimationFrame(() => bodyRef.current?.setSelectionRange(0, 0));
+      if (state.mode === "reply" || state.mode === "reply_all") {
+        requestAnimationFrame(() => bodyRef.current?.focusStart());
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, aiSettings?.signatures]);
+  }, [activeSig]);
 
   const markDirty = () => {
     if (!dirtyRef.current) {
@@ -205,8 +249,10 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
 
   const saveDraft = useCallback(async (): Promise<number> => {
     const f = fieldsRef.current;
-    const fullBody =
-      f.quote && !f.quoteRemoved ? `${f.body.replace(/\s+$/, "")}\n\n${f.quote}` : f.body;
+    const plain = htmlToText(f.body);
+    const withQuote = f.quote !== "" && !f.quoteRemoved;
+    const fullBody = withQuote ? `${plain.replace(/\s+$/, "")}\n\n${f.quote}` : plain;
+    const fullHtml = withQuote ? `${f.body}<br><br>${quoteToHtml(f.quote)}` : f.body;
     const { draftId: newId } = await call("save_draft", {
       args: {
         draftId: f.draftId,
@@ -216,6 +262,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
         bcc: f.bcc,
         subject: f.subject,
         bodyText: fullBody,
+        bodyHtml: fullHtml,
         mode: state.mode,
         inReplyToMessageId: state.replyTo?.id ?? null,
         attachments: f.attachments,
@@ -225,7 +272,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     fieldsRef.current.draftId = newId;
     setSavedAt(Date.now());
     dirtyRef.current = false;
-    set({ composerDirty: false });
+    set({ composerDirty: false, editingDraftId: newId });
     return newId;
   }, [state.mode, state.replyTo, set]);
 
@@ -240,11 +287,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   // Focus: recipients for new/forward, body for replies.
   useEffect(() => {
     if (state.mode === "reply" || state.mode === "reply_all") {
-      const el = bodyRef.current;
-      if (el) {
-        el.focus();
-        el.setSelectionRange(0, 0);
-      }
+      bodyRef.current?.focusStart();
     }
     // new/forward: RecipientField autoFocus handles it
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -273,11 +316,18 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             cc: f.cc,
             bcc: f.bcc,
             subject: f.subject,
-            body: f.body,
+            body: htmlToText(f.body),
+            bodyHtml: f.body,
             attachments: f.attachments,
           },
         };
         closeComposer();
+
+        // Show the queued reply (with its body) in the thread right away.
+        void queryClient.invalidateQueries({ queryKey: ["threads"] });
+        if (state.replyTo) {
+          void queryClient.invalidateQueries({ queryKey: ["thread", state.replyTo.threadId] });
+        }
 
         if (opts.instant) {
           pushToast({ kind: "info", message: t("compose:sent"), durationMs: 2500 });
@@ -389,7 +439,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
         voice: voiceOn,
       });
       setAiPrevBody(fieldsRef.current.body);
-      setBody(text);
+      setBody(textToHtml(text));
       markDirty();
       setAiOpen(false);
       setAiInstruction("");
@@ -401,6 +451,31 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiInstruction, aiPending, accounts, state.replyTo, pushToast, voiceOn]);
+
+  // "Proofread": AI copy-edits the current body in place; the existing
+  // restore bar undoes it. HTML formatting is preserved by the prompt.
+  const runProofread = useCallback(async () => {
+    const cur = fieldsRef.current.body;
+    if (isHtmlEmpty(cur) || proofPending) return;
+    setProofPending(true);
+    try {
+      const fixed = (await call("ai_proofread", { body: cur })).trim();
+      if (fixed && fixed !== cur) {
+        setAiPrevBody(cur);
+        // Plain-text answers (model stripped the markup) are re-encoded;
+        // decode first so entities from the HTML input don't double-escape.
+        setBody(/<[a-z][^>]*>/i.test(fixed) ? fixed : textToHtml(decodeEntities(fixed)));
+        markDirty();
+      } else {
+        pushToast({ kind: "info", message: t("compose:proofreadClean"), durationMs: 2500 });
+      }
+    } catch (err) {
+      pushToast({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setProofPending(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proofPending, pushToast, t]);
 
   const restorePreviousBody = () => {
     if (aiPrevBody == null) return;
@@ -419,58 +494,41 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       else if (action === "snippet") setSnippetOpen(true);
       else if (action === "instant_send") void doSend({ instant: true });
       else if (action === "attach") void attachFiles();
+      else if (action === "share_availability") useUi.getState().set({ availabilityOpen: true });
+      else if (action === "proofread") void runProofread();
       else if (action === "ai") {
         setAiOpen(true);
         requestAnimationFrame(() => aiInputRef.current?.focus());
       }
     });
-  }, [doSend, attachFiles]);
+  }, [doSend, attachFiles, runProofread]);
 
   useEffect(() => {
     if (aiOpen) requestAnimationFrame(() => aiInputRef.current?.focus());
   }, [aiOpen]);
 
-  // Inline snippet expansion: typing ";shortcut " expands in place.
-  const onBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const el = e.target;
-    let text = el.value;
-    const pos = el.selectionStart;
-    const before = text.slice(0, pos);
-    const match = /;([a-z0-9_-]+)([ \n])$/i.exec(before);
-    if (match && snippets) {
-      const snip = snippets.find((s) => s.shortcut?.toLowerCase() === match[1].toLowerCase());
-      if (snip) {
-        const start = pos - match[0].length;
-        const inserted = snip.bodyText + match[2];
-        text = text.slice(0, start) + inserted + text.slice(pos);
-        setBody(text);
-        markDirty();
-        void call("use_snippet", { snippetId: snip.id });
-        requestAnimationFrame(() => {
-          el.setSelectionRange(start + inserted.length, start + inserted.length);
-        });
-        return;
-      }
-    }
-    setBody(text);
-    markDirty();
-  };
+  // Inline snippet expansion: typing ";shortcut " in the editor expands in
+  // place (RichBody handles the caret surgery, we resolve the shortcut).
+  const expandShortcut = useCallback(
+    (name: string): string | null => {
+      const snip = snippets?.find((s) => s.shortcut?.toLowerCase() === name.toLowerCase());
+      if (!snip) return null;
+      void call("use_snippet", { snippetId: snip.id });
+      markDirty();
+      return snip.bodyText;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [snippets],
+  );
 
   const insertSnippet = (snipId: number) => {
     const snip = snippets?.find((s) => s.id === snipId);
     if (!snip) return;
-    const el = bodyRef.current;
-    const pos = el ? el.selectionStart : body.length;
-    const text = body.slice(0, pos) + snip.bodyText + body.slice(pos);
-    setBody(text);
     if (snip.subject && !subject) setSubject(snip.subject);
     markDirty();
     void call("use_snippet", { snippetId: snip.id });
     setSnippetOpen(false);
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(pos + snip.bodyText.length, pos + snip.bodyText.length);
-    });
+    requestAnimationFrame(() => bodyRef.current?.insertText(snip.bodyText));
   };
 
   const discard = async () => {
@@ -492,62 +550,62 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     pushToast({ kind: "info", message: t("compose:draftSaved"), durationMs: 2500 });
   };
 
+  const accountSelect = (
+    <select
+      value={accountId}
+      onChange={(e) => {
+        setAccountId(Number(e.target.value));
+        markDirty();
+      }}
+      className="shrink-0 cursor-pointer bg-transparent text-right text-[12px] text-ink-faint outline-none hover:text-ink-muted"
+    >
+      {(accounts ?? []).map((a) => (
+        <option key={a.id} value={a.id}>
+          {a.email}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <div
       className={
         inline
-          ? "relative w-full"
-          : "fixed inset-x-0 bottom-0 z-40 flex justify-center px-4"
+          ? "co-composer co-fade-in border-t border-hairline pt-3"
+          : "co-composer co-fade-in min-h-0 flex-1 overflow-y-auto"
       }
     >
       <div
         className={
           inline
-            ? "co-fade-in relative flex w-full flex-col rounded-xl border border-hairline bg-bg1"
-            : "co-sheet-in relative flex max-h-[82vh] w-full max-w-[760px] flex-col rounded-t-xl border border-b-0 border-hairline bg-bg1"
+            ? "relative flex w-full flex-col"
+            : "relative mx-auto flex w-full max-w-[860px] flex-col px-6 py-6 pb-24"
         }
-        style={{ boxShadow: inline ? "var(--elev-1)" : "var(--elev-2)" }}
       >
-        {/* header */}
-        <div className="co-hairline-b flex shrink-0 items-center gap-3 px-4 py-2.5">
-          <span className="text-[13px] font-semibold text-ink">{t(`compose:modeTitles.${state.mode}`)}</span>
-          {state.replyTo && state.mode !== "new" && (
-            <span className="truncate text-[12px] text-ink-faint">
-              {state.replyTo.subject}
-            </span>
-          )}
-          <div className="grow" />
-          <select
-            value={accountId}
-            onChange={(e) => {
-              setAccountId(Number(e.target.value));
-              markDirty();
-            }}
-            className="rounded-md border border-hairline bg-bg0 px-2 py-1 text-[12px] text-ink-muted outline-none"
-          >
-            {(accounts ?? []).map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.email}
-              </option>
-            ))}
-          </select>
-          <button
-            className="rounded-md px-1.5 py-0.5 text-ink-faint hover:bg-bg2 hover:text-ink"
-            onClick={() => buildCommandContext().escape()}
-            aria-label={t("compose:close")}
-          >
-            ✕
-          </button>
-        </div>
+        {!inline && (
+          <header className="mb-3 flex items-center justify-between gap-4">
+            <button
+              className="flex items-center gap-1.5 text-[12px] text-ink-faint hover:text-ink-muted"
+              onClick={() => buildCommandContext().escape()}
+            >
+              ← {t("compose:close")}
+              <kbd className="co-kbd !text-[10px]">Esc</kbd>
+            </button>
+            {accountSelect}
+          </header>
+        )}
 
         {/* fields */}
-        <div
-          className={
-            inline
-              ? "flex flex-col px-4"
-              : "flex min-h-0 flex-1 flex-col overflow-y-auto px-4"
-          }
-        >
+        <div className="flex flex-col">
+          {inline && (
+            <div className="flex items-center gap-3 pb-1">
+              <span className="text-[11px] font-semibold tracking-[0.08em] text-ink-muted uppercase">
+                {t(`compose:modeTitles.${state.mode}`)}
+              </span>
+              <div className="grow" />
+              {accountSelect}
+            </div>
+          )}
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <RecipientRow
@@ -581,16 +639,20 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             )}
           </div>
 
-          <input
-            value={subject}
-            onChange={(e) => {
-              setSubject(e.target.value);
-              markDirty();
-            }}
-            placeholder={t("compose:subject")}
-            className="co-hairline-b w-full bg-transparent py-2.5 text-[14px] font-medium text-ink outline-none placeholder:text-ink-faint"
-            spellCheck={false}
-          />
+          {/* Replies keep the derived "Re:" subject out of sight (thread title
+              already shows it); new messages get the subject as the big title. */}
+          {!inline && (
+            <input
+              value={subject}
+              onChange={(e) => {
+                setSubject(e.target.value);
+                markDirty();
+              }}
+              placeholder={t("compose:subject")}
+              className="co-hairline-b w-full bg-transparent py-3 text-[19px] font-semibold tracking-tight text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
+              spellCheck={false}
+            />
+          )}
 
           {aiOpen && (
             <div
@@ -674,15 +736,19 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             </div>
           )}
 
-          <textarea
+          <RichBody
             ref={bodyRef}
             value={body}
-            onChange={onBodyChange}
+            onChange={(html) => {
+              setBody(html);
+              markDirty();
+            }}
             placeholder={t("compose:bodyPlaceholder", { mod: MOD_LABEL })}
-            className={`${inline ? "min-h-[120px]" : "min-h-[180px]"} w-full flex-1 resize-none bg-transparent py-3 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-faint`}
+            minHeightClass={inline ? "min-h-[140px]" : "min-h-[240px]"}
+            expandShortcut={expandShortcut}
           />
 
-          {(state.mode === "reply" || state.mode === "reply_all") && body.trim() === "" && (
+          {(state.mode === "reply" || state.mode === "reply_all") && isHtmlEmpty(body) && (
             <div className="flex flex-wrap gap-2 pb-3" data-testid="quick-replies">
               {[t("compose:quickReply1"), t("compose:quickReply2"), t("compose:quickReply3")].map(
                 (s) => (
@@ -690,12 +756,8 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                     key={s}
                     className="rounded-full border border-hairline bg-bg0 px-3 py-1 text-[12.5px] text-ink-muted hover:border-hairline-strong hover:bg-bg2 hover:text-ink"
                     onClick={() => {
-                      setBody(s);
                       markDirty();
-                      requestAnimationFrame(() => {
-                        bodyRef.current?.focus();
-                        bodyRef.current?.setSelectionRange(s.length, s.length);
-                      });
+                      bodyRef.current?.insertText(s);
                     }}
                   >
                     {s}
@@ -737,7 +799,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                     </button>
                   </div>
                   <pre className="max-h-44 overflow-y-auto font-sans text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-faint">
-                    {init.quote}
+                    {stripQuoteMarkers(init.quote)}
                   </pre>
                 </div>
               )}
@@ -746,7 +808,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
         </div>
 
         {/* footer */}
-        <div className="flex shrink-0 items-center gap-3 border-t border-hairline px-4 py-2.5">
+        <div className="mt-1 flex shrink-0 items-center gap-3 border-t border-hairline pt-3">
           <button
             className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-white transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
             onClick={() => void doSend()}
@@ -754,10 +816,41 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
           >
             {t("compose:send")}
           </button>
+          <button
+            className="flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 disabled:opacity-50"
+            onClick={() => void runProofread()}
+            disabled={proofPending || isHtmlEmpty(body)}
+            title={`${t("compose:proofread")} (${MOD_LABEL}⇧P)`}
+          >
+            {proofPending && (
+              <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+            )}
+            {t("compose:proofread")}
+          </button>
           <span className="text-[11.5px] text-ink-faint">
             {t("compose:footerHints", { mod: MOD_LABEL })}
           </span>
           <div className="grow" />
+          {!state.initial && accountSigs.length > 0 && (
+            <select
+              value={activeSig?.id ?? ""}
+              aria-label={t("compose:signature.label")}
+              title={t("compose:signature.label")}
+              data-testid="signature-picker"
+              onChange={(e) => {
+                setManualSigId(e.target.value || null);
+                markDirty();
+              }}
+              className="shrink-0 cursor-pointer bg-transparent text-[11.5px] text-ink-faint outline-none hover:text-ink-muted"
+            >
+              <option value="">{t("compose:signature.none")}</option>
+              {accountSigs.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
           <span className="text-[11.5px] text-ink-faint">
             {savedAt ? t("compose:draftSaved") : dirtyRef.current ? t("compose:unsaved") : ""}
           </span>
@@ -765,12 +858,8 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
 
         {/* discard / save confirm */}
         {confirmOpen && (
-          <div
-            className={`co-fade-in absolute inset-0 z-10 flex justify-center bg-bg0/60 backdrop-blur-[2px] ${
-              inline ? "items-center rounded-xl" : "items-end rounded-t-xl"
-            }`}
-          >
-            <div className="mb-10 flex flex-col items-center gap-3 rounded-xl border border-hairline bg-bg1 px-6 py-5" style={{ boxShadow: "var(--elev-2)" }}>
+          <div className="co-fade-in absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-bg0/70 backdrop-blur-[2px]">
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-hairline bg-bg1 px-6 py-5" style={{ boxShadow: "var(--elev-2)" }}>
               <span className="text-[13.5px] text-ink">{t("compose:keepDraft")}</span>
               <div className="flex gap-2">
                 <button
@@ -795,7 +884,6 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             </div>
           </div>
         )}
-      </div>
 
       {sendLaterOpen && (
         <TimePopover
@@ -816,6 +904,17 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
           onPick={insertSnippet}
         />
       )}
+
+      {availabilityOpen && (
+        <AvailabilityPicker
+          onClose={() => useUi.getState().set({ availabilityOpen: false })}
+          onInsert={(html) => {
+            markDirty();
+            requestAnimationFrame(() => bodyRef.current?.insertHtml(html));
+          }}
+        />
+      )}
+      </div>
     </div>
   );
 }

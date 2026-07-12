@@ -9,5 +9,18 @@
   "split": {
     "important": "重要",
     "other": "其他"
+  },
+  "splitPopover": {
+    "title": "新建分组",
+    "fromSender": "来自 {{email}} 的邮件",
+    "fromDomain": "所有 @{{domain}}",
+    "tabName": "标签页：{{name}}",
+    "created": "已创建分组“{{name}}”"
+  },
+  "pane": {
+    "empty": "未选择会话",
+    "recent": "最近的会话",
+    "noRecent": "没有其他会话",
+    "noSubject": "(无主题)"
   }
 }

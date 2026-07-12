@@ -26,7 +26,7 @@
   "removeNamed": "Retirer {{name}}",
   "bodyPlaceholder": "Écrivez quelque chose… ( ;raccourci développe les extraits, {{mod}}+; pour parcourir )",
   "send": "Envoyer",
-  "footerHints": "{{mod}}↵ envoyer · {{mod}}⇧↵ envoyer et terminer · {{mod}}⇧L plus tard · {{mod}}⇧A joindre · {{mod}}J IA",
+  "footerHints": "{{mod}}↵ envoyer · {{mod}}⇧↵ envoyer et terminer",
   "draftSaved": "Brouillon enregistré",
   "unsaved": "Non enregistré",
   "keepDraft": "Conserver ce brouillon ?",
@@ -53,5 +53,24 @@
   "quotedLabel": "Message cité",
   "quickReply1": "Bien reçu, merci !",
   "quickReply2": "Ça me va, je m’en occupe.",
-  "quickReply3": "Merci, je vais y jeter un œil."
+  "quickReply3": "Merci, je vais y jeter un œil.",
+  "signature": {
+    "label": "Signature",
+    "none": "Aucune signature"
+  },
+  "fmt": {
+    "bold": "Gras",
+    "italic": "Italique",
+    "underline": "Souligné",
+    "strike": "Barré",
+    "bullets": "Liste à puces",
+    "quote": "Citation",
+    "image": "Insérer une image",
+    "link": "Insérer un lien",
+    "linkPlaceholder": "https://exemple.com",
+    "linkApply": "Appliquer",
+    "table": "Insérer un tableau"
+  },
+  "proofread": "Corriger",
+  "proofreadClean": "Tout est bon - rien à corriger."
 }

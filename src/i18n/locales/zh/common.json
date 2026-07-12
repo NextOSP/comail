@@ -43,7 +43,10 @@
     "waitingForChord": "等待组合键",
     "settings": "设置",
     "settingsWithShortcut": "设置（{{shortcut}}）",
-    "allAccounts": "所有账户"
+    "allAccounts": "所有账户",
+    "menu": "邮箱",
+    "calendar": "日历（0 今天，2 本周）",
+    "mail": "邮件"
   },
   "loading": "加载中…",
   "selectedCount": "已选 {{count}} 项",
@@ -56,7 +59,8 @@
     "placeholder": "搜索邮件…",
     "try": "试试",
     "emptyHint": "在所有账户、文件夹和邮件中搜索。",
-    "noResults": "没有关于“{{query}}”的结果"
+    "noResults": "没有关于“{{query}}”的结果",
+    "toggleHint": "切换搜索 / 提问 — ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "键盘快捷键",
@@ -69,6 +73,13 @@
     "noMatches": "无匹配文件夹",
     "loading": "加载文件夹…",
     "movedTo": "已移动到 {{folder}}"
+  },
+  "label": {
+    "title": "标签",
+    "placeholder": "筛选或创建标签…",
+    "none": "还没有标签",
+    "create": "创建“{{name}}”",
+    "createFailed": "无法创建标签"
   },
   "snoozePopover": {
     "snoozeUntil": "暂停至",
@@ -100,5 +111,17 @@
     "starred": "已加星标",
     "select": "选择",
     "deselect": "取消选择"
+  },
+  "sidebar": {
+    "snippets": "片段",
+    "splits": "分栏收件箱规则",
+    "labels": "标签",
+    "manageLabels": "管理标签",
+    "settings": "设置",
+    "accountSettings": "账户设置",
+    "calendar": "日历"
+  },
+  "notification": {
+    "newMessages": "{{count}} 封新邮件"
   }
 }

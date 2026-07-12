@@ -21,7 +21,13 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   const [overrides, setOverrides] = useState<Record<number, boolean>>({});
   useEffect(() => setOverrides({}), [threadId]);
 
-  const messages = useMemo(() => data?.messages ?? [], [data]);
+  // Hide the draft that's open in the inline composer so it isn't double-rendered.
+  const editingDraftId = useUi((s) => s.editingDraftId);
+  const hiddenDraftId = inlineComposer ? editingDraftId : null;
+  const messages = useMemo(
+    () => (data?.messages ?? []).filter((m) => m.id !== hiddenDraftId),
+    [data, hiddenDraftId],
+  );
 
   // Auto mark read shortly after opening.
   useEffect(() => {
@@ -125,7 +131,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   );
 }
 
-/** Scrolls the inline reply card into view when it appears. */
+/** Scrolls the inline reply into view when it appears. */
 function InlineComposerAnchor({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {

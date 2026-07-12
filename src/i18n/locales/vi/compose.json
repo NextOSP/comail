@@ -26,7 +26,7 @@
   "removeNamed": "Xóa {{name}}",
   "bodyPlaceholder": "Viết gì đó… ( ;phím tắt để chèn mẫu, {{mod}}+; để duyệt )",
   "send": "Gửi",
-  "footerHints": "{{mod}}↵ gửi · {{mod}}⇧↵ gửi & hoàn tất · {{mod}}⇧L để sau · {{mod}}⇧A đính kèm · {{mod}}J AI",
+  "footerHints": "{{mod}}↵ gửi · {{mod}}⇧↵ gửi & hoàn tất",
   "draftSaved": "Đã lưu bản nháp",
   "unsaved": "Chưa lưu",
   "keepDraft": "Giữ bản nháp này?",
@@ -53,5 +53,24 @@
   "quotedLabel": "Thư trích dẫn",
   "quickReply1": "Đã nhận, cảm ơn!",
   "quickReply2": "Nghe ổn đấy, tôi sẽ làm.",
-  "quickReply3": "Cảm ơn, tôi sẽ xem qua."
+  "quickReply3": "Cảm ơn, tôi sẽ xem qua.",
+  "signature": {
+    "label": "Chữ ký",
+    "none": "Không có chữ ký"
+  },
+  "fmt": {
+    "bold": "In đậm",
+    "italic": "In nghiêng",
+    "underline": "Gạch chân",
+    "strike": "Gạch ngang",
+    "bullets": "Danh sách gạch đầu dòng",
+    "quote": "Trích dẫn",
+    "image": "Chèn hình ảnh",
+    "link": "Chèn liên kết",
+    "linkPlaceholder": "https://vidu.com",
+    "linkApply": "Áp dụng",
+    "table": "Chèn bảng"
+  },
+  "proofread": "Soát lỗi",
+  "proofreadClean": "Ổn rồi - không có gì cần sửa."
 }

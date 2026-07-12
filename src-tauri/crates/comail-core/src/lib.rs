@@ -4,6 +4,7 @@
 pub mod accounts;
 pub mod ai;
 pub mod autolabel;
+pub mod caldav;
 pub mod calendar;
 pub mod config;
 pub mod db;
@@ -14,6 +15,7 @@ pub mod imap;
 pub mod mime;
 pub mod models;
 pub mod oauth;
+pub mod preview;
 pub mod queue;
 pub mod scheduler;
 pub mod search;
@@ -34,6 +36,45 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// An AI feature, each routed to a configurable model tier.
+#[derive(Clone, Copy)]
+enum Scenario {
+    /// Ask-your-inbox agentic Q&A.
+    Ask,
+    /// Drafting / rewriting replies.
+    Draft,
+    /// Thread summaries.
+    Summarize,
+    /// Learning the user's writing voice.
+    Voice,
+    /// Palette natural-language commands (tiny prompt, latency-sensitive).
+    Command,
+}
+
+/// Resolve the model id a scenario should use: its configured tier's model, or
+/// the legacy single `ai_model` when that tier is left blank.
+fn resolve_ai_model(settings: &Settings, scenario: Scenario) -> String {
+    let tier = match scenario {
+        Scenario::Ask => settings.ai_tier_ask.as_str(),
+        Scenario::Draft => settings.ai_tier_draft.as_str(),
+        Scenario::Summarize => settings.ai_tier_summarize.as_str(),
+        Scenario::Voice => settings.ai_tier_voice.as_str(),
+        // Palette parsing wants the fastest model available.
+        Scenario::Command => "instant",
+    };
+    let picked = match tier {
+        "instant" => &settings.ai_model_instant,
+        "cheap" => &settings.ai_model_cheap,
+        "intelligent" => &settings.ai_model_intelligent,
+        _ => &settings.ai_model,
+    };
+    if picked.trim().is_empty() {
+        settings.ai_model.clone()
+    } else {
+        picked.clone()
+    }
+}
+
 #[derive(Clone)]
 pub struct Core {
     pub db: Db,
@@ -41,6 +82,7 @@ pub struct Core {
     paths: Arc<Paths>,
     tokens: TokenProvider,
     handles: Arc<RwLock<HashMap<i64, AccountHandle>>>,
+    cal_handles: Arc<RwLock<HashMap<i64, caldav::task::CalTaskHandle>>>,
     embed: Arc<embed::EmbedState>,
 }
 
@@ -55,6 +97,7 @@ impl Core {
             paths: Arc::new(paths),
             tokens: TokenProvider::new(),
             handles: Arc::new(RwLock::new(HashMap::new())),
+            cal_handles: Arc::new(RwLock::new(HashMap::new())),
             embed: Arc::new(embed::EmbedState::new()),
         };
 
@@ -72,7 +115,21 @@ impl Core {
             core.spawn_actor(cfg).await;
         }
 
-        scheduler::spawn(core.db.clone(), core.bus.clone(), core.handles.clone());
+        // Calendar sync tasks for accounts with a connected CalDAV server.
+        let cal_accounts = core
+            .db
+            .read(|conn| repo::caldav::all_configs(conn))
+            .await?;
+        for cfg in cal_accounts {
+            core.spawn_cal_task(cfg.account_id).await;
+        }
+
+        scheduler::spawn(
+            core.db.clone(),
+            core.bus.clone(),
+            core.handles.clone(),
+            core.cal_handles.clone(),
+        );
 
         // Make the bundled default model available for offline first run, then
         // start the background embedding worker.
@@ -148,6 +205,32 @@ impl Core {
     async fn spawn_actor(&self, cfg: AccountConfig) {
         let handle = spawn_account(self.sync_ctx(), cfg);
         self.handles.write().await.insert(handle.account_id, handle);
+    }
+
+    async fn spawn_cal_task(&self, account_id: i64) {
+        let handle = caldav::task::spawn(
+            self.db.clone(),
+            self.bus.clone(),
+            self.tokens.clone(),
+            account_id,
+        );
+        self.cal_handles.write().await.insert(account_id, handle);
+    }
+
+    async fn nudge_cal(&self, account_id: Option<i64>) {
+        let handles = self.cal_handles.read().await;
+        match account_id {
+            Some(id) => {
+                if let Some(h) = handles.get(&id) {
+                    h.nudge();
+                }
+            }
+            None => {
+                for h in handles.values() {
+                    h.nudge();
+                }
+            }
+        }
     }
 
     async fn nudge(&self, account_id: Option<i64>, cmd_for: impl Fn() -> SyncCmd) {
@@ -296,6 +379,7 @@ impl Core {
         if let Some(h) = self.handles.write().await.remove(&account_id) {
             h.send(SyncCmd::Shutdown);
         }
+        self.cal_handles.write().await.remove(&account_id);
         credentials::delete_all(account_id);
         self.db
             .write(move |conn| repo::accounts::delete(conn, account_id))
@@ -597,9 +681,10 @@ impl Core {
                 };
 
                 tx.execute(
-                    "INSERT INTO message_bodies (message_id, text_body) VALUES (?1, ?2)
-                     ON CONFLICT(message_id) DO UPDATE SET text_body = excluded.text_body",
-                    rusqlite::params![draft_id, args.body_text],
+                    "INSERT INTO message_bodies (message_id, text_body, html_body) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(message_id) DO UPDATE SET text_body = excluded.text_body,
+                                                           html_body = excluded.html_body",
+                    rusqlite::params![draft_id, args.body_text, args.body_html],
                 )?;
                 tx.execute(
                     "UPDATE messages SET body_state = 'cached', snippet = ?2 WHERE id = ?1",
@@ -739,6 +824,57 @@ impl Core {
         Ok(path_str)
     }
 
+    /// Extract an attachment in memory and convert it to a safe, inert
+    /// preview payload (sanitized HTML / text / cell grid / base64 media).
+    pub async fn preview_attachment(
+        &self,
+        attachment_id: i64,
+    ) -> Result<preview::AttachmentPreview> {
+        let (message_id, part_id, filename, mime_type) = self
+            .db
+            .read(move |conn| {
+                conn.query_row(
+                    "SELECT message_id, part_id, filename, mime_type FROM attachments WHERE id = ?1",
+                    rusqlite::params![attachment_id],
+                    |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, Option<String>>(1)?,
+                            r.get::<_, Option<String>>(2)?,
+                            r.get::<_, Option<String>>(3)?,
+                        ))
+                    },
+                )
+                .map_err(Into::into)
+            })
+            .await?;
+
+        let row = self
+            .db
+            .read(move |conn| repo::messages::get_row(conn, message_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("message".into()))?;
+        let raw_path = row
+            .raw_path
+            .ok_or_else(|| CoreError::NotFound("raw message not synced yet".into()))?;
+        let part_id = part_id.ok_or_else(|| CoreError::NotFound("attachment part".into()))?;
+
+        let raw = tokio::fs::read(&raw_path).await?;
+        // Parsing untrusted office/spreadsheet formats is CPU-bound; keep it
+        // off the async runtime threads.
+        tokio::task::spawn_blocking(move || {
+            let (bytes, parsed_name) = crate::mime::extract_attachment(&raw, &part_id)?;
+            let name = filename.or(parsed_name);
+            Ok(preview::build_preview(
+                &bytes,
+                name.as_deref(),
+                mime_type.as_deref(),
+            ))
+        })
+        .await
+        .map_err(|e| CoreError::Other(e.to_string()))?
+    }
+
     pub async fn list_contacts(&self, prefix: String, limit: i64) -> Result<Vec<Address>> {
         self.db
             .read(move |conn| repo::contacts::autocomplete(conn, &prefix, limit.clamp(1, 50)))
@@ -762,15 +898,669 @@ impl Core {
     // ---------- calendar ----------
 
     pub async fn list_events(&self, start_ms: i64, end_ms: i64) -> Result<Vec<CalendarEvent>> {
+        let (mut events, masters) = self
+            .db
+            .read(move |conn| {
+                Ok((
+                    repo::calendar::list_range(conn, start_ms, end_ms)?,
+                    repo::calendar::recurring_masters(conn, end_ms)?,
+                ))
+            })
+            .await?;
+
+        // Expand recurring series into concrete occurrences. Occurrences keep
+        // the master's row id (edits/deletes address the whole series in v1);
+        // unsupported rules fall back to the master row alone.
+        for m in masters {
+            let Some(rrule) = m.event.rrule.clone() else { continue };
+            let duration = m
+                .event
+                .ends_at
+                .map(|e| e - m.event.starts_at)
+                .unwrap_or(1_800_000);
+            let Some(occs) = caldav::rrule::expand(
+                &rrule,
+                m.event.starts_at,
+                duration,
+                m.ical_raw.as_deref(),
+                start_ms,
+                end_ms,
+            ) else {
+                continue; // unsupported rule: the master entry stands alone
+            };
+            events.retain(|e| e.id != m.event.id);
+            for occ in occs {
+                let mut e = m.event.clone();
+                e.starts_at = occ.start;
+                e.ends_at = Some(occ.end);
+                events.push(e);
+            }
+        }
+        events.sort_by_key(|e| e.starts_at);
+        Ok(events)
+    }
+
+    /// Invite events carried by one message (the thread invite card).
+    pub async fn events_for_message(&self, message_id: i64) -> Result<Vec<CalendarEvent>> {
         self.db
-            .read(move |conn| repo::calendar::list_range(conn, start_ms, end_ms))
+            .read(move |conn| repo::calendar::for_message(conn, message_id))
             .await
+    }
+
+    /// Create a meeting. The event lands on the local calendar immediately;
+    /// if it has attendees, an invite email with an ICS (METHOD:REQUEST) is
+    /// drafted and queued through the normal send pipeline (undo window,
+    /// offline queueing, sent-folder append all apply).
+    pub async fn create_event(&self, args: CreateEventArgs) -> Result<CalendarEvent> {
+        if args.summary.trim().is_empty() {
+            return Err(CoreError::Other("event needs a title".into()));
+        }
+        if args.ends_at <= args.starts_at {
+            return Err(CoreError::Other("event must end after it starts".into()));
+        }
+        let account_id = args.account_id;
+        let account = self
+            .db
+            .read(move |conn| repo::accounts::get(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("account".into()))?;
+
+        let uid = format!("{}-{}@comail", now_ms(), crate::mime::rand_token());
+        let attendees: Vec<EventAttendee> = args
+            .attendees
+            .iter()
+            .map(|a| EventAttendee {
+                email: a.email.clone(),
+                name: a.name.clone(),
+                partstat: Some("NEEDS-ACTION".into()),
+            })
+            .collect();
+
+        let ev = args.clone();
+        let organizer_email = account.email.clone();
+        let uid_for_db = uid.clone();
+        let event_id = self
+            .db
+            .write(move |conn| {
+                repo::calendar::insert_local(
+                    conn,
+                    account_id,
+                    &uid_for_db,
+                    ev.summary.trim(),
+                    ev.location.as_deref(),
+                    ev.description.as_deref(),
+                    ev.join_url.as_deref(),
+                    &organizer_email,
+                    &attendees,
+                    ev.starts_at,
+                    ev.ends_at,
+                    ev.all_day,
+                )
+            })
+            .await?;
+
+        if !args.attendees.is_empty() {
+            let organizer = Address {
+                name: account.display_name.clone(),
+                email: account.email.clone(),
+            };
+            let ics = calendar::build_request_ics(&calendar::InviteSpec {
+                uid: &uid,
+                sequence: 0,
+                summary: args.summary.trim(),
+                description: args.description.as_deref(),
+                location: args.location.as_deref(),
+                join_url: args.join_url.as_deref(),
+                organizer: &organizer,
+                attendees: &args.attendees,
+                starts_at_ms: args.starts_at,
+                ends_at_ms: args.ends_at,
+                dtstamp_ms: now_ms(),
+            });
+            let body_text = invite_body_text(&args);
+            self.send_calendar_mail(
+                account_id,
+                args.attendees.clone(),
+                format!("Invitation: {}", args.summary.trim()),
+                body_text,
+                &ics,
+            )
+            .await?;
+        }
+
+        self.enqueue_cal_push(event_id, account_id, "cal_put").await?;
+        self.db
+            .read(move |conn| repo::calendar::get(conn, event_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("event".into()))
+    }
+
+    /// Answer an invite: store our response and email an ICS METHOD:REPLY to
+    /// the organizer (the standard-compliant path every calendar understands).
+    pub async fn rsvp_event(&self, args: RsvpEventArgs) -> Result<CalendarEvent> {
+        let partstat = match args.response.as_str() {
+            "accepted" => "ACCEPTED",
+            "tentative" => "TENTATIVE",
+            "declined" => "DECLINED",
+            _ => return Err(CoreError::Other("invalid RSVP response".into())),
+        };
+        let event_id = args.event_id;
+        let (ev, uid_seq) = self
+            .db
+            .read(move |conn| {
+                Ok((
+                    repo::calendar::get(conn, event_id)?,
+                    repo::calendar::uid_and_sequence(conn, event_id)?,
+                ))
+            })
+            .await?;
+        let ev = ev.ok_or_else(|| CoreError::NotFound("event".into()))?;
+        let (uid, sequence) = uid_seq.ok_or_else(|| CoreError::NotFound("event".into()))?;
+
+        let account_id = ev.account_id;
+        let account = self
+            .db
+            .read(move |conn| repo::accounts::get(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("account".into()))?;
+
+        // Reply goes to the organizer; without one there is nobody to notify,
+        // but we still record the response locally.
+        if let Some(organizer) = ev.organizer.clone().filter(|o| !o.is_empty()) {
+            let me = Address {
+                name: account.display_name.clone(),
+                email: account.email.clone(),
+            };
+            let ics = calendar::build_reply_ics(&calendar::ReplySpec {
+                uid: &uid,
+                sequence,
+                summary: ev.summary.as_deref(),
+                partstat,
+                organizer_email: &organizer,
+                attendee: &me,
+                starts_at_ms: ev.starts_at,
+                ends_at_ms: ev.ends_at,
+                dtstamp_ms: now_ms(),
+            });
+            let verb = match partstat {
+                "ACCEPTED" => "Accepted",
+                "TENTATIVE" => "Tentative",
+                _ => "Declined",
+            };
+            let title = ev.summary.clone().unwrap_or_else(|| "(no title)".into());
+            self.send_calendar_mail(
+                account_id,
+                vec![Address {
+                    name: None,
+                    email: organizer,
+                }],
+                format!("{verb}: {title}"),
+                format!(
+                    "{} has responded {} to: {title}",
+                    account.email,
+                    verb.to_lowercase()
+                ),
+                &ics,
+            )
+            .await?;
+        }
+
+        self.db
+            .write(move |conn| repo::calendar::set_rsvp(conn, event_id, partstat))
+            .await?;
+        // CalDAV-backed invites also sync the PARTSTAT change to the server.
+        self.enqueue_cal_push(event_id, ev.account_id, "cal_put")
+            .await?;
+        self.db
+            .read(move |conn| repo::calendar::get(conn, event_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("event".into()))
+    }
+
+    /// Edit an event we organize. The change is applied locally at once,
+    /// attendees get an updated REQUEST ICS (bumped SEQUENCE) when `notify`,
+    /// and CalDAV-backed events are flagged for the next push.
+    pub async fn update_event(&self, args: UpdateEventArgs) -> Result<CalendarEvent> {
+        if args.summary.trim().is_empty() {
+            return Err(CoreError::Other("event needs a title".into()));
+        }
+        if args.ends_at <= args.starts_at {
+            return Err(CoreError::Other("event must end after it starts".into()));
+        }
+        let event_id = args.event_id;
+        let existing = self
+            .db
+            .read(move |conn| repo::calendar::get(conn, event_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("event".into()))?;
+        if !existing.is_local {
+            return Err(CoreError::Other(
+                "only events you organize can be edited".into(),
+            ));
+        }
+
+        // Preserve responses attendees already gave; new addresses start out
+        // NEEDS-ACTION.
+        let attendees: Vec<EventAttendee> = args
+            .attendees
+            .iter()
+            .map(|a| EventAttendee {
+                email: a.email.clone(),
+                name: a.name.clone(),
+                partstat: existing
+                    .attendees
+                    .iter()
+                    .find(|old| old.email.eq_ignore_ascii_case(&a.email))
+                    .and_then(|old| old.partstat.clone())
+                    .or_else(|| Some("NEEDS-ACTION".into())),
+            })
+            .collect();
+
+        let args_for_db = args.clone();
+        let atts_for_db = attendees.clone();
+        self.db
+            .write(move |conn| repo::calendar::update_local_fields(conn, &args_for_db, &atts_for_db))
+            .await?;
+
+        if args.notify && !args.attendees.is_empty() {
+            let account_id = existing.account_id;
+            let account = self
+                .db
+                .read(move |conn| repo::accounts::get(conn, account_id))
+                .await?
+                .ok_or_else(|| CoreError::NotFound("account".into()))?;
+            let (uid, sequence) = self
+                .db
+                .read(move |conn| repo::calendar::uid_and_sequence(conn, event_id))
+                .await?
+                .ok_or_else(|| CoreError::NotFound("event".into()))?;
+            let organizer = Address {
+                name: account.display_name.clone(),
+                email: account.email.clone(),
+            };
+            let ics = calendar::build_request_ics(&calendar::InviteSpec {
+                uid: &uid,
+                sequence,
+                summary: args.summary.trim(),
+                description: args.description.as_deref(),
+                location: args.location.as_deref(),
+                join_url: args.join_url.as_deref(),
+                organizer: &organizer,
+                attendees: &args.attendees,
+                starts_at_ms: args.starts_at,
+                ends_at_ms: args.ends_at,
+                dtstamp_ms: now_ms(),
+            });
+            let body = invite_body_text(&CreateEventArgs {
+                account_id,
+                summary: args.summary.clone(),
+                description: args.description.clone(),
+                location: args.location.clone(),
+                join_url: args.join_url.clone(),
+                starts_at: args.starts_at,
+                ends_at: args.ends_at,
+                all_day: args.all_day,
+                attendees: args.attendees.clone(),
+            });
+            self.send_calendar_mail(
+                account_id,
+                args.attendees.clone(),
+                format!("Updated invitation: {}", args.summary.trim()),
+                body,
+                &ics,
+            )
+            .await?;
+        }
+
+        self.enqueue_cal_push(event_id, existing.account_id, "cal_put")
+            .await?;
+        self.db
+            .read(move |conn| repo::calendar::get(conn, event_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("event".into()))
+    }
+
+    /// Delete an event. Organized events with attendees email a METHOD:CANCEL
+    /// when `notify`; CalDAV-backed rows become tombstones deleted at the next
+    /// push, purely local rows disappear immediately.
+    pub async fn delete_event(&self, event_id: i64, notify: bool) -> Result<()> {
+        let ev = self
+            .db
+            .read(move |conn| repo::calendar::get(conn, event_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("event".into()))?;
+
+        if notify && ev.is_local && !ev.attendees.is_empty() {
+            let account_id = ev.account_id;
+            let account = self
+                .db
+                .read(move |conn| repo::accounts::get(conn, account_id))
+                .await?
+                .ok_or_else(|| CoreError::NotFound("account".into()))?;
+            let (uid, sequence) = self
+                .db
+                .read(move |conn| repo::calendar::uid_and_sequence(conn, event_id))
+                .await?
+                .ok_or_else(|| CoreError::NotFound("event".into()))?;
+            let organizer = Address {
+                name: account.display_name.clone(),
+                email: account.email.clone(),
+            };
+            let to: Vec<Address> = ev
+                .attendees
+                .iter()
+                .map(|a| Address {
+                    name: a.name.clone(),
+                    email: a.email.clone(),
+                })
+                .collect();
+            let title = ev.summary.clone().unwrap_or_else(|| "(no title)".into());
+            let ics = calendar::build_cancel_ics(&calendar::InviteSpec {
+                uid: &uid,
+                sequence: sequence + 1,
+                summary: &title,
+                description: None,
+                location: ev.location.as_deref(),
+                join_url: None,
+                organizer: &organizer,
+                attendees: &to,
+                starts_at_ms: ev.starts_at,
+                ends_at_ms: ev.ends_at.unwrap_or(ev.starts_at + 1_800_000),
+                dtstamp_ms: now_ms(),
+            });
+            self.send_calendar_mail(
+                account_id,
+                to,
+                format!("Cancelled: {title}"),
+                format!("{title} has been cancelled."),
+                &ics,
+            )
+            .await?;
+        }
+
+        // CalDAV rows need the server-side DELETE; keep a tombstone and let
+        // the push path finish the job. Everything else goes right away.
+        if ev.calendar_id.is_some() {
+            self.db
+                .write(move |conn| repo::calendar::mark_deleted(conn, event_id))
+                .await?;
+            self.enqueue_cal_push(event_id, ev.account_id, "cal_delete")
+                .await?;
+        } else {
+            self.db
+                .write(move |conn| repo::calendar::hard_delete(conn, event_id))
+                .await?;
+        }
+        Ok(())
+    }
+
+    // ---------- caldav ----------
+
+    /// Connect a calendar server to an account. Generic servers store the app
+    /// password in the keyring; Google reuses the account's OAuth tokens (the
+    /// caller must have completed the calendar-scope re-consent first).
+    /// Discovery doubles as the connection test - nothing persists on failure.
+    pub async fn connect_calendar(&self, args: ConnectCalendarArgs) -> Result<Vec<Calendar>> {
+        let account_id = args.account_id;
+        let kind = if args.kind == "google" { "google" } else { "generic" };
+        let base_url = match kind {
+            "google" => caldav::GOOGLE_CALDAV_BASE.to_string(),
+            _ => {
+                let url = args
+                    .url
+                    .clone()
+                    .filter(|u| !u.trim().is_empty())
+                    .ok_or_else(|| CoreError::CalDav("server URL is required".into()))?;
+                let mut url = url.trim().to_string();
+                if !url.contains("://") {
+                    url = format!("https://{url}");
+                }
+                url
+            }
+        };
+
+        // Build auth without persisting anything yet.
+        let auth = match kind {
+            "google" => caldav::DavAuth::Bearer(
+                self.tokens.access_token(account_id, Provider::Gmail).await?,
+            ),
+            _ => {
+                let user = args.username.clone().unwrap_or_default();
+                let pass = args
+                    .password
+                    .clone()
+                    .filter(|p| !p.is_empty())
+                    .ok_or_else(|| CoreError::CalDav("password is required".into()))?;
+                caldav::DavAuth::Basic(user, pass)
+            }
+        };
+        let transport = caldav::HttpTransport::new(auth)?;
+        let discovery = caldav::discovery::discover(&transport, &base_url).await?;
+
+        // Persist: keyring first, then config + collections.
+        if kind == "generic" {
+            if let Some(pass) = args.password.clone() {
+                credentials::store_async(account_id, Slot::CaldavPassword, pass).await?;
+            }
+        }
+        let cfg = repo::caldav::CaldavConfig {
+            account_id,
+            kind: kind.to_string(),
+            base_url,
+            username: args.username.clone(),
+            principal_url: discovery.principal_url.clone(),
+            home_set_url: Some(discovery.home_set_url.clone()),
+            enabled: true,
+            last_error: None,
+        };
+        let calendars = discovery.calendars.clone();
+        let out = self
+            .db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                repo::caldav::upsert_config(&tx, &cfg)?;
+                let mut first_id = None;
+                for c in &calendars {
+                    let id = repo::caldav::upsert_calendar(
+                        &tx,
+                        account_id,
+                        &c.url,
+                        c.display_name.as_deref(),
+                        c.color.as_deref(),
+                        false,
+                    )?;
+                    first_id.get_or_insert(id);
+                }
+                if let Some(id) = first_id {
+                    // Keep an existing default if one is set; else first wins.
+                    let has_default: i64 = tx.query_row(
+                        "SELECT COUNT(*) FROM calendars WHERE account_id = ?1 AND is_default = 1",
+                        rusqlite::params![account_id],
+                        |r| r.get(0),
+                    )?;
+                    if has_default == 0 {
+                        repo::caldav::set_default_calendar(&tx, account_id, id)?;
+                    }
+                }
+                let list = repo::caldav::list_calendars(&tx, Some(account_id))?;
+                tx.commit()?;
+                Ok(list)
+            })
+            .await?;
+
+        self.spawn_cal_task(account_id).await;
+        self.nudge_cal(Some(account_id)).await;
+        Ok(out)
+    }
+
+    /// Google calendar connection: re-run the OAuth consent with the
+    /// calendar scope added (scopes are fixed at consent time, so the account
+    /// must re-consent) and swap in the widened tokens, then discover.
+    pub async fn connect_google_calendar(
+        &self,
+        account_id: i64,
+        open_url: impl FnOnce(String) + Send,
+    ) -> Result<Vec<Calendar>> {
+        let account = self
+            .db
+            .read(move |conn| repo::accounts::get(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("account".into()))?;
+        if account.provider != Provider::Gmail {
+            return Err(CoreError::CalDav(
+                "google calendar needs a Gmail account".into(),
+            ));
+        }
+
+        let outcome = oauth::flow::authorize_with(
+            Provider::Gmail,
+            &[oauth::providers::GOOGLE_CALENDAR_SCOPE],
+            Some(&account.email),
+            open_url,
+        )
+        .await?;
+        if !outcome.email.eq_ignore_ascii_case(&account.email) {
+            return Err(CoreError::Auth(format!(
+                "consent was granted for {} - expected {}",
+                outcome.email, account.email
+            )));
+        }
+        self.tokens
+            .store_initial(
+                account_id,
+                outcome.access_token,
+                outcome.expires_in,
+                outcome.refresh_token,
+            )
+            .await?;
+
+        self.connect_calendar(ConnectCalendarArgs {
+            account_id,
+            kind: "google".into(),
+            url: None,
+            username: None,
+            password: None,
+        })
+        .await
+    }
+
+    /// Disconnect the calendar server: events stay locally, sync bookkeeping
+    /// is cleared, credentials removed.
+    pub async fn disconnect_calendar(&self, account_id: i64) -> Result<()> {
+        self.cal_handles.write().await.remove(&account_id);
+        self.db
+            .write(move |conn| repo::caldav::delete_config(conn, account_id))
+            .await?;
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = credentials::store(account_id, Slot::CaldavPassword, "");
+        })
+        .await;
+        self.bus.emit(CoreEvent::CalendarUpdated { account_id });
+        Ok(())
+    }
+
+    pub async fn list_calendars(&self, account_id: Option<i64>) -> Result<Vec<Calendar>> {
+        self.db
+            .read(move |conn| repo::caldav::list_calendars(conn, account_id))
+            .await
+    }
+
+    pub async fn set_calendar_enabled(&self, calendar_id: i64, enabled: bool) -> Result<()> {
+        self.db
+            .write(move |conn| repo::caldav::set_calendar_enabled(conn, calendar_id, enabled))
+            .await?;
+        let cal = self
+            .db
+            .read(move |conn| repo::caldav::get_calendar(conn, calendar_id))
+            .await?;
+        if let Some(cal) = cal {
+            self.bus
+                .emit(CoreEvent::CalendarUpdated { account_id: cal.account_id });
+        }
+        Ok(())
+    }
+
+    pub async fn calendar_sync_now(&self, account_id: Option<i64>) {
+        self.nudge_cal(account_id).await;
+    }
+
+    /// Queue a CalDAV write for the account's calendar task, when the account
+    /// has one configured. No-op otherwise (purely local calendars).
+    async fn enqueue_cal_push(&self, event_id: i64, account_id: i64, kind: &str) -> Result<()> {
+        let kind = kind.to_string();
+        self.db
+            .write(move |conn| {
+                if repo::caldav::get_config(conn, account_id)?.is_none() {
+                    return Ok(());
+                }
+                // Dirty guards the row against being clobbered by a pull that
+                // runs between now and the push.
+                if kind == "cal_put" {
+                    repo::calendar::mark_dirty(conn, event_id)?;
+                }
+                let payload = serde_json::json!({ "eventId": event_id });
+                repo::actions::enqueue(conn, account_id, &kind, None, None, &payload, None)?;
+                Ok(())
+            })
+            .await?;
+        self.nudge_cal(Some(account_id)).await;
+        Ok(())
+    }
+
+    /// Draft + queue an email carrying an ICS part, through the normal send
+    /// pipeline. The ICS is staged like an attachment.
+    async fn send_calendar_mail(
+        &self,
+        account_id: i64,
+        to: Vec<Address>,
+        subject: String,
+        body_text: String,
+        ics: &str,
+    ) -> Result<()> {
+        let tmp_dir = self.paths.data_dir.join("tmp");
+        tokio::fs::create_dir_all(&tmp_dir).await?;
+        let tmp_path = tmp_dir.join(format!("invite-{}.ics", crate::mime::rand_token()));
+        tokio::fs::write(&tmp_path, ics.as_bytes()).await?;
+
+        let draft_id = self
+            .save_draft(SaveDraftArgs {
+                draft_id: None,
+                account_id,
+                to,
+                cc: Vec::new(),
+                bcc: Vec::new(),
+                subject,
+                body_text,
+                body_html: None,
+                mode: "new".into(),
+                in_reply_to_message_id: None,
+                attachments: vec![DraftAttachmentIn {
+                    file_path: tmp_path.to_string_lossy().into_owned(),
+                    filename: "invite.ics".into(),
+                }],
+            })
+            .await?;
+        // The draft staged its own copy; the temp file can go.
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        self.queue_send(QueueSendArgs {
+            draft_id,
+            send_at: None,
+        })
+        .await?;
+        Ok(())
     }
 
     // ---------- AI ----------
 
-    async fn ai_config(&self) -> Result<ai::AiConfig> {
+    async fn ai_config(&self, scenario: Scenario) -> Result<ai::AiConfig> {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        self.ai_config_from(&settings, scenario).await
+    }
+
+    /// Build an [`ai::AiConfig`] for `scenario` from already-loaded settings,
+    /// picking the model for the scenario's tier (all tiers share the base URL
+    /// and stored API key).
+    async fn ai_config_from(&self, settings: &Settings, scenario: Scenario) -> Result<ai::AiConfig> {
         let api_key = match credentials::load_async(0, Slot::AiApiKey).await {
             Ok(k) => k,
             // Local endpoints (LM Studio, Ollama over http://) need no key;
@@ -784,8 +1574,8 @@ impl Core {
             }
         };
         Ok(ai::AiConfig {
-            base_url: settings.ai_base_url,
-            model: settings.ai_model,
+            base_url: settings.ai_base_url.clone(),
+            model: resolve_ai_model(settings, scenario),
             api_key,
         })
     }
@@ -819,8 +1609,15 @@ impl Core {
         ai::list_models(&settings.ai_base_url, &api_key).await
     }
 
+    /// Parse a natural-language palette query ("meeting tomorrow 8pm ...")
+    /// into a structured intent the UI can execute.
+    pub async fn ai_command(&self, query: String) -> Result<AiIntent> {
+        let cfg = self.ai_config(Scenario::Command).await?;
+        ai::intent(&cfg, &query).await
+    }
+
     pub async fn ai_summarize(&self, thread_id: i64) -> Result<String> {
-        let cfg = self.ai_config().await?;
+        let cfg = self.ai_config(Scenario::Summarize).await?;
         let detail = self.get_thread(thread_id).await?;
         let context = ai::thread_context(&detail.messages, 24_000);
         ai::chat(&cfg, ai::summarize_prompt(&detail.thread.subject, &context)).await
@@ -838,8 +1635,8 @@ impl Core {
         sender_name: String,
         voice: Option<bool>,
     ) -> Result<String> {
-        let cfg = self.ai_config().await?;
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        let cfg = self.ai_config_from(&settings, Scenario::Draft).await?;
         let use_voice = voice.unwrap_or(settings.voice_drafting);
 
         let (subject, context, reply_target) = match thread_id {
@@ -879,10 +1676,17 @@ impl Core {
         .await
     }
 
+    /// Copy-edit a draft body (plain text or simple HTML) without changing
+    /// meaning, tone, or language. Returns the corrected draft.
+    pub async fn ai_proofread(&self, body: String) -> Result<String> {
+        let cfg = self.ai_config(Scenario::Draft).await?;
+        ai::chat(&cfg, ai::proofread_prompt(&body)).await
+    }
+
     /// Distill the user's writing voice from their sent mail and persist it as
     /// a style profile. Returns the profile text.
     pub async fn ai_learn_voice(&self) -> Result<String> {
-        let cfg = self.ai_config().await?;
+        let cfg = self.ai_config(Scenario::Voice).await?;
         let samples = self
             .db
             .read(|conn| {
@@ -1042,10 +1846,17 @@ impl Core {
 
     /// RAG: answer a natural-language question grounded in the most relevant
     /// messages, returning the answer plus its source citations.
+    /// Answer a question about the mailbox. Seeds with a semantic-search RAG
+    /// pass, then hands the model a `search_inbox` tool so it can reformulate
+    /// queries and dig deeper on its own before answering. Falls back to a plain
+    /// one-shot RAG answer if the model/endpoint doesn't support tool calling.
     pub async fn ai_ask(&self, question: String, request_id: String) -> Result<AskResult> {
-        let cfg = self.ai_config().await?;
-        let hits = self.vector_hits(&question, 8).await?;
-        if hits.is_empty() {
+        const MAX_ROUNDS: usize = 4;
+        let cfg = self.ai_config(Scenario::Ask).await?;
+
+        // RAG seed: the model always starts from the best semantic matches.
+        let mut sources = self.retrieve_details(&question, 8).await?;
+        if sources.is_empty() {
             return Ok(AskResult {
                 answer: "I couldn't find anything relevant in your mailbox. \
                          Make sure semantic search is enabled and indexing has finished."
@@ -1053,10 +1864,106 @@ impl Core {
                 citations: Vec::new(),
             });
         }
+        // Surface the seed sources immediately; more are emitted as the model searches.
+        self.emit_ask_citations(&request_id, &sources);
 
+        let mut initial_context = String::new();
+        for (i, m) in sources.iter().enumerate() {
+            initial_context.push_str(&ai::format_excerpt(i + 1, m));
+        }
+        let mut messages: Vec<serde_json::Value> = vec![
+            serde_json::json!({ "role": "system", "content": ai::AGENTIC_ASK_SYSTEM }),
+            serde_json::json!({
+                "role": "user",
+                "content": format!("Emails:\n\n{initial_context}\nQuestion: {question}"),
+            }),
+        ];
+        let tools = ai::search_inbox_tool();
+
+        // Agentic loop: let the model call search_inbox until it answers or we
+        // hit the round cap. `answer = Some` means the model produced text.
+        let mut answer: Option<String> = None;
+        let mut used_tools = false;
+        for round in 0..MAX_ROUNDS {
+            match ai::chat_tools(&cfg, messages.clone(), tools.clone()).await {
+                Ok(ai::ChatStep::Content(text)) => {
+                    answer = Some(text);
+                    break;
+                }
+                Ok(ai::ChatStep::Tools { assistant, calls }) => {
+                    used_tools = true;
+                    messages.push(assistant);
+                    for call in calls {
+                        let (result, added) = if call.name == "search_inbox" {
+                            self.run_search_inbox(&call.arguments, &mut sources).await
+                        } else {
+                            (format!("Unknown tool: {}", call.name), 0)
+                        };
+                        messages.push(serde_json::json!({
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": result,
+                        }));
+                        if added > 0 {
+                            self.emit_ask_citations(&request_id, &sources);
+                        }
+                    }
+                }
+                Err(e) => {
+                    // A first-round failure means the model/endpoint has no tool
+                    // support - degrade to a plain streamed RAG answer. A failure
+                    // mid-conversation is a real error.
+                    if round == 0 && !used_tools {
+                        break;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        let answer = match answer {
+            Some(text) => {
+                if !text.is_empty() {
+                    self.bus.emit(CoreEvent::AskDelta {
+                        request_id: request_id.clone(),
+                        delta: text.clone(),
+                    });
+                }
+                text
+            }
+            None => {
+                // Cap reached while still searching, or tool-less fallback: force
+                // a final streamed answer over everything gathered, tools off.
+                messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": "Now answer the user's question using ONLY the numbered excerpts \
+                                above. Cite them like [1]. If the answer isn't there, say you \
+                                couldn't find it. Concise plain text, no preamble.",
+                }));
+                let bus = self.bus.clone();
+                let rid = request_id.clone();
+                ai::chat_stream_json(&cfg, messages, move |delta| {
+                    bus.emit(CoreEvent::AskDelta {
+                        request_id: rid.clone(),
+                        delta: delta.to_string(),
+                    });
+                })
+                .await?
+            }
+        };
+        self.bus.emit(CoreEvent::AskDone { request_id });
+
+        Ok(AskResult {
+            answer,
+            citations: Self::ask_citations(&sources),
+        })
+    }
+
+    /// Semantic-search `query` and hydrate the top-`k` hits into message details.
+    async fn retrieve_details(&self, query: &str, k: usize) -> Result<Vec<MessageDetail>> {
+        let hits = self.vector_hits(query, k).await?;
         let ids: Vec<i64> = hits.iter().map(|(id, _)| *id).collect();
-        let details = self
-            .db
+        self.db
             .read(move |conn| {
                 let mut out = Vec::new();
                 for id in ids {
@@ -1066,43 +1973,69 @@ impl Core {
                 }
                 Ok::<_, CoreError>(out)
             })
-            .await?;
+            .await
+    }
 
-        let citations: Vec<AskCitation> = details
+    /// Execute a `search_inbox` tool call: run the search, append any *new*
+    /// messages to `sources` with stable citation numbers, and return the
+    /// excerpt block for the model plus how many new sources were added.
+    async fn run_search_inbox(
+        &self,
+        arguments: &str,
+        sources: &mut Vec<MessageDetail>,
+    ) -> (String, usize) {
+        let args: serde_json::Value =
+            serde_json::from_str(arguments).unwrap_or_else(|_| serde_json::json!({}));
+        let query = args["query"].as_str().unwrap_or("").trim().to_string();
+        if query.is_empty() {
+            return ("(empty query - nothing searched)".into(), 0);
+        }
+        if sources.len() >= 24 {
+            return ("Source limit reached; answer with what you already have.".into(), 0);
+        }
+        let limit = args["limit"].as_u64().unwrap_or(6).clamp(1, 8) as usize;
+        let details = self.retrieve_details(&query, limit).await.unwrap_or_default();
+
+        let mut block = String::new();
+        let mut added = 0;
+        for d in details {
+            if sources.iter().any(|s| s.id == d.id) {
+                continue; // already cited under an earlier number
+            }
+            block.push_str(&ai::format_excerpt(sources.len() + 1, &d));
+            sources.push(d);
+            added += 1;
+            if sources.len() >= 24 {
+                break;
+            }
+        }
+        let text = if added == 0 {
+            format!("No new results for \"{query}\".")
+        } else {
+            format!("Results for \"{query}\":\n\n{block}")
+        };
+        (text, added)
+    }
+
+    fn emit_ask_citations(&self, request_id: &str, sources: &[MessageDetail]) {
+        self.bus.emit(CoreEvent::AskCitations {
+            request_id: request_id.to_string(),
+            citations: Self::ask_citations(sources),
+        });
+    }
+
+    fn ask_citations(sources: &[MessageDetail]) -> Vec<AskCitation> {
+        sources
             .iter()
             .map(|d| AskCitation {
                 message_id: d.id,
                 thread_id: d.thread_id,
                 subject: d.subject.clone(),
-                from: d
-                    .from
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| d.from.email.clone()),
+                from: d.from.name.clone().unwrap_or_else(|| d.from.email.clone()),
                 date: d.date,
                 snippet: d.snippet.clone(),
             })
-            .collect();
-
-        // Surface the sources immediately, before the (slow) answer streams.
-        self.bus.emit(CoreEvent::AskCitations {
-            request_id: request_id.clone(),
-            citations: citations.clone(),
-        });
-
-        let context = ai::rag_context(&details, 20_000);
-        let bus = self.bus.clone();
-        let rid = request_id.clone();
-        let answer = ai::chat_stream(&cfg, ai::ask_prompt(&question, &context), |delta| {
-            bus.emit(CoreEvent::AskDelta {
-                request_id: rid.clone(),
-                delta: delta.to_string(),
-            });
-        })
-        .await?;
-        self.bus.emit(CoreEvent::AskDone { request_id });
-
-        Ok(AskResult { answer, citations })
+            .collect()
     }
 
     // ---------- snippets / splits / settings ----------
@@ -1349,6 +2282,41 @@ async fn stage_draft_attachment(
     let dst = sub.join(safe_filename(filename));
     tokio::fs::copy(&canon_src, &dst).await?;
     Ok(dst.to_string_lossy().into_owned())
+}
+
+/// Plain-text body for an outgoing invite email (the ICS carries the real
+/// event; this is what non-calendar clients show).
+fn invite_body_text(args: &CreateEventArgs) -> String {
+    use chrono::TimeZone;
+    let fmt = |ms: i64| {
+        chrono::Local
+            .timestamp_millis_opt(ms)
+            .earliest()
+            .map(|dt| {
+                if args.all_day {
+                    dt.format("%a, %b %e, %Y").to_string()
+                } else {
+                    dt.format("%a, %b %e, %Y at %H:%M").to_string()
+                }
+            })
+            .unwrap_or_default()
+    };
+    let mut out = format!(
+        "You are invited: {}\n\nWhen: {} - {}\n",
+        args.summary.trim(),
+        fmt(args.starts_at),
+        fmt(args.ends_at)
+    );
+    if let Some(loc) = args.location.as_deref().filter(|l| !l.is_empty()) {
+        out.push_str(&format!("Where: {loc}\n"));
+    }
+    if let Some(url) = args.join_url.as_deref().filter(|u| !u.is_empty()) {
+        out.push_str(&format!("Join: {url}\n"));
+    }
+    if let Some(desc) = args.description.as_deref().filter(|d| !d.is_empty()) {
+        out.push_str(&format!("\n{desc}\n"));
+    }
+    out
 }
 
 /// Push user-entered OAuth app registrations into the resolver.
@@ -1752,4 +2720,43 @@ fn revert_action(
     }
     tx.commit()?;
     Ok(thread_id)
+}
+
+#[cfg(test)]
+mod ai_model_routing_tests {
+    use super::*;
+
+    #[test]
+    fn blank_tier_falls_back_to_legacy_model() {
+        let mut s = Settings::default();
+        s.ai_model = "legacy".into();
+        // Tiers default (ask/draft=intelligent, summarize=instant, voice=cheap)
+        // but no tier model is set, so every scenario uses the legacy model.
+        for sc in [Scenario::Ask, Scenario::Draft, Scenario::Summarize, Scenario::Voice] {
+            assert_eq!(resolve_ai_model(&s, sc), "legacy");
+        }
+    }
+
+    #[test]
+    fn each_scenario_uses_its_tier_model() {
+        let mut s = Settings::default();
+        s.ai_model = "legacy".into();
+        s.ai_model_instant = "fast".into();
+        s.ai_model_cheap = "mid".into();
+        s.ai_model_intelligent = "smart".into();
+        // Defaults: ask/draft -> intelligent, summarize -> instant, voice -> cheap.
+        assert_eq!(resolve_ai_model(&s, Scenario::Ask), "smart");
+        assert_eq!(resolve_ai_model(&s, Scenario::Draft), "smart");
+        assert_eq!(resolve_ai_model(&s, Scenario::Summarize), "fast");
+        assert_eq!(resolve_ai_model(&s, Scenario::Voice), "mid");
+    }
+
+    #[test]
+    fn scenario_can_be_repointed_to_another_tier() {
+        let mut s = Settings::default();
+        s.ai_model = "legacy".into();
+        s.ai_model_instant = "fast".into();
+        s.ai_tier_ask = "instant".into(); // route Ask to the instant tier
+        assert_eq!(resolve_ai_model(&s, Scenario::Ask), "fast");
+    }
 }

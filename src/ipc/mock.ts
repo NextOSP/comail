@@ -2,12 +2,14 @@
 // (`pnpm dev` without Tauri). Implements every command in the contract.
 
 import type {
+  Calendar,
   Account,
   ActionResult,
   Address,
   AddPasswordAccountArgs,
   AiStatus,
   AttachmentMeta,
+  AttachmentPreview,
   CalendarEvent,
   Commands,
   ConnectionTestResult,
@@ -80,7 +82,7 @@ const id = () => nextId++;
 const accounts: Account[] = [
   {
     id: 1,
-    email: "bd@nextwaves.com",
+    email: "bd@northbeam.com",
     displayName: "B.D. Chen",
     provider: "imap",
     authKind: "password",
@@ -97,15 +99,15 @@ const accounts: Account[] = [
 ];
 
 const SELF: Record<number, Address> = {
-  1: { name: "B.D. Chen", email: "bd@nextwaves.com" },
+  1: { name: "B.D. Chen", email: "bd@northbeam.com" },
   2: { name: "B.D. Chen", email: "bd.chen.dev@gmail.com" },
 };
 
 // People
-const ana: Address = { name: "Ana Moreau", email: "ana@nextwaves.com" };
-const priya: Address = { name: "Priya Raman", email: "priya@nextwaves.com" };
-const tom: Address = { name: "Tom Okafor", email: "tom@nextwaves.com" };
-const mei: Address = { name: "Mei Nakamura", email: "mei@nextwaves.com" };
+const ana: Address = { name: "Ana Moreau", email: "ana@northbeam.com" };
+const priya: Address = { name: "Priya Raman", email: "priya@northbeam.com" };
+const tom: Address = { name: "Tom Okafor", email: "tom@northbeam.com" };
+const mei: Address = { name: "Mei Nakamura", email: "mei@northbeam.com" };
 const jonas: Address = { name: "Jonas Wehrli", email: "jonas.wehrli@helvetic.io" };
 const sofia: Address = { name: "Sofia Lindqvist", email: "sofia@brightline.se" };
 const marcus: Address = { name: "Marcus Bell", email: "marcus.bell@atlaslegal.com" };
@@ -206,7 +208,7 @@ function addThread(
   return t;
 }
 
-// --- Account 1: work (bd@nextwaves.com) -------------------------------------
+// --- Account 1: work (bd@northbeam.com) -------------------------------------
 
 addThread(1, "Q3 roadmap review - final deck", [
   {
@@ -279,7 +281,7 @@ addThread(1, "Board update draft - June", [
   {
     from: ana,
     ago: 3 * D + 2 * H,
-    body: "Draft of the June board update is here: https://docs.nextwaves.com/board/2026-06\n\nRevenue section is done. Can you write the eng section? Keep it to ~150 words - wins, misses, and the reliability numbers. Deadline Thursday.",
+    body: "Draft of the June board update is here: https://docs.northbeam.com/board/2026-06\n\nRevenue section is done. Can you write the eng section? Keep it to ~150 words - wins, misses, and the reliability numbers. Deadline Thursday.",
   },
 ], {});
 
@@ -308,7 +310,7 @@ addThread(1, "Pen test report - action items (3 high, 7 medium)", [
     from: marcus,
     ago: 5 * D + 4 * H,
     body: "Full report attached. The three highs:\n\nH-1: OAuth state parameter not bound to session (CSRF on account linking)\nH-2: Draft attachments readable via predictable IDs before send\nH-3: Rate limiting absent on the password reset endpoint\n\nWe need written remediation timelines for the SOC 2 evidence folder within two weeks. Mediums can wait for the quarterly cycle.\n\nMarcus Bell\nAtlas Legal & Compliance",
-    attachments: [{ name: "nextwaves-pentest-2026H1.pdf", mime: "application/pdf", size: 5_113_400 }],
+    attachments: [{ name: "northbeam-pentest-2026H1.pdf", mime: "application/pdf", size: 5_113_400 }],
   },
   {
     from: SELF[1],
@@ -325,7 +327,7 @@ addThread(1, "Interview loop feedback needed - candidate #219", [
     from: priya,
     ago: 8 * H,
     unread: true,
-    body: "Your feedback for yesterday's systems interview is the last one missing. Debrief is at 3pm today - please get it in before then. Scorecard link: https://ats.nextwaves.com/candidates/219/feedback",
+    body: "Your feedback for yesterday's systems interview is the last one missing. Debrief is at 3pm today - please get it in before then. Scorecard link: https://ats.northbeam.com/candidates/219/feedback",
   },
 ]);
 
@@ -360,7 +362,7 @@ addThread(1, "Re: Quietloop acquisition - technical due diligence", [
 
 addThread(1, "Expense report rejected: 'Team dinner - Berlin'", [
   {
-    from: { name: "Nextwaves Finance", email: "finance@nextwaves.com" },
+    from: { name: "Northbeam Finance", email: "finance@northbeam.com" },
     ago: 3 * D + 7 * H,
     body: "Your expense report EXP-1187 (€214.50, Team dinner - Berlin) was rejected.\n\nReason: itemized receipt missing (credit card slip only).\n\nPlease re-submit with the itemized receipt within 30 days.",
   },
@@ -370,7 +372,7 @@ addThread(1, "Notes from the reliability retro", [
   {
     from: tom,
     ago: 7 * D + 2 * H,
-    body: "Notes from today's retro:\n\n- The March 30 outage was DNS TTL + our own connection pinning. Action: honor TTLs, cap connection age at 15m. (me)\n- Alert fatigue: 40% of pages last month were the flaky bodies-backfill alert. Action: make it a ticket, not a page. (Mei)\n- We STILL don't have a staging IMAP server that simulates Yahoo's quirks. Action: budget ask. (B.D.)\n\nFull doc: https://docs.nextwaves.com/retro/2026-06-reliability",
+    body: "Notes from today's retro:\n\n- The March 30 outage was DNS TTL + our own connection pinning. Action: honor TTLs, cap connection age at 15m. (me)\n- Alert fatigue: 40% of pages last month were the flaky bodies-backfill alert. Action: make it a ticket, not a page. (Mei)\n- We STILL don't have a staging IMAP server that simulates Yahoo's quirks. Action: budget ask. (B.D.)\n\nFull doc: https://docs.northbeam.com/retro/2026-06-reliability",
   },
 ]);
 
@@ -397,16 +399,16 @@ addThread(1, "Your invoice from Hetzner (2026-06)", [
   },
 ]);
 
-addThread(1, "[nextwaves/sync-engine] PR #612: Per-account reconnect gate (opened)", [
+addThread(1, "[northbeam/sync-engine] PR #612: Per-account reconnect gate (opened)", [
   {
     from: github,
     ago: 2 * H,
     unread: true,
-    body: "tom-okafor opened pull request #612 in nextwaves/sync-engine\n\nPer-account reconnect gate\n\nAdds a fair semaphore per account guarding IMAP reconnects, with 0-3s jitter. Fixes the reconnect storm reported in #598.\n\n+214 −38, 6 files changed\n\nView it on GitHub: https://github.com/nextwaves/sync-engine/pull/612",
+    body: "tom-okafor opened pull request #612 in northbeam/sync-engine\n\nPer-account reconnect gate\n\nAdds a fair semaphore per account guarding IMAP reconnects, with 0-3s jitter. Fixes the reconnect storm reported in #598.\n\n+214 −38, 6 files changed\n\nView it on GitHub: https://github.com/northbeam/sync-engine/pull/612",
   },
 ]);
 
-addThread(1, "[nextwaves/sync-engine] Issue #598: Reconnect storm after network blip", [
+addThread(1, "[northbeam/sync-engine] Issue #598: Reconnect storm after network blip", [
   {
     from: github,
     ago: 2 * D + 4 * H,
@@ -425,7 +427,7 @@ addThread(1, "LIN-482: Snooze wake-ups fire twice when laptop sleeps past wake t
     from: linear,
     ago: 11 * H,
     unread: true,
-    body: "Mei Nakamura assigned LIN-482 to you.\n\nSnooze wake-ups fire twice when laptop sleeps past wake time\n\nPriority: High · Cycle 14\n\nWhen the machine sleeps through a snooze wake time, the catch-up scan re-fires notifications that the pre-sleep tick already delivered.\n\nView in Linear: https://linear.app/nextwaves/issue/LIN-482",
+    body: "Mei Nakamura assigned LIN-482 to you.\n\nSnooze wake-ups fire twice when laptop sleeps past wake time\n\nPriority: High · Cycle 14\n\nWhen the machine sleeps through a snooze wake time, the catch-up scan re-fires notifications that the pre-sleep tick already delivered.\n\nView in Linear: https://linear.app/northbeam/issue/LIN-482",
   },
 ]);
 
@@ -434,8 +436,8 @@ addThread(1, "Your Stripe invoice payment failed", [
     from: stripe,
     ago: 1 * D + 3 * H,
     unread: true,
-    body: "A payment for invoice in_1PZk8q2 ($480.00) to Nextwaves Inc. failed.\n\nCustomer: meridianhealth.example.com\nReason: card_declined (insufficient_funds)\n\nStripe will retry automatically in 3 days. You can also update the customer's payment method from the dashboard.",
-    html: "<div style='font-family:sans-serif;max-width:560px'><h2 style='color:#635bff;margin:0 0 12px'>Stripe</h2><p>A payment for invoice <b>in_1PZk8q2</b> ($480.00) to <b>Nextwaves Inc.</b> failed.</p><table style='border-collapse:collapse;margin:12px 0'><tr><td style='padding:4px 12px 4px 0;color:#666'>Customer</td><td>meridianhealth.example.com</td></tr><tr><td style='padding:4px 12px 4px 0;color:#666'>Reason</td><td>card_declined (insufficient_funds)</td></tr></table><p>Stripe will retry automatically in 3 days.</p><p><a href='https://dashboard.stripe.com' style='color:#635bff'>View in dashboard →</a></p></div>",
+    body: "A payment for invoice in_1PZk8q2 ($480.00) to Northbeam Inc. failed.\n\nCustomer: meridianhealth.example.com\nReason: card_declined (insufficient_funds)\n\nStripe will retry automatically in 3 days. You can also update the customer's payment method from the dashboard.",
+    html: "<div style='font-family:sans-serif;max-width:560px'><h2 style='color:#635bff;margin:0 0 12px'>Stripe</h2><p>A payment for invoice <b>in_1PZk8q2</b> ($480.00) to <b>Northbeam Inc.</b> failed.</p><table style='border-collapse:collapse;margin:12px 0'><tr><td style='padding:4px 12px 4px 0;color:#666'>Customer</td><td>meridianhealth.example.com</td></tr><tr><td style='padding:4px 12px 4px 0;color:#666'>Reason</td><td>card_declined (insufficient_funds)</td></tr></table><p>Stripe will retry automatically in 3 days.</p><p><a href='https://dashboard.stripe.com' style='color:#635bff'>View in dashboard →</a></p></div>",
   },
 ]);
 
@@ -443,7 +445,7 @@ addThread(1, "Deployment failed: sync-engine-worker (production)", [
   {
     from: vercel,
     ago: 5 * D + 11 * H,
-    body: "Your deployment sync-engine-worker@c41f2aa failed to build.\n\nError: error[E0308]: mismatched types, src/backfill.rs:214\n\nView the build logs: https://vercel.com/nextwaves/sync-engine-worker",
+    body: "Your deployment sync-engine-worker@c41f2aa failed to build.\n\nError: error[E0308]: mismatched types, src/backfill.rs:214\n\nView the build logs: https://vercel.com/northbeam/sync-engine-worker",
   },
 ]);
 
@@ -463,11 +465,11 @@ addThread(1, "Your DigitalOcean invoice for June 2026", [
   },
 ]);
 
-addThread(1, "Weekly digest: nextwaves.com zone activity", [
+addThread(1, "Weekly digest: northbeam.com zone activity", [
   {
     from: cloudflare,
     ago: 4 * D + 9 * H,
-    body: "Here's what happened on nextwaves.com this week:\n\nRequests: 4.2M (+8%)\nThreats blocked: 12,406\nCache hit ratio: 91.2%\nTop country: United States (38%)",
+    body: "Here's what happened on northbeam.com this week:\n\nRequests: 4.2M (+8%)\nThreats blocked: 12,406\nCache hit ratio: 91.2%\nTop country: United States (38%)",
   },
 ]);
 
@@ -475,7 +477,7 @@ addThread(1, "Tailscale: new device added to your tailnet", [
   {
     from: tailscale,
     ago: 6 * D + 7 * H,
-    body: "A new device 'bd-framework-16' was added to the nextwaves.com tailnet by bd@nextwaves.com.\n\nOS: Linux 6.9\nIf this wasn't you, remove the device and rotate your keys immediately.",
+    body: "A new device 'bd-framework-16' was added to the northbeam.com tailnet by bd@northbeam.com.\n\nOS: Linux 6.9\nIf this wasn't you, remove the device and rotate your keys immediately.",
   },
 ]);
 
@@ -518,11 +520,11 @@ addThread(1, "RustConf 2026: early-bird tickets end Friday", [
   },
 ]);
 
-addThread(1, "Domain renewal: nextwaves.io expires in 30 days", [
+addThread(1, "Domain renewal: northbeam.io expires in 30 days", [
   {
     from: namecheap,
     ago: 5 * D + 2 * H,
-    body: "Your domain nextwaves.io expires on 2026-08-10.\n\nAuto-renew: OFF\nRenewal price: $38.88\n\nRenew now to avoid losing the domain.",
+    body: "Your domain northbeam.io expires on 2026-08-10.\n\nAuto-renew: OFF\nRenewal price: $38.88\n\nRenew now to avoid losing the domain.",
   },
 ]);
 
@@ -543,9 +545,9 @@ addThread(1, "Re: Conference travel budget", [
   },
 ], { folder: "done" });
 
-addThread(1, "Welcome to Nextwaves - IT onboarding", [
+addThread(1, "Welcome to Northbeam - IT onboarding", [
   {
-    from: { name: "Nextwaves IT", email: "it@nextwaves.com" },
+    from: { name: "Northbeam IT", email: "it@northbeam.com" },
     ago: 13 * D + 6 * H,
     body: "Your accounts are ready. VPN config attached. Ping #it-help with any issues.",
   },
@@ -671,7 +673,7 @@ addThread(2, "Figma: Ana Moreau invited you to 'Comail brand exploration'", [
   {
     from: figma,
     ago: 2 * D + 3 * H,
-    body: "Ana Moreau (ana@nextwaves.com) invited you to edit the file 'Comail brand exploration'.\n\nOpen in Figma: https://figma.com/file/abc123",
+    body: "Ana Moreau (ana@northbeam.com) invited you to edit the file 'Comail brand exploration'.\n\nOpen in Figma: https://figma.com/file/abc123",
   },
 ]);
 
@@ -875,6 +877,13 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   loadRemoteImages: false,
   aiBaseUrl: "https://openrouter.ai/api/v1",
   aiModel: "mock/gpt",
+  aiModelInstant: "",
+  aiModelCheap: "",
+  aiModelIntelligent: "",
+  aiTierAsk: "intelligent",
+  aiTierDraft: "intelligent",
+  aiTierSummarize: "instant",
+  aiTierVoice: "cheap",
   googleClientId: "",
   googleClientSecret: "",
   msClientId: "",
@@ -884,10 +893,13 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   voiceDrafting: false,
   voiceProfile: "",
   voiceLearnedAt: 0,
+  meetingNotifyLeadMinutes: 10,
   notificationsEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
   signatures: {},
+  signatureList: [],
+  signatureDefaults: {},
 };
 
 let settings: Settings = (() => {
@@ -910,14 +922,21 @@ const startOfToday = (() => {
   return d.getTime();
 })();
 
-const calendarEvents: CalendarEvent[] = [
+type EventSeed = Omit<
+  CalendarEvent,
+  "description" | "attendees" | "joinUrl" | "rsvpStatus" | "isLocal" | "calendarId" | "rrule"
+> &
+  Partial<CalendarEvent>;
+
+const calendarEvents: CalendarEvent[] = (
+  [
   {
     id: id(),
     accountId: 1,
     messageId: null,
     summary: "Team standup",
     location: "Fishbowl",
-    organizer: "mei@nextwaves.com",
+    organizer: "mei@northbeam.com",
     startsAt: startOfToday + 9.5 * H,
     endsAt: startOfToday + 9.75 * H,
     allDay: false,
@@ -931,6 +950,11 @@ const calendarEvents: CalendarEvent[] = [
     summary: "CRDT walkthrough - Quietloop data room",
     location: "Google Meet",
     organizer: "elena@quietloop.dev",
+    joinUrl: "https://meet.google.com/abc-defg-hij",
+    attendees: [
+      { email: "bd@northbeam.com", name: "Dean", partstat: "NEEDS-ACTION" },
+      { email: "elena@quietloop.dev", name: "Elena", partstat: "ACCEPTED" },
+    ],
     startsAt: startOfToday + 14 * H,
     endsAt: startOfToday + 15 * H,
     allDay: false,
@@ -943,7 +967,7 @@ const calendarEvents: CalendarEvent[] = [
     messageId: null,
     summary: "Backend hiring sync",
     location: null,
-    organizer: "priya@nextwaves.com",
+    organizer: "priya@northbeam.com",
     startsAt: startOfToday + 16 * H,
     endsAt: startOfToday + 16.5 * H,
     allDay: false,
@@ -969,7 +993,7 @@ const calendarEvents: CalendarEvent[] = [
     messageId: null,
     summary: "1:1 with Tom - reconnect gate pairing",
     location: "Hallway room",
-    organizer: "tom@nextwaves.com",
+    organizer: "tom@northbeam.com",
     startsAt: startOfToday + D + 9.5 * H,
     endsAt: startOfToday + D + 10.5 * H,
     allDay: false,
@@ -1015,7 +1039,30 @@ const calendarEvents: CalendarEvent[] = [
     status: "CONFIRMED",
     method: "REQUEST",
   },
-];
+  ] satisfies EventSeed[]
+).map((e) => ({
+  description: null,
+  attendees: [],
+  joinUrl: null,
+  rsvpStatus: null,
+  isLocal: false,
+  calendarId: null,
+  rrule: null,
+  ...e,
+}));
+
+// Connected CalDAV calendars (empty until connect_calendar is called in dev).
+const mockCalendars: Calendar[] = [];
+
+// Attach the CRDT walkthrough invite to Elena's "Calendar invite sent"
+// message so the thread invite card (RSVP) renders in mock mode.
+{
+  const invite = calendarEvents.find((e) => e.summary?.startsWith("CRDT walkthrough"));
+  const msg = threads
+    .flatMap((t) => t.messages)
+    .find((m) => m.from.email === elena.email && m.textBody.includes("Calendar invite sent"));
+  if (invite && msg) invite.messageId = msg.id;
+}
 
 // ---------------------------------------------------------------------------
 // Derived views + helpers
@@ -1298,7 +1345,7 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
       isDraft: true,
       isOutgoing: true,
       textBody: args.bodyText,
-      htmlBody: null,
+      htmlBody: args.bodyHtml ?? null,
       attachments: [],
       listUnsubscribe: null,
     };
@@ -1310,6 +1357,7 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
     msg.cc = args.cc;
     msg.subject = args.subject || msg.subject;
     msg.textBody = args.bodyText;
+    msg.htmlBody = args.bodyHtml ?? null;
     msg.date = Date.now();
     if (thread && thread.folder === "drafts") thread.subject = args.subject || thread.subject;
   }
@@ -1564,6 +1612,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "get_attachment":
       return delay(`/tmp/comail-mock/attachment-${a.attachmentId}`);
 
+    case "preview_attachment":
+      return delay(mockPreview(a.attachmentId as number));
+
     case "list_folders":
       return delay(folders.filter((f) => (a.accountId == null ? true : f.accountId === a.accountId)));
 
@@ -1770,6 +1821,126 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(hits, 60);
     }
 
+    case "events_for_message": {
+      const messageId = a.messageId as number;
+      const hits = calendarEvents
+        .filter((ev) => ev.messageId === messageId)
+        .map((ev) => ({ ...ev }));
+      return delay(hits, 40);
+    }
+
+    case "create_event": {
+      const args = a.args as import("./types").CreateEventArgs;
+      const ev: CalendarEvent = {
+        id: id(),
+        accountId: args.accountId,
+        messageId: null,
+        summary: args.summary,
+        location: args.location ?? null,
+        organizer: accounts.find((acc) => acc.id === args.accountId)?.email ?? null,
+        description: args.description ?? null,
+        attendees: (args.attendees ?? []).map((at) => ({
+          email: at.email,
+          name: at.name ?? null,
+          partstat: "NEEDS-ACTION",
+        })),
+        joinUrl: args.joinUrl ?? null,
+        rsvpStatus: null,
+        isLocal: true,
+        calendarId: null,
+        rrule: null,
+        startsAt: args.startsAt,
+        endsAt: args.endsAt,
+        allDay: args.allDay ?? false,
+        status: "CONFIRMED",
+        method: "REQUEST",
+      };
+      calendarEvents.push(ev);
+      return delay({ ...ev }, 120);
+    }
+
+    case "rsvp_event": {
+      const { eventId, response } = a.args as { eventId: number; response: string };
+      const ev = calendarEvents.find((e) => e.id === eventId);
+      if (!ev) throw new Error("event not found");
+      ev.rsvpStatus =
+        response === "accepted" ? "ACCEPTED" : response === "tentative" ? "TENTATIVE" : "DECLINED";
+      return delay({ ...ev }, 120);
+    }
+
+    case "update_event": {
+      const args = a.args as import("./types").UpdateEventArgs;
+      const ev = calendarEvents.find((e) => e.id === args.eventId);
+      if (!ev) throw new Error("event not found");
+      if (!ev.isLocal) throw new Error("only events you organize can be edited");
+      ev.summary = args.summary;
+      ev.description = args.description ?? null;
+      ev.location = args.location ?? null;
+      ev.joinUrl = args.joinUrl ?? null;
+      ev.startsAt = args.startsAt;
+      ev.endsAt = args.endsAt;
+      ev.allDay = args.allDay ?? false;
+      ev.attendees = (args.attendees ?? []).map((at) => ({
+        email: at.email,
+        name: at.name ?? null,
+        partstat:
+          ev.attendees.find((old) => old.email.toLowerCase() === at.email.toLowerCase())
+            ?.partstat ?? "NEEDS-ACTION",
+      }));
+      return delay({ ...ev }, 120);
+    }
+
+    case "delete_event": {
+      const eventId = a.eventId as number;
+      const idx = calendarEvents.findIndex((e) => e.id === eventId);
+      if (idx === -1) throw new Error("event not found");
+      calendarEvents.splice(idx, 1);
+      return delay(undefined, 120);
+    }
+
+    case "connect_calendar": {
+      const args = a.args as { accountId: number; kind: string; url?: string };
+      const base = args.url ?? "https://calendar.mock/";
+      const cal: Calendar = {
+        id: id(),
+        accountId: args.accountId,
+        url: `${base.replace(/\/$/, "")}/personal/`,
+        displayName: args.kind === "google" ? "Google Calendar" : "Personal",
+        color: null,
+        readOnly: false,
+        enabled: true,
+        isDefault: true,
+        lastSyncedAt: Date.now(),
+      };
+      mockCalendars.push(cal);
+      return delay([...mockCalendars.filter((c) => c.accountId === args.accountId)], 400);
+    }
+
+    case "disconnect_calendar": {
+      const accountId = a.accountId as number;
+      for (let i = mockCalendars.length - 1; i >= 0; i--) {
+        if (mockCalendars[i].accountId === accountId) mockCalendars.splice(i, 1);
+      }
+      return delay(undefined, 100);
+    }
+
+    case "list_calendars": {
+      const accountId = a.accountId as number | null | undefined;
+      const hits = accountId == null
+        ? [...mockCalendars]
+        : mockCalendars.filter((c) => c.accountId === accountId);
+      return delay(hits, 40);
+    }
+
+    case "set_calendar_enabled": {
+      const cal = mockCalendars.find((c) => c.id === (a.calendarId as number));
+      if (cal) cal.enabled = a.enabled as boolean;
+      return delay(undefined, 60);
+    }
+
+    case "calendar_sync_now":
+      return delay(undefined, 150);
+
     case "ai_status":
       return delay<AiStatus>(
         { configured: true, model: settings.aiModel || "mock/gpt", baseUrl: settings.aiBaseUrl },
@@ -1784,6 +1955,39 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         ["anthropic/claude-sonnet", "mock/gpt", "openai/gpt-4o-mini", "openai/gpt-4o"],
         200,
       );
+
+    case "ai_command": {
+      // Tiny offline stand-in for the intent parser.
+      const q = String(a.query ?? "");
+      const none = {
+        kind: "none", summary: null, location: null, startsAt: null, endsAt: null,
+        allDay: null, to: null, subject: null, body: null, query: null, view: null,
+      };
+      const time = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(q);
+      if (/meeting|event|schedule|lunch|dinner|call with/i.test(q)) {
+        const d = new Date();
+        if (time) {
+          let h = parseInt(time[1], 10) % 12;
+          if (/pm/i.test(time[3])) h += 12;
+          d.setHours(h, time[2] ? parseInt(time[2], 10) : 0, 0, 0);
+          if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1);
+        } else {
+          d.setHours(d.getHours() + 1, 0, 0, 0);
+        }
+        const summary = q.replace(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i, "").trim() || "Meeting";
+        return delay({
+          ...none,
+          kind: "create_event",
+          summary,
+          startsAt: d.getTime(),
+          endsAt: d.getTime() + 60 * 60_000,
+        }, 500);
+      }
+      if (/^(email|write|mail)\b/i.test(q)) {
+        return delay({ ...none, kind: "compose", subject: q.replace(/^(email|write|mail)\s*/i, "") }, 500);
+      }
+      return delay({ ...none, kind: "search", query: q }, 500);
+    }
 
     case "ai_summarize": {
       const t = threads.find((x) => x.id === a.threadId);
@@ -1804,6 +2008,20 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         `${greeting}\n\nThanks for your note. As requested (${instruction.trim() || "no instruction"}), here's where I've landed: happy to proceed as discussed, and I'll follow up with details shortly.\n\nBest,\n${senderName}`,
         1200,
       );
+    }
+
+    case "ai_proofread": {
+      // Naive copy-edit so the flow is visible in dev: fix a few classic
+      // typos, double spaces, and lowercase standalone "i".
+      const body = (a.body as string) ?? "";
+      const fixed = body
+        .replace(/\bteh\b/g, "the")
+        .replace(/\brecieve\b/g, "receive")
+        .replace(/\bdont\b/g, "don't")
+        .replace(/\bim\b/gi, "I'm")
+        .replace(/\bi\b/g, "I")
+        .replace(/ {2,}/g, " ");
+      return delay(fixed, 900);
     }
 
     case "ai_ask": {
@@ -1859,4 +2077,69 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     default:
       throw new Error(`mockInvoke: unimplemented command "${cmd as string}"`);
   }
+}
+
+// Tiny embedded fixtures so the preview modal demos every payload kind in a
+// plain browser: a valid one-page PDF and a 320x200 gradient PNG.
+const MOCK_PDF_B64 =
+  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgMzk2XSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA3MiA+PgpzdHJlYW0KQlQgL0YxIDI4IFRmIDcyIDMwMCBUZCAoQ29tYWlsIFBERiBwcmV2aWV3KSBUaiAwIC00MCBUZCAocGFnZSBvbmUpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBuIAowMDAwMDAwMzYzIDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNDMzCiUlRU9G";
+const MOCK_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAACgElEQVR4nO3VQQ2AAAADsUHQhgiEoo8nGi5pXzOw3PHc77Ztx2YYRmucA7Ku/9FAjQJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJD2AeZcwR5nq+niwAAAABJRU5ErkJggg==";
+
+/** Kind-appropriate mock preview, keyed off the attachment's file extension. */
+function mockPreview(attachmentId: number): AttachmentPreview {
+  let meta: AttachmentMeta | undefined;
+  for (const t of threads) {
+    for (const m of t.messages) {
+      meta = m.attachments.find((x) => x.id === attachmentId);
+      if (meta) break;
+    }
+    if (meta) break;
+  }
+  const ext = meta?.filename?.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return { kind: "pdf", base64: MOCK_PDF_B64 };
+  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) {
+    return { kind: "image", dataUri: `data:image/png;base64,${MOCK_PNG_B64}` };
+  }
+  if (["csv", "tsv", "xlsx", "xls", "ods"].includes(ext)) {
+    return {
+      kind: "sheet",
+      sheets: [
+        {
+          name: "Summary",
+          rows: [
+            ["Region", "Q1", "Q2", "Q3"],
+            ["EMEA", "1,204", "1,380", "1,512"],
+            ["Americas", "2,010", "2,144", "2,391"],
+            ["APAC", "845", "930", "1,004"],
+          ],
+          truncated: false,
+        },
+        { name: "Raw", rows: [["id", "value"], ["1", "42"]], truncated: true },
+      ],
+    };
+  }
+  if (["md", "markdown", "html", "htm", "docx"].includes(ext)) {
+    return {
+      kind: "html",
+      html: "<h1>Mock document</h1><p>Rendered from a <em>sanitized</em> conversion.</p><table><tr><td>cell A</td><td>cell B</td></tr></table>",
+    };
+  }
+  if (["pptx", "ppsx"].includes(ext)) {
+    return {
+      kind: "slides",
+      slides: [
+        { lines: ["Quarterly review", "Mock deck"] },
+        { lines: ["Slide two", "One bullet", "Another bullet"] },
+      ],
+    };
+  }
+  if (["txt", "log", "json", "xml", "ics", "eml"].includes(ext) || meta?.mimeType?.startsWith("text/")) {
+    return {
+      kind: "text",
+      text: `Mock preview of ${meta?.filename ?? `attachment ${attachmentId}`}.\n\n${"reconnect: idle timeout, retrying\n".repeat(12)}`,
+      truncated: false,
+    };
+  }
+  return { kind: "unsupported", reason: "unsupported_type" };
 }

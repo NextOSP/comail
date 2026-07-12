@@ -52,13 +52,34 @@
     "baseUrlLabel": "URL de base",
     "baseUrlHint": "Point de terminaison compatible OpenAI.",
     "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
-    "modelLabel": "Modèle",
-    "modelsAvailable": "{{n}} modèles disponibles depuis le point de terminaison.",
+    "modelLabel": "Modèle par défaut",
+    "modelsAvailable": "{{n}} modèles disponibles depuis le point de terminaison. Utilisé partout où un niveau ci-dessous est laissé vide.",
     "modelHintEmpty": "Saisissez un identifiant de modèle, ou choisissez-en un une fois la liste du point de terminaison chargée.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Fournisseur",
     "providerHint": "Les préréglages remplissent l’URL de base ; choisissez Point de terminaison personnalisé pour utiliser toute URL compatible OpenAI. Les serveurs locaux ne nécessitent aucune clé API.",
-    "customProvider": "Point de terminaison personnalisé"
+    "customProvider": "Point de terminaison personnalisé",
+    "tiersSection": "Niveaux de modèle",
+    "tiersIntro": "Associez chaque niveau à un modèle du fournisseur ci-dessus. Laissez un niveau vide pour utiliser le modèle par défaut.",
+    "tier": {
+      "instant": "Instantané",
+      "cheap": "Économique",
+      "intelligent": "Intelligent"
+    },
+    "tierFallback": "modèle par défaut",
+    "tierInstantHint": "Le plus rapide, le moins coûteux — tâches rapides et à fort volume.",
+    "tierCheapHint": "Coût équilibré pour les tâches courantes.",
+    "tierIntelligentHint": "Le plus capable — meilleure qualité, coût plus élevé. Nécessite l’appel d’outils pour Interroger.",
+    "routingSection": "Routage des fonctionnalités",
+    "routingIntro": "Choisissez le niveau utilisé par chaque fonctionnalité IA.",
+    "routeAsk": "Interroger (Q&R)",
+    "routeAskHint": "Recherche agentique dans votre boîte de réception — profite du niveau le plus intelligent.",
+    "routeDraft": "Rédiger et répondre",
+    "routeDraftHint": "Écriture et réécriture d’e-mails dans votre style.",
+    "routeSummarize": "Résumer",
+    "routeSummarizeHint": "Résumés de conversation — rapide et économique suffit généralement.",
+    "routeVoice": "Apprendre le style d’écriture",
+    "routeVoiceHint": "Tâche occasionnelle en arrière-plan qui distille votre style."
   },
   "oauth": {
     "description": "Se connecter avec Google / Microsoft nécessite votre propre enregistrement d’application (un client ID). Créez un client OAuth <b>Application de bureau</b> dans Google Cloud Console, ou une application <b>Mobile et bureau</b> dans Microsoft Entra avec l’URI de redirection <code>http://localhost</code>. Guide complet ci-dessous.",
@@ -179,7 +200,54 @@
     "saving": "Enregistrement…",
     "saveChanges": "Enregistrer les modifications",
     "create": "Créer la division",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "autoLabelTabs": "Étiquetage automatique des onglets",
+    "autoBadge": "Auto",
+    "relabel": "Relancer les libellés automatiques",
+    "relabeling": "Classification…",
+    "relabeled": "Libellés automatiques appliqués à {{count}} messages"
+  },
+  "labels": {
+    "title": "Libellés",
+    "yourLabels": "Vos libellés",
+    "new": "Nouveau libellé",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "reallyDelete": "Vraiment supprimer ?",
+    "empty": "Aucun libellé pour l’instant. Créez-en un pour étiqueter et filtrer votre courrier.",
+    "nameLabel": "Nom",
+    "namePlaceholder": "ex. Travail",
+    "colorLabel": "Couleur",
+    "saving": "Enregistrement…",
+    "saveChanges": "Enregistrer les modifications",
+    "create": "Créer le libellé",
+    "cancel": "Annuler",
+    "saveFailed": "Impossible d’enregistrer le libellé : {{detail}}",
+    "deleteFailed": "Impossible de supprimer le libellé : {{detail}}"
+  },
+  "notifications": {
+    "label": "Notifications de bureau",
+    "hint": "Notifier à l’arrivée d’un nouveau message quand la fenêtre n’est pas au premier plan."
+  },
+  "autoAdvance": {
+    "label": "Avance automatique",
+    "hint": "Après Terminé/Reporter dans une conversation, ouvrir la conversation suivante au lieu de revenir à la liste."
+  },
+  "signature": {
+    "section": "Signatures",
+    "placeholder": "Cordialement,\nVotre nom",
+    "add": "Ajouter une signature",
+    "newName": "Nouvelle signature",
+    "empty": "Aucune signature pour l'instant.",
+    "forNew": "Par défaut pour les nouveaux e-mails",
+    "forReply": "En réponse / transfert",
+    "none": "Aucune signature",
+    "delete": "Supprimer",
+    "deleteConfirm": "Supprimer ?"
+  },
+  "autoLabels": {
+    "label": "Libellés automatiques",
+    "hint": "Catégorise automatiquement le courrier entrant en Marketing, Actualités, Réseaux sociaux ou Prospection."
   },
   "about": {
     "section": "À propos",
@@ -190,5 +258,28 @@
     "upToDate": "Vous avez la dernière version.",
     "updateAvailable": "La version {{version}} est disponible.",
     "restartInstall": "Redémarrer et installer"
+  },
+  "calendar": {
+    "section": "Synchronisation du calendrier",
+    "hint": "Synchronisation bidirectionnelle via CalDAV. Google demande un nouveau consentement unique ; Fastmail/iCloud/serveurs auto-hébergés utilisent un mot de passe d’application.",
+    "connected": "Calendrier connecté — première synchronisation en cours",
+    "disconnected": "Calendrier déconnecté — les événements restent sur cet appareil",
+    "syncStarted": "Synchronisation du calendrier lancée",
+    "syncNow": "Synchroniser",
+    "disconnect": "Déconnecter",
+    "connectGoogle": "Connecter Google Agenda",
+    "connectCaldav": "Connecter CalDAV…",
+    "connect": "Connecter",
+    "urlPlaceholder": "URL du serveur, p. ex. https://caldav.fastmail.com",
+    "username": "Identifiant",
+    "appPassword": "Mot de passe d’application",
+    "default": "Par défaut"
+  },
+  "meetingReminder": {
+    "label": "Rappels de réunion",
+    "hint": "Notification avant le début de l’événement ; cliquez pour rejoindre l’appel.",
+    "off": "Désactivé",
+    "minutes_one": "{{count}} minute avant",
+    "minutes_other": "{{count}} minutes avant"
   }
 }

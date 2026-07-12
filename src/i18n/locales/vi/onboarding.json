@@ -1,4 +1,12 @@
 {
+  "intro": {
+    "skipHint": "Nhấn phím bất kỳ để bỏ qua",
+    "lines": [
+      "Chào mừng.",
+      "Email, nhanh như suy nghĩ.",
+      "Cùng thiết lập nào."
+    ]
+  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",

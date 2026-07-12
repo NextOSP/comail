@@ -1,10 +1,14 @@
 // Dark-mode adaptation for HTML email. Senders style for white backgrounds;
-// on our dark theme their near-black/gray text becomes unreadable. We lighten
-// dark text colors, but only in regions that do NOT have an explicit light
-// background of their own (a white "card" inside the email keeps its design).
+// on our dark theme their white surfaces and near-black text become jarring or
+// unreadable. We blend the email into the dark theme (Dark Reader style):
+// light backgrounds are darkened and dark text is lightened, so cards, boxes
+// and copy all sit naturally on the app's dark canvas.
 //
-// The HTML is parsed with DOMParser, which never executes scripts, and only
-// color values are rewritten before re-serialization.
+// This runs against the *live* iframe document (after load), not a detached
+// parse, so getComputedStyle resolves backgrounds and colors defined in
+// <style> blocks / CSS classes — not just inline style="" / bgcolor="" — which
+// is exactly where senders hide the white card that used to break readability.
+// No scripts run in the sandboxed iframe; we only rewrite color values.
 
 let ctx: CanvasRenderingContext2D | null | undefined;
 
@@ -33,71 +37,94 @@ function luminance([r, g, b]: [number, number, number, number]): number {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 }
 
-/** Lift a too-dark color into the readable range, keeping its hue. */
-function lighten([r, g, b]: [number, number, number, number]): string {
-  const max = Math.max(r, g, b) / 255;
-  const min = Math.min(r, g, b) / 255;
+/** Convert [r,g,b] (0-255) to [h (deg), s (0-1), l (0-1)]. */
+function toHsl([r, g, b]: [number, number, number, number]): [number, number, number] {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
   const l = (max + min) / 2;
   const d = max - min;
   let h = 0;
   let s = 0;
   if (d > 0) {
     s = d / (1 - Math.abs(2 * l - 1));
-    const rn = r / 255, gn = g / 255, bn = b / 255;
     if (max === rn) h = ((gn - bn) / d) % 6;
     else if (max === gn) h = (bn - rn) / d + 2;
     else h = (rn - gn) / d + 4;
     h = (h * 60 + 360) % 360;
   }
+  return [h, s, l];
+}
+
+/** Lift a too-dark text color into the readable range, keeping its hue. */
+function lightenText(color: [number, number, number, number]): string {
+  const [h, s, l] = toHsl(color);
   // Grays go light gray; colored text (links, brand colors) goes pastel.
   const newL = s > 0.25 ? 0.72 : Math.max(0.78, 1 - l * 0.5);
   const newS = Math.min(s, 0.85);
   return `hsl(${Math.round(h)} ${Math.round(newS * 100)}% ${Math.round(newL * 100)}%)`;
 }
 
-function ownBackground(el: HTMLElement): [number, number, number, number] | null {
-  const fromStyle = el.style?.backgroundColor;
-  if (fromStyle) {
-    const c = parseColor(fromStyle);
-    if (c) return c;
-  }
-  const attr = el.getAttribute("bgcolor");
-  if (attr) {
-    const c = parseColor(attr);
-    if (c) return c;
-  }
-  return null;
+/** Sink a light background down to a dark surface, preserving hue and the
+ *  relative order of shades (whiter originals stay a touch lighter) so nested
+ *  cards keep their layering instead of flattening into one flat block. */
+function darkenBackground(color: [number, number, number, number]): string {
+  const [h, s, l] = toHsl(color);
+  // l is in [0.5, 1] here (only light backgrounds reach this). Map to a narrow
+  // dark band ~[0.11, 0.16]; keep only a hint of the original saturation.
+  const newL = 0.11 + (l - 0.5) * 0.1;
+  const newS = Math.min(s, 0.2);
+  return `hsl(${Math.round(h)} ${Math.round(newS * 100)}% ${Math.round(newL * 100)}%)`;
 }
 
-function walk(el: HTMLElement, onLightBg: boolean) {
-  let light = onLightBg;
-  const bg = ownBackground(el);
-  if (bg && bg[3] > 0.4) light = luminance(bg) > 0.5;
+/** True if the element directly contains a non-empty text node. */
+function hasDirectText(el: HTMLElement): boolean {
+  for (const node of el.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.trim()) {
+      return true;
+    }
+  }
+  return false;
+}
 
-  if (!light) {
-    const fontAttr = el.tagName === "FONT" ? el.getAttribute("color") : null;
-    const cur = el.style?.color || fontAttr;
-    if (cur) {
-      const c = parseColor(cur);
-      if (c && luminance(c) < 0.55) {
-        el.style.color = lighten(c);
-        if (fontAttr) el.removeAttribute("color");
+function walk(el: HTMLElement, getStyle: (el: Element) => CSSStyleDeclaration) {
+  // Skip elements the sender explicitly renders as media/graphics.
+  const tag = el.tagName;
+  if (tag !== "IMG" && tag !== "SVG" && tag !== "CANVAS" && tag !== "VIDEO") {
+    const cs = getStyle(el);
+
+    // Darken the element's own opaque light surface. Computed backgroundColor
+    // is not inherited, so this reflects a background the element truly paints
+    // (from inline style, bgcolor, or a <style>/class rule) — the case the old
+    // detached-DOM detector missed.
+    const bg = parseColor(cs.backgroundColor);
+    if (bg && bg[3] >= 0.5 && luminance(bg) > 0.5) {
+      el.style.backgroundColor = darkenBackground(bg);
+    }
+
+    // Lighten dark text, but only on elements that actually hold text so we
+    // don't flatten inherited colors across every structural wrapper.
+    if (hasDirectText(el)) {
+      const col = parseColor(cs.color);
+      if (col && luminance(col) < 0.5) {
+        el.style.color = lightenText(col);
       }
     }
   }
 
   for (const child of el.children) {
-    walk(child as HTMLElement, light);
+    walk(child as HTMLElement, getStyle);
   }
 }
 
-/** Rewrite inline colors so text stays readable on the app's dark background. */
-export function adaptHtmlForDarkMode(html: string): string {
+/** Blend a loaded email document into the app's dark theme in place. `root` is
+ *  the live iframe body; its owner window supplies the resolved styles. */
+export function adaptDocumentForDarkMode(root: HTMLElement): void {
   try {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    walk(doc.body as HTMLElement, false);
-    return doc.body.innerHTML;
+    const win = root.ownerDocument.defaultView;
+    if (!win) return;
+    walk(root, (el) => win.getComputedStyle(el));
   } catch {
-    return html;
+    // Best-effort: a failed adaptation leaves the email in its original colors.
   }
 }

@@ -13,5 +13,6 @@
   "other": "Algo salió mal",
   "unknown": "Algo salió mal",
   "oauthFailed": "Error al iniciar sesión con OAuth",
-  "connectionFailed": "Error de conexión"
+  "connectionFailed": "Error de conexión",
+  "caldav": "Error del servidor de calendario"
 }

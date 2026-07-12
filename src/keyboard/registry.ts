@@ -11,6 +11,9 @@ export interface Command {
   titleKey: string;
   /** interpolation values for titleKey (e.g. the account number) */
   titleParams?: Record<string, unknown>;
+  /** dynamic display title (wins over titleKey); re-evaluated per render,
+   *  for commands whose target only exists at runtime (e.g. "Go to <label>") */
+  title?: () => string;
   aliases: string[];
   /** display string, e.g. "E", "⌘K", "G then I" (auto-derived if omitted) */
   shortcut?: string;

@@ -17,8 +17,11 @@
     "moveToTrash": "移动到垃圾箱",
     "markAsSpam": "标记为垃圾邮件",
     "selectThread": "选择会话",
-    "selectAllFromHere": "选择从此处起的全部",
+    "selectAll": "全选",
+    "extendSelectionDown": "向下扩展选择",
+    "extendSelectionUp": "向上扩展选择",
     "moveToFolder": "移动到文件夹…",
+    "label": "添加标签…",
     "unsubscribe": "退订",
     "undo": "撤销",
     "nextThread": "下一个会话",
@@ -52,6 +55,14 @@
     "aiSummarize": "AI：总结会话",
     "calendarToday": "日历：今天",
     "calendarWeek": "日历：本周",
+    "calendarMonth": "日历：月视图",
+    "calendarBackInbox": "日历：返回收件箱",
+    "createEvent": "日历：创建日程",
+    "calendarPrev": "日历：上一个",
+    "calendarNext": "日历：下一个",
+    "calendarJumpToday": "日历：回到今天",
+    "joinNextMeeting": "日历：加入下一个会议",
+    "shareAvailability": "分享空闲时间…",
     "switchAccountAll": "切换账户：所有账户",
     "switchAccount": "切换账户：账户 {{n}}",
     "palette": "命令面板",
@@ -64,13 +75,22 @@
     "editSplits": "编辑分组",
     "themeSnow": "主题：雪白",
     "themeCarbon": "主题：碳黑",
-    "themeSystem": "主题：跟随系统"
+    "themeSystem": "主题：跟随系统",
+    "splitBySender": "按发件人分组",
+    "goLabel": "前往标签：{{name}}",
+    "askAi": "向 AI 询问你的收件箱",
+    "relabelAuto": "重新运行自动标签",
+    "openAiSettings": "AI 设置",
+    "openAccountSettings": "账户设置",
+    "toggleSidebar": "显示邮箱菜单",
+    "aiProofread": "AI 校对"
   },
   "toast": {
     "syncing": "同步中…",
     "noUnsubscribeLink": "无退订链接",
     "unsubscribeWouldOpen": "退订：将打开 {{url}}",
-    "couldNotOpenLink": "无法打开链接：{{detail}}"
+    "couldNotOpenLink": "无法打开链接：{{detail}}",
+    "noMeetingToJoin": "没有带会议链接的近期会议"
   },
   "actionLabel": {
     "markedDone": "已标记完成",
@@ -92,5 +112,11 @@
     "undone": "已撤销",
     "nothingToUndo": "没有可撤销的操作"
   },
-  "actionFailed": "操作失败：{{detail}}"
+  "actionFailed": "操作失败：{{detail}}",
+  "aiIntent": {
+    "badge": "AI",
+    "row": "让 AI 执行：“{{query}}”",
+    "notUnderstood": "AI 无法将其转换为操作。请尝试换一种说法。",
+    "locationNote": "地点：{{location}}"
+  }
 }

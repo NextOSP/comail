@@ -6,10 +6,93 @@
   "hintToday": "0 for today",
   "escCloses": "Esc closes",
   "closeAria": "Close calendar",
+  "prevAria": "Previous",
+  "nextAria": "Next",
+  "createAria": "Create event",
   "noEventsToday": "No events today",
   "noEventsWeek": "No events this week",
   "allDay": "All day",
   "noTitle": "(no title)",
   "cancelled": "Cancelled",
-  "byOrganizer": "by {{organizer}}"
+  "byOrganizer": "by {{organizer}}",
+  "join": "Join",
+  "going": "Going?",
+  "viewDay": "View day",
+  "conflict": "Conflicts with another event",
+  "week": "Week",
+  "month": "Month",
+  "moreEvents_one": "+{{count}} more",
+  "moreEvents_other": "+{{count}} more",
+  "rsvp": {
+    "yes": "Yes",
+    "maybe": "Maybe",
+    "no": "No"
+  },
+  "rsvpSent": {
+    "accepted": "Accepted — reply sent to the organizer",
+    "tentative": "Marked tentative — reply sent to the organizer",
+    "declined": "Declined — reply sent to the organizer"
+  },
+  "create": {
+    "title": "Create event",
+    "saveHint": "⌘/Ctrl+Enter saves",
+    "quickPlaceholder": "Try: lunch with sam tomorrow 1pm 45m",
+    "quickApply": "Enter fills the form",
+    "summary": "Title",
+    "date": "Date",
+    "time": "Time",
+    "duration": "Duration",
+    "attendees": "Attendees",
+    "attendeesPlaceholder": "emails, comma-separated — each gets an invite",
+    "location": "Location",
+    "joinUrl": "Meeting link",
+    "description": "Description",
+    "save": "Save",
+    "saveInvite": "Save & send invites",
+    "quickAiPending": "Asking AI…",
+    "quickAiHint": "Enter · let AI parse this (any language)",
+    "quickAiMiss": "AI couldn't read an event out of that. Try adding a day or time."
+  },
+  "created": {
+    "plain": "Event added to your calendar",
+    "withInvites_one": "Event created — invite queued to {{count}} attendee",
+    "withInvites_other": "Event created — invites queued to {{count}} attendees"
+  },
+  "edit": {
+    "title": "Edit event",
+    "save": "Save changes",
+    "saveInvite": "Save & email updates"
+  },
+  "updated": {
+    "plain": "Event updated",
+    "withInvites_one": "Event updated — update emailed to {{count}} attendee",
+    "withInvites_other": "Event updated — updates emailed to {{count}} attendees"
+  },
+  "deleted": {
+    "plain": "Event deleted",
+    "withInvites_one": "Event cancelled — cancellation emailed to {{count}} attendee",
+    "withInvites_other": "Event cancelled — cancellations emailed to {{count}} attendees"
+  },
+  "detail": {
+    "organizerHint": "Organized by {{organizer}} — respond above",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Delete this event?",
+    "confirmCancel_one": "Cancel this event? A cancellation email goes to {{count}} attendee.",
+    "confirmCancel_other": "Cancel this event? A cancellation email goes to {{count}} attendees."
+  },
+  "availability": {
+    "title": "Share availability",
+    "days": "Days ahead",
+    "daysOption_one": "{{count}} day",
+    "daysOption_other": "{{count}} days",
+    "hint": "Free times from your calendar. Click a slot to leave it out, then insert.",
+    "none": "No free slots found in this window",
+    "insert_one": "Insert {{count}} time",
+    "insert_other": "Insert {{count}} times",
+    "leadIn": "Would any of these times work for you?"
+  },
+  "screenHint": "Esc or 1 back · click a slot to create",
+  "reminderBody": "Starts at {{time}}",
+  "syncConflict": "“{{summary}}” changed on the server — your edit was kept as a copy"
 }

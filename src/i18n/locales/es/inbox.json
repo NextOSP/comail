@@ -9,5 +9,18 @@
   "split": {
     "important": "Importante",
     "other": "Otros"
+  },
+  "splitPopover": {
+    "title": "Nueva división",
+    "fromSender": "Correo de {{email}}",
+    "fromDomain": "Todos @{{domain}}",
+    "tabName": "pestaña: {{name}}",
+    "created": "División \"{{name}}\" creada"
+  },
+  "pane": {
+    "empty": "Ninguna conversación seleccionada",
+    "recent": "Conversaciones recientes",
+    "noRecent": "No hay otras conversaciones",
+    "noSubject": "(sin asunto)"
   }
 }

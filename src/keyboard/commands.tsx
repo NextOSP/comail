@@ -7,6 +7,7 @@ import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { MOCK_MODE } from "../ipc/mock";
 import type { Account, MessageDetail, ThreadDetail } from "../ipc/types";
+import { addMonths, startOfMonth } from "../lib/calendarGrid";
 import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
 import type { CommandCtx } from "./context";
@@ -20,7 +21,9 @@ export type ComposerAction =
   | "snippet"
   | "instant_send"
   | "attach"
-  | "ai";
+  | "share_availability"
+  | "ai"
+  | "proofread";
 
 export function fireComposerAction(action: ComposerAction) {
   window.dispatchEvent(new CustomEvent<ComposerAction>("comail:composer-action", { detail: action }));
@@ -99,6 +102,76 @@ function runUnsubscribe(ctx: CommandCtx) {
   push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
 }
 
+// --------------------------------------------------------------- Calendar
+
+/** Seed the event-create modal from the focused/open thread: subject becomes
+ *  the title, everyone on the thread except our own accounts becomes an
+ *  attendee (Superhuman's create-event-from-email). */
+function eventPrefillFromThread(ctx: CommandCtx) {
+  const threadId = ctx.ui.openThreadId ?? ctx.targets[0];
+  if (threadId == null) return undefined;
+  const detail = queryClient.getQueryData<ThreadDetail>(["thread", threadId]);
+  if (!detail) return undefined;
+  const accounts = queryClient.getQueryData<Account[]>(["accounts"]) ?? [];
+  const own = new Set(accounts.map((a) => a.email.toLowerCase()));
+  const seen = new Set<string>();
+  const attendees = [];
+  for (const m of detail.messages) {
+    for (const a of [m.from, ...m.to, ...m.cc]) {
+      const e = a.email.toLowerCase();
+      if (own.has(e) || seen.has(e)) continue;
+      seen.add(e);
+      attendees.push(a);
+    }
+  }
+  const subject = detail.messages[0]?.subject ?? "";
+  return {
+    summary: subject.replace(/^((re|fwd?|aw|wg):\s*)+/i, "").trim(),
+    attendees,
+  };
+}
+
+function shiftCalendar(dir: 1 | -1) {
+  const s = useUi.getState();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const anchor = s.calendarFocusDay ?? today.getTime();
+  if (s.calendarScreen && s.calendarView === "month") {
+    s.set({ calendarFocusDay: addMonths(startOfMonth(anchor), dir) });
+    return;
+  }
+  const span = s.calendarScreen || s.calendarDrawer === "week" ? 7 : 1;
+  s.set({ calendarFocusDay: anchor + dir * span * 86_400_000 });
+}
+
+/** Any calendar surface (peek drawer or full-screen week) showing. */
+const calendarVisible = (ctx: CommandCtx) =>
+  ctx.ui.calendarDrawer != null || ctx.ui.calendarScreen;
+
+/** Open the join link of the next (or currently running) meeting. */
+async function joinNextMeeting() {
+  const push = useUi.getState().pushToast;
+  const now = Date.now();
+  try {
+    const events = await call("list_events", { startMs: now - 3_600_000, endMs: now + 86_400_000 });
+    const next = events
+      .filter((ev) => ev.joinUrl && ev.status?.toUpperCase() !== "CANCELLED")
+      .filter((ev) => (ev.endsAt ?? ev.startsAt + 1) > now)
+      .sort((a, b) => a.startsAt - b.startsAt)[0];
+    if (!next) {
+      push({ kind: "info", message: i18n.t("commands:toast.noMeetingToJoin") });
+      return;
+    }
+    if (MOCK_MODE) {
+      push({ kind: "info", message: i18n.t("commands:toast.unsubscribeWouldOpen", { url: next.joinUrl! }) });
+      return;
+    }
+    await openUrl(next.joinUrl!);
+  } catch (err) {
+    push({ kind: "error", message: errorMessage(err) });
+  }
+}
+
 // --------------------------------------------------------- Account filter
 
 /** Ctrl+1 = all accounts, Ctrl+2 = first account, Ctrl+3 = second, … */
@@ -150,6 +223,60 @@ async function summarizeThread(threadId: number) {
       message: errorMessage(err),
     });
   }
+}
+
+
+// ------------------------------------------------------------- Label go-to
+
+type CachedLabel = { id: number; name: string; position: number; isAuto?: boolean };
+
+function cachedLabels(): CachedLabel[] {
+  return (
+    (queryClient.getQueryData<CachedLabel[]>(["labels"]) ?? [])
+      .slice()
+      .sort((a, b) => a.position - b.position)
+  );
+}
+
+function gotoLabel(l: CachedLabel) {
+  const ui = useUi.getState();
+  if (l.isAuto) {
+    // auto categories are inbox tabs
+    ui.set({
+      view: "inbox",
+      splitId: null,
+      labelFilter: l.id,
+      searchOpen: false,
+      searchQuery: "",
+      openThreadId: null,
+      focusedMessageId: null,
+      selection: [],
+      selectedIndex: 0,
+      selectedThreadId: null,
+    });
+  } else {
+    ui.selectLabel(l.id);
+  }
+}
+
+/** "Go to <label name>" — one palette slot per cached label. */
+function labelSlotCommand(i: number): Command {
+  return {
+    id: `go-label-${i}`,
+    titleKey: "commands:title.goLabel",
+    title: () => {
+      const l = cachedLabels()[i];
+      return i18n.t("commands:title.goLabel", { name: l ? l.name : "" });
+    },
+    aliases: ["label", "go to label", "filter by label"],
+    keys: [],
+    section: "Go to",
+    when: (ctx) => !ctx.composerOpen && !ctx.panelOpen && cachedLabels().length > i,
+    run: () => {
+      const l = cachedLabels()[i];
+      if (l) gotoLabel(l);
+    },
+  };
 }
 
 export const ALL_COMMANDS: Command[] = [
@@ -233,9 +360,9 @@ export const ALL_COMMANDS: Command[] = [
     },
   },
   {
-    id: "select-all-below",
-    titleKey: "commands:title.selectAllFromHere",
-    aliases: ["select all", "select down", "select everything"],
+    id: "select-all",
+    titleKey: "commands:title.selectAll",
+    aliases: ["select all", "select everything"],
     keys: ["mod+a"],
     section: "Triage",
     when: (ctx) =>
@@ -245,11 +372,29 @@ export const ALL_COMMANDS: Command[] = [
       !editableFocused(),
     run: () => {
       const s = useUi.getState();
+      // Every visible thread. If they're already all selected, toggle off.
       const order = s.visibleThreadIds;
-      const anchor = s.selectedThreadId != null ? order.indexOf(s.selectedThreadId) : s.selectedIndex;
-      const below = order.slice(Math.max(0, anchor));
-      s.set({ selection: [...new Set([...s.selection, ...below])] });
+      const allSelected = order.length > 0 && order.every((id) => s.selection.includes(id));
+      s.setSelection(allSelected ? [] : order);
     },
+  },
+  {
+    id: "extend-selection-down",
+    titleKey: "commands:title.extendSelectionDown",
+    aliases: ["select down", "extend selection down"],
+    keys: ["shift+arrowdown"],
+    section: "Triage",
+    when: (ctx) => noOverlay(ctx) && !ctx.inConversation && ctx.ui.visibleThreadIds.length > 0,
+    run: () => useUi.getState().extendSelection(1),
+  },
+  {
+    id: "extend-selection-up",
+    titleKey: "commands:title.extendSelectionUp",
+    aliases: ["select up", "extend selection up"],
+    keys: ["shift+arrowup"],
+    section: "Triage",
+    when: (ctx) => noOverlay(ctx) && !ctx.inConversation && ctx.ui.visibleThreadIds.length > 0,
+    run: () => useUi.getState().extendSelection(-1),
   },
   {
     id: "move-to-folder",
@@ -461,6 +606,8 @@ export const ALL_COMMANDS: Command[] = [
     when: noOverlay,
     run: (ctx) => ctx.goto("all"),
   },
+  // Go to a label: one slot per cached label so titles stay live.
+  ...Array.from({ length: 9 }, (_, i) => labelSlotCommand(i)),
 
   // -------------------------------------------------------------- Compose
   {
@@ -566,6 +713,15 @@ export const ALL_COMMANDS: Command[] = [
     run: () => fireComposerAction("ai"),
   },
   {
+    id: "ai-proofread",
+    titleKey: "commands:title.aiProofread",
+    aliases: ["proofread", "fix grammar", "copy edit", "check spelling"],
+    keys: ["mod+shift+p"],
+    section: "AI",
+    when: (ctx) => ctx.composerOpen,
+    run: () => fireComposerAction("proofread"),
+  },
+  {
     id: "ai-summarize",
     titleKey: "commands:title.aiSummarize",
     aliases: ["summary", "tldr", "summarize"],
@@ -578,6 +734,35 @@ export const ALL_COMMANDS: Command[] = [
     },
   },
 
+
+  {
+    id: "ask-ai",
+    titleKey: "commands:title.askAi",
+    aliases: ["ask", "ask inbox", "ask my email", "question", "rag"],
+    keys: [],
+    section: "AI",
+    when: (ctx) => !ctx.composerOpen && !ctx.panelOpen,
+    run: () => useUi.getState().set({ searchOpen: true, searchModeRequest: "ask", openThreadId: null }),
+  },
+  {
+    id: "relabel-auto",
+    titleKey: "commands:title.relabelAuto",
+    aliases: ["auto labels", "recategorize", "reclassify mail"],
+    keys: [],
+    section: "AI",
+    when: (ctx) => !ctx.composerOpen && !ctx.panelOpen,
+    run: () => {
+      const push = useUi.getState().pushToast;
+      void call("relabel_auto", {})
+        .then((n) => {
+          push({ kind: "info", message: i18n.t("settings:splits.relabeled", { count: n }) });
+          void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+        })
+        .catch((err: unknown) => push({ kind: "error", message: errorMessage(err) }));
+    },
+  },
+
   // ------------------------------------------------------------- Calendar
   {
     id: "calendar-today",
@@ -586,16 +771,99 @@ export const ALL_COMMANDS: Command[] = [
     keys: ["0"],
     section: "Calendar",
     when: noPanel,
-    run: () => useUi.getState().set({ calendarDrawer: "day" }),
+    run: () => useUi.getState().set({ calendarDrawer: "day", calendarFocusDay: null }),
   },
   {
     id: "calendar-week",
     titleKey: "commands:title.calendarWeek",
-    aliases: ["week", "next 7 days", "upcoming"],
-    keys: ["2"],
+    aliases: ["week", "next 7 days", "upcoming", "open calendar"],
+    keys: ["2", "m"],
+    section: "Calendar",
+    // On the calendar screen itself `m` belongs to the month toggle below.
+    when: (ctx) => noPanel(ctx) && !ctx.ui.calendarScreen,
+    run: () =>
+      useUi
+        .getState()
+        .set({ calendarScreen: true, calendarDrawer: null, calendarFocusDay: null }),
+  },
+  {
+    id: "calendar-month-toggle",
+    titleKey: "commands:title.calendarMonth",
+    aliases: ["month", "month view", "toggle month", "week view"],
+    keys: ["m"],
+    section: "Calendar",
+    when: (ctx) => noPanel(ctx) && ctx.ui.calendarScreen,
+    run: () => {
+      const s = useUi.getState();
+      s.set({ calendarView: s.calendarView === "month" ? "week" : "month" });
+    },
+  },
+  {
+    id: "calendar-back-inbox",
+    titleKey: "commands:title.calendarBackInbox",
+    aliases: ["back to inbox"],
+    keys: ["1"],
+    section: "Calendar",
+    hiddenInPalette: true,
+    when: (ctx) => noPanel(ctx) && ctx.ui.calendarScreen,
+    run: () => useUi.getState().set({ calendarScreen: false, calendarFocusDay: null }),
+  },
+  {
+    id: "create-event",
+    titleKey: "commands:title.createEvent",
+    aliases: ["new event", "meeting", "schedule", "invite"],
+    keys: ["b"],
     section: "Calendar",
     when: noPanel,
-    run: () => useUi.getState().set({ calendarDrawer: "week" }),
+    run: (ctx) => useUi.getState().set({ eventCreate: { prefill: eventPrefillFromThread(ctx) } }),
+  },
+  {
+    id: "calendar-prev",
+    titleKey: "commands:title.calendarPrev",
+    aliases: ["previous day", "previous week"],
+    keys: ["-"],
+    section: "Calendar",
+    hiddenInPalette: true,
+    when: (ctx) => noPanel(ctx) && calendarVisible(ctx),
+    run: () => shiftCalendar(-1),
+  },
+  {
+    id: "calendar-next",
+    titleKey: "commands:title.calendarNext",
+    aliases: ["next day", "next week"],
+    keys: ["="],
+    section: "Calendar",
+    hiddenInPalette: true,
+    when: (ctx) => noPanel(ctx) && calendarVisible(ctx),
+    run: () => shiftCalendar(1),
+  },
+  {
+    id: "calendar-jump-today",
+    titleKey: "commands:title.calendarJumpToday",
+    aliases: ["back to today"],
+    keys: ["t"],
+    section: "Calendar",
+    hiddenInPalette: true,
+    when: (ctx) => noPanel(ctx) && calendarVisible(ctx),
+    run: () => useUi.getState().set({ calendarFocusDay: null }),
+  },
+  {
+    id: "join-next-meeting",
+    titleKey: "commands:title.joinNextMeeting",
+    aliases: ["join", "zoom", "meet", "video call"],
+    keys: [],
+    section: "Calendar",
+    when: noPanel,
+    run: () => void joinNextMeeting(),
+  },
+  {
+    id: "share-availability",
+    titleKey: "commands:title.shareAvailability",
+    aliases: ["insert free times", "availability", "find time"],
+    keys: ["mod+shift+s"],
+    section: "Calendar",
+    when: (ctx) => ctx.composerOpen,
+    run: () => fireComposerAction("share_availability"),
   },
 
   // ------------------------------------------------- Account filter (Ctrl+N)
@@ -618,7 +886,12 @@ export const ALL_COMMANDS: Command[] = [
     keys: ["/"],
     section: "Meta",
     when: (ctx) => !ctx.composerOpen && !ctx.paletteOpen && !ctx.panelOpen,
-    run: () => useUi.getState().set({ searchOpen: true, openThreadId: null }),
+    run: () =>
+      useUi.getState().set({
+        calendarScreen: false,
+        searchOpen: true,
+        openThreadId: null,
+      }),
   },
   {
     id: "help",
@@ -651,6 +924,33 @@ export const ALL_COMMANDS: Command[] = [
     section: "Meta",
     when: (ctx) => !ctx.panelOpen,
     run: () => useUi.getState().set({ panel: "settings" }),
+  },
+  {
+    id: "open-ai-settings",
+    titleKey: "commands:title.openAiSettings",
+    aliases: ["ai settings", "api key", "model", "openrouter", "provider"],
+    keys: [],
+    section: "Meta",
+    when: (ctx) => !ctx.panelOpen,
+    run: () => useUi.getState().set({ panel: "settings", settingsTab: "ai" }),
+  },
+  {
+    id: "open-account-settings",
+    titleKey: "commands:title.openAccountSettings",
+    aliases: ["accounts", "add account", "oauth", "sign in", "signature"],
+    keys: [],
+    section: "Meta",
+    when: (ctx) => !ctx.panelOpen,
+    run: () => useUi.getState().set({ panel: "settings", settingsTab: "accounts" }),
+  },
+  {
+    id: "toggle-sidebar",
+    titleKey: "commands:title.toggleSidebar",
+    aliases: ["menu", "mailboxes", "folders", "drawer", "hamburger"],
+    keys: [],
+    section: "Meta",
+    when: (ctx) => !ctx.composerOpen && !ctx.panelOpen,
+    run: () => useUi.getState().set({ sidebarOpen: !useUi.getState().sidebarOpen }),
   },
   {
     id: "manage-snippets",

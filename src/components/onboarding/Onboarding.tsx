@@ -44,7 +44,9 @@ const PRESETS: Record<string, Preset> = {
   },
 };
 
-export function Onboarding({ onClose }: { onClose?: () => void } = {}) {
+export function Onboarding(
+  { onClose, starfield }: { onClose?: () => void; starfield?: boolean } = {},
+) {
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
   // Modal mode (opened from Settings) jumps straight to the IMAP form.
@@ -134,7 +136,7 @@ export function Onboarding({ onClose }: { onClose?: () => void } = {}) {
       data-tauri-drag-region
       onMouseDown={onClose}
     >
-      {!onClose && <div className="co-aurora" aria-hidden />}
+      {!onClose && !starfield && <div className="co-aurora" aria-hidden />}
       {!onClose && (
         <button
           className="absolute top-3 right-4 z-20 rounded-md p-2 text-ink-faint hover:bg-bg2 hover:text-ink"

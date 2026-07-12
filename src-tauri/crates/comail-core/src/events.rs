@@ -53,6 +53,20 @@ pub enum CoreEvent {
     AskDone {
         request_id: String,
     },
+    /// Calendar data changed (CalDAV pull or local mutation synced).
+    CalendarUpdated {
+        account_id: i64,
+    },
+    /// A meeting starts within the reminder window.
+    EventReminder {
+        event: crate::models::CalendarEvent,
+        occurrence_start: i64,
+    },
+    /// A local edit lost against the server (kept as a conflict copy).
+    CalendarConflict {
+        event_id: i64,
+        summary: Option<String>,
+    },
 }
 
 #[derive(Clone)]

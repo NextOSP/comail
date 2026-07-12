@@ -5,7 +5,8 @@ import i18n, { setLanguage, SUPPORTED_LANGUAGES, SYSTEM_LANGUAGE } from "../../i
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { appVersion, checkForUpdate, installUpdate } from "../../ipc/updater";
-import type { Provider, Settings, SyncState } from "../../ipc/types";
+import type { AiTier, Provider, Settings, Signature, SyncState } from "../../ipc/types";
+import { RichBody } from "../compose/RichBody";
 import { queryClient } from "../../queries/client";
 import {
   useAccounts,
@@ -17,6 +18,7 @@ import {
 } from "../../queries/hooks";
 import { commandScore } from "../../keyboard/commandScore";
 import { useUi } from "../../stores/ui";
+import { CalendarSettings } from "./CalendarSettings";
 import { LabelsSection } from "./LabelsPanel";
 import { SnippetsSection } from "./SnippetsPanel";
 import { SplitInboxSection } from "./SplitsPanel";
@@ -51,6 +53,13 @@ const DEFAULT_SETTINGS: Settings = {
   loadRemoteImages: false,
   aiBaseUrl: "",
   aiModel: "",
+  aiModelInstant: "",
+  aiModelCheap: "",
+  aiModelIntelligent: "",
+  aiTierAsk: "intelligent",
+  aiTierDraft: "intelligent",
+  aiTierSummarize: "instant",
+  aiTierVoice: "cheap",
   googleClientId: "",
   googleClientSecret: "",
   msClientId: "",
@@ -60,10 +69,13 @@ const DEFAULT_SETTINGS: Settings = {
   voiceDrafting: false,
   voiceProfile: "",
   voiceLearnedAt: 0,
+  meetingNotifyLeadMinutes: 10,
   notificationsEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
   signatures: {},
+  signatureList: [],
+  signatureDefaults: {},
 };
 
 /** Optimistic settings write: cache first, backend follows, rollback on error. */
@@ -277,6 +289,25 @@ export function SettingsPanel() {
                 onChange={(autoAdvance) => void updateSettings({ autoAdvance })}
               />
             </SettingRow>
+            <SettingRow
+              label={t("settings:meetingReminder.label")}
+              hint={t("settings:meetingReminder.hint")}
+            >
+              <select
+                className="rounded-md border border-hairline bg-bg0 px-2 py-1 text-[12.5px] text-ink"
+                value={s.meetingNotifyLeadMinutes}
+                onChange={(e) =>
+                  void updateSettings({ meetingNotifyLeadMinutes: Number(e.target.value) })
+                }
+              >
+                <option value={0}>{t("settings:meetingReminder.off")}</option>
+                {[5, 10, 15, 30].map((m) => (
+                  <option key={m} value={m}>
+                    {t("settings:meetingReminder.minutes", { count: m })}
+                  </option>
+                ))}
+              </select>
+            </SettingRow>
             <AboutSection />
           </section>
         )}
@@ -312,6 +343,7 @@ export function SettingsPanel() {
         {tab === "accounts" && (
           <>
             <AccountsSection />
+            <CalendarSettings />
             <SignaturesSection settings={s} />
             <OAuthSection settings={s} />
           </>
@@ -378,6 +410,74 @@ function AboutSection() {
         </div>
       </SettingRow>
     </section>
+  );
+}
+
+const AI_TIERS: AiTier[] = ["instant", "cheap", "intelligent"];
+
+/** A model-id field for one tier; commits on blur / Enter, shares the global
+ *  `ai-model-options` datalist. Empty means "fall back to the default model". */
+function TierModelField({
+  label,
+  hint,
+  value,
+  placeholder,
+  onCommit,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  placeholder: string;
+  onCommit: (v: string) => void;
+}) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  return (
+    <SettingRow label={label} hint={hint}>
+      <input
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={() => onCommit(v.trim())}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onCommit(v.trim());
+        }}
+        placeholder={placeholder}
+        spellCheck={false}
+        list="ai-model-options"
+        className={`${inputCls} !w-[280px]`}
+      />
+    </SettingRow>
+  );
+}
+
+/** Dropdown routing one AI scenario to a model tier. */
+function ScenarioRouteRow({
+  label,
+  hint,
+  value,
+  onChange,
+  tierLabel,
+}: {
+  label: string;
+  hint: string;
+  value: AiTier;
+  onChange: (v: AiTier) => void;
+  tierLabel: (t: AiTier) => string;
+}) {
+  return (
+    <SettingRow label={label} hint={hint}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as AiTier)}
+        className={`${inputCls} !w-[180px]`}
+      >
+        {AI_TIERS.map((tier) => (
+          <option key={tier} value={tier}>
+            {tierLabel(tier)}
+          </option>
+        ))}
+      </select>
+    </SettingRow>
   );
 }
 
@@ -534,6 +634,65 @@ function AiSection({ settings }: { settings: Settings }) {
           ))}
         </datalist>
       </SettingRow>
+
+      <SectionLabel>{t("settings:ai.tiersSection")}</SectionLabel>
+      <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
+        {t("settings:ai.tiersIntro")}
+      </p>
+      <TierModelField
+        label={t("settings:ai.tier.instant")}
+        hint={t("settings:ai.tierInstantHint")}
+        value={settings.aiModelInstant}
+        placeholder={t("settings:ai.tierFallback")}
+        onCommit={(v) => commitField({ aiModelInstant: v })}
+      />
+      <TierModelField
+        label={t("settings:ai.tier.cheap")}
+        hint={t("settings:ai.tierCheapHint")}
+        value={settings.aiModelCheap}
+        placeholder={t("settings:ai.tierFallback")}
+        onCommit={(v) => commitField({ aiModelCheap: v })}
+      />
+      <TierModelField
+        label={t("settings:ai.tier.intelligent")}
+        hint={t("settings:ai.tierIntelligentHint")}
+        value={settings.aiModelIntelligent}
+        placeholder={t("settings:ai.tierFallback")}
+        onCommit={(v) => commitField({ aiModelIntelligent: v })}
+      />
+
+      <SectionLabel>{t("settings:ai.routingSection")}</SectionLabel>
+      <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
+        {t("settings:ai.routingIntro")}
+      </p>
+      <ScenarioRouteRow
+        label={t("settings:ai.routeAsk")}
+        hint={t("settings:ai.routeAskHint")}
+        value={settings.aiTierAsk}
+        onChange={(v) => commitField({ aiTierAsk: v })}
+        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+      />
+      <ScenarioRouteRow
+        label={t("settings:ai.routeDraft")}
+        hint={t("settings:ai.routeDraftHint")}
+        value={settings.aiTierDraft}
+        onChange={(v) => commitField({ aiTierDraft: v })}
+        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+      />
+      <ScenarioRouteRow
+        label={t("settings:ai.routeSummarize")}
+        hint={t("settings:ai.routeSummarizeHint")}
+        value={settings.aiTierSummarize}
+        onChange={(v) => commitField({ aiTierSummarize: v })}
+        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+      />
+      <ScenarioRouteRow
+        label={t("settings:ai.routeVoice")}
+        hint={t("settings:ai.routeVoiceHint")}
+        value={settings.aiTierVoice}
+        onChange={(v) => commitField({ aiTierVoice: v })}
+        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+      />
     </section>
   );
 }
@@ -831,22 +990,30 @@ const SYNC_DOT: Record<SyncState, string> = {
   offline: "var(--bg4)",
 };
 
-/** Per-account signature, appended to new mail (stored in settings.signatures). */
+/** Rich signatures, many per account, with Gmail-style new/reply defaults. */
 function SignaturesSection({ settings }: { settings: Settings }) {
   const { t } = useTranslation();
   const { data: accounts } = useAccounts();
   if ((accounts ?? []).length === 0) return null;
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <SectionLabel>{t("settings:signature.section")}</SectionLabel>
       {(accounts ?? []).map((a) => (
-        <SignatureField key={a.id} accountId={a.id} email={a.email} settings={settings} />
+        <AccountSignatures key={a.id} accountId={a.id} email={a.email} settings={settings} />
       ))}
     </section>
   );
 }
 
-function SignatureField({
+/** Persist a mutation of the signature list + defaults as a whole-object write. */
+function writeSignatures(
+  list: Signature[],
+  defaults: Record<string, { newId?: string | null; replyId?: string | null }>,
+) {
+  void updateSettings({ signatureList: list, signatureDefaults: defaults });
+}
+
+function AccountSignatures({
   accountId,
   email,
   settings,
@@ -856,30 +1023,159 @@ function SignatureField({
   settings: Settings;
 }) {
   const { t } = useTranslation();
-  const saved = settings.signatures[String(accountId)] ?? "";
-  const [value, setValue] = useState(saved);
-  useEffect(() => setValue(saved), [saved]);
+  const key = String(accountId);
+  const sigs = settings.signatureList.filter((s) => s.accountId === accountId);
+  const defs = settings.signatureDefaults[key] ?? {};
 
-  const commit = () => {
-    if (value === saved) return;
-    const signatures = { ...settings.signatures };
-    if (value.trim()) signatures[String(accountId)] = value;
-    else delete signatures[String(accountId)];
-    void updateSettings({ signatures });
+  const addSignature = () => {
+    const sig: Signature = {
+      id: crypto.randomUUID(),
+      accountId,
+      name: t("settings:signature.newName"),
+      html: "",
+    };
+    writeSignatures([...settings.signatureList, sig], settings.signatureDefaults);
+  };
+
+  const deleteSignature = (id: string) => {
+    const list = settings.signatureList.filter((s) => s.id !== id);
+    // Drop the id from this account's defaults if it pointed at the removed sig.
+    const cur = settings.signatureDefaults[key] ?? {};
+    const next = {
+      ...settings.signatureDefaults,
+      [key]: {
+        newId: cur.newId === id ? null : cur.newId,
+        replyId: cur.replyId === id ? null : cur.replyId,
+      },
+    };
+    writeSignatures(list, next);
+  };
+
+  const setDefault = (field: "newId" | "replyId", id: string) => {
+    const cur = settings.signatureDefaults[key] ?? {};
+    writeSignatures(settings.signatureList, {
+      ...settings.signatureDefaults,
+      [key]: { ...cur, [field]: id || null },
+    });
   };
 
   return (
-    <SettingRow label={email} hint={t("settings:signature.hint")}>
-      <textarea
+    <div className="flex flex-col gap-3 rounded-xl border border-hairline bg-bg0/40 p-4">
+      <div className="text-[13px] font-medium text-ink">{email}</div>
+
+      {sigs.length === 0 ? (
+        <div className="text-[12.5px] text-ink-faint">{t("settings:signature.empty")}</div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {sigs.map((sig) => (
+            <SignatureEditor key={sig.id} sig={sig} settings={settings} onDelete={deleteSignature} />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button type="button" className={ghostBtnCls} onClick={addSignature}>
+          {t("settings:signature.add")}
+        </button>
+      </div>
+
+      {sigs.length > 0 && (
+        <div className="flex flex-col gap-2 pt-1">
+          <DefaultSelect
+            label={t("settings:signature.forNew")}
+            value={defs.newId ?? ""}
+            sigs={sigs}
+            onChange={(id) => setDefault("newId", id)}
+          />
+          <DefaultSelect
+            label={t("settings:signature.forReply")}
+            value={defs.replyId ?? ""}
+            sigs={sigs}
+            onChange={(id) => setDefault("replyId", id)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DefaultSelect({
+  label,
+  value,
+  sigs,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  sigs: Signature[];
+  onChange: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <SettingRow label={label}>
+      <select
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        placeholder={t("settings:signature.placeholder")}
-        rows={3}
-        spellCheck={false}
-        className={`${inputCls} !h-auto !w-[320px] resize-y py-1.5 leading-relaxed`}
-      />
+        onChange={(e) => onChange(e.target.value)}
+        className={`${inputCls} !w-[240px]`}
+      >
+        <option value="">{t("settings:signature.none")}</option>
+        {sigs.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
     </SettingRow>
+  );
+}
+
+function SignatureEditor({
+  sig,
+  settings,
+  onDelete,
+}: {
+  sig: Signature;
+  settings: Settings;
+  onDelete: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(sig.name);
+  const [html, setHtml] = useState(sig.html);
+  useEffect(() => setName(sig.name), [sig.name]);
+  useEffect(() => setHtml(sig.html), [sig.html]);
+
+  // Commit a field back to the shared list on blur (mirrors the old textarea).
+  const commit = (patch: Partial<Signature>) => {
+    const list = settings.signatureList.map((s) =>
+      s.id === sig.id ? { ...s, ...patch } : s,
+    );
+    writeSignatures(list, settings.signatureDefaults);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-hairline bg-bg1/50 p-3">
+      <div className="flex items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => name.trim() && name !== sig.name && commit({ name: name.trim() })}
+          placeholder={t("settings:signature.newName")}
+          className={`${inputCls} !h-8 flex-1`}
+        />
+        <ConfirmButton
+          label={t("settings:signature.delete")}
+          confirmLabel={t("settings:signature.deleteConfirm")}
+          onConfirm={() => onDelete(sig.id)}
+        />
+      </div>
+      <RichBody
+        value={html}
+        onChange={setHtml}
+        onBlur={() => html !== sig.html && commit({ html })}
+        placeholder={t("settings:signature.placeholder")}
+        minHeightClass="min-h-[80px]"
+      />
+    </div>
   );
 }
 

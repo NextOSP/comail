@@ -36,6 +36,7 @@ function ThreadRowImpl({
     <div
       className={`co-row flex h-full cursor-default items-center gap-3 pr-5 pl-4 ${leaving ? "co-row-leaving" : ""}`}
       data-selected={selected}
+      data-checked={checked}
       onClick={(e) => onRowClick(thread.id, e)}
       onMouseEnter={onHover ? () => onHover(thread.id) : undefined}
     >

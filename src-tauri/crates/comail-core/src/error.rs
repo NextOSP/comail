@@ -20,6 +20,8 @@ pub enum CoreError {
     Keyring(String),
     #[error("mime error: {0}")]
     Mime(String),
+    #[error("caldav error: {0}")]
+    CalDav(String),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("offline")]
@@ -43,6 +45,7 @@ impl CoreError {
             CoreError::NeedsReauth => "needs_reauth",
             CoreError::Keyring(_) => "keyring",
             CoreError::Mime(_) => "mime",
+            CoreError::CalDav(_) => "caldav",
             CoreError::NotFound(_) => "not_found",
             CoreError::Offline => "offline",
             CoreError::Other(_) => "other",

@@ -5,7 +5,7 @@ export function InboxZero({ viewTitle }: { viewTitle: string }) {
   const { t } = useTranslation();
   return (
     <div className="relative flex flex-1 items-center justify-center overflow-hidden">
-      <div className="co-aurora" aria-hidden />
+      <div className="co-halo" aria-hidden />
       <div className="co-fade-in relative z-10 flex flex-col items-center gap-2 text-center">
         <svg
           width="42"

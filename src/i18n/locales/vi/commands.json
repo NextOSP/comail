@@ -17,8 +17,11 @@
     "moveToTrash": "Chuyển vào thùng rác",
     "markAsSpam": "Đánh dấu là thư rác",
     "selectThread": "Chọn cuộc hội thoại",
-    "selectAllFromHere": "Chọn tất cả từ đây",
+    "selectAll": "Chọn tất cả",
+    "extendSelectionDown": "Mở rộng vùng chọn xuống dưới",
+    "extendSelectionUp": "Mở rộng vùng chọn lên trên",
     "moveToFolder": "Chuyển đến thư mục…",
+    "label": "Gắn nhãn…",
     "unsubscribe": "Hủy đăng ký",
     "undo": "Hoàn tác",
     "nextThread": "Cuộc hội thoại tiếp theo",
@@ -52,6 +55,14 @@
     "aiSummarize": "AI: Tóm tắt cuộc hội thoại",
     "calendarToday": "Lịch: Hôm nay",
     "calendarWeek": "Lịch: Tuần này",
+    "calendarMonth": "Lịch: Xem theo tháng",
+    "calendarBackInbox": "Lịch: Về hộp thư đến",
+    "createEvent": "Lịch: Tạo sự kiện",
+    "calendarPrev": "Lịch: Trước",
+    "calendarNext": "Lịch: Sau",
+    "calendarJumpToday": "Lịch: Về hôm nay",
+    "joinNextMeeting": "Lịch: Tham gia cuộc họp tiếp theo",
+    "shareAvailability": "Chia sẻ thời gian rảnh…",
     "switchAccountAll": "Chuyển tài khoản: Tất cả tài khoản",
     "switchAccount": "Chuyển tài khoản: tài khoản {{n}}",
     "palette": "Bảng lệnh",
@@ -64,13 +75,22 @@
     "editSplits": "Chỉnh sửa nhóm",
     "themeSnow": "Giao diện: Snow",
     "themeCarbon": "Giao diện: Carbon",
-    "themeSystem": "Giao diện: Hệ thống"
+    "themeSystem": "Giao diện: Hệ thống",
+    "splitBySender": "Phân nhóm theo người gửi",
+    "goLabel": "Đến nhãn: {{name}}",
+    "askAi": "Hỏi AI về hộp thư của bạn",
+    "relabelAuto": "Chạy lại gắn nhãn tự động",
+    "openAiSettings": "Cài đặt AI",
+    "openAccountSettings": "Cài đặt tài khoản",
+    "toggleSidebar": "Hiện menu hộp thư",
+    "aiProofread": "Soát lỗi bằng AI"
   },
   "toast": {
     "syncing": "Đang đồng bộ…",
     "noUnsubscribeLink": "Không có liên kết hủy đăng ký",
     "unsubscribeWouldOpen": "Hủy đăng ký: sẽ mở {{url}}",
-    "couldNotOpenLink": "Không thể mở liên kết: {{detail}}"
+    "couldNotOpenLink": "Không thể mở liên kết: {{detail}}",
+    "noMeetingToJoin": "Không có cuộc họp sắp tới nào có liên kết tham gia"
   },
   "actionLabel": {
     "markedDone": "Đã đánh dấu hoàn tất",
@@ -92,5 +112,11 @@
     "undone": "Đã hoàn tác",
     "nothingToUndo": "Không có gì để hoàn tác"
   },
-  "actionFailed": "Thao tác thất bại: {{detail}}"
+  "actionFailed": "Thao tác thất bại: {{detail}}",
+  "aiIntent": {
+    "badge": "AI",
+    "row": "Yêu cầu AI thực hiện: “{{query}}”",
+    "notUnderstood": "AI không thể chuyển điều đó thành một thao tác. Hãy thử diễn đạt lại.",
+    "locationNote": "Địa điểm: {{location}}"
+  }
 }

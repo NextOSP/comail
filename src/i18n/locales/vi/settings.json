@@ -52,13 +52,34 @@
     "baseUrlLabel": "URL cơ sở",
     "baseUrlHint": "Điểm cuối tương thích OpenAI.",
     "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
-    "modelLabel": "Mô hình",
-    "modelsAvailable": "Có {{n}} mô hình từ điểm cuối.",
+    "modelLabel": "Mô hình mặc định",
+    "modelsAvailable": "Có {{n}} mô hình từ điểm cuối. Được dùng ở bất kỳ đâu nếu bậc bên dưới để trống.",
     "modelHintEmpty": "Nhập id mô hình, hoặc chọn một khi danh sách điểm cuối tải xong.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Nhà cung cấp",
     "providerHint": "Cài đặt sẵn điền URL cơ sở; chọn Điểm cuối tùy chỉnh để dùng bất kỳ URL tương thích OpenAI nào. Máy chủ cục bộ không cần khóa API.",
-    "customProvider": "Điểm cuối tùy chỉnh"
+    "customProvider": "Điểm cuối tùy chỉnh",
+    "tiersSection": "Các bậc mô hình",
+    "tiersIntro": "Gán mỗi bậc cho một mô hình của nhà cung cấp ở trên. Để trống một bậc để dùng mô hình mặc định.",
+    "tier": {
+      "instant": "Tức thì",
+      "cheap": "Tiết kiệm",
+      "intelligent": "Thông minh"
+    },
+    "tierFallback": "mô hình mặc định",
+    "tierInstantHint": "Nhanh nhất, chi phí thấp nhất — tác vụ nhanh, khối lượng lớn.",
+    "tierCheapHint": "Chi phí cân bằng cho công việc thường ngày.",
+    "tierIntelligentHint": "Có năng lực nhất — chất lượng tốt nhất, chi phí cao hơn. Cần gọi công cụ cho Hỏi.",
+    "routingSection": "Định tuyến tính năng",
+    "routingIntro": "Chọn bậc mà mỗi tính năng AI sử dụng.",
+    "routeAsk": "Hỏi (Hỏi đáp)",
+    "routeAskHint": "Tìm kiếm theo tác vụ trong hộp thư của bạn — hưởng lợi từ bậc thông minh nhất.",
+    "routeDraft": "Soạn thảo & trả lời",
+    "routeDraftHint": "Viết và viết lại email theo giọng văn của bạn.",
+    "routeSummarize": "Tóm tắt",
+    "routeSummarizeHint": "Tóm tắt cuộc hội thoại — nhanh và rẻ thường là đủ.",
+    "routeVoice": "Học giọng văn",
+    "routeVoiceHint": "Tác vụ nền thỉnh thoảng chạy để chắt lọc phong cách của bạn."
   },
   "oauth": {
     "description": "Đăng nhập bằng Google / Microsoft cần đăng ký ứng dụng riêng của bạn (một client ID). Tạo một client OAuth <b>Ứng dụng máy tính</b> trong Google Cloud Console, hoặc một ứng dụng <b>Mobile and desktop</b> trong Microsoft Entra với URI chuyển hướng <code>http://localhost</code>. Hướng dẫn đầy đủ bên dưới.",
@@ -179,7 +200,54 @@
     "saving": "Đang lưu…",
     "saveChanges": "Lưu thay đổi",
     "create": "Tạo nhóm",
-    "cancel": "Hủy"
+    "cancel": "Hủy",
+    "autoLabelTabs": "Tự động gắn nhãn cho tab",
+    "autoBadge": "Tự động",
+    "relabel": "Chạy lại gắn nhãn tự động",
+    "relabeling": "Đang phân loại…",
+    "relabeled": "Đã áp dụng nhãn tự động cho {{count}} thư"
+  },
+  "labels": {
+    "title": "Nhãn",
+    "yourLabels": "Nhãn của bạn",
+    "new": "Nhãn mới",
+    "edit": "Sửa",
+    "delete": "Xóa",
+    "reallyDelete": "Thực sự xóa?",
+    "empty": "Chưa có nhãn nào. Tạo một nhãn để gắn thẻ và lọc thư của bạn.",
+    "nameLabel": "Tên",
+    "namePlaceholder": "vd. Công việc",
+    "colorLabel": "Màu",
+    "saving": "Đang lưu…",
+    "saveChanges": "Lưu thay đổi",
+    "create": "Tạo nhãn",
+    "cancel": "Hủy",
+    "saveFailed": "Không thể lưu nhãn: {{detail}}",
+    "deleteFailed": "Không thể xóa nhãn: {{detail}}"
+  },
+  "notifications": {
+    "label": "Thông báo trên máy tính",
+    "hint": "Thông báo khi có thư mới đến trong khi cửa sổ không được lấy nét."
+  },
+  "autoAdvance": {
+    "label": "Tự động chuyển tiếp",
+    "hint": "Sau khi Hoàn tất/Tạm ẩn một cuộc hội thoại, mở cuộc hội thoại tiếp theo thay vì quay về danh sách."
+  },
+  "signature": {
+    "section": "Chữ ký",
+    "placeholder": "Trân trọng,\nTên của bạn",
+    "add": "Thêm chữ ký",
+    "newName": "Chữ ký mới",
+    "empty": "Chưa có chữ ký nào.",
+    "forNew": "Mặc định cho thư mới",
+    "forReply": "Khi trả lời / chuyển tiếp",
+    "none": "Không có chữ ký",
+    "delete": "Xóa",
+    "deleteConfirm": "Xóa?"
+  },
+  "autoLabels": {
+    "label": "Nhãn tự động",
+    "hint": "Tự động phân loại thư đến thành Marketing, Tin tức, Mạng xã hội hoặc Chào hàng."
   },
   "about": {
     "section": "Giới thiệu",
@@ -190,5 +258,28 @@
     "upToDate": "Bạn đang dùng phiên bản mới nhất.",
     "updateAvailable": "Đã có phiên bản {{version}}.",
     "restartInstall": "Khởi động lại và cài đặt"
+  },
+  "calendar": {
+    "section": "Đồng bộ lịch",
+    "hint": "Đồng bộ hai chiều qua CalDAV. Google cần cấp quyền lại một lần; Fastmail/iCloud/máy chủ tự vận hành dùng mật khẩu ứng dụng.",
+    "connected": "Đã kết nối lịch — đang đồng bộ lần đầu",
+    "disconnected": "Đã ngắt kết nối lịch — sự kiện vẫn ở trên thiết bị này",
+    "syncStarted": "Đã bắt đầu đồng bộ lịch",
+    "syncNow": "Đồng bộ ngay",
+    "disconnect": "Ngắt kết nối",
+    "connectGoogle": "Kết nối Google Calendar",
+    "connectCaldav": "Kết nối CalDAV…",
+    "connect": "Kết nối",
+    "urlPlaceholder": "URL máy chủ, ví dụ https://caldav.fastmail.com",
+    "username": "Tên đăng nhập",
+    "appPassword": "Mật khẩu ứng dụng",
+    "default": "Mặc định"
+  },
+  "meetingReminder": {
+    "label": "Nhắc cuộc họp",
+    "hint": "Thông báo trên máy trước khi sự kiện bắt đầu; nhấp để tham gia cuộc gọi.",
+    "off": "Tắt",
+    "minutes_one": "{{count}} phút trước",
+    "minutes_other": "{{count}} phút trước"
   }
 }

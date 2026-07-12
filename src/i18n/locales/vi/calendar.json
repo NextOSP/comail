@@ -6,10 +6,93 @@
   "hintToday": "0 để xem hôm nay",
   "escCloses": "Esc để đóng",
   "closeAria": "Đóng lịch",
+  "prevAria": "Trước",
+  "nextAria": "Sau",
+  "createAria": "Tạo sự kiện",
   "noEventsToday": "Không có sự kiện hôm nay",
   "noEventsWeek": "Không có sự kiện tuần này",
   "allDay": "Cả ngày",
   "noTitle": "(không có tiêu đề)",
   "cancelled": "Đã hủy",
-  "byOrganizer": "bởi {{organizer}}"
+  "byOrganizer": "bởi {{organizer}}",
+  "join": "Tham gia",
+  "going": "Bạn có tham dự?",
+  "viewDay": "Xem ngày",
+  "conflict": "Trùng với một sự kiện khác",
+  "week": "Tuần",
+  "month": "Tháng",
+  "moreEvents_one": "+{{count}} sự kiện nữa",
+  "moreEvents_other": "+{{count}} sự kiện nữa",
+  "rsvp": {
+    "yes": "Có",
+    "maybe": "Có thể",
+    "no": "Không"
+  },
+  "rsvpSent": {
+    "accepted": "Đã chấp nhận — đã gửi phản hồi cho người tổ chức",
+    "tentative": "Đã đánh dấu tạm thời — đã gửi phản hồi cho người tổ chức",
+    "declined": "Đã từ chối — đã gửi phản hồi cho người tổ chức"
+  },
+  "create": {
+    "title": "Tạo sự kiện",
+    "saveHint": "⌘/Ctrl+Enter để lưu",
+    "quickPlaceholder": "Thử: an trua voi sam tomorrow 1pm 45m",
+    "quickApply": "Enter để điền vào biểu mẫu",
+    "summary": "Tiêu đề",
+    "date": "Ngày",
+    "time": "Giờ",
+    "duration": "Thời lượng",
+    "attendees": "Người tham dự",
+    "attendeesPlaceholder": "email cách nhau bằng dấu phẩy — mỗi người nhận một lời mời",
+    "location": "Địa điểm",
+    "joinUrl": "Liên kết cuộc họp",
+    "description": "Mô tả",
+    "save": "Lưu",
+    "saveInvite": "Lưu và gửi lời mời",
+    "quickAiPending": "Đang hỏi AI…",
+    "quickAiHint": "Enter · để AI phân tích (mọi ngôn ngữ)",
+    "quickAiMiss": "AI không thể tạo sự kiện từ nội dung đó. Hãy thử thêm ngày hoặc giờ."
+  },
+  "created": {
+    "plain": "Đã thêm sự kiện vào lịch của bạn",
+    "withInvites_one": "Đã tạo sự kiện — lời mời đang chờ gửi tới {{count}} người tham dự",
+    "withInvites_other": "Đã tạo sự kiện — lời mời đang chờ gửi tới {{count}} người tham dự"
+  },
+  "edit": {
+    "title": "Sửa sự kiện",
+    "save": "Lưu thay đổi",
+    "saveInvite": "Lưu và gửi email cập nhật"
+  },
+  "updated": {
+    "plain": "Đã cập nhật sự kiện",
+    "withInvites_one": "Đã cập nhật sự kiện — bản cập nhật đã gửi tới {{count}} người tham dự",
+    "withInvites_other": "Đã cập nhật sự kiện — bản cập nhật đã gửi tới {{count}} người tham dự"
+  },
+  "deleted": {
+    "plain": "Đã xóa sự kiện",
+    "withInvites_one": "Đã hủy sự kiện — email hủy đã gửi tới {{count}} người tham dự",
+    "withInvites_other": "Đã hủy sự kiện — email hủy đã gửi tới {{count}} người tham dự"
+  },
+  "detail": {
+    "organizerHint": "Do {{organizer}} tổ chức — phản hồi ở trên",
+    "edit": "Sửa",
+    "delete": "Xóa",
+    "confirmDelete": "Xóa sự kiện này?",
+    "confirmCancel_one": "Hủy sự kiện này? Email hủy sẽ được gửi tới {{count}} người tham dự.",
+    "confirmCancel_other": "Hủy sự kiện này? Email hủy sẽ được gửi tới {{count}} người tham dự."
+  },
+  "availability": {
+    "title": "Chia sẻ thời gian rảnh",
+    "days": "Số ngày tới",
+    "daysOption_one": "{{count}} ngày",
+    "daysOption_other": "{{count}} ngày",
+    "hint": "Khung giờ rảnh theo lịch của bạn. Nhấp vào một khung giờ để bỏ, rồi chèn.",
+    "none": "Không tìm thấy khung giờ rảnh trong khoảng này",
+    "insert_one": "Chèn {{count}} khung giờ",
+    "insert_other": "Chèn {{count}} khung giờ",
+    "leadIn": "Bạn thấy khung giờ nào phù hợp không?"
+  },
+  "screenHint": "Esc hoặc 1 để quay lại · nhấp vào ô trống để tạo",
+  "reminderBody": "Bắt đầu lúc {{time}}",
+  "syncConflict": "\"{{summary}}\" đã thay đổi trên máy chủ — chỉnh sửa của bạn được giữ lại thành bản sao"
 }

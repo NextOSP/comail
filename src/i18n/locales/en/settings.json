@@ -52,13 +52,34 @@
     "baseUrlLabel": "Base URL",
     "baseUrlHint": "OpenAI-compatible endpoint.",
     "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
-    "modelLabel": "Model",
-    "modelsAvailable": "{{n}} models available from the endpoint.",
+    "modelLabel": "Default model",
+    "modelsAvailable": "{{n}} models available from the endpoint. Used wherever a tier below is left blank.",
     "modelHintEmpty": "Type a model id, or pick one once the endpoint list loads.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Provider",
     "providerHint": "Presets fill the base URL; pick Custom endpoint to use any OpenAI-compatible URL. Local servers need no API key.",
-    "customProvider": "Custom endpoint"
+    "customProvider": "Custom endpoint",
+    "tiersSection": "Model tiers",
+    "tiersIntro": "Point each tier at a model on the provider above. Leave a tier blank to use the default model.",
+    "tier": {
+      "instant": "Instant",
+      "cheap": "Cheap",
+      "intelligent": "Intelligent"
+    },
+    "tierFallback": "default model",
+    "tierInstantHint": "Fastest, lowest cost — quick, high-volume tasks.",
+    "tierCheapHint": "Balanced cost for routine work.",
+    "tierIntelligentHint": "Most capable — best quality, higher cost. Needs tool-calling for Ask.",
+    "routingSection": "Feature routing",
+    "routingIntro": "Choose which tier each AI feature uses.",
+    "routeAsk": "Ask (Q&A)",
+    "routeAskHint": "Agentic search over your mailbox — benefits from the smartest tier.",
+    "routeDraft": "Draft & reply",
+    "routeDraftHint": "Writing and rewriting email in your voice.",
+    "routeSummarize": "Summarize",
+    "routeSummarizeHint": "Thread summaries — fast and cheap is usually enough.",
+    "routeVoice": "Learn writing voice",
+    "routeVoiceHint": "Occasional background task that distils your style."
   },
   "oauth": {
     "description": "Sign in with Google / Microsoft needs your own app registration (a client ID). Create a <b>Desktop app</b> OAuth client in Google Cloud Console, or a <b>Mobile and desktop</b> app in Microsoft Entra with redirect URI <code>http://localhost</code>. Full walkthrough below.",
@@ -214,8 +235,15 @@
   },
   "signature": {
     "section": "Signatures",
-    "hint": "Appended to new messages from this account.",
-    "placeholder": "Best,\nYour name"
+    "placeholder": "Best,\nYour name",
+    "add": "Add signature",
+    "newName": "New signature",
+    "empty": "No signatures yet.",
+    "forNew": "Default for new emails",
+    "forReply": "On reply / forward",
+    "none": "No signature",
+    "delete": "Delete",
+    "deleteConfirm": "Delete?"
   },
   "autoLabels": {
     "label": "Auto Labels",
@@ -230,5 +258,28 @@
     "upToDate": "You're on the latest version.",
     "updateAvailable": "Version {{version}} is available.",
     "restartInstall": "Restart & install"
+  },
+  "calendar": {
+    "section": "Calendar sync",
+    "hint": "Two-way sync over CalDAV. Google needs a one-time re-consent; Fastmail/iCloud/self-hosted servers use an app password.",
+    "connected": "Calendar connected — first sync running",
+    "disconnected": "Calendar disconnected — events stay on this device",
+    "syncStarted": "Calendar sync started",
+    "syncNow": "Sync now",
+    "disconnect": "Disconnect",
+    "connectGoogle": "Connect Google Calendar",
+    "connectCaldav": "Connect CalDAV…",
+    "connect": "Connect",
+    "urlPlaceholder": "Server URL, e.g. https://caldav.fastmail.com",
+    "username": "Username",
+    "appPassword": "App password",
+    "default": "Default"
+  },
+  "meetingReminder": {
+    "label": "Meeting reminders",
+    "hint": "Desktop notification before events start; click it to join the call.",
+    "off": "Off",
+    "minutes_one": "{{count}} minute before",
+    "minutes_other": "{{count}} minutes before"
   }
 }

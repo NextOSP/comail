@@ -9,8 +9,9 @@ import { useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import type { AttachmentMeta, MessageDetail } from "../../ipc/types";
 import { addressName, formatSize, hueOf, initials, longTime, relativeTime } from "../../lib/format";
-import { adaptHtmlForDarkMode } from "../../lib/emailDark";
-import { splitQuotedTail } from "../../lib/quotes";
+import { adaptDocumentForDarkMode } from "../../lib/emailDark";
+import { splitQuotedTail, stripQuoteMarkers } from "../../lib/quotes";
+import { InviteCard } from "../calendar/InviteCard";
 
 async function openAttachment(a: AttachmentMeta) {
   const { pushToast } = useUi.getState();
@@ -44,6 +45,11 @@ export function MessageCard({
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
+  const lastUndo = useUi((s) => s.lastUndo);
+  // Draft queued in the undo-send window reads "Sending…", not "Draft".
+  const isSendPending =
+    message.isDraft && lastUndo?.type === "send" && lastUndo.reopen.draftId === message.id;
+  const draftBadge = isSendPending ? t("thread:sendingBadge") : t("thread:draftBadge");
 
   useEffect(() => {
     if (focused) {
@@ -67,7 +73,7 @@ export function MessageCard({
           {addressName(message.from)}
         </span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-ink-faint">
-          {message.isDraft ? `${t("thread:draftBadge")} · ` : ""}
+          {message.isDraft ? `${draftBadge} · ` : ""}
           {message.snippet}
         </span>
         <span className="shrink-0 text-[11.5px] text-ink-faint">{relativeTime(message.date)}</span>
@@ -95,8 +101,12 @@ export function MessageCard({
             </span>
             <span className="truncate text-[12px] text-ink-faint">{message.from.email}</span>
             {message.isDraft && (
-              <span className="rounded bg-bg2 px-1.5 text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
-                {t("thread:draftBadge")}
+              <span
+                className={`rounded bg-bg2 px-1.5 text-[10.5px] font-semibold tracking-wide uppercase ${
+                  isSendPending ? "text-accent" : "text-ink-faint"
+                }`}
+              >
+                {draftBadge}
               </span>
             )}
           </div>
@@ -109,6 +119,7 @@ export function MessageCard({
       </header>
 
       <div className="px-4 py-4 select-text">
+        <InviteCard messageId={message.id} />
         <MessageBody message={message} />
       </div>
 
@@ -124,7 +135,16 @@ export function MessageCard({
                 title={a.mimeType ?? undefined}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void openAttachment(a);
+                  // Plain click = safe in-app preview; Alt/middle-click keeps
+                  // the old "open in the OS app" behavior.
+                  if (e.altKey) void openAttachment(a);
+                  else useUi.getState().set({ attachmentPreview: a });
+                }}
+                onAuxClick={(e) => {
+                  if (e.button === 1) {
+                    e.stopPropagation();
+                    void openAttachment(a);
+                  }
                 }}
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -194,7 +214,7 @@ function MessageBody({ message }: { message: MessageDetail }) {
                 {t("compose:hideQuoted")}
               </button>
               <pre className="max-w-[90ch] font-sans text-[13.5px] leading-[1.6] whitespace-pre-wrap text-ink-faint">
-                {quoted}
+                {stripQuoteMarkers(quoted)}
               </pre>
             </div>
           )}
@@ -239,9 +259,9 @@ function HtmlBody({ html }: { html: string }) {
     const muted = root.getPropertyValue("--text-muted").trim() || "#666";
     const accent = root.getPropertyValue("--accent").trim() || "#714cb6";
     const scheme = root.getPropertyValue("--iframe-scheme").trim() || "light";
-    // Senders design for white backgrounds; on dark themes lift their dark
-    // text colors where the email has no light surface of its own.
-    const body = scheme === "dark" ? adaptHtmlForDarkMode(html) : html;
+    // On dark themes the email is blended in after load (adaptDocumentForDarkMode
+    // in onLoad), once getComputedStyle can resolve its <style>/class colors.
+    const body = html;
     // CSP inside the sandboxed iframe: remote http(s) images only when the
     // "load remote images" setting is on; inline/data images always allowed.
     const imgSrc = loadRemoteImages ? "data: cid: http: https:" : "data: cid:";
@@ -271,6 +291,11 @@ function HtmlBody({ html }: { html: string }) {
   const onLoad = () => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc?.body) return;
+    // Blend the email into the dark theme now that its CSS has resolved.
+    const scheme = getComputedStyle(document.documentElement)
+      .getPropertyValue("--iframe-scheme")
+      .trim();
+    if (scheme === "dark") adaptDocumentForDarkMode(doc.body);
     measure();
     // Keep the height in sync as images/fonts finish loading inside the
     // sandboxed doc (no scripts allowed there, so observe from out here).

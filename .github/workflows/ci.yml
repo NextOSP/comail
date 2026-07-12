@@ -11,6 +11,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: CI only needs to read the repo. Fork PRs already get a
+# read-only token, but pinning this here also constrains push-event runs so a
+# malicious commit can't use the workflow token to write to the repo.
+permissions:
+  contents: read
+
 env:
   # Fewer incremental artifacts, faster cold builds in CI
   CARGO_INCREMENTAL: "0"
@@ -21,7 +27,7 @@ jobs:
     name: Lint & test
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux system deps
         run: |
@@ -31,13 +37,13 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf \
             libssl-dev libdbus-1-dev build-essential curl wget file pkg-config
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install frontend deps
@@ -77,7 +83,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: lint-test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux system deps
         run: |
@@ -87,13 +93,13 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf \
             libssl-dev libdbus-1-dev build-essential curl wget file pkg-config
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install frontend deps

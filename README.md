@@ -44,11 +44,26 @@ Comail at one. The default is local.
 - **A calmer inbox.** Split inbox (Important, Other, and your own rules), snooze,
   send later, and undo send with a delayed dispatch you can actually cancel.
 - **Write faster.** Snippets, one-key unsubscribe (`Cmd+U`), and optional AI over
-  any OpenAI-compatible endpoint for thread summaries, reply drafting, and
-  drafting in your own voice learned from your sent mail.
-- **Attachments both ways.** Open what you receive, attach files to drafts.
-- **Calendar built in.** Meeting invites are parsed into a local agenda with a
-  day or week peek (`0` / `2`).
+  any OpenAI-compatible endpoint for thread summaries, reply drafting,
+  proofreading, and drafting in your own voice learned from your sent mail,
+  with per-feature model tiers so cheap tasks use cheap models. The command
+  palette also takes plain-language asks and turns them into actions.
+- **Attachments both ways.** Preview what you receive right in the app: PDF,
+  Word, PowerPoint, Excel, CSV, Markdown, and images all render without leaving
+  the thread. Attach files to drafts, and Alt-click to open externally.
+- **A real calendar.** Full week and month views (`2` for the screen, `0` for
+  the drawer peek), click or drag to create, drag to move and resize, and
+  natural-language quick-add ("lunch with Ana tuesday 12:30", timezone-aware,
+  any language via the optional AI). Meeting invites become RSVP cards in the
+  thread; accepting, editing, or cancelling an event emails the attendees.
+  Reminders fire as native notifications, and you can paste your free slots
+  into an email with share-availability.
+- **Calendar sync that's yours.** Two-way CalDAV sync with Google Calendar
+  (one-time extra consent), Fastmail, iCloud, or any self-hosted server.
+  Offline edits queue and push when you reconnect, and conflicting server
+  changes are kept as copies rather than lost.
+- **A mail handler, properly.** Comail registers for `mailto:` links, so
+  "email us" links anywhere on your system open a Comail composer.
 - **Always running, out of the way.** Lives in the tray and keeps syncing after
   you close the window.
 - **Looks right anywhere.** Snow and Carbon light and dark themes, a UI in
@@ -128,8 +143,10 @@ setup. Use an app password.
 - `src-tauri/crates/comail-core` is the Tauri-free Rust core: the IMAP sync
   engine (one actor per account), SMTP, MIME parse, build, and sanitize, SQLite
   (WAL) with FTS5, the offline action queue with optimistic mutations, the
-  snooze and send-later scheduler, OAuth (PKCE and loopback), OS keyring
-  credential storage, and the local embedding index.
+  snooze and send-later scheduler, the CalDAV client (discovery, two-way sync,
+  RRULE expansion, offline push queue), OAuth (PKCE and loopback), OS keyring
+  credential storage, the attachment preview converters, and the local
+  embedding index.
 - `src-tauri/src` is a thin adapter. Tauri commands call the core, core events
   are forwarded to the UI (with mail:updated coalescing), and the updater and
   single-instance plugins live here. It also detects the GPU on Linux and

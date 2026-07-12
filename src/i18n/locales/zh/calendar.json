@@ -6,10 +6,93 @@
   "hintToday": "按 0 查看今天",
   "escCloses": "按 Esc 关闭",
   "closeAria": "关闭日历",
+  "prevAria": "上一个",
+  "nextAria": "下一个",
+  "createAria": "创建日程",
   "noEventsToday": "今天没有日程",
   "noEventsWeek": "本周没有日程",
   "allDay": "全天",
   "noTitle": "（无标题）",
   "cancelled": "已取消",
-  "byOrganizer": "由 {{organizer}}"
+  "byOrganizer": "由 {{organizer}}",
+  "join": "加入",
+  "going": "是否参加？",
+  "viewDay": "查看当天",
+  "conflict": "与另一个日程冲突",
+  "week": "周",
+  "month": "月",
+  "moreEvents_one": "还有 {{count}} 项",
+  "moreEvents_other": "还有 {{count}} 项",
+  "rsvp": {
+    "yes": "参加",
+    "maybe": "待定",
+    "no": "不参加"
+  },
+  "rsvpSent": {
+    "accepted": "已接受 — 回复已发送给组织者",
+    "tentative": "已标记为待定 — 回复已发送给组织者",
+    "declined": "已拒绝 — 回复已发送给组织者"
+  },
+  "create": {
+    "title": "创建日程",
+    "saveHint": "⌘/Ctrl+Enter 保存",
+    "quickPlaceholder": "试试：lunch with sam tomorrow 1pm 45m",
+    "quickApply": "按 Enter 填入表单",
+    "summary": "标题",
+    "date": "日期",
+    "time": "时间",
+    "duration": "时长",
+    "attendees": "参与者",
+    "attendeesPlaceholder": "邮箱，用逗号分隔 — 每人都会收到邀请",
+    "location": "地点",
+    "joinUrl": "会议链接",
+    "description": "描述",
+    "save": "保存",
+    "saveInvite": "保存并发送邀请",
+    "quickAiPending": "正在询问 AI…",
+    "quickAiHint": "按 Enter · 让 AI 解析（支持任何语言）",
+    "quickAiMiss": "AI 未能从中解析出日程。试试补充日期或时间。"
+  },
+  "created": {
+    "plain": "日程已添加到你的日历",
+    "withInvites_one": "日程已创建 — 邀请已排队发送给 {{count}} 位参与者",
+    "withInvites_other": "日程已创建 — 邀请已排队发送给 {{count}} 位参与者"
+  },
+  "edit": {
+    "title": "编辑日程",
+    "save": "保存更改",
+    "saveInvite": "保存并发送更新邮件"
+  },
+  "updated": {
+    "plain": "日程已更新",
+    "withInvites_one": "日程已更新 — 更新已发送给 {{count}} 位参与者",
+    "withInvites_other": "日程已更新 — 更新已发送给 {{count}} 位参与者"
+  },
+  "deleted": {
+    "plain": "日程已删除",
+    "withInvites_one": "日程已取消 — 取消通知已发送给 {{count}} 位参与者",
+    "withInvites_other": "日程已取消 — 取消通知已发送给 {{count}} 位参与者"
+  },
+  "detail": {
+    "organizerHint": "由 {{organizer}} 组织 — 请在上方回复",
+    "edit": "编辑",
+    "delete": "删除",
+    "confirmDelete": "删除此日程？",
+    "confirmCancel_one": "取消此日程？将向 {{count}} 位参与者发送取消邮件。",
+    "confirmCancel_other": "取消此日程？将向 {{count}} 位参与者发送取消邮件。"
+  },
+  "availability": {
+    "title": "分享空闲时间",
+    "days": "未来天数",
+    "daysOption_one": "{{count}} 天",
+    "daysOption_other": "{{count}} 天",
+    "hint": "根据你的日历列出空闲时段。点击时段可排除，然后插入。",
+    "none": "该时间范围内没有空闲时段",
+    "insert_one": "插入 {{count}} 个时段",
+    "insert_other": "插入 {{count}} 个时段",
+    "leadIn": "以下时间是否方便？"
+  },
+  "screenHint": "Esc 或 1 返回 · 点击空档创建日程",
+  "reminderBody": "{{time}} 开始",
+  "syncConflict": "“{{summary}}”在服务器上已更改 — 你的编辑已保留为副本"
 }

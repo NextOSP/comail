@@ -17,8 +17,11 @@
     "moveToTrash": "Mover a la papelera",
     "markAsSpam": "Marcar como spam",
     "selectThread": "Seleccionar conversación",
-    "selectAllFromHere": "Seleccionar todo desde aquí",
+    "selectAll": "Seleccionar todo",
+    "extendSelectionDown": "Extender selección hacia abajo",
+    "extendSelectionUp": "Extender selección hacia arriba",
     "moveToFolder": "Mover a carpeta…",
+    "label": "Etiqueta…",
     "unsubscribe": "Cancelar suscripción",
     "undo": "Deshacer",
     "nextThread": "Conversación siguiente",
@@ -52,6 +55,14 @@
     "aiSummarize": "IA: Resumir conversación",
     "calendarToday": "Calendario: Hoy",
     "calendarWeek": "Calendario: Esta semana",
+    "calendarMonth": "Calendario: Vista de mes",
+    "calendarBackInbox": "Calendario: Volver a la bandeja",
+    "createEvent": "Calendario: Crear evento",
+    "calendarPrev": "Calendario: Anterior",
+    "calendarNext": "Calendario: Siguiente",
+    "calendarJumpToday": "Calendario: Ir a hoy",
+    "joinNextMeeting": "Calendario: Unirse a la próxima reunión",
+    "shareAvailability": "Compartir disponibilidad…",
     "switchAccountAll": "Cambiar de cuenta: Todas las cuentas",
     "switchAccount": "Cambiar de cuenta: cuenta {{n}}",
     "palette": "Paleta de comandos",
@@ -64,13 +75,22 @@
     "editSplits": "Editar divisiones",
     "themeSnow": "Tema: Snow",
     "themeCarbon": "Tema: Carbon",
-    "themeSystem": "Tema: Sistema"
+    "themeSystem": "Tema: Sistema",
+    "splitBySender": "Dividir por remitente",
+    "goLabel": "Ir a la etiqueta: {{name}}",
+    "askAi": "Preguntar a la IA sobre tu bandeja",
+    "relabelAuto": "Reejecutar etiquetas automáticas",
+    "openAiSettings": "Ajustes de IA",
+    "openAccountSettings": "Ajustes de la cuenta",
+    "toggleSidebar": "Mostrar menú de buzones",
+    "aiProofread": "Revisar con IA"
   },
   "toast": {
     "syncing": "Sincronizando…",
     "noUnsubscribeLink": "Sin enlace para cancelar suscripción",
     "unsubscribeWouldOpen": "Cancelar suscripción: abriría {{url}}",
-    "couldNotOpenLink": "No se pudo abrir el enlace: {{detail}}"
+    "couldNotOpenLink": "No se pudo abrir el enlace: {{detail}}",
+    "noMeetingToJoin": "No hay reuniones próximas con enlace para unirse"
   },
   "actionLabel": {
     "markedDone": "Marcado como hecho",
@@ -92,5 +112,11 @@
     "undone": "Deshecho",
     "nothingToUndo": "Nada que deshacer"
   },
-  "actionFailed": "La acción falló: {{detail}}"
+  "actionFailed": "La acción falló: {{detail}}",
+  "aiIntent": {
+    "badge": "IA",
+    "row": "Pedir a la IA que haga: “{{query}}”",
+    "notUnderstood": "La IA no pudo convertir eso en una acción. Intenta reformularlo.",
+    "locationNote": "Ubicación: {{location}}"
+  }
 }
