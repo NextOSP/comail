@@ -26,7 +26,7 @@ webpki-roots = "0.26"
 futures = "0.3"
 
 # storage
-rusqlite = { version = "0.37", features = ["bundled", "backup", "functions"] }
+rusqlite = { version = "0.40", features = ["bundled", "backup", "functions"] }
 dirs = "6"
 
 # local embeddings (pure Rust, CPU backend only - no MKL/CUDA/Accelerate,
