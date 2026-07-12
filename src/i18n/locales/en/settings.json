@@ -106,11 +106,12 @@
       "g6": "Once it works, publish the consent screen to Production. In Testing status Google expires sign-ins after 7 days.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Open Microsoft Entra",
-      "m1": "At entra.microsoft.com go to App registrations, New registration.",
-      "m2": "Supported account types: any organizational directory and personal Microsoft accounts.",
-      "m3": "Redirect URI: platform Mobile and desktop applications, value http://localhost.",
-      "m4": "API permissions: Microsoft Graph, Delegated: IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
-      "m5": "Copy the Application (client) ID into the field below. Leave the secret empty for this app type."
+      "m1": "At entra.microsoft.com go to App registrations, New registration. Name it Comail: users see this name on the consent screen.",
+      "m2": "Supported account types: pick the multitenant option that also includes personal Microsoft accounts. This is required: Comail signs in via the shared /common endpoint, and a single-tenant app fails with error AADSTS50194. Fixable later under Authentication.",
+      "m3": "Redirect URI: platform Mobile and desktop applications (not Web), value http://localhost.",
+      "m4": "API permissions: Add a permission, Microsoft Graph, then Delegated permissions (not Application permissions; if the list looks wrong you are in the Application box). Tick IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid, and email.",
+      "m5": "There is no key or secret to create for Microsoft; skip Certificates & secrets. Just copy the Application (client) ID from the Overview page into the field below.",
+      "m6": "Work or school mailboxes only: if sign-in ends with \"Need admin approval\", a tenant admin must consent once via Grant admin consent on the API permissions page. Personal Outlook.com accounts never need this."
     }
   },
   "accounts": {
@@ -130,6 +131,7 @@
     "waitingGoogle": "Waiting for Google…",
     "signInGoogle": "Sign in with Google",
     "waitingMicrosoft": "Waiting for Microsoft…",
+    "cancelWaiting": "{{waiting}} (click to cancel)",
     "signInMicrosoft": "Sign in with Microsoft"
   },
   "snippets": {

@@ -122,12 +122,16 @@ export function Onboarding(
           message: t("onboarding:oauthNotConfigured"),
           durationMs: 6000,
         });
-      } else {
+      } else if (!raw.includes("sign-in cancelled")) {
         pushToast({ kind: "error", message: errorMessage(err) });
       }
     } finally {
       setOauthBusy(null);
     }
+  };
+
+  const cancelOauth = () => {
+    void call("cancel_oauth", {}).catch(() => {});
   };
 
   return (
@@ -183,17 +187,21 @@ export function Onboarding(
             </button>
             <button
               className="w-full rounded-lg border border-hairline bg-bg0 py-2.5 text-[13.5px] text-ink-faint hover:bg-bg2 disabled:opacity-60"
-              disabled={oauthBusy != null}
-              onClick={() => void oauth("gmail")}
+              disabled={oauthBusy != null && oauthBusy !== "gmail"}
+              onClick={() => (oauthBusy === "gmail" ? cancelOauth() : void oauth("gmail"))}
             >
-              {oauthBusy === "gmail" ? t("onboarding:waitingForGoogle") : t("onboarding:signInWithGoogle")}
+              {oauthBusy === "gmail"
+                ? t("settings:accounts.cancelWaiting", { waiting: t("onboarding:waitingForGoogle") })
+                : t("onboarding:signInWithGoogle")}
             </button>
             <button
               className="w-full rounded-lg border border-hairline bg-bg0 py-2.5 text-[13.5px] text-ink-faint hover:bg-bg2 disabled:opacity-60"
-              disabled={oauthBusy != null}
-              onClick={() => void oauth("microsoft")}
+              disabled={oauthBusy != null && oauthBusy !== "microsoft"}
+              onClick={() => (oauthBusy === "microsoft" ? cancelOauth() : void oauth("microsoft"))}
             >
-              {oauthBusy === "microsoft" ? t("onboarding:waitingForMicrosoft") : t("onboarding:signInWithMicrosoft")}
+              {oauthBusy === "microsoft"
+                ? t("settings:accounts.cancelWaiting", { waiting: t("onboarding:waitingForMicrosoft") })
+                : t("onboarding:signInWithMicrosoft")}
             </button>
           </div>
         ) : (

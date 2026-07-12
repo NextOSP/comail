@@ -1573,6 +1573,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       await delay(null, 600);
       throw new Error("OAuth sign-in isn't available in this build yet - use IMAP/SMTP for now.");
 
+    case "cancel_oauth":
+      return delay(undefined);
+
     case "list_threads": {
       const view = (a.view as View) ?? "inbox";
       const splitId = a.splitId as number | null | undefined;

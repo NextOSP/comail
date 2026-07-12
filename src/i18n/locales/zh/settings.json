@@ -106,11 +106,12 @@
       "g6": "成功后，将同意屏幕发布到正式版。在测试状态下，Google 会在 7 天后使登录失效。",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "打开 Microsoft Entra",
-      "m1": "在 entra.microsoft.com 前往应用注册，新注册。",
-      "m2": "支持的账户类型：任何组织目录和个人 Microsoft 账户。",
-      "m3": "重定向 URI：平台选择移动和桌面应用程序，值为 http://localhost。",
-      "m4": "API 权限：Microsoft Graph，委托：IMAP.AccessAsUser.All、SMTP.Send、offline_access。",
-      "m5": "将应用程序（客户端）ID 复制到下方字段中。此类应用请将密钥留空。"
+      "m1": "在 entra.microsoft.com 前往应用注册，新注册。命名为 Comail：用户会在授权页面上看到这个名称。",
+      "m2": "支持的账户类型：选择同时包含个人 Microsoft 账户的多租户选项。这是必需的：Comail 通过共享的 /common 端点登录，单租户应用会报错 AADSTS50194。之后可在“身份验证”中修改。",
+      "m3": "重定向 URI：平台选择移动和桌面应用程序（不是 Web），值为 http://localhost。",
+      "m4": "API 权限：添加权限，Microsoft Graph，然后选择委托的权限（不是应用程序权限；如果权限列表看起来不对，说明选错了框）。勾选 IMAP.AccessAsUser.All、SMTP.Send、offline_access、openid 和 email。",
+      "m5": "Microsoft 这边不需要创建任何密钥或机密，跳过“证书和密码”。只需把概述页面上的应用程序（客户端）ID 复制到下方字段。",
+      "m6": "仅限工作或学校邮箱：如果登录时提示“需要管理员批准”，租户管理员需在 API 权限页面点击“授予管理员同意”一次。个人 Outlook.com 账户永远不需要。"
     }
   },
   "accounts": {
@@ -130,6 +131,7 @@
     "waitingGoogle": "等待 Google…",
     "signInGoogle": "使用 Google 登录",
     "waitingMicrosoft": "等待 Microsoft…",
+    "cancelWaiting": "{{waiting}}（点击取消）",
     "signInMicrosoft": "使用 Microsoft 登录"
   },
   "snippets": {
