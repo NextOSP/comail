@@ -383,6 +383,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       const account = accounts?.find((a) => a.id === fieldsRef.current.accountId);
       const text = await call("ai_draft", {
         threadId: state.replyTo?.threadId ?? null,
+        replyToMessageId: state.replyTo?.id ?? null,
         instruction,
         senderName: account ? (account.displayName ?? account.email) : null,
         voice: voiceOn,

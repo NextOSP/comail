@@ -212,13 +212,20 @@ pub async fn ai_summarize(state: State<'_, AppState>, thread_id: i64) -> CmdResu
 pub async fn ai_draft(
     state: State<'_, AppState>,
     thread_id: Option<i64>,
+    reply_to_message_id: Option<i64>,
     instruction: String,
     sender_name: Option<String>,
     voice: Option<bool>,
 ) -> CmdResult<String> {
     state
         .core
-        .ai_draft(thread_id, instruction, sender_name.unwrap_or_default(), voice)
+        .ai_draft(
+            thread_id,
+            reply_to_message_id,
+            instruction,
+            sender_name.unwrap_or_default(),
+            voice,
+        )
         .await
         .map_err(err)
 }

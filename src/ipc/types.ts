@@ -460,6 +460,8 @@ export interface Commands {
   ai_summarize(args: { threadId: number }): Promise<string>;
   ai_draft(args: {
     threadId: number | null;
+    /** The message the user hit reply on, so the draft targets the right one. */
+    replyToMessageId: number | null;
     instruction: string;
     senderName: string | null;
     /** Write in the user's learned voice; falls back to the saved setting when omitted. */

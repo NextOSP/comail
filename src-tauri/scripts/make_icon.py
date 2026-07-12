@@ -1,32 +1,20 @@
 #!/usr/bin/env python3
-"""Comail app icon: a dimensional, beveled metallic HEXAGON (bolt head, top view).
+"""Comail app icon: a gradient CIRCLE, palette-driven.
 
-Crafted look with pure Pillow:
-  * Rich deep-blue studio gradient tile with a soft radial glow + vignette.
-  * A brushed-steel hexagon extruded for thickness, with six chamfer facets
-    lit per-edge (top-left light source), a glossy specular sweep, an inner
-    bevel and a soft cast shadow.
-Rendered at 4x supersampling -> 1024x1024.
+Approach (pure Pillow):
+  * A multi-point *mesh* gradient (several blended colour fields) rather than a
+    flat linear ramp — reads as "designed", not "AI default".
+  * Fine film grain to kill banding and add texture.
+  * Palettes lean monochromatic/duotone (intentional, brand-like) instead of
+    the overused purple->pink->orange sunset.
+
+Usage: python3 make_icon.py [palette_name]   (default: cobalt)
 """
-import math
-from PIL import Image, ImageDraw, ImageFilter
-
-SS = 4
-N = 1024
-SIZE = N * SS
-R = int(0.14 * SIZE)
+import sys, math
+from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 def lerp(a, b, t):
     return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
-
-def ramp(t, stops):
-    t = max(0.0, min(1.0, t))
-    for i in range(len(stops) - 1):
-        t0, c0 = stops[i]
-        t1, c1 = stops[i + 1]
-        if t <= t1:
-            return lerp(c0, c1, (t - t0) / (t1 - t0) if t1 > t0 else 0)
-    return stops[-1][1]
 
 def vgrad(w, h, top, bot):
     img = Image.new("RGB", (w, h))
@@ -35,147 +23,86 @@ def vgrad(w, h, top, bot):
         d.line([(0, y), (w, y)], fill=lerp(top, bot, y / (h - 1)))
     return img
 
-def hexagon(cx, cy, r, rot=0.0):
-    pts = []
-    for k in range(6):
-        a = math.radians(60 * k + rot)
-        pts.append((cx + r * math.cos(a), cy - r * math.sin(a)))
-    return pts
+def blob(mesh, color, bx, by, rad, strength):
+    m = Image.new("L", mesh.size, 0)
+    ImageDraw.Draw(m).ellipse([bx - rad, by - rad, bx + rad, by + rad], fill=255)
+    m = m.filter(ImageFilter.GaussianBlur(rad * 0.55))
+    m = m.point(lambda v: int(v * strength))
+    return Image.composite(Image.new("RGB", mesh.size, color), mesh, m)
 
-# ---------------- background tile ----------------
-bg = vgrad(SIZE, SIZE, (23, 62, 140), (8, 24, 66))          # deep blue studio
-# soft radial glow behind the hex
-glow = Image.new("L", (SIZE, SIZE), 0)
-gd = ImageDraw.Draw(glow)
-gcx, gcy, gr = SIZE * 0.5, SIZE * 0.42, SIZE * 0.42
-gd.ellipse([gcx - gr, gcy - gr, gcx + gr, gcy + gr], fill=130)
-glow = glow.filter(ImageFilter.GaussianBlur(SIZE * 0.10))
-bg = Image.composite(Image.new("RGB", (SIZE, SIZE), (70, 120, 210)), bg, glow)
-# vignette
-vig = Image.new("L", (SIZE, SIZE), 0)
-vd = ImageDraw.Draw(vig)
-vd.rectangle([0, 0, SIZE, SIZE], fill=110)
-vd.ellipse([-SIZE * 0.2, -SIZE * 0.2, SIZE * 1.2, SIZE * 1.2], fill=0)
-vig = vig.filter(ImageFilter.GaussianBlur(SIZE * 0.14))
-bg = Image.composite(Image.new("RGB", (SIZE, SIZE), (4, 12, 34)), bg, vig)
+# ---- palettes: (top, bot, [(color,fx,fy,frad,strength)...], halo, bg, lift) ----
+PALETTES = {
+    # electric cobalt -> cyan, cool & techy
+    "cobalt": dict(
+        top=(37, 99, 235), bot=(34, 211, 238),
+        blobs=[((30, 64, 175), .30, .24, .55, .85), ((59, 130, 246), .80, .22, .45, .70),
+               ((37, 99, 235), .26, .60, .48, .70), ((103, 232, 249), .80, .82, .50, .85),
+               ((186, 240, 255), .60, .70, .20, .5)],
+        halo=(22, 60, 120), bg=(8, 12, 22), lift=(220, 245, 255)),
+    # deep teal -> emerald, fresh
+    "emerald": dict(
+        top=(13, 92, 99), bot=(52, 211, 153),
+        blobs=[((14, 116, 110), .30, .24, .55, .85), ((6, 95, 70), .26, .60, .48, .75),
+               ((110, 231, 183), .80, .82, .50, .85), ((34, 211, 238), .80, .22, .42, .55),
+               ((200, 255, 235), .60, .70, .20, .5)],
+        halo=(16, 80, 70), bg=(7, 16, 14), lift=(225, 255, 245)),
+    # molten amber -> deep orange, warm & editorial (single warm family)
+    "amber": dict(
+        top=(253, 196, 90), bot=(154, 52, 18),
+        blobs=[((251, 191, 36), .30, .22, .52, .85), ((249, 115, 22), .70, .55, .50, .8),
+               ((124, 45, 18), .80, .84, .50, .85), ((255, 231, 160), .30, .30, .30, .55)],
+        halo=(120, 60, 20), bg=(20, 12, 6), lift=(255, 240, 210)),
+    # crimson -> rose, bold
+    "crimson": dict(
+        top=(244, 63, 94), bot=(136, 19, 55),
+        blobs=[((251, 113, 133), .30, .24, .55, .85), ((225, 29, 72), .70, .40, .5, .8),
+               ((76, 5, 25), .80, .84, .50, .85), ((253, 164, 175), .30, .28, .28, .55)],
+        halo=(110, 22, 44), bg=(18, 8, 12), lift=(255, 225, 228)),
+    # graphite -> steel blue, ultra-restrained / premium
+    "slate": dict(
+        top=(90, 108, 140), bot=(20, 28, 44),
+        blobs=[((120, 140, 175), .30, .22, .55, .8), ((70, 90, 130), .75, .78, .5, .8),
+               ((160, 180, 210), .32, .30, .26, .5)],
+        halo=(50, 66, 96), bg=(9, 11, 16), lift=(210, 224, 245)),
+}
 
-icon = bg.convert("RGBA")
+def build_icon(pal, N=1024, SS=3):
+    SIZE = N * SS
+    R = int(0.14 * SIZE)
+    mesh = vgrad(SIZE, SIZE, pal["top"], pal["bot"])
+    for color, fx, fy, fr, st in pal["blobs"]:
+        mesh = blob(mesh, color, SIZE * fx, SIZE * fy, SIZE * fr, st)
+    mesh = mesh.filter(ImageFilter.GaussianBlur(SIZE * 0.02))
+    lift = Image.new("L", mesh.size, 0)
+    ImageDraw.Draw(lift).ellipse([SIZE * .16, SIZE * .02, SIZE * .84, SIZE * .5], fill=52)
+    lift = lift.filter(ImageFilter.GaussianBlur(SIZE * 0.10))
+    mesh = Image.composite(Image.new("RGB", mesh.size, pal["lift"]), mesh, lift)
 
-# ---------------- hexagon geometry ----------------
-cx, cy = SIZE * 0.5, SIZE * 0.47
-r = SIZE * 0.34                 # circumradius (vertex)
-rot = 30                        # flat-top hexagon
-th = int(SIZE * 0.055)          # extrusion thickness
-outer = hexagon(cx, cy, r, rot)
+    bg = Image.new("RGB", (SIZE, SIZE), pal["bg"])
+    halo = Image.new("L", (SIZE, SIZE), 0)
+    ImageDraw.Draw(halo).ellipse([SIZE * .14, SIZE * .14, SIZE * .86, SIZE * .86], fill=110)
+    halo = halo.filter(ImageFilter.GaussianBlur(SIZE * 0.08))
+    bg = Image.composite(Image.new("RGB", (SIZE, SIZE), pal["halo"]), bg, halo)
 
-# ---------------- cast shadow ----------------
-sh = Image.new("L", (SIZE, SIZE), 0)
-sd = ImageDraw.Draw(sh)
-sd.polygon(hexagon(cx, cy + th, r * 1.02, rot), fill=150)
-sh = sh.filter(ImageFilter.GaussianBlur(SIZE * 0.035))
-shadow = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-shadow.putalpha(sh.point(lambda v: int(v * 0.85)))
-icon = Image.alpha_composite(icon, shadow)
+    cx = cy = SIZE * 0.5
+    cr = SIZE * 0.365
+    cmask = Image.new("L", (SIZE, SIZE), 0)
+    ImageDraw.Draw(cmask).ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=255)
+    cmask = cmask.filter(ImageFilter.GaussianBlur(SS * 0.8))
+    comp = bg.copy()
+    comp.paste(mesh, (0, 0), cmask)
 
-draw = ImageDraw.Draw(icon)
+    grain = Image.effect_noise((SIZE, SIZE), 26).convert("RGB")
+    comp = Image.blend(comp, ImageChops.overlay(comp, grain), 0.055)
 
-# ---------------- extruded side (thickness) ----------------
-side = hexagon(cx, cy + th, r, rot)
-side_grad_top = (66, 80, 108)
-side_grad_bot = (30, 40, 62)
-# fill the union of the two hexes bottom band with a dark gradient
-side_mask = Image.new("L", (SIZE, SIZE), 0)
-ImageDraw.Draw(side_mask).polygon(side, fill=255)
-side_fill = vgrad(SIZE, SIZE, side_grad_top, side_grad_bot)
-icon.paste(side_fill, (0, 0), side_mask)
-draw = ImageDraw.Draw(icon)
+    tile = Image.new("L", (SIZE, SIZE), 0)
+    ImageDraw.Draw(tile).rounded_rectangle([0, 0, SIZE - 1, SIZE - 1], radius=R, fill=255)
+    out = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    out.paste(comp, (0, 0), tile)
+    return out.resize((N, N), Image.LANCZOS)
 
-# ---------------- top face: chamfer facets ----------------
-STEEL = [(0.00, (44, 56, 80)), (0.30, (96, 112, 142)),
-         (0.55, (150, 168, 198)), (0.78, (212, 222, 240)),
-         (0.92, (240, 246, 253)), (1.00, (255, 255, 255))]
-# light direction (screen coords, y down); top-left, mostly from top
-L = (-0.45, -1.0)
-Ln = math.hypot(*L)
-L = (L[0] / Ln, L[1] / Ln)
-
-bw = r * 0.20                    # bevel / chamfer width
-inner = hexagon(cx, cy, r - bw, rot)
-
-# base fill of the whole top face (mid steel) so facet seams are covered
-top_mask = Image.new("L", (SIZE, SIZE), 0)
-ImageDraw.Draw(top_mask).polygon(outer, fill=255)
-icon.paste(vgrad(SIZE, SIZE, (200, 212, 234), (150, 166, 192)), (0, 0), top_mask)
-draw = ImageDraw.Draw(icon)
-
-# draw the six chamfer facets as quads (outer edge -> inner edge)
-for k in range(6):
-    ox0, oy0 = outer[k]
-    ox1, oy1 = outer[(k + 1) % 6]
-    ix1, iy1 = inner[(k + 1) % 6]
-    ix0, iy0 = inner[k]
-    mx = (ox0 + ox1) / 2 - cx
-    my = (oy0 + oy1) / 2 - cy
-    mn = math.hypot(mx, my) or 1
-    facing = (mx / mn) * L[0] + (my / mn) * L[1]     # -1..1 (1 = toward light)
-    b = 0.5 + 0.5 * facing
-    col = ramp(0.15 + 0.85 * b, STEEL)
-    draw.polygon([(ox0, oy0), (ox1, oy1), (ix1, iy1), (ix0, iy0)], fill=col + (255,))
-
-# inner flat face: bright brushed gradient
-inner_mask = Image.new("L", (SIZE, SIZE), 0)
-ImageDraw.Draw(inner_mask).polygon(inner, fill=255)
-icon.paste(vgrad(SIZE, SIZE, (236, 243, 252), (176, 192, 216)), (0, 0), inner_mask)
-draw = ImageDraw.Draw(icon)
-
-# brushed concentric rings on the inner face (subtle)
-rings = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-rd = ImageDraw.Draw(rings)
-for i in range(1, 7):
-    rr = (r - bw) * (i / 7.0)
-    shade = 255 if i % 2 else 235
-    rd.ellipse([cx - rr, cy - rr * 0.98, cx + rr, cy + rr * 0.98],
-               outline=(shade, shade, shade, 22), width=max(2, int(SIZE * 0.004)))
-rings.putalpha(rings.getchannel("A").filter(ImageFilter.GaussianBlur(SS)))
-inner_only = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-inner_only.paste(rings, (0, 0), inner_mask)
-icon = Image.alpha_composite(icon, inner_only)
-draw = ImageDraw.Draw(icon)
-
-# glossy specular sweep across the top-left of the inner face
-gloss = Image.new("L", (SIZE, SIZE), 0)
-gld = ImageDraw.Draw(gloss)
-gld.ellipse([cx - r * 0.9, cy - r * 1.05, cx + r * 0.2, cy - r * 0.05], fill=120)
-gloss = gloss.filter(ImageFilter.GaussianBlur(SIZE * 0.03))
-gloss_layer = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 0))
-gloss_layer.putalpha(gloss)
-clip = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-clip.paste(gloss_layer, (0, 0), top_mask)
-icon = Image.alpha_composite(icon, clip)
-draw = ImageDraw.Draw(icon)
-
-# crisp bright rim on the top-left outer edges, thin dark rim bottom-right
-for k in range(6):
-    x0, y0 = outer[k]
-    x1, y1 = outer[(k + 1) % 6]
-    mx = (x0 + x1) / 2 - cx
-    my = (y0 + y1) / 2 - cy
-    mn = math.hypot(mx, my) or 1
-    facing = (mx / mn) * L[0] + (my / mn) * L[1]
-    if facing > 0.15:
-        draw.line([(x0, y0), (x1, y1)], fill=(255, 255, 255, 210),
-                  width=max(2, int(SIZE * 0.006)))
-    elif facing < -0.3:
-        draw.line([(x0, y0), (x1, y1)], fill=(20, 30, 50, 150),
-                  width=max(2, int(SIZE * 0.004)))
-
-# ---------------- round the tile & export ----------------
-mask = Image.new("L", (SIZE, SIZE), 0)
-ImageDraw.Draw(mask).rounded_rectangle([0, 0, SIZE - 1, SIZE - 1], radius=R, fill=255)
-out_img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-out_img.paste(icon, (0, 0), mask)
-
-final = out_img.resize((N, N), Image.LANCZOS)
-out = __file__.rsplit("/", 1)[0] + "/../app-icon.png"
-final.save(out)
-print("wrote", out)
+if __name__ == "__main__":
+    name = sys.argv[1] if len(sys.argv) > 1 else "cobalt"
+    path = __file__.rsplit("/", 1)[0] + "/../app-icon.png"
+    build_icon(PALETTES[name]).save(path)
+    print("wrote", path, "palette:", name)

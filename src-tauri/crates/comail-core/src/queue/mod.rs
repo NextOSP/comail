@@ -328,9 +328,26 @@ async fn send_action(
             Ok(rows)
         })
         .await?;
+    // Defense in depth: only ever read files inside our own staging root, so a
+    // stale/crafted `draft_attachments` row can't turn dispatch into an
+    // arbitrary local-file read. `save_draft` copies picked files in here.
+    let staging_root = tokio::fs::canonicalize(ctx.paths.draft_attachments_dir())
+        .await
+        .ok();
     let mut attachments = Vec::new();
     for (path, filename) in att_rows {
-        let bytes = tokio::fs::read(&path)
+        let canon = tokio::fs::canonicalize(&path)
+            .await
+            .map_err(|e| CoreError::Other(format!("attachment {filename}: {e}")))?;
+        let within = staging_root
+            .as_ref()
+            .is_some_and(|root| canon.starts_with(root));
+        if !within {
+            return Err(CoreError::Other(format!(
+                "attachment {filename}: refusing to read file outside the staging area"
+            )));
+        }
+        let bytes = tokio::fs::read(&canon)
             .await
             .map_err(|e| CoreError::Other(format!("attachment {filename}: {e}")))?;
         let mime_type = mime_guess_from_name(&filename);

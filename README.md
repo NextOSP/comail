@@ -59,6 +59,9 @@ Comail at one. The default is local.
 
 ## Development setup (Linux)
 
+Contributing? Read [CONTRIBUTING.md](CONTRIBUTING.md) for the test suites and
+project conventions.
+
 System dependencies (Debian/Ubuntu):
 
 ```bash

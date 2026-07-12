@@ -35,6 +35,13 @@ impl Paths {
             .join(account_id.to_string())
     }
 
+    /// Root for app-managed copies of outgoing (draft) attachments. Files
+    /// picked in the composer are staged here so dispatch only ever reads
+    /// files the app itself wrote, never an arbitrary frontend-supplied path.
+    pub fn draft_attachments_dir(&self) -> PathBuf {
+        self.data_dir.join("draft_attachments")
+    }
+
     /// Directory holding local embedding-model weights (`<models_dir>/<key>`).
     pub fn models_dir(&self) -> PathBuf {
         self.data_dir.join("models")

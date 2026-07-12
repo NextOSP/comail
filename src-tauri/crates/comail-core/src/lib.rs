@@ -497,8 +497,22 @@ impl Core {
     // ---------- compose ----------
 
     pub async fn save_draft(&self, args: SaveDraftArgs) -> Result<i64> {
-        let core_paths = self.paths.clone();
-        let _ = core_paths;
+        // Stage every attachment into an app-managed dir up front, so the paths
+        // persisted to `draft_attachments` (and later read at dispatch) are
+        // always files the app itself copied - never an arbitrary path handed
+        // in by the frontend. Snapshotting here also fixes the sent bytes at
+        // compose time rather than whatever the source file becomes later.
+        let staging_root = self.paths.draft_attachments_dir();
+        let mut staged: Vec<crate::models::DraftAttachmentIn> =
+            Vec::with_capacity(args.attachments.len());
+        for att in &args.attachments {
+            let file_path =
+                stage_draft_attachment(&staging_root, &att.file_path, &att.filename).await?;
+            staged.push(crate::models::DraftAttachmentIn {
+                file_path,
+                filename: att.filename.clone(),
+            });
+        }
         self.db
             .write(move |conn| {
                 let tx = conn.transaction()?;
@@ -596,7 +610,7 @@ impl Core {
                     "DELETE FROM draft_attachments WHERE draft_id = ?1",
                     rusqlite::params![draft_id],
                 )?;
-                for att in &args.attachments {
+                for att in &staged {
                     tx.execute(
                         "INSERT INTO draft_attachments (draft_id, file_path, filename) VALUES (?1,?2,?3)",
                         rusqlite::params![draft_id, att.file_path, att.filename],
@@ -604,7 +618,7 @@ impl Core {
                 }
                 tx.execute(
                     "UPDATE messages SET has_attachments = ?2 WHERE id = ?1",
-                    rusqlite::params![draft_id, (!args.attachments.is_empty()) as i64],
+                    rusqlite::params![draft_id, (!staged.is_empty()) as i64],
                 )?;
                 if let Some(tid) = repo::messages::get_row(&tx, draft_id)?.and_then(|r| r.thread_id)
                 {
@@ -698,18 +712,11 @@ impl Core {
         let raw = tokio::fs::read(&raw_path).await?;
         let (bytes, parsed_name) = crate::mime::extract_attachment(&raw, &part_id)?;
 
-        let safe_name: String = filename
-            .or(parsed_name)
-            .unwrap_or_else(|| format!("attachment-{attachment_id}"))
-            .chars()
-            .map(|c| {
-                if c == '/' || c == '\\' || c == '\0' {
-                    '_'
-                } else {
-                    c
-                }
-            })
-            .collect();
+        let safe_name = safe_filename(
+            &filename
+                .or(parsed_name)
+                .unwrap_or_else(|| format!("attachment-{attachment_id}")),
+        );
         let dir = self
             .paths
             .attachments_dir(row.account_id)
@@ -826,6 +833,7 @@ impl Core {
     pub async fn ai_draft(
         &self,
         thread_id: Option<i64>,
+        reply_to_message_id: Option<i64>,
         instruction: String,
         sender_name: String,
         voice: Option<bool>,
@@ -834,15 +842,16 @@ impl Core {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
         let use_voice = voice.unwrap_or(settings.voice_drafting);
 
-        let (subject, context) = match thread_id {
+        let (subject, context, reply_target) = match thread_id {
             Some(tid) => {
                 let detail = self.get_thread(tid).await?;
                 (
                     detail.thread.subject.clone(),
                     ai::thread_context(&detail.messages, 24_000),
+                    ai::reply_target_line(&detail.messages, reply_to_message_id),
                 )
             }
-            None => (String::new(), String::new()),
+            None => (String::new(), String::new(), String::new()),
         };
 
         if use_voice {
@@ -853,6 +862,7 @@ impl Core {
                 ai::draft_prompt_voiced(
                     &subject,
                     &context,
+                    &reply_target,
                     &instruction,
                     &sender_name,
                     &settings.voice_profile,
@@ -864,7 +874,7 @@ impl Core {
 
         ai::chat(
             &cfg,
-            ai::draft_prompt(&subject, &context, &instruction, &sender_name),
+            ai::draft_prompt(&subject, &context, &reply_target, &instruction, &sender_name),
         )
         .await
     }
@@ -1294,6 +1304,51 @@ async fn copy_model_files(src: &std::path::Path, dst: &std::path::Path) -> std::
         tokio::fs::copy(src.join(f), dst.join(f)).await?;
     }
     Ok(())
+}
+
+/// Reduce an untrusted filename to a single, benign path component: strip
+/// separators/NUL/control chars, leading dots and spaces, and cap the length.
+fn safe_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c == '/' || c == '\\' || c == '\0' || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches(['.', ' ']);
+    let base = if trimmed.is_empty() { "attachment" } else { trimmed };
+    base.chars().take(200).collect()
+}
+
+/// Copy a composer-picked file into the app-managed draft-attachment staging
+/// area and return the staged absolute path. A path already inside the staging
+/// root (a reloaded draft round-tripping its own staged path) is returned
+/// unchanged. This guarantees dispatch only ever reads files the app itself
+/// wrote, closing an arbitrary local-file read/exfiltration path through the
+/// `save_draft` IPC command.
+async fn stage_draft_attachment(
+    root: &std::path::Path,
+    src: &str,
+    filename: &str,
+) -> Result<String> {
+    tokio::fs::create_dir_all(root).await?;
+    let root = tokio::fs::canonicalize(root).await?;
+    let canon_src = tokio::fs::canonicalize(src)
+        .await
+        .map_err(|e| CoreError::Other(format!("attachment {filename}: {e}")))?;
+    if canon_src.starts_with(&root) {
+        // Already staged (e.g. re-saving a draft reloaded from the DB).
+        return Ok(canon_src.to_string_lossy().into_owned());
+    }
+    let sub = root.join(crate::mime::rand_token());
+    tokio::fs::create_dir_all(&sub).await?;
+    let dst = sub.join(safe_filename(filename));
+    tokio::fs::copy(&canon_src, &dst).await?;
+    Ok(dst.to_string_lossy().into_owned())
 }
 
 /// Push user-entered OAuth app registrations into the resolver.

@@ -327,7 +327,7 @@ pub fn build_message(out: &OutgoingMessage) -> Result<(String, Vec<u8>)> {
     Ok((msg_id, raw))
 }
 
-fn rand_token() -> String {
+pub(crate) fn rand_token() -> String {
     use rand::Rng;
     let mut rng = rand::rng();
     (0..10)
