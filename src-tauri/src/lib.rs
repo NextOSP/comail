@@ -126,14 +126,56 @@ fn configure_linux_renderer() {
     }
 }
 
+/// Log to stderr (dev) and to `<data_dir>/logs/comail.log` (packaged builds,
+/// where stderr goes nowhere). The file is rotated once to `.1` when it
+/// crosses 5 MB so it can't grow unbounded. `RUST_LOG` overrides the filter.
+fn init_logging() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::Layer;
+
+    let filter = || {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info,comail_core=debug".into())
+    };
+
+    let file = (|| {
+        let dir = Paths::default_dirs().data_dir.join("logs");
+        std::fs::create_dir_all(&dir).ok()?;
+        let path = dir.join("comail.log");
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() > 5 * 1024 * 1024) {
+            let _ = std::fs::rename(&path, dir.join("comail.log.1"));
+        }
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+    })();
+
+    let registry =
+        tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().with_filter(filter()));
+    match file {
+        Some(f) => registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(std::sync::Mutex::new(f))
+                    .with_filter(filter()),
+            )
+            .init(),
+        None => registry.init(),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,comail_core=debug".into()),
-        )
-        .init();
+    init_logging();
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        os = std::env::consts::OS,
+        "comail starting"
+    );
 
     // Pick a WebKitGTK rendering path that suits this machine's GPU. Must run
     // before the webview is created.
@@ -237,6 +279,7 @@ pub fn run() {
             commands::test_connection,
             commands::remove_account,
             commands::start_oauth,
+            commands::cancel_oauth,
             commands::list_threads,
             commands::get_thread,
             commands::get_body,

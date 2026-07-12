@@ -106,11 +106,12 @@
       "g6": "Cuando funcione, publica la pantalla de consentimiento en Producción. En estado de Pruebas, Google caduca los inicios de sesión tras 7 días.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Abrir Microsoft Entra",
-      "m1": "En entra.microsoft.com ve a Registros de aplicaciones, Nuevo registro.",
-      "m2": "Tipos de cuenta admitidos: cualquier directorio organizativo y cuentas personales de Microsoft.",
-      "m3": "URI de redirección: plataforma Aplicaciones móviles y de escritorio, valor http://localhost.",
-      "m4": "Permisos de API: Microsoft Graph, Delegados: IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
-      "m5": "Copia el ID de aplicación (cliente) en el campo de abajo. Deja el secreto vacío para este tipo de app."
+      "m1": "En entra.microsoft.com ve a Registros de aplicaciones, Nuevo registro. Llámala Comail: los usuarios ven este nombre en la pantalla de consentimiento.",
+      "m2": "Tipos de cuenta admitidos: elige la opción multiinquilino que también incluye cuentas personales de Microsoft. Es obligatorio: Comail inicia sesión por el punto de conexión compartido /common y una app de un solo inquilino falla con el error AADSTS50194. Se puede corregir después en Autenticación.",
+      "m3": "URI de redirección: plataforma Aplicaciones móviles y de escritorio (no Web), valor http://localhost.",
+      "m4": "Permisos de API: Agregar un permiso, Microsoft Graph, y luego Permisos delegados (no Permisos de aplicación; si la lista se ve rara estás en el cuadro equivocado). Marca IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid y email.",
+      "m5": "No hay ninguna clave ni secreto que crear para Microsoft; omite Certificados y secretos. Solo copia el ID de aplicación (cliente) de la página Información general en el campo de abajo.",
+      "m6": "Solo buzones de trabajo o escuela: si el inicio de sesión termina con \"Se necesita aprobación del administrador\", un administrador del inquilino debe dar su consentimiento una vez con Conceder consentimiento de administrador en la página de permisos de API. Las cuentas personales de Outlook.com nunca lo necesitan."
     }
   },
   "accounts": {
@@ -130,6 +131,7 @@
     "waitingGoogle": "Esperando a Google…",
     "signInGoogle": "Iniciar sesión con Google",
     "waitingMicrosoft": "Esperando a Microsoft…",
+    "cancelWaiting": "{{waiting}} (clic para cancelar)",
     "signInMicrosoft": "Iniciar sesión con Microsoft"
   },
   "snippets": {

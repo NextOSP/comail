@@ -71,7 +71,17 @@ pub async fn authorize_with(
     let state = random_string(32);
 
     let server = LoopbackServer::bind().await?;
-    let redirect_uri = server.redirect_uri();
+    // Microsoft only ignores the (random) port for the literal hostname
+    // `localhost`; a 127.0.0.1 redirect must match the registered URI exactly,
+    // port included, so it always fails with AADSTS50011. Google is the
+    // opposite: its docs prescribe the loopback IP. The server accepts any
+    // path, so the Microsoft form drops /callback to exactly match a
+    // registered `http://localhost`.
+    let redirect_uri = if provider == Provider::Microsoft {
+        format!("http://localhost:{}/", server.port)
+    } else {
+        server.redirect_uri()
+    };
 
     let mut scopes = cfg.scopes.join(" ");
     for extra in extra_scopes {
@@ -96,12 +106,21 @@ pub async fn authorize_with(
         auth_url.push_str(&format!("&login_hint={}", urlencode(hint)));
     }
 
+    tracing::info!(
+        ?provider,
+        %redirect_uri,
+        scopes = %scopes,
+        "oauth: opening browser for sign-in"
+    );
     open_url(auth_url);
 
     let code = server
         .wait_for_code(std::time::Duration::from_secs(300))
-        .await?;
+        .await
+        .inspect_err(|e| tracing::warn!(?provider, error = %e, "oauth: no usable callback"))?;
+    tracing::info!(?provider, "oauth: authorization code received");
     if code.state.as_deref() != Some(state.as_str()) {
+        tracing::warn!(?provider, "oauth: state mismatch on callback");
         return Err(CoreError::Auth("oauth state mismatch".into()));
     }
 
@@ -116,9 +135,21 @@ pub async fn authorize_with(
         form.push(("client_secret".to_string(), cs));
     }
 
-    let body = post_form(cfg.token_url, &form).await?;
-    let tok: ExchangeResponse = serde_json::from_str(&body)
-        .map_err(|_| CoreError::Auth(format!("token exchange failed: {body}")))?;
+    let body = post_form(cfg.token_url, &form).await.inspect_err(
+        |e| tracing::warn!(?provider, error = %e, "oauth: token endpoint unreachable"),
+    )?;
+    let tok: ExchangeResponse = serde_json::from_str(&body).map_err(|_| {
+        // The error body is safe to log (no tokens are issued on failure) and
+        // is usually the only clue to a misconfigured app registration.
+        tracing::warn!(?provider, response = %body, "oauth: token exchange rejected");
+        CoreError::Auth(format!("token exchange failed: {body}"))
+    })?;
+    tracing::info!(
+        ?provider,
+        has_refresh_token = tok.refresh_token.is_some(),
+        expires_in = ?tok.expires_in,
+        "oauth: token exchange succeeded"
+    );
 
     let email = tok
         .id_token

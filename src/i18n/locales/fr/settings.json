@@ -106,11 +106,12 @@
       "g6": "Une fois que cela fonctionne, publiez l’écran de consentement en Production. En statut Test, Google fait expirer les connexions après 7 jours.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Ouvrir Microsoft Entra",
-      "m1": "Sur entra.microsoft.com, allez dans Inscriptions d’applications, Nouvelle inscription.",
-      "m2": "Types de comptes pris en charge : tout annuaire organisationnel et comptes Microsoft personnels.",
-      "m3": "URI de redirection : plateforme Applications mobiles et de bureau, valeur http://localhost.",
-      "m4": "Autorisations d’API : Microsoft Graph, Déléguées : IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
-      "m5": "Copiez l’ID d’application (client) dans le champ ci-dessous. Laissez le secret vide pour ce type d’application."
+      "m1": "Sur entra.microsoft.com, allez dans Inscriptions d’applications, Nouvelle inscription. Nommez-la Comail : les utilisateurs voient ce nom sur l’écran de consentement.",
+      "m2": "Types de comptes pris en charge : choisissez l’option multilocataire qui inclut aussi les comptes Microsoft personnels. C’est obligatoire : Comail se connecte via le point de terminaison partagé /common, et une application monolocataire échoue avec l’erreur AADSTS50194. Corrigeable ensuite sous Authentification.",
+      "m3": "URI de redirection : plateforme Applications mobiles et de bureau (pas Web), valeur http://localhost.",
+      "m4": "Autorisations d’API : Ajouter une autorisation, Microsoft Graph, puis Autorisations déléguées (pas Autorisations d’application ; si la liste semble étrange, vous êtes dans la mauvaise case). Cochez IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid et email.",
+      "m5": "Il n’y a aucune clé ni aucun secret à créer pour Microsoft ; ignorez Certificats et secrets. Copiez simplement l’ID d’application (client) de la page Vue d’ensemble dans le champ ci-dessous.",
+      "m6": "Boîtes professionnelles ou scolaires uniquement : si la connexion se termine par « Approbation de l’administrateur requise », un administrateur du locataire doit consentir une fois via Accorder un consentement d’administrateur sur la page des autorisations d’API. Les comptes personnels Outlook.com n’en ont jamais besoin."
     }
   },
   "accounts": {
@@ -130,6 +131,7 @@
     "waitingGoogle": "En attente de Google…",
     "signInGoogle": "Se connecter avec Google",
     "waitingMicrosoft": "En attente de Microsoft…",
+    "cancelWaiting": "{{waiting}} (cliquer pour annuler)",
     "signInMicrosoft": "Se connecter avec Microsoft"
   },
   "snippets": {
