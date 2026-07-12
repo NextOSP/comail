@@ -102,7 +102,10 @@ fn operator_filters_apply_to_semantic_hits() {
         ..Default::default()
     };
     let out = repo::search::hybrid(&conn, &q, &hits, 20).unwrap();
-    assert!(out.is_empty(), "operator filter must drop non-starred semantic hit");
+    assert!(
+        out.is_empty(),
+        "operator filter must drop non-starred semantic hit"
+    );
 }
 
 #[test]
@@ -115,7 +118,8 @@ fn store_and_counts_track_embedding_state() {
     assert_eq!(pending, 0);
 
     // A fresh body store re-flags the message as pending.
-    repo::messages::store_body(&conn, 100, Some("new text"), None, None, false, Some("new")).unwrap();
+    repo::messages::store_body(&conn, 100, Some("new text"), None, None, false, Some("new"))
+        .unwrap();
     let (_, _, pending2) = repo::embeddings::counts(&conn, MODEL).unwrap();
     assert_eq!(pending2, 1);
     let ids = repo::embeddings::pending(&conn, 10).unwrap();

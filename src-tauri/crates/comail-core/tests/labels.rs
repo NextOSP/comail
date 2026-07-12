@@ -69,7 +69,11 @@ fn membership_flows_to_summary_and_filter() {
 
     // Removing membership clears it.
     repo::labels::remove_from_message(&conn, 100, work.id).unwrap();
-    assert!(repo::threads::get_summary(&conn, 10).unwrap().unwrap().labels.is_empty());
+    assert!(repo::threads::get_summary(&conn, 10)
+        .unwrap()
+        .unwrap()
+        .labels
+        .is_empty());
     assert_eq!(list_ids(&conn, Some(work.id)), Vec::<i64>::new());
 }
 
@@ -85,14 +89,18 @@ fn reconcile_keywords_rounds_labels_in_and_out() {
     assert_eq!(repo::labels::for_thread(&conn, 10).unwrap(), vec![work.id]);
 
     // An unknown server keyword is ignored (never becomes a label membership).
-    let changed = repo::labels::reconcile_keywords(&conn, 100, &["Work".into(), "$Junk".into()]).unwrap();
+    let changed =
+        repo::labels::reconcile_keywords(&conn, 100, &["Work".into(), "$Junk".into()]).unwrap();
     assert!(!changed);
     assert_eq!(repo::labels::for_thread(&conn, 10).unwrap(), vec![work.id]);
 
     // Server now reports "Personal" instead of "Work": Work removed, Personal added.
     let changed = repo::labels::reconcile_keywords(&conn, 100, &["Personal".into()]).unwrap();
     assert!(changed);
-    assert_eq!(repo::labels::for_thread(&conn, 10).unwrap(), vec![personal.id]);
+    assert_eq!(
+        repo::labels::for_thread(&conn, 10).unwrap(),
+        vec![personal.id]
+    );
 
     // Deleting a label cascades its memberships away.
     repo::labels::delete(&conn, personal.id).unwrap();

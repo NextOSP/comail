@@ -116,10 +116,7 @@ impl Core {
         }
 
         // Calendar sync tasks for accounts with a connected CalDAV server.
-        let cal_accounts = core
-            .db
-            .read(|conn| repo::caldav::all_configs(conn))
-            .await?;
+        let cal_accounts = core.db.read(|conn| repo::caldav::all_configs(conn)).await?;
         for cfg in cal_accounts {
             core.spawn_cal_task(cfg.account_id).await;
         }
@@ -141,9 +138,8 @@ impl Core {
         {
             let c = core.clone();
             tokio::spawn(async move {
-                let needed = c
-                    .db
-                    .read(|conn| {
+                let needed =
+                    c.db.read(|conn| {
                         let s = repo::settings::get(conn)?;
                         if !s.auto_labels_enabled {
                             return Ok(false);
@@ -912,7 +908,9 @@ impl Core {
         // the master's row id (edits/deletes address the whole series in v1);
         // unsupported rules fall back to the master row alone.
         for m in masters {
-            let Some(rrule) = m.event.rrule.clone() else { continue };
+            let Some(rrule) = m.event.rrule.clone() else {
+                continue;
+            };
             let duration = m
                 .event
                 .ends_at
@@ -1028,7 +1026,8 @@ impl Core {
             .await?;
         }
 
-        self.enqueue_cal_push(event_id, account_id, "cal_put").await?;
+        self.enqueue_cal_push(event_id, account_id, "cal_put")
+            .await?;
         self.db
             .read(move |conn| repo::calendar::get(conn, event_id))
             .await?
@@ -1159,7 +1158,9 @@ impl Core {
         let args_for_db = args.clone();
         let atts_for_db = attendees.clone();
         self.db
-            .write(move |conn| repo::calendar::update_local_fields(conn, &args_for_db, &atts_for_db))
+            .write(move |conn| {
+                repo::calendar::update_local_fields(conn, &args_for_db, &atts_for_db)
+            })
             .await?;
 
         if args.notify && !args.attendees.is_empty() {
@@ -1302,7 +1303,11 @@ impl Core {
     /// Discovery doubles as the connection test - nothing persists on failure.
     pub async fn connect_calendar(&self, args: ConnectCalendarArgs) -> Result<Vec<Calendar>> {
         let account_id = args.account_id;
-        let kind = if args.kind == "google" { "google" } else { "generic" };
+        let kind = if args.kind == "google" {
+            "google"
+        } else {
+            "generic"
+        };
         let base_url = match kind {
             "google" => caldav::GOOGLE_CALDAV_BASE.to_string(),
             _ => {
@@ -1322,7 +1327,9 @@ impl Core {
         // Build auth without persisting anything yet.
         let auth = match kind {
             "google" => caldav::DavAuth::Bearer(
-                self.tokens.access_token(account_id, Provider::Gmail).await?,
+                self.tokens
+                    .access_token(account_id, Provider::Gmail)
+                    .await?,
             ),
             _ => {
                 let user = args.username.clone().unwrap_or_default();
@@ -1474,8 +1481,9 @@ impl Core {
             .read(move |conn| repo::caldav::get_calendar(conn, calendar_id))
             .await?;
         if let Some(cal) = cal {
-            self.bus
-                .emit(CoreEvent::CalendarUpdated { account_id: cal.account_id });
+            self.bus.emit(CoreEvent::CalendarUpdated {
+                account_id: cal.account_id,
+            });
         }
         Ok(())
     }
@@ -1560,7 +1568,11 @@ impl Core {
     /// Build an [`ai::AiConfig`] for `scenario` from already-loaded settings,
     /// picking the model for the scenario's tier (all tiers share the base URL
     /// and stored API key).
-    async fn ai_config_from(&self, settings: &Settings, scenario: Scenario) -> Result<ai::AiConfig> {
+    async fn ai_config_from(
+        &self,
+        settings: &Settings,
+        scenario: Scenario,
+    ) -> Result<ai::AiConfig> {
         let api_key = match credentials::load_async(0, Slot::AiApiKey).await {
             Ok(k) => k,
             // Local endpoints (LM Studio, Ollama over http://) need no key;
@@ -1671,7 +1683,13 @@ impl Core {
 
         ai::chat(
             &cfg,
-            ai::draft_prompt(&subject, &context, &reply_target, &instruction, &sender_name),
+            ai::draft_prompt(
+                &subject,
+                &context,
+                &reply_target,
+                &instruction,
+                &sender_name,
+            ),
         )
         .await
     }
@@ -1738,7 +1756,9 @@ impl Core {
                 }
                 if out.is_empty() {
                     // No index / no similar sent mail: use recent sent as exemplars.
-                    for (_, subject, body) in repo::messages::list_sent_bodies(conn, None, k as i64)? {
+                    for (_, subject, body) in
+                        repo::messages::list_sent_bodies(conn, None, k as i64)?
+                    {
                         out.push((format!("(Compose a new email. Subject: {subject})"), body));
                     }
                 }
@@ -1760,14 +1780,17 @@ impl Core {
         // best-effort and skipped for queries too short to carry meaning.
         let lex_fut = {
             let q = parsed.clone();
-            self.db
-                .read(move |conn| repo::search::lexical_thread_ids(conn, &q, repo::search::candidate_cap(limit)))
+            self.db.read(move |conn| {
+                repo::search::lexical_thread_ids(conn, &q, repo::search::candidate_cap(limit))
+            })
         };
         let vec_fut = async {
             if parsed.text.chars().count() < 3 {
                 Vec::new()
             } else {
-                self.vector_hits(&parsed.text, 200).await.unwrap_or_default()
+                self.vector_hits(&parsed.text, 200)
+                    .await
+                    .unwrap_or_default()
             }
         };
         let (lexical, vec_hits) = tokio::join!(lex_fut, vec_fut);
@@ -1991,10 +2014,16 @@ impl Core {
             return ("(empty query - nothing searched)".into(), 0);
         }
         if sources.len() >= 24 {
-            return ("Source limit reached; answer with what you already have.".into(), 0);
+            return (
+                "Source limit reached; answer with what you already have.".into(),
+                0,
+            );
         }
         let limit = args["limit"].as_u64().unwrap_or(6).clamp(1, 8) as usize;
-        let details = self.retrieve_details(&query, limit).await.unwrap_or_default();
+        let details = self
+            .retrieve_details(&query, limit)
+            .await
+            .unwrap_or_default();
 
         let mut block = String::new();
         let mut added = 0;
@@ -2253,7 +2282,11 @@ fn safe_filename(name: &str) -> String {
         })
         .collect();
     let trimmed = cleaned.trim_matches(['.', ' ']);
-    let base = if trimmed.is_empty() { "attachment" } else { trimmed };
+    let base = if trimmed.is_empty() {
+        "attachment"
+    } else {
+        trimmed
+    };
     base.chars().take(200).collect()
 }
 
@@ -2732,7 +2765,12 @@ mod ai_model_routing_tests {
         s.ai_model = "legacy".into();
         // Tiers default (ask/draft=intelligent, summarize=instant, voice=cheap)
         // but no tier model is set, so every scenario uses the legacy model.
-        for sc in [Scenario::Ask, Scenario::Draft, Scenario::Summarize, Scenario::Voice] {
+        for sc in [
+            Scenario::Ask,
+            Scenario::Draft,
+            Scenario::Summarize,
+            Scenario::Voice,
+        ] {
             assert_eq!(resolve_ai_model(&s, sc), "legacy");
         }
     }

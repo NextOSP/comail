@@ -75,7 +75,9 @@ pub fn parse(input: &str) -> ParsedQuery {
                 // Escape FTS special syntax by quoting; add * for prefix matching.
                 let clean: String = token
                     .chars()
-                    .filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_')
+                    .filter(|c| {
+                        c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_'
+                    })
                     .collect();
                 if !clean.is_empty() {
                     fts_terms.push(fts_term(&clean));
@@ -142,14 +144,8 @@ mod tests {
     #[test]
     fn leading_d_expands_to_dj_variant() {
         let q = parse("don dep");
-        assert_eq!(
-            q.fts,
-            "(\"don\"* OR \"đon\"*) AND (\"dep\"* OR \"đep\"*)"
-        );
-        assert_eq!(
-            q.fts_or,
-            "(\"don\"* OR \"đon\"*) OR (\"dep\"* OR \"đep\"*)"
-        );
+        assert_eq!(q.fts, "(\"don\"* OR \"đon\"*) AND (\"dep\"* OR \"đep\"*)");
+        assert_eq!(q.fts_or, "(\"don\"* OR \"đon\"*) OR (\"dep\"* OR \"đep\"*)");
     }
 
     #[test]

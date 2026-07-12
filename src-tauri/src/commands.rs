@@ -70,7 +70,14 @@ pub async fn list_threads(
 ) -> CmdResult<ThreadPage> {
     state
         .core
-        .list_threads(view, split_id, account_id, label_id, cursor, limit.unwrap_or(50))
+        .list_threads(
+            view,
+            split_id,
+            account_id,
+            label_id,
+            cursor,
+            limit.unwrap_or(50),
+        )
         .await
         .map_err(err)
 }
@@ -205,11 +212,7 @@ pub async fn events_for_message(
     state: State<'_, AppState>,
     message_id: i64,
 ) -> CmdResult<Vec<CalendarEvent>> {
-    state
-        .core
-        .events_for_message(message_id)
-        .await
-        .map_err(err)
+    state.core.events_for_message(message_id).await.map_err(err)
 }
 
 #[tauri::command]
@@ -273,7 +276,11 @@ pub async fn connect_calendar(
 
 #[tauri::command]
 pub async fn disconnect_calendar(state: State<'_, AppState>, account_id: i64) -> CmdResult<()> {
-    state.core.disconnect_calendar(account_id).await.map_err(err)
+    state
+        .core
+        .disconnect_calendar(account_id)
+        .await
+        .map_err(err)
 }
 
 #[tauri::command]

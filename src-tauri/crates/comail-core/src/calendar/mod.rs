@@ -230,8 +230,7 @@ pub fn parse_ics(text: &str) -> Vec<IcsEvent> {
                         }
                     }
                     "ORGANIZER" => {
-                        ev.organizer =
-                            Some(value.trim().trim_start_matches("mailto:").to_string());
+                        ev.organizer = Some(value.trim().trim_start_matches("mailto:").to_string());
                     }
                     "ATTENDEE" => {
                         let email = value.trim().trim_start_matches("mailto:").to_string();
@@ -453,10 +452,7 @@ pub fn build_reply_ics(spec: &ReplySpec) -> String {
         if let Some(s) = spec.summary {
             push_prop(out, "SUMMARY", &escape(s));
         }
-        fold(
-            &format!("ORGANIZER:mailto:{}", spec.organizer_email),
-            out,
-        );
+        fold(&format!("ORGANIZER:mailto:{}", spec.organizer_email), out);
         let cn = spec
             .attendee
             .name
@@ -506,13 +502,19 @@ mod tests {
     fn parses_attendees_description_and_meet_link() {
         let ics = "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:evt-3\r\nSUMMARY:Sync\r\nDESCRIPTION:Agenda\\nJoin: https://meet.google.com/abc-defg-hij\r\nATTENDEE;CN=\"Bob B\";PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:bob@example.com\r\nATTENDEE;PARTSTAT=ACCEPTED:mailto:carol@example.com\r\nSEQUENCE:2\r\nDTSTART:20260720T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR";
         let ev = &parse_ics(ics)[0];
-        assert_eq!(ev.description.as_deref(), Some("Agenda\nJoin: https://meet.google.com/abc-defg-hij"));
+        assert_eq!(
+            ev.description.as_deref(),
+            Some("Agenda\nJoin: https://meet.google.com/abc-defg-hij")
+        );
         assert_eq!(ev.sequence, 2);
         assert_eq!(ev.attendees.len(), 2);
         assert_eq!(ev.attendees[0].email, "bob@example.com");
         assert_eq!(ev.attendees[0].name.as_deref(), Some("Bob B"));
         assert_eq!(ev.attendees[1].partstat.as_deref(), Some("ACCEPTED"));
-        assert_eq!(ev.join_url.as_deref(), Some("https://meet.google.com/abc-defg-hij"));
+        assert_eq!(
+            ev.join_url.as_deref(),
+            Some("https://meet.google.com/abc-defg-hij")
+        );
     }
 
     #[test]
@@ -527,10 +529,19 @@ mod tests {
 
     #[test]
     fn request_roundtrips_through_parser() {
-        let organizer = Address { name: Some("Dean".into()), email: "bd@northbeam.com".into() };
+        let organizer = Address {
+            name: Some("Dean".into()),
+            email: "bd@northbeam.com".into(),
+        };
         let attendees = vec![
-            Address { name: Some("Bob, Jr.".into()), email: "bob@example.com".into() },
-            Address { name: None, email: "carol@example.com".into() },
+            Address {
+                name: Some("Bob, Jr.".into()),
+                email: "bob@example.com".into(),
+            },
+            Address {
+                name: None,
+                email: "carol@example.com".into(),
+            },
         ];
         let ics = build_request_ics(&InviteSpec {
             uid: "abc-123@comail",
@@ -567,7 +578,10 @@ mod tests {
 
     #[test]
     fn reply_roundtrips_through_parser() {
-        let me = Address { name: None, email: "bd@northbeam.com".into() };
+        let me = Address {
+            name: None,
+            email: "bd@northbeam.com".into(),
+        };
         let ics = build_reply_ics(&ReplySpec {
             uid: "evt-1@cal.example.com",
             sequence: 1,

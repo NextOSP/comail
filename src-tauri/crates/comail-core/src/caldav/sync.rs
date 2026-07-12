@@ -57,10 +57,8 @@ pub async fn sync_account(
             Err(e) => {
                 tracing::warn!("calendar {} sync failed: {e}", cal.id);
                 let msg = e.to_string();
-                db.write(move |conn| {
-                    repo::caldav::set_config_error(conn, account_id, Some(&msg))
-                })
-                .await?;
+                db.write(move |conn| repo::caldav::set_config_error(conn, account_id, Some(&msg)))
+                    .await?;
             }
         }
     }
@@ -239,7 +237,13 @@ async fn sync_calendar(
                     continue;
                 };
                 repo::calendar::upsert_remote(
-                    &tx, account_id, calendar_id, href, etag, ics, master,
+                    &tx,
+                    account_id,
+                    calendar_id,
+                    href,
+                    etag,
+                    ics,
+                    master,
                 )?;
             }
             tx.commit()?;

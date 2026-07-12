@@ -56,8 +56,10 @@ async fn first_sync_drains_bodies_fast_and_updates_live() {
         return;
     }
     std::env::set_var("COMAIL_TLS_INSECURE", "1");
-    let creds_file =
-        std::env::temp_dir().join(format!("comail-firstsync-creds-{}.json", std::process::id()));
+    let creds_file = std::env::temp_dir().join(format!(
+        "comail-firstsync-creds-{}.json",
+        std::process::id()
+    ));
     std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file);
 
     seed().await;

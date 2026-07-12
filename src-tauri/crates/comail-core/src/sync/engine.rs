@@ -144,17 +144,21 @@ async fn run_actor(ctx: SyncCtx, config: AccountConfig, mut rx: mpsc::UnboundedR
             Ok(more_bodies) => {
                 session = Some(s);
                 if full {
-                    full_due = tokio::time::Instant::now()
-                        + std::time::Duration::from_secs(CYCLE_SECS);
+                    full_due =
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
                     cycle += 1;
                 }
-                set_state(&ctx, account_id, if more_bodies { "syncing" } else { "idle" }).await;
+                set_state(
+                    &ctx,
+                    account_id,
+                    if more_bodies { "syncing" } else { "idle" },
+                )
+                .await;
                 more_bodies
             }
             Err(CoreError::NeedsReauth) | Err(CoreError::Auth(_)) => {
                 imap::logout(s).await;
-                full_due =
-                    tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
+                full_due = tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
                 set_state(&ctx, account_id, "needs_reauth").await;
                 false
             }
@@ -162,8 +166,7 @@ async fn run_actor(ctx: SyncCtx, config: AccountConfig, mut rx: mpsc::UnboundedR
                 tracing::warn!(account_id, "sync cycle error: {e}");
                 imap::logout(s).await;
                 // Keep the pre-existing pacing: don't hammer a flaky server.
-                full_due =
-                    tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
+                full_due = tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
                 ctx.bus.emit(CoreEvent::NetworkState { online: false });
                 false
             }
@@ -637,7 +640,8 @@ async fn reconcile_flags(ctx: &SyncCtx, session: &mut Session, folder: &Folder) 
                     if repo::actions::has_pending_for_message(&tx, row.id)? {
                         continue;
                     }
-                    let flags_changed = row.is_read != flags.seen || row.is_starred != flags.flagged;
+                    let flags_changed =
+                        row.is_read != flags.seen || row.is_starred != flags.flagged;
                     if flags_changed {
                         repo::messages::set_flags(&tx, row.id, flags.seen, flags.flagged)?;
                     }

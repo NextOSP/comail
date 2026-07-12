@@ -52,11 +52,7 @@ pub fn spawn(db: Db, bus: EventBus, tokens: TokenProvider, account_id: i64) -> C
                 Err(CoreError::NeedsReauth) => {
                     let _ = db
                         .write(move |conn| {
-                            repo::caldav::set_config_error(
-                                conn,
-                                account_id,
-                                Some("needs_reauth"),
-                            )
+                            repo::caldav::set_config_error(conn, account_id, Some("needs_reauth"))
                         })
                         .await;
                 }

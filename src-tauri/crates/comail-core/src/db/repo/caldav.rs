@@ -252,16 +252,40 @@ mod tests {
         .unwrap();
         assert_eq!(all_configs(&c).unwrap().len(), 1);
 
-        let a = upsert_calendar(&c, 1, "https://dav.example.com/cal/a/", Some("A"), None, false)
-            .unwrap();
-        let b = upsert_calendar(&c, 1, "https://dav.example.com/cal/b/", Some("B"), None, true)
-            .unwrap();
+        let a = upsert_calendar(
+            &c,
+            1,
+            "https://dav.example.com/cal/a/",
+            Some("A"),
+            None,
+            false,
+        )
+        .unwrap();
+        let b = upsert_calendar(
+            &c,
+            1,
+            "https://dav.example.com/cal/b/",
+            Some("B"),
+            None,
+            true,
+        )
+        .unwrap();
         // Re-discovery keeps ids and sync state.
         set_sync_state(&c, a, Some("c1"), Some("t1"), 42).unwrap();
-        let a2 = upsert_calendar(&c, 1, "https://dav.example.com/cal/a/", Some("A2"), None, false)
-            .unwrap();
+        let a2 = upsert_calendar(
+            &c,
+            1,
+            "https://dav.example.com/cal/a/",
+            Some("A2"),
+            None,
+            false,
+        )
+        .unwrap();
         assert_eq!(a, a2);
-        assert_eq!(sync_state(&c, a).unwrap(), (Some("c1".into()), Some("t1".into())));
+        assert_eq!(
+            sync_state(&c, a).unwrap(),
+            (Some("c1".into()), Some("t1".into()))
+        );
 
         set_default_calendar(&c, 1, b).unwrap();
         assert_eq!(default_calendar(&c, 1).unwrap().unwrap().id, b);
