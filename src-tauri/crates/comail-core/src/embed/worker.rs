@@ -7,12 +7,12 @@
 //! thread; only the short vector write does.
 
 use super::{
-    model_dir, model_present, prepare_chunks, spec_or_default, Embedder, EmbedState, LocalCandle,
+    model_dir, model_present, prepare_chunks, spec_or_default, EmbedState, Embedder, LocalCandle,
 };
 use crate::config::Paths;
 use crate::db::{repo, Db};
-use crate::error::{CoreError, Result};
 use crate::embed::store::VectorIndex;
+use crate::error::{CoreError, Result};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -69,7 +69,9 @@ async fn tick(db: &Db, state: &Arc<EmbedState>, paths: &Arc<Paths>) -> Result<bo
     let model_id = embedder.model_id().to_string();
     let dim = embedder.dim();
 
-    let batch = db.read(|conn| repo::embeddings::pending(conn, BATCH)).await?;
+    let batch = db
+        .read(|conn| repo::embeddings::pending(conn, BATCH))
+        .await?;
     if batch.is_empty() {
         return Ok(false);
     }
@@ -142,7 +144,8 @@ async fn ensure_ready(
     let model_id = spec.key.to_string();
     let rows = {
         let m = model_id.clone();
-        db.read(move |conn| repo::embeddings::load_all(conn, &m)).await?
+        db.read(move |conn| repo::embeddings::load_all(conn, &m))
+            .await?
     };
     let mut idx = VectorIndex::new(spec.dim, spec.key);
     for (mid, ci, v) in rows {

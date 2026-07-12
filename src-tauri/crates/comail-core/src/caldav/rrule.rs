@@ -65,7 +65,9 @@ fn parse_rule(rrule: &str) -> Option<Rule> {
     };
     let mut saw_freq = false;
     for part in rrule.split(';') {
-        let Some((k, v)) = part.split_once('=') else { continue };
+        let Some((k, v)) = part.split_once('=') else {
+            continue;
+        };
         match k.trim().to_ascii_uppercase().as_str() {
             "FREQ" => {
                 saw_freq = true;
@@ -140,7 +142,9 @@ fn nth_weekday(year: i32, month: u32, ord: i32, day: Weekday) -> Option<chrono::
             - first.weekday().num_days_from_monday() as i64)
             % 7;
         let dom = 1 + offset as u32 + (ord as u32 - 1) * 7;
-        (dom <= days_in_month).then(|| first.with_day(dom)).flatten()
+        (dom <= days_in_month)
+            .then(|| first.with_day(dom))
+            .flatten()
     } else {
         let last = first.with_day(days_in_month)?;
         let offset = (7 + last.weekday().num_days_from_monday() as i64
@@ -283,12 +287,10 @@ pub fn expand(
     let mut overrides: Vec<(i64, i64, i64)> = Vec::new(); // (orig_start, new_start, new_end)
     if let Some(raw) = ical_raw {
         for line in unfolded_lines(raw) {
-            if let Some(rest) = line
-                .strip_prefix("EXDATE:")
-                .or_else(|| line.split_once(':').and_then(|(k, v)| {
-                    k.starts_with("EXDATE;").then_some(v)
-                }))
-            {
+            if let Some(rest) = line.strip_prefix("EXDATE:").or_else(|| {
+                line.split_once(':')
+                    .and_then(|(k, v)| k.starts_with("EXDATE;").then_some(v))
+            }) {
                 for tok in rest.split(',') {
                     if let Some((ms, _)) = parse_dt(tok) {
                         exdates.push(ms);
@@ -366,7 +368,12 @@ mod tests {
 
     fn local_ms(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> i64 {
         chrono::Local
-            .from_local_datetime(&NaiveDate::from_ymd_opt(y, mo, d).unwrap().and_hms_opt(h, mi, 0).unwrap())
+            .from_local_datetime(
+                &NaiveDate::from_ymd_opt(y, mo, d)
+                    .unwrap()
+                    .and_hms_opt(h, mi, 0)
+                    .unwrap(),
+            )
             .earliest()
             .unwrap()
             .timestamp_millis()
@@ -419,11 +426,23 @@ mod tests {
         // 2026 in Europe; if the host TZ has no DST this still passes since
         // wall-clock arithmetic is used throughout).
         let start = local_ms(2026, 10, 20, 9, 0);
-        let occ = expand("FREQ=WEEKLY;COUNT=3", start, HOUR, None, 0, start + 40 * DAY).unwrap();
+        let occ = expand(
+            "FREQ=WEEKLY;COUNT=3",
+            start,
+            HOUR,
+            None,
+            0,
+            start + 40 * DAY,
+        )
+        .unwrap();
         assert_eq!(occ.len(), 3);
         for (i, o) in occ.iter().enumerate() {
             let dt = to_local_naive(o.start).unwrap();
-            assert_eq!(dt.time(), chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap(), "occ {i}");
+            assert_eq!(
+                dt.time(),
+                chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+                "occ {i}"
+            );
         }
     }
 
@@ -466,7 +485,15 @@ mod tests {
     #[test]
     fn monthly_day_31_skips_short_months() {
         let start = local_ms(2026, 1, 31, 12, 0);
-        let occ = expand("FREQ=MONTHLY;COUNT=4", start, HOUR, None, 0, start + 200 * DAY).unwrap();
+        let occ = expand(
+            "FREQ=MONTHLY;COUNT=4",
+            start,
+            HOUR,
+            None,
+            0,
+            start + 200 * DAY,
+        )
+        .unwrap();
         let starts: Vec<i64> = occ.iter().map(|o| o.start).collect();
         // Feb/Apr have no 31st; COUNT applies to emitted candidates.
         assert_eq!(
@@ -533,9 +560,18 @@ mod tests {
         .unwrap();
         let starts: Vec<i64> = occ.iter().map(|o| o.start).collect();
         assert!(starts.contains(&local_ms(2026, 7, 6, 9, 0)));
-        assert!(!starts.contains(&local_ms(2026, 7, 13, 9, 0)), "EXDATE skipped");
-        assert!(!starts.contains(&local_ms(2026, 7, 20, 9, 0)), "overridden slot moved");
-        assert!(starts.contains(&local_ms(2026, 7, 21, 14, 0)), "override present");
+        assert!(
+            !starts.contains(&local_ms(2026, 7, 13, 9, 0)),
+            "EXDATE skipped"
+        );
+        assert!(
+            !starts.contains(&local_ms(2026, 7, 20, 9, 0)),
+            "overridden slot moved"
+        );
+        assert!(
+            starts.contains(&local_ms(2026, 7, 21, 14, 0)),
+            "override present"
+        );
     }
 
     #[test]
@@ -543,7 +579,8 @@ mod tests {
         let start = local_ms(2026, 7, 1, 9, 0);
         assert!(expand("FREQ=WEEKLY;BYSETPOS=2", start, HOUR, None, 0, i64::MAX / 2).is_none());
         assert!(expand("FREQ=HOURLY", start, HOUR, None, 0, i64::MAX / 2).is_none());
-        assert!(expand("COUNT=3", start, HOUR, None, 0, i64::MAX / 2).is_none()); // no FREQ
+        assert!(expand("COUNT=3", start, HOUR, None, 0, i64::MAX / 2).is_none());
+        // no FREQ
     }
 
     #[test]

@@ -112,7 +112,10 @@ pub fn classify(f: &MessageFacts) -> Option<Category> {
     if (f.is_automated || f.has_list_headers)
         && (domain_matches(domain, NEWSLETTER_DOMAINS)
             || newsy_local
-            || subject_has(&subject, &["issue #", "digest", "this week in", "weekly roundup"]))
+            || subject_has(
+                &subject,
+                &["issue #", "digest", "this week in", "weekly roundup"],
+            ))
     {
         return Some(Category::News);
     }
@@ -125,7 +128,14 @@ pub fn classify(f: &MessageFacts) -> Option<Category> {
             || promo_local
             || subject_has(
                 &subject,
-                &["% off", "sale", "last chance", "free shipping", "limited time", "discount"],
+                &[
+                    "% off",
+                    "sale",
+                    "last chance",
+                    "free shipping",
+                    "limited time",
+                    "discount",
+                ],
             ))
     {
         return Some(Category::Marketing);
@@ -135,7 +145,14 @@ pub fn classify(f: &MessageFacts) -> Option<Category> {
         && !f.sender_known
         && subject_has(
             &subject,
-            &["quick call", "partnership", "sponsor", "demo", "collab", "guest post"],
+            &[
+                "quick call",
+                "partnership",
+                "sponsor",
+                "demo",
+                "collab",
+                "guest post",
+            ],
         )
     {
         return Some(Category::Pitch);
@@ -199,12 +216,22 @@ mod tests {
     #[test]
     fn social_by_domain() {
         assert_eq!(
-            classify(&facts("notify@linkedin.com", "You appeared in searches", true, true)),
+            classify(&facts(
+                "notify@linkedin.com",
+                "You appeared in searches",
+                true,
+                true
+            )),
             Some(Category::Social)
         );
         // subdomains too
         assert_eq!(
-            classify(&facts("x@e.facebookmail.com", "New friend request", true, false)),
+            classify(&facts(
+                "x@e.facebookmail.com",
+                "New friend request",
+                true,
+                false
+            )),
             Some(Category::Social)
         );
     }
@@ -216,7 +243,12 @@ mod tests {
             Some(Category::News)
         );
         assert_eq!(
-            classify(&facts("hello@somecorp.com", "Issue #42: the roundup", false, true)),
+            classify(&facts(
+                "hello@somecorp.com",
+                "Issue #42: the roundup",
+                false,
+                true
+            )),
             Some(Category::News)
         );
     }
@@ -224,11 +256,21 @@ mod tests {
     #[test]
     fn marketing_by_promo_signals() {
         assert_eq!(
-            classify(&facts("offers@shop.example", "50% off everything", true, true)),
+            classify(&facts(
+                "offers@shop.example",
+                "50% off everything",
+                true,
+                true
+            )),
             Some(Category::Marketing)
         );
         assert_eq!(
-            classify(&facts("bounce@em1234.rsgsv.net", "Your cart misses you", true, true)),
+            classify(&facts(
+                "bounce@em1234.rsgsv.net",
+                "Your cart misses you",
+                true,
+                true
+            )),
             Some(Category::Marketing)
         );
     }
@@ -236,7 +278,12 @@ mod tests {
     #[test]
     fn pitch_only_for_unknown_human_senders() {
         assert_eq!(
-            classify(&facts("bd@agency.io", "Quick call this week?", false, false)),
+            classify(&facts(
+                "bd@agency.io",
+                "Quick call this week?",
+                false,
+                false
+            )),
             Some(Category::Pitch)
         );
         // known sender: not a pitch
@@ -258,7 +305,8 @@ mod tests {
         use crate::db::testutil;
         let c = testutil::conn();
         testutil::seed_account(&c);
-        let (_t, msg) = testutil::seed_message(&c, "offers@shop.example", "50% off everything", true);
+        let (_t, msg) =
+            testutil::seed_message(&c, "offers@shop.example", "50% off everything", true);
 
         let f = MessageFacts {
             from_addr: "offers@shop.example",
@@ -290,12 +338,18 @@ mod tests {
         assert!(!sender_known(&c, "bd@agency.io"));
         crate::db::repo::contacts::harvest(
             &c,
-            &crate::models::Address { name: None, email: "bd@agency.io".into() },
+            &crate::models::Address {
+                name: None,
+                email: "bd@agency.io".into(),
+            },
             true,
             100,
         )
         .unwrap();
-        assert!(sender_known(&c, "BD@AGENCY.IO"), "contact match must be case-insensitive");
+        assert!(
+            sender_known(&c, "BD@AGENCY.IO"),
+            "contact match must be case-insensitive"
+        );
     }
 
     #[test]

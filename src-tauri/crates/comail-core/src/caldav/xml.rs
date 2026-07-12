@@ -131,7 +131,11 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
                     "response" => {
                         if let Some(mut item) = cur.take() {
                             if item.status == 0 {
-                                item.status = if propstat_status != 0 { propstat_status } else { 200 };
+                                item.status = if propstat_status != 0 {
+                                    propstat_status
+                                } else {
+                                    200
+                                };
                             }
                             out.items.push(item);
                         }
@@ -404,7 +408,10 @@ END:VCALENDAR</c:calendar-data>
         assert_eq!(cal.displayname.as_deref(), Some("Personal"));
         assert_eq!(cal.color.as_deref(), Some("#3B87E0FF"));
         assert_eq!(cal.ctag.as_deref(), Some("ctag-123"));
-        assert_eq!(cal.sync_token.as_deref(), Some("http://sabre.io/ns/sync/55"));
+        assert_eq!(
+            cal.sync_token.as_deref(),
+            Some("http://sabre.io/ns/sync/55")
+        );
         let tasks = &ms.items[2];
         assert!(tasks.is_calendar);
         assert!(!tasks.supports_vevent); // VTODO-only collection filtered out

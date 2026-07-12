@@ -31,7 +31,11 @@ pub struct SlidePreview {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum AttachmentPreview {
     /// Raster/vector image, delivered as a data URI (rendered in an <img>,
     /// where SVG scripts never execute).
@@ -53,7 +57,11 @@ pub enum AttachmentPreview {
 
 /// Build a preview from raw attachment bytes. Never fails: anything we can't
 /// parse degrades to `Unsupported` so the UI can fall back to the OS opener.
-pub fn build_preview(bytes: &[u8], filename: Option<&str>, mime: Option<&str>) -> AttachmentPreview {
+pub fn build_preview(
+    bytes: &[u8],
+    filename: Option<&str>,
+    mime: Option<&str>,
+) -> AttachmentPreview {
     if bytes.len() > MAX_PREVIEW_BYTES {
         return AttachmentPreview::Unsupported {
             reason: "too_large".into(),
@@ -129,10 +137,8 @@ fn format_of(ext: &str, mime: &str) -> Format {
         "md" | "markdown" => return Format::Markdown,
         "html" | "htm" => return Format::Html,
         "txt" | "log" | "json" | "xml" | "yaml" | "yml" | "toml" | "ini" | "cfg" | "conf"
-        | "rs" | "py" | "js" | "ts" | "tsx" | "jsx" | "java" | "c" | "cpp" | "h" | "hpp"
-        | "go" | "rb" | "sh" | "css" | "sql" | "diff" | "patch" | "ics" | "eml" => {
-            return Format::Text
-        }
+        | "rs" | "py" | "js" | "ts" | "tsx" | "jsx" | "java" | "c" | "cpp" | "h" | "hpp" | "go"
+        | "rb" | "sh" | "css" | "sql" | "diff" | "patch" | "ics" | "eml" => return Format::Text,
         _ => {}
     }
     // No (known) extension - fall back to the declared MIME type.
@@ -442,8 +448,7 @@ fn heading_level(style: Option<&str>) -> Option<u8> {
 
 fn attr_val(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option<String> {
     e.attributes().flatten().find_map(|a| {
-        (a.key.local_name().as_ref() == name)
-            .then(|| String::from_utf8_lossy(&a.value).to_string())
+        (a.key.local_name().as_ref() == name).then(|| String::from_utf8_lossy(&a.value).to_string())
     })
 }
 
@@ -596,7 +601,10 @@ mod tests {
         match p {
             AttachmentPreview::Html { html } => {
                 assert!(html.contains("<h1>Title</h1>"), "html: {html}");
-                assert!(html.contains("<p>Hello world &amp; &lt;tag&gt;</p>"), "html: {html}");
+                assert!(
+                    html.contains("<p>Hello world &amp; &lt;tag&gt;</p>"),
+                    "html: {html}"
+                );
                 assert!(html.contains("<li>item one</li>"), "html: {html}");
                 assert!(html.contains("<td>A1</td><td>B1</td>"), "html: {html}");
             }

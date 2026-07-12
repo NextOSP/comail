@@ -166,5 +166,8 @@ async fn save_draft_neutralizes_traversal_filename_and_is_idempotent() {
         .unwrap();
     assert_eq!(draft_id2, draft_id);
     let restaged = std::fs::canonicalize(&stored_paths(&core, draft_id).await[0]).unwrap();
-    assert_eq!(restaged, staged_canon, "already-staged path should be reused");
+    assert_eq!(
+        restaged, staged_canon,
+        "already-staged path should be reused"
+    );
 }

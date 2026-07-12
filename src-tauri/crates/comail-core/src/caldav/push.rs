@@ -90,8 +90,17 @@ async fn push_row(
     // conditional headers is NOT done - but a 412 on create means the uid
     // already exists remotely: treat like an update conflict.
     if resp.status == 412 || resp.status == 409 {
-        return resolve_conflict(db, bus, t, account_id, calendar_id, &abs_url, &href_path, row)
-            .await;
+        return resolve_conflict(
+            db,
+            bus,
+            t,
+            account_id,
+            calendar_id,
+            &abs_url,
+            &href_path,
+            row,
+        )
+        .await;
     }
     if !resp.ok() {
         return Err(super::err(format!("PUT {abs_url}: HTTP {}", resp.status)));
@@ -106,7 +115,14 @@ async fn push_row(
     let etag = resp.etag.clone();
     let href = href_path.clone();
     db.write(move |conn| {
-        repo::calendar::clear_dirty_set_etag(conn, event_id, calendar_id, &href, etag.as_deref(), &body)
+        repo::calendar::clear_dirty_set_etag(
+            conn,
+            event_id,
+            calendar_id,
+            &href,
+            etag.as_deref(),
+            &body,
+        )
     })
     .await?;
     Ok(())
@@ -116,7 +132,8 @@ async fn push_delete(db: &Db, t: &dyn Transport, row: &SyncRow) -> Result<()> {
     let event_id = row.event.id;
     let (Some(calendar_id), Some(href)) = (row.event.calendar_id, row.caldav_href.clone()) else {
         // Never synced: nothing to delete remotely.
-        db.write(move |conn| repo::calendar::hard_delete(conn, event_id)).await?;
+        db.write(move |conn| repo::calendar::hard_delete(conn, event_id))
+            .await?;
         return Ok(());
     };
     let cal_url = db
@@ -132,7 +149,8 @@ async fn push_delete(db: &Db, t: &dyn Transport, row: &SyncRow) -> Result<()> {
     let resp = t.request("DELETE", &abs_url, None, &headers, None).await?;
     match resp.status {
         s if (200..300).contains(&s) || s == 404 => {
-            db.write(move |conn| repo::calendar::hard_delete(conn, event_id)).await?;
+            db.write(move |conn| repo::calendar::hard_delete(conn, event_id))
+                .await?;
             Ok(())
         }
         412 => {
@@ -184,14 +202,19 @@ async fn resolve_conflict(
                 &tx,
                 account_id,
                 &conflict_uid,
-                &format!("{} (conflict copy)", row2.event.summary.clone().unwrap_or_default()),
+                &format!(
+                    "{} (conflict copy)",
+                    row2.event.summary.clone().unwrap_or_default()
+                ),
                 row2.event.location.as_deref(),
                 row2.event.description.as_deref(),
                 row2.event.join_url.as_deref(),
                 row2.event.organizer.as_deref().unwrap_or_default(),
                 &atts,
                 row2.event.starts_at,
-                row2.event.ends_at.unwrap_or(row2.event.starts_at + 1_800_000),
+                row2.event
+                    .ends_at
+                    .unwrap_or(row2.event.starts_at + 1_800_000),
                 row2.event.all_day,
             )?;
             // Then let the server version replace the original row.
@@ -201,7 +224,15 @@ async fn resolve_conflict(
                     "UPDATE calendar_events SET dirty = 0, deleted = 0 WHERE id = ?1",
                     rusqlite::params![event_id],
                 )?;
-                repo::calendar::upsert_remote(&tx, account_id, calendar_id, &href, &etag, &ics, master)?;
+                repo::calendar::upsert_remote(
+                    &tx,
+                    account_id,
+                    calendar_id,
+                    &href,
+                    &etag,
+                    &ics,
+                    master,
+                )?;
             }
             tx.commit()?;
             Ok(())
@@ -227,7 +258,13 @@ async fn resolve_conflict(
 
 fn sanitize_uid(uid: &str) -> String {
     uid.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '@' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '@' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -246,7 +283,10 @@ pub fn build_put_body(row: &SyncRow, self_email: Option<&str>) -> String {
     push_prop(&mut out, "DTSTAMP", &fmt_utc(now_ms()));
     push_prop(&mut out, "SEQUENCE", &row.sequence.to_string());
     if ev.all_day {
-        fold(&format!("DTSTART;VALUE=DATE:{}", fmt_local_date(ev.starts_at)), &mut out);
+        fold(
+            &format!("DTSTART;VALUE=DATE:{}", fmt_local_date(ev.starts_at)),
+            &mut out,
+        );
         fold(
             &format!(
                 "DTEND;VALUE=DATE:{}",
@@ -293,7 +333,10 @@ pub fn build_put_body(row: &SyncRow, self_email: Option<&str>) -> String {
             a.partstat.clone()
         };
         let ps = partstat.unwrap_or_else(|| "NEEDS-ACTION".into());
-        fold(&format!("ATTENDEE;PARTSTAT={ps}:mailto:{}", a.email), &mut out);
+        fold(
+            &format!("ATTENDEE;PARTSTAT={ps}:mailto:{}", a.email),
+            &mut out,
+        );
     }
     // Carry-overs from the raw server copy.
     if let Some(raw) = &row.ical_raw {
@@ -474,7 +517,11 @@ mod tests {
             .await
             .unwrap();
 
-        let ok = DavResponse { status: 204, etag: Some("\"e1\"".into()), body: String::new() };
+        let ok = DavResponse {
+            status: 204,
+            etag: Some("\"e1\"".into()),
+            body: String::new(),
+        };
         let t = MockTransport::new(vec![ok]);
         assert!(push_dirty(&db, &bus, &t, 1).await.unwrap());
 
@@ -487,7 +534,10 @@ mod tests {
         assert!(!body.contains("METHOD"));
         assert!(body.contains("BEGIN:VALARM"), "alarm carried over");
         let headers = t.headers_seen.lock().unwrap();
-        assert_eq!(headers[0].get("If-Match").map(String::as_str), Some("\"e0\""));
+        assert_eq!(
+            headers[0].get("If-Match").map(String::as_str),
+            Some("\"e0\"")
+        );
         drop(seen);
         drop(headers);
 
@@ -498,7 +548,11 @@ mod tests {
             .unwrap();
         assert!(!row.event.summary.is_none());
         assert_eq!(row.etag.as_deref(), Some("\"e1\""));
-        assert!(db.read(|c| repo::calendar::dirty_rows(c, 1)).await.unwrap().is_empty());
+        assert!(db
+            .read(|c| repo::calendar::dirty_rows(c, 1))
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -508,19 +562,38 @@ mod tests {
         let id = db
             .write(|c| {
                 repo::calendar::insert_local(
-                    c, 1, "new-1@comail", "Fresh", None, None, None, "me@test.dev", &[], 1_000,
-                    2_000, false,
+                    c,
+                    1,
+                    "new-1@comail",
+                    "Fresh",
+                    None,
+                    None,
+                    None,
+                    "me@test.dev",
+                    &[],
+                    1_000,
+                    2_000,
+                    false,
                 )
             })
             .await
             .unwrap();
-        db.write(move |c| repo::calendar::mark_dirty(c, id)).await.unwrap();
+        db.write(move |c| repo::calendar::mark_dirty(c, id))
+            .await
+            .unwrap();
 
-        let ok = DavResponse { status: 201, etag: Some("\"n1\"".into()), body: String::new() };
+        let ok = DavResponse {
+            status: 201,
+            etag: Some("\"n1\"".into()),
+            body: String::new(),
+        };
         let t = MockTransport::new(vec![ok]);
         assert!(push_dirty(&db, &bus, &t, 1).await.unwrap());
         let headers = t.headers_seen.lock().unwrap();
-        assert_eq!(headers[0].get("If-None-Match").map(String::as_str), Some("*"));
+        assert_eq!(
+            headers[0].get("If-None-Match").map(String::as_str),
+            Some("*")
+        );
         drop(headers);
         let row = db
             .read(move |c| repo::calendar::sync_row_for(c, id))
@@ -528,7 +601,11 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.event.calendar_id, Some(10));
-        assert!(row.caldav_href.as_deref().unwrap().ends_with("new-1@comail.ics"));
+        assert!(row
+            .caldav_href
+            .as_deref()
+            .unwrap()
+            .ends_with("new-1@comail.ics"));
     }
 
     #[tokio::test]
@@ -540,7 +617,11 @@ mod tests {
             .await
             .unwrap();
 
-        let precondition = DavResponse { status: 412, etag: None, body: String::new() };
+        let precondition = DavResponse {
+            status: 412,
+            etag: None,
+            body: String::new(),
+        };
         let server_copy = DavResponse {
             status: 200,
             etag: Some("\"srv\"".into()),
@@ -557,7 +638,11 @@ mod tests {
         let summaries: Vec<_> = events.iter().filter_map(|e| e.summary.clone()).collect();
         assert!(summaries.iter().any(|s| s == "Server truth"));
         assert!(summaries.iter().any(|s| s.contains("(conflict copy)")));
-        assert!(db.read(|c| repo::calendar::dirty_rows(c, 1)).await.unwrap().is_empty());
+        assert!(db
+            .read(|c| repo::calendar::dirty_rows(c, 1))
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -565,9 +650,15 @@ mod tests {
         let (db, _dir) = seed_db().await;
         let bus = EventBus::new();
         let id = seed_synced_event(&db).await;
-        db.write(move |c| repo::calendar::mark_deleted(c, id)).await.unwrap();
+        db.write(move |c| repo::calendar::mark_deleted(c, id))
+            .await
+            .unwrap();
 
-        let ok = DavResponse { status: 204, etag: None, body: String::new() };
+        let ok = DavResponse {
+            status: 204,
+            etag: None,
+            body: String::new(),
+        };
         let t = MockTransport::new(vec![ok]);
         push_dirty(&db, &bus, &t, 1).await.unwrap();
         let seen = t.seen.lock().unwrap();
@@ -599,7 +690,15 @@ mod tests {
                     ends_at_ms: Some(2_000),
                     ..Default::default()
                 };
-                repo::calendar::upsert_remote(c, 1, 10, "/cal/me/work/inv1.ics", "\"i0\"", "RAW", &ev)?;
+                repo::calendar::upsert_remote(
+                    c,
+                    1,
+                    10,
+                    "/cal/me/work/inv1.ics",
+                    "\"i0\"",
+                    "RAW",
+                    &ev,
+                )?;
                 let id: i64 = c.query_row(
                     "SELECT id FROM calendar_events WHERE ical_uid = 'inv-1@remote'",
                     [],
@@ -613,11 +712,18 @@ mod tests {
             .unwrap();
         let _ = id;
 
-        let ok = DavResponse { status: 204, etag: Some("\"i1\"".into()), body: String::new() };
+        let ok = DavResponse {
+            status: 204,
+            etag: Some("\"i1\"".into()),
+            body: String::new(),
+        };
         let t = MockTransport::new(vec![ok]);
         push_dirty(&db, &bus, &t, 1).await.unwrap();
         let seen = t.seen.lock().unwrap();
         let body = seen[0].2.as_ref().unwrap();
-        assert!(body.contains("ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@test.dev"), "{body}");
+        assert!(
+            body.contains("ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@test.dev"),
+            "{body}"
+        );
     }
 }

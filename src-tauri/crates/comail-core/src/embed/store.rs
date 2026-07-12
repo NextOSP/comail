@@ -143,7 +143,7 @@ mod tests {
         // message 1: two chunks, one aligned with query
         idx.push(1, 0, &[1.0, 0.0]);
         idx.push(1, 1, &[0.0, 1.0]);
-        idx.push(2, 0, &[0.7071, 0.7071]);
+        idx.push(2, 0, &[std::f32::consts::FRAC_1_SQRT_2, std::f32::consts::FRAC_1_SQRT_2]);
         let q = [1.0f32, 0.0];
         let res = idx.search(&q, 5);
         assert_eq!(res.len(), 2); // deduped to 2 messages

@@ -76,11 +76,17 @@ mod tests {
 
         // ordered by position
         let listed = list(&c).unwrap();
-        assert_eq!(listed.iter().map(|s| s.id).collect::<Vec<_>>(), vec![b.id, a.id]);
+        assert_eq!(
+            listed.iter().map(|s| s.id).collect::<Vec<_>>(),
+            vec![b.id, a.id]
+        );
 
         // query JSON survives the roundtrip
         let got = get(&c, a.id).unwrap().unwrap();
-        assert_eq!(got.query.senders.as_deref(), Some(&["@github.com".to_string()][..]));
+        assert_eq!(
+            got.query.senders.as_deref(),
+            Some(&["@github.com".to_string()][..])
+        );
         assert_eq!(got.query.is_automated, Some(true));
 
         let updated = save(&c, Some(a.id), "GH", 2, &SplitRuleQuery::default()).unwrap();
