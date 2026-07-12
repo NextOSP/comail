@@ -27,7 +27,7 @@ jobs:
     name: Lint & test
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Linux system deps
         run: |
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: lint-test
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Linux system deps
         run: |
