@@ -40,7 +40,7 @@ hf-hub = { version = "1", default-features = false, features = ["rustls-tls"] }
 # auth
 keyring = { version = "3", features = ["sync-secret-service", "apple-native", "windows-native"] }
 base64 = "0.22"
-sha2 = "0.10"
+sha2 = "0.11"
 url = "2"
 
 # CalDAV (HTTP + multistatus XML); rustls keeps the no-native-TLS property
