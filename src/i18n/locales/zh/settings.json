@@ -1,0 +1,194 @@
+{
+  "title": "设置",
+  "section": {
+    "preferences": "偏好设置",
+    "ai": "AI",
+    "oauthApps": "OAuth 应用",
+    "accounts": "账户",
+    "splitInbox": "分栏收件箱",
+    "snippets": "片段",
+    "labels": "标签"
+  },
+  "search": {
+    "placeholder": "搜索设置…",
+    "noResults": "没有与“{{query}}”匹配的设置。"
+  },
+  "theme": {
+    "label": "主题",
+    "hint": "雪白为浅色，碳黑为深色。",
+    "snow": "雪白",
+    "carbon": "碳黑",
+    "system": "跟随系统"
+  },
+  "language": {
+    "label": "语言",
+    "hint": "“跟随系统”将使用您设备的语言。",
+    "system": "跟随系统"
+  },
+  "undoSend": {
+    "label": "撤销发送窗口",
+    "hint": "发送后可用 Z 撤销的时长。",
+    "seconds": "{{n}} 秒"
+  },
+  "loadRemoteImages": {
+    "label": "加载远程图片",
+    "hint": "关闭后会拦截 HTML 邮件中的跟踪像素和远程内容。"
+  },
+  "toast": {
+    "settingsSaveFailed": "无法保存设置：{{detail}}"
+  },
+  "ai": {
+    "statusLabel": "状态",
+    "statusHint": "密钥存储在系统密钥链中，且不会显示。",
+    "configured": "已配置 · {{model}}",
+    "notConfigured": "未配置",
+    "loading": "…",
+    "apiKeyLabel": "API 密钥",
+    "apiKeyHint": "留空保存可清除已存储的密钥。",
+    "apiKeyPlaceholder": "sk-or-…",
+    "save": "保存",
+    "keySaved": "AI 密钥已保存",
+    "keyCleared": "AI 密钥已清除",
+    "baseUrlLabel": "基础 URL",
+    "baseUrlHint": "兼容 OpenAI 的端点。",
+    "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
+    "modelLabel": "模型",
+    "modelsAvailable": "端点提供 {{n}} 个可用模型。",
+    "modelHintEmpty": "输入模型 id，或在端点列表加载后从中选择。",
+    "modelPlaceholder": "anthropic/claude-sonnet",
+    "providerLabel": "服务商",
+    "providerHint": "预设会自动填入基础 URL；选择自定义端点可使用任何兼容 OpenAI 的 URL。本地服务器无需 API 密钥。",
+    "customProvider": "自定义端点"
+  },
+  "oauth": {
+    "description": "使用 Google / Microsoft 登录需要您自己的应用注册（一个客户端 ID）。请在 Google Cloud Console 中创建 <b>桌面应用</b> OAuth 客户端，或在 Microsoft Entra 中创建 <b>移动和桌面</b> 应用，并将重定向 URI 设为 <code>http://localhost</code>。完整操作步骤见下方。",
+    "googleClientIdLabel": "Google 客户端 ID",
+    "googleClientIdPlaceholder": "1234-abc.apps.googleusercontent.com",
+    "googleClientSecretLabel": "Google 客户端密钥",
+    "googleClientSecretHint": "桌面应用客户端会获得一个密钥；Google 不将其视为机密。",
+    "googleClientSecretPlaceholder": "GOCSPX-…",
+    "msClientIdLabel": "Microsoft 客户端 ID",
+    "msClientIdHint": "Entra 应用注册的应用程序（客户端）ID。",
+    "msClientIdPlaceholder": "00000000-0000-0000-0000-000000000000",
+    "msClientSecretLabel": "Microsoft 客户端密钥",
+    "msClientSecretHint": "桌面（公共客户端）注册请留空。仅 Web 类型的注册才使用密钥。",
+    "msClientSecretPlaceholder": "可选",
+    "guide": {
+      "title": "分步设置",
+      "googleTitle": "Google (Gmail)",
+      "openGoogle": "打开 Google Cloud Console",
+      "g1": "在 console.cloud.google.com 创建一个项目，然后前往 API 和服务。",
+      "g2": "OAuth 同意屏幕：选择“外部”，填写应用名称，并将您自己的 Gmail 地址添加为测试用户。",
+      "g3": "范围：添加 https://mail.google.com/（Google 接受用于 IMAP/SMTP 的唯一范围）。",
+      "g4": "凭据：创建凭据，OAuth 客户端 ID，应用类型选择桌面应用。",
+      "g5": "将客户端 ID 和客户端密钥复制到下方字段中。",
+      "g6": "成功后，将同意屏幕发布到正式版。在测试状态下，Google 会在 7 天后使登录失效。",
+      "msTitle": "Microsoft (Outlook / 365)",
+      "openMs": "打开 Microsoft Entra",
+      "m1": "在 entra.microsoft.com 前往应用注册，新注册。",
+      "m2": "支持的账户类型：任何组织目录和个人 Microsoft 账户。",
+      "m3": "重定向 URI：平台选择移动和桌面应用程序，值为 http://localhost。",
+      "m4": "API 权限：Microsoft Graph，委托：IMAP.AccessAsUser.All、SMTP.Send、offline_access。",
+      "m5": "将应用程序（客户端）ID 复制到下方字段中。此类应用请将密钥留空。"
+    }
+  },
+  "accounts": {
+    "provider": {
+      "imap": "IMAP",
+      "gmail": "Google",
+      "microsoft": "Microsoft"
+    },
+    "remove": "移除",
+    "reallyRemove": "确定要移除吗？",
+    "removed": "已移除 {{email}}",
+    "removeFailed": "无法移除账户：{{detail}}",
+    "connected": "账户已连接。同步中…",
+    "configureOauthFirst": "请先填写上方的 OAuth 应用部分。分步指南就在那里。",
+    "empty": "尚未连接任何账户。",
+    "addImap": "添加账户（IMAP）",
+    "waitingGoogle": "等待 Google…",
+    "signInGoogle": "使用 Google 登录",
+    "waitingMicrosoft": "等待 Microsoft…",
+    "signInMicrosoft": "使用 Microsoft 登录"
+  },
+  "snippets": {
+    "title": "片段",
+    "deleteFailed": "无法删除片段：{{detail}}",
+    "expandHint": "在撰写器中输入 <kbd>;快捷词</kbd> 即可展开片段。",
+    "new": "新建片段",
+    "usedCount": "已使用 {{n}} 次",
+    "edit": "编辑",
+    "delete": "删除",
+    "reallyDelete": "确定要删除吗？",
+    "empty": "还没有片段。创建一个以加快回复速度。",
+    "saveFailed": "无法保存片段：{{detail}}",
+    "nameLabel": "名称",
+    "namePlaceholder": "例如：日程安排",
+    "shortcutLabel": "快捷词",
+    "shortcutPlaceholder": "sched",
+    "subjectLabel": "主题（可选）",
+    "subjectPlaceholder": "若主题为空则填入",
+    "bodyLabel": "正文",
+    "bodyPlaceholder": "片段内容…",
+    "saving": "保存中…",
+    "saveChanges": "保存更改",
+    "create": "创建片段",
+    "cancel": "取消"
+  },
+  "splits": {
+    "title": "收件箱分组",
+    "describe": {
+      "from": "来自 {{senders}}",
+      "subjectHas": "主题包含 {{subjects}}",
+      "automatedOnly": "仅自动邮件",
+      "humanOnly": "仅真人邮件",
+      "nothing": "无任何匹配"
+    },
+    "reorderFailed": "无法重新排序分组：{{detail}}",
+    "deleteFailed": "无法删除分组：{{detail}}",
+    "builtin": {
+      "importantName": "重要",
+      "importantDesc": "来自真人的邮件",
+      "otherName": "其他",
+      "otherDesc": "自动邮件",
+      "badge": "内置"
+    },
+    "builtinNote": "“重要”和“其他”为内置分组，无法编辑。下方的自定义分组会获得各自的收件箱标签页；被匹配的邮件将离开“重要”/“其他”。",
+    "customSplits": "自定义分组",
+    "new": "新建分组",
+    "edit": "编辑",
+    "delete": "删除",
+    "reallyDelete": "确定要删除吗？",
+    "empty": "还没有自定义分组。创建一个，为发件人设置独立的标签页。",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "saveFailed": "无法保存分组：{{detail}}",
+    "nameLabel": "名称",
+    "namePlaceholder": "例如：GitHub",
+    "senderLabel": "发件人为（以逗号分隔的地址或 @域名）",
+    "senderPlaceholder": "@github.com, boss@co.com",
+    "subjectLabel": "主题包含（以逗号分隔）",
+    "subjectPlaceholder": "发票, 收据",
+    "automatedLabel": "自动邮件",
+    "automated": {
+      "any": "任意",
+      "automated": "仅自动邮件",
+      "human": "仅真人邮件"
+    },
+    "addCondition": "请至少添加一个条件。",
+    "saving": "保存中…",
+    "saveChanges": "保存更改",
+    "create": "创建分组",
+    "cancel": "取消"
+  },
+  "about": {
+    "section": "关于",
+    "version": "版本",
+    "versionHint": "从 GitHub 检查并安装最新版本。",
+    "checkUpdates": "检查更新",
+    "checking": "检查中…",
+    "upToDate": "已是最新版本。",
+    "updateAvailable": "版本 {{version}} 可用。",
+    "restartInstall": "重启并安装"
+  }
+}

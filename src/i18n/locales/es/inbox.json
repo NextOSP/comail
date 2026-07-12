@@ -1,0 +1,13 @@
+{
+  "zero": {
+    "allDone": "Ya terminaste todo",
+    "nothingIn": "Nada en {{view}} · {{date}}",
+    "hintNextSplit": "división siguiente",
+    "hintCompose": "redactar",
+    "hintShortcuts": "atajos"
+  },
+  "split": {
+    "important": "Importante",
+    "other": "Otros"
+  }
+}

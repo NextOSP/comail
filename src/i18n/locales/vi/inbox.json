@@ -1,0 +1,13 @@
+{
+  "zero": {
+    "allDone": "Bạn đã xong hết",
+    "nothingIn": "Không có gì trong {{view}} · {{date}}",
+    "hintNextSplit": "nhóm tiếp theo",
+    "hintCompose": "soạn thư",
+    "hintShortcuts": "phím tắt"
+  },
+  "split": {
+    "important": "Quan trọng",
+    "other": "Khác"
+  }
+}

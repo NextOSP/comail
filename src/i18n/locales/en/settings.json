@@ -1,0 +1,234 @@
+{
+  "title": "Settings",
+  "section": {
+    "preferences": "Preferences",
+    "ai": "AI",
+    "oauthApps": "OAuth apps",
+    "accounts": "Accounts",
+    "splitInbox": "Split inbox",
+    "snippets": "Snippets",
+    "labels": "Labels"
+  },
+  "search": {
+    "placeholder": "Search settings…",
+    "noResults": "No settings match “{{query}}”."
+  },
+  "theme": {
+    "label": "Theme",
+    "hint": "Snow is light, Carbon is dark.",
+    "snow": "Snow",
+    "carbon": "Carbon",
+    "system": "System"
+  },
+  "language": {
+    "label": "Language",
+    "hint": "System follows your device language.",
+    "system": "System"
+  },
+  "undoSend": {
+    "label": "Undo send window",
+    "hint": "How long a send can be cancelled with Z.",
+    "seconds": "{{n}}s"
+  },
+  "loadRemoteImages": {
+    "label": "Load remote images",
+    "hint": "Off blocks tracking pixels and remote content in HTML mail."
+  },
+  "toast": {
+    "settingsSaveFailed": "Couldn't save settings: {{detail}}"
+  },
+  "ai": {
+    "statusLabel": "Status",
+    "statusHint": "Key is stored in the system keychain and never shown.",
+    "configured": "Configured · {{model}}",
+    "notConfigured": "Not configured",
+    "loading": "…",
+    "apiKeyLabel": "API key",
+    "apiKeyHint": "Save empty to clear the stored key.",
+    "apiKeyPlaceholder": "sk-or-…",
+    "save": "Save",
+    "keySaved": "AI key saved",
+    "keyCleared": "AI key cleared",
+    "baseUrlLabel": "Base URL",
+    "baseUrlHint": "OpenAI-compatible endpoint.",
+    "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
+    "modelLabel": "Model",
+    "modelsAvailable": "{{n}} models available from the endpoint.",
+    "modelHintEmpty": "Type a model id, or pick one once the endpoint list loads.",
+    "modelPlaceholder": "anthropic/claude-sonnet",
+    "providerLabel": "Provider",
+    "providerHint": "Presets fill the base URL; pick Custom endpoint to use any OpenAI-compatible URL. Local servers need no API key.",
+    "customProvider": "Custom endpoint"
+  },
+  "oauth": {
+    "description": "Sign in with Google / Microsoft needs your own app registration (a client ID). Create a <b>Desktop app</b> OAuth client in Google Cloud Console, or a <b>Mobile and desktop</b> app in Microsoft Entra with redirect URI <code>http://localhost</code>. Full walkthrough below.",
+    "googleClientIdLabel": "Google client ID",
+    "googleClientIdPlaceholder": "1234-abc.apps.googleusercontent.com",
+    "googleClientSecretLabel": "Google client secret",
+    "googleClientSecretHint": "Desktop-app clients get one; it is not treated as confidential by Google.",
+    "googleClientSecretPlaceholder": "GOCSPX-…",
+    "msClientIdLabel": "Microsoft client ID",
+    "msClientIdHint": "Application (client) ID of the Entra app registration.",
+    "msClientIdPlaceholder": "00000000-0000-0000-0000-000000000000",
+    "msClientSecretLabel": "Microsoft client secret",
+    "msClientSecretHint": "Leave empty for desktop (public client) registrations. Only Web-type registrations use a secret.",
+    "msClientSecretPlaceholder": "optional",
+    "guide": {
+      "title": "Step-by-step setup",
+      "googleTitle": "Google (Gmail)",
+      "openGoogle": "Open Google Cloud Console",
+      "g1": "Create a project at console.cloud.google.com, then go to APIs & Services.",
+      "g2": "OAuth consent screen: choose External, fill in the app name, and add your own Gmail address as a test user.",
+      "g3": "Scopes: add https://mail.google.com/ (the only scope Google accepts for IMAP/SMTP).",
+      "g4": "Credentials: Create credentials, OAuth client ID, application type Desktop app.",
+      "g5": "Copy the client ID and client secret into the fields below.",
+      "g6": "Once it works, publish the consent screen to Production. In Testing status Google expires sign-ins after 7 days.",
+      "msTitle": "Microsoft (Outlook / 365)",
+      "openMs": "Open Microsoft Entra",
+      "m1": "At entra.microsoft.com go to App registrations, New registration.",
+      "m2": "Supported account types: any organizational directory and personal Microsoft accounts.",
+      "m3": "Redirect URI: platform Mobile and desktop applications, value http://localhost.",
+      "m4": "API permissions: Microsoft Graph, Delegated: IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
+      "m5": "Copy the Application (client) ID into the field below. Leave the secret empty for this app type."
+    }
+  },
+  "accounts": {
+    "provider": {
+      "imap": "IMAP",
+      "gmail": "Google",
+      "microsoft": "Microsoft"
+    },
+    "remove": "Remove",
+    "reallyRemove": "Really remove?",
+    "removed": "Removed {{email}}",
+    "removeFailed": "Couldn't remove account: {{detail}}",
+    "connected": "Account connected. Syncing…",
+    "configureOauthFirst": "Fill in the OAuth apps section above first. The step-by-step guide is right there.",
+    "empty": "No accounts connected.",
+    "addImap": "Add account (IMAP)",
+    "waitingGoogle": "Waiting for Google…",
+    "signInGoogle": "Sign in with Google",
+    "waitingMicrosoft": "Waiting for Microsoft…",
+    "signInMicrosoft": "Sign in with Microsoft"
+  },
+  "snippets": {
+    "title": "Snippets",
+    "deleteFailed": "Couldn't delete snippet: {{detail}}",
+    "expandHint": "Type <kbd>;shortcut</kbd> in the composer to expand a snippet.",
+    "new": "New snippet",
+    "usedCount": "used {{n}}×",
+    "edit": "Edit",
+    "delete": "Delete",
+    "reallyDelete": "Really delete?",
+    "empty": "No snippets yet. Create one to speed up replies.",
+    "saveFailed": "Couldn't save snippet: {{detail}}",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Scheduling",
+    "shortcutLabel": "Shortcut",
+    "shortcutPlaceholder": "sched",
+    "subjectLabel": "Subject (optional)",
+    "subjectPlaceholder": "Fills the subject if it's empty",
+    "bodyLabel": "Body",
+    "bodyPlaceholder": "Snippet text…",
+    "saving": "Saving…",
+    "saveChanges": "Save changes",
+    "create": "Create snippet",
+    "cancel": "Cancel"
+  },
+  "splits": {
+    "title": "Inbox splits",
+    "describe": {
+      "from": "from {{senders}}",
+      "subjectHas": "subject has {{subjects}}",
+      "automatedOnly": "automated only",
+      "humanOnly": "human only",
+      "nothing": "matches nothing"
+    },
+    "reorderFailed": "Couldn't reorder splits: {{detail}}",
+    "deleteFailed": "Couldn't delete split: {{detail}}",
+    "builtin": {
+      "importantName": "Important",
+      "importantDesc": "mail from people",
+      "otherName": "Other",
+      "otherDesc": "automated mail",
+      "badge": "Built-in"
+    },
+    "builtinNote": "Important and Other are built in and can't be edited. Custom splits below get their own inbox tab; anything they match leaves Important/Other.",
+    "customSplits": "Custom splits",
+    "new": "New split",
+    "edit": "Edit",
+    "delete": "Delete",
+    "reallyDelete": "Really delete?",
+    "empty": "No custom splits yet. Create one to give senders their own tab.",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "saveFailed": "Couldn't save split: {{detail}}",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. GitHub",
+    "senderLabel": "Sender is (comma-separated addresses or @domains)",
+    "senderPlaceholder": "@github.com, boss@co.com",
+    "subjectLabel": "Subject contains (comma-separated)",
+    "subjectPlaceholder": "invoice, receipt",
+    "automatedLabel": "Automated mail",
+    "automated": {
+      "any": "Any",
+      "automated": "Only automated",
+      "human": "Only human"
+    },
+    "addCondition": "Add at least one condition.",
+    "saving": "Saving…",
+    "saveChanges": "Save changes",
+    "create": "Create split",
+    "cancel": "Cancel",
+    "autoLabelTabs": "Auto label tabs",
+    "autoBadge": "Auto",
+    "relabel": "Re-run auto labels",
+    "relabeling": "Classifying…",
+    "relabeled": "Auto labels applied to {{count}} messages"
+  },
+  "labels": {
+    "title": "Labels",
+    "yourLabels": "Your labels",
+    "new": "New label",
+    "edit": "Edit",
+    "delete": "Delete",
+    "reallyDelete": "Really delete?",
+    "empty": "No labels yet. Create one to tag and filter your mail.",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Work",
+    "colorLabel": "Color",
+    "saving": "Saving…",
+    "saveChanges": "Save changes",
+    "create": "Create label",
+    "cancel": "Cancel",
+    "saveFailed": "Couldn't save label: {{detail}}",
+    "deleteFailed": "Couldn't delete label: {{detail}}"
+  },
+  "notifications": {
+    "label": "Desktop notifications",
+    "hint": "Notify when new mail arrives while the window is unfocused."
+  },
+  "autoAdvance": {
+    "label": "Auto-advance",
+    "hint": "After Done/Snooze in a conversation, open the next thread instead of returning to the list."
+  },
+  "signature": {
+    "section": "Signatures",
+    "hint": "Appended to new messages from this account.",
+    "placeholder": "Best,\nYour name"
+  },
+  "autoLabels": {
+    "label": "Auto Labels",
+    "hint": "Automatically categorize incoming mail as Marketing, News, Social, or Pitch."
+  },
+  "about": {
+    "section": "About",
+    "version": "Version",
+    "versionHint": "Check for and install the latest release from GitHub.",
+    "checkUpdates": "Check for updates",
+    "checking": "Checking…",
+    "upToDate": "You're on the latest version.",
+    "updateAvailable": "Version {{version}} is available.",
+    "restartInstall": "Restart & install"
+  }
+}

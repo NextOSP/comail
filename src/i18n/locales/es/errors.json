@@ -1,0 +1,17 @@
+{
+  "db": "Error de base de datos",
+  "io": "Error del sistema de archivos",
+  "imap": "Error del servidor de correo (IMAP)",
+  "smtp": "No se pudo enviar (error SMTP)",
+  "tls": "Error de conexión segura (TLS)",
+  "auth": "Error de autenticación",
+  "needs_reauth": "Esta cuenta necesita reconectarse",
+  "keyring": "Error de almacenamiento seguro",
+  "mime": "Error de formato del mensaje",
+  "not_found": "No encontrado",
+  "offline": "Estás sin conexión",
+  "other": "Algo salió mal",
+  "unknown": "Algo salió mal",
+  "oauthFailed": "Error al iniciar sesión con OAuth",
+  "connectionFailed": "Error de conexión"
+}

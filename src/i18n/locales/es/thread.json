@@ -1,0 +1,34 @@
+{
+  "couldntLoad": "No se pudo cargar esta conversación.",
+  "backToList": "Volver a la lista (Esc)",
+  "back": "Atrás",
+  "noSubject": "(sin asunto)",
+  "messages_one": "{{count}} mensaje",
+  "messages_other": "{{count}} mensajes",
+  "snoozedBadge": "Pospuesto",
+  "positionOf": "{{pos}} de {{total}}",
+  "footer": {
+    "replyAll": "responder a todos",
+    "reply": "responder",
+    "forward": "reenviar",
+    "done": "hecho",
+    "snooze": "posponer",
+    "summarize": "resumir",
+    "nextPrev": "siguiente / anterior"
+  },
+  "aiSummary": {
+    "title": "Resumen de IA",
+    "pending": "Resumiendo…",
+    "dismiss": "Descartar resumen"
+  },
+  "draftBadge": "Borrador",
+  "msgTo": "para",
+  "msgCc": "cc",
+  "loadingMessage": "Cargando mensaje…",
+  "messageBodyTitle": "Cuerpo del mensaje",
+  "attachment": {
+    "fallbackName": "adjunto",
+    "savedMock": "{{name}} guardado (simulado)",
+    "openFailed": "No se pudo abrir el adjunto: {{detail}}"
+  }
+}

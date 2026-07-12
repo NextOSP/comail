@@ -1,0 +1,34 @@
+{
+  "couldntLoad": "Impossible de charger cette conversation.",
+  "backToList": "Retour à la liste (Esc)",
+  "back": "Retour",
+  "noSubject": "(sans objet)",
+  "messages_one": "{{count}} message",
+  "messages_other": "{{count}} messages",
+  "snoozedBadge": "En attente",
+  "positionOf": "{{pos}} sur {{total}}",
+  "footer": {
+    "replyAll": "répondre à tous",
+    "reply": "répondre",
+    "forward": "transférer",
+    "done": "terminé",
+    "snooze": "reporter",
+    "summarize": "résumer",
+    "nextPrev": "suivant / précédent"
+  },
+  "aiSummary": {
+    "title": "Résumé IA",
+    "pending": "Résumé en cours…",
+    "dismiss": "Ignorer le résumé"
+  },
+  "draftBadge": "Brouillon",
+  "msgTo": "à",
+  "msgCc": "cc",
+  "loadingMessage": "Chargement du message…",
+  "messageBodyTitle": "Corps du message",
+  "attachment": {
+    "fallbackName": "pièce jointe",
+    "savedMock": "{{name}} enregistré (simulation)",
+    "openFailed": "Impossible d’ouvrir la pièce jointe : {{detail}}"
+  }
+}

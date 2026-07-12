@@ -1,0 +1,34 @@
+{
+  "couldntLoad": "Couldn’t load this thread.",
+  "backToList": "Back to list (Esc)",
+  "back": "Back",
+  "noSubject": "(no subject)",
+  "messages_one": "{{count}} message",
+  "messages_other": "{{count}} messages",
+  "snoozedBadge": "Snoozed",
+  "positionOf": "{{pos}} of {{total}}",
+  "footer": {
+    "replyAll": "reply all",
+    "reply": "reply",
+    "forward": "forward",
+    "done": "done",
+    "snooze": "snooze",
+    "summarize": "summarize",
+    "nextPrev": "next / prev"
+  },
+  "aiSummary": {
+    "title": "AI summary",
+    "pending": "Summarizing…",
+    "dismiss": "Dismiss summary"
+  },
+  "draftBadge": "Draft",
+  "msgTo": "to",
+  "msgCc": "cc",
+  "loadingMessage": "Loading message…",
+  "messageBodyTitle": "Message body",
+  "attachment": {
+    "fallbackName": "attachment",
+    "savedMock": "Saved {{name}} (mock)",
+    "openFailed": "Couldn't open attachment: {{detail}}"
+  }
+}

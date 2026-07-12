@@ -1,0 +1,15 @@
+{
+  "today": "Today",
+  "tomorrow": "Tomorrow",
+  "thisWeek": "This Week",
+  "hintWeek": "2 for week",
+  "hintToday": "0 for today",
+  "escCloses": "Esc closes",
+  "closeAria": "Close calendar",
+  "noEventsToday": "No events today",
+  "noEventsWeek": "No events this week",
+  "allDay": "All day",
+  "noTitle": "(no title)",
+  "cancelled": "Cancelled",
+  "byOrganizer": "by {{organizer}}"
+}

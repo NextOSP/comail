@@ -1,0 +1,13 @@
+{
+  "zero": {
+    "allDone": "全部处理完毕",
+    "nothingIn": "{{view}} 中没有内容 · {{date}}",
+    "hintNextSplit": "下一个分组",
+    "hintCompose": "撰写",
+    "hintShortcuts": "快捷键"
+  },
+  "split": {
+    "important": "重要",
+    "other": "其他"
+  }
+}

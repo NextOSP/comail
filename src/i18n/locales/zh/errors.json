@@ -1,0 +1,17 @@
+{
+  "db": "数据库错误",
+  "io": "文件系统错误",
+  "imap": "邮件服务器（IMAP）错误",
+  "smtp": "无法发送（SMTP 错误）",
+  "tls": "安全连接（TLS）错误",
+  "auth": "身份验证失败",
+  "needs_reauth": "此账户需要重新连接",
+  "keyring": "安全存储错误",
+  "mime": "邮件格式错误",
+  "not_found": "未找到",
+  "offline": "您已离线",
+  "other": "出错了",
+  "unknown": "出错了",
+  "oauthFailed": "OAuth 登录失败",
+  "connectionFailed": "连接失败"
+}

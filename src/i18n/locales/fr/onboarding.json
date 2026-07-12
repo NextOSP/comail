@@ -1,0 +1,48 @@
+{
+  "provider": {
+    "fastmail": "Fastmail",
+    "icloud": "iCloud",
+    "gmail": "Gmail (manuel)",
+    "custom": "Personnalisé"
+  },
+  "note": {
+    "fastmail": "Utilisez un mot de passe d’application depuis les paramètres Fastmail.",
+    "icloud": "Nécessite un mot de passe spécifique à l’application depuis appleid.apple.com.",
+    "gmail": "Activez IMAP dans les paramètres Gmail et utilisez un mot de passe d’application."
+  },
+  "settingsTitle": "Paramètres (Ctrl+,)",
+  "settingsAria": "Paramètres",
+  "closeAria": "Fermer",
+  "titleAddAccount": "Ajouter un compte",
+  "subtitleAddAccount": "Connectez une autre boîte mail via IMAP / SMTP.",
+  "subtitleWelcome": "L’e-mail à la vitesse de la pensée. Ajoutez votre premier compte pour commencer.",
+  "addAccountImapSmtp": "Ajouter un compte (IMAP / SMTP)",
+  "waitingForGoogle": "En attente de Google…",
+  "signInWithGoogle": "Se connecter avec Google",
+  "waitingForMicrosoft": "En attente de Microsoft…",
+  "signInWithMicrosoft": "Se connecter avec Microsoft",
+  "field": {
+    "provider": "Fournisseur",
+    "email": "E-mail",
+    "displayName": "Nom affiché",
+    "password": "Mot de passe",
+    "imapHost": "Serveur IMAP",
+    "smtpHost": "Serveur SMTP",
+    "port": "Port"
+  },
+  "placeholder": {
+    "email": "you@example.com",
+    "displayName": "Facultatif",
+    "password": "Mot de passe d’application",
+    "imapHost": "imap.example.com",
+    "smtpHost": "smtp.example.com"
+  },
+  "testingConnection": "Test de la connexion…",
+  "adding": "Ajout…",
+  "connect": "Connecter",
+  "back": "Retour",
+  "connectionFailed": "Échec de la connexion",
+  "accountConnected": "{{email}} connecté. Synchronisation…",
+  "oauthConnected": "Compte connecté. Synchronisation…",
+  "oauthNotConfigured": "Ajoutez d’abord votre client ID OAuth. Ouverture des paramètres, consultez le guide détaillé sous Applications OAuth."
+}

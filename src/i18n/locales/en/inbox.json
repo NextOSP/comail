@@ -1,0 +1,20 @@
+{
+  "zero": {
+    "allDone": "You’re all done",
+    "nothingIn": "Nothing in {{view}} · {{date}}",
+    "hintNextSplit": "next split",
+    "hintCompose": "compose",
+    "hintShortcuts": "shortcuts"
+  },
+  "split": {
+    "important": "Important",
+    "other": "Other"
+  },
+  "splitPopover": {
+    "title": "New split",
+    "fromSender": "Mail from {{email}}",
+    "fromDomain": "Everyone @{{domain}}",
+    "tabName": "tab: {{name}}",
+    "created": "Split \"{{name}}\" created"
+  }
+}

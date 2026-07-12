@@ -1,0 +1,48 @@
+{
+  "provider": {
+    "fastmail": "Fastmail",
+    "icloud": "iCloud",
+    "gmail": "Gmail（手动）",
+    "custom": "自定义"
+  },
+  "note": {
+    "fastmail": "请使用 Fastmail 设置中的应用专用密码。",
+    "icloud": "需要从 appleid.apple.com 获取应用专用密码。",
+    "gmail": "在 Gmail 设置中启用 IMAP 并使用应用专用密码。"
+  },
+  "settingsTitle": "设置（Ctrl+,）",
+  "settingsAria": "设置",
+  "closeAria": "关闭",
+  "titleAddAccount": "添加账户",
+  "subtitleAddAccount": "通过 IMAP / SMTP 连接另一个邮箱。",
+  "subtitleWelcome": "以思维的速度收发邮件。添加第一个账户即可开始。",
+  "addAccountImapSmtp": "添加账户（IMAP / SMTP）",
+  "waitingForGoogle": "等待 Google…",
+  "signInWithGoogle": "使用 Google 登录",
+  "waitingForMicrosoft": "等待 Microsoft…",
+  "signInWithMicrosoft": "使用 Microsoft 登录",
+  "field": {
+    "provider": "服务商",
+    "email": "邮箱",
+    "displayName": "显示名称",
+    "password": "密码",
+    "imapHost": "IMAP 主机",
+    "smtpHost": "SMTP 主机",
+    "port": "端口"
+  },
+  "placeholder": {
+    "email": "you@example.com",
+    "displayName": "可选",
+    "password": "应用专用密码",
+    "imapHost": "imap.example.com",
+    "smtpHost": "smtp.example.com"
+  },
+  "testingConnection": "正在测试连接…",
+  "adding": "添加中…",
+  "connect": "连接",
+  "back": "返回",
+  "connectionFailed": "连接失败",
+  "accountConnected": "{{email}} 已连接。同步中…",
+  "oauthConnected": "账户已连接。同步中…",
+  "oauthNotConfigured": "请先添加 OAuth 客户端 ID。正在打开设置，请查看 OAuth 应用下的分步指南。"
+}

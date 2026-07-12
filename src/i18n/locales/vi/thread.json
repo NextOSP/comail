@@ -1,0 +1,34 @@
+{
+  "couldntLoad": "Không thể tải cuộc hội thoại này.",
+  "backToList": "Quay lại danh sách (Esc)",
+  "back": "Quay lại",
+  "noSubject": "(không có chủ đề)",
+  "messages_one": "{{count}} thư",
+  "messages_other": "{{count}} thư",
+  "snoozedBadge": "Đã tạm ẩn",
+  "positionOf": "{{pos}} trên {{total}}",
+  "footer": {
+    "replyAll": "trả lời tất cả",
+    "reply": "trả lời",
+    "forward": "chuyển tiếp",
+    "done": "hoàn tất",
+    "snooze": "tạm ẩn",
+    "summarize": "tóm tắt",
+    "nextPrev": "tiếp / trước"
+  },
+  "aiSummary": {
+    "title": "Tóm tắt AI",
+    "pending": "Đang tóm tắt…",
+    "dismiss": "Bỏ tóm tắt"
+  },
+  "draftBadge": "Bản nháp",
+  "msgTo": "đến",
+  "msgCc": "cc",
+  "loadingMessage": "Đang tải thư…",
+  "messageBodyTitle": "Nội dung thư",
+  "attachment": {
+    "fallbackName": "tệp đính kèm",
+    "savedMock": "Đã lưu {{name}} (mock)",
+    "openFailed": "Không thể mở tệp đính kèm: {{detail}}"
+  }
+}

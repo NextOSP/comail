@@ -1,0 +1,123 @@
+{
+  "view": {
+    "inbox": "Inbox",
+    "starred": "Starred",
+    "snoozed": "Snoozed",
+    "sent": "Sent",
+    "drafts": "Drafts",
+    "done": "Done",
+    "trash": "Trash",
+    "spam": "Spam",
+    "all": "All Mail"
+  },
+  "syncState": {
+    "idle": "idle",
+    "syncing": "syncing",
+    "error": "error",
+    "needs_reauth": "needs reauth",
+    "offline": "offline"
+  },
+  "unit": {
+    "bytes": "B",
+    "kilobytes": "KB",
+    "megabytes": "MB"
+  },
+  "action": {
+    "done": "Done",
+    "snooze": "Snooze",
+    "star": "Star",
+    "read": "Read",
+    "trash": "Trash",
+    "spam": "Spam",
+    "clear": "Clear",
+    "close": "Close",
+    "back": "Back",
+    "cancel": "Cancel",
+    "dismiss": "Dismiss",
+    "undo": "Undo"
+  },
+  "topbar": {
+    "search": "Search",
+    "offline": "Offline",
+    "syncing": "Syncing",
+    "waitingForChord": "Waiting for chord",
+    "settings": "Settings",
+    "settingsWithShortcut": "Settings ({{shortcut}})",
+    "allAccounts": "All accounts",
+    "menu": "Mailboxes"
+  },
+  "loading": "Loading…",
+  "selectedCount": "{{count}} selected",
+  "undoSuffix": "{{label}} · Z to undo",
+  "palette": {
+    "placeholder": "Type a command…",
+    "empty": "No matching commands"
+  },
+  "search": {
+    "placeholder": "Search mail…",
+    "try": "Try",
+    "emptyHint": "Search across every account, folder, and message.",
+    "noResults": "No results for “{{query}}”"
+  },
+  "shortcutHelp": {
+    "title": "Keyboard shortcuts",
+    "escToClose": "Esc to close",
+    "then": "then"
+  },
+  "move": {
+    "title": "Move to folder",
+    "placeholder": "Filter folders…",
+    "noMatches": "No matching folders",
+    "loading": "Loading folders…",
+    "movedTo": "Moved to {{folder}}"
+  },
+  "label": {
+    "title": "Labels",
+    "placeholder": "Filter or create a label…",
+    "none": "No labels yet",
+    "create": "Create “{{name}}”",
+    "createFailed": "Couldn't create label"
+  },
+  "snoozePopover": {
+    "snoozeUntil": "Snooze until",
+    "snoozed": "Snoozed",
+    "snoozedUntil": "Snoozed until {{label}}"
+  },
+  "timePopover": {
+    "placeholder": "Try \"tomorrow\", \"2h\", \"monday 9am\"…",
+    "keepTyping": "Keep typing…"
+  },
+  "snoozeFmt": {
+    "today": "Today, {{time}}",
+    "tomorrow": "Tomorrow, {{time}}",
+    "dateAt": "{{date}}, {{time}}"
+  },
+  "snoozePreset": {
+    "later today": "Later today",
+    "tonight": "Tonight",
+    "tomorrow": "Tomorrow",
+    "this weekend": "This weekend",
+    "next week": "Next week"
+  },
+  "splitTabs": {
+    "tabToSwitch": "Tab to switch"
+  },
+  "threadRow": {
+    "hasAttachments": "Has attachments",
+    "attachment": "Attachment",
+    "starred": "Starred",
+    "select": "Select",
+    "deselect": "Deselect"
+  },
+  "sidebar": {
+    "snippets": "Snippets",
+    "splits": "Split inbox rules",
+    "labels": "Labels",
+    "manageLabels": "Manage labels",
+    "settings": "Settings",
+    "accountSettings": "Account settings"
+  },
+  "notification": {
+    "newMessages": "{{count}} new messages"
+  }
+}

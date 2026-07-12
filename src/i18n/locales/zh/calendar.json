@@ -1,0 +1,15 @@
+{
+  "today": "今天",
+  "tomorrow": "明天",
+  "thisWeek": "本周",
+  "hintWeek": "按 2 查看本周",
+  "hintToday": "按 0 查看今天",
+  "escCloses": "按 Esc 关闭",
+  "closeAria": "关闭日历",
+  "noEventsToday": "今天没有日程",
+  "noEventsWeek": "本周没有日程",
+  "allDay": "全天",
+  "noTitle": "（无标题）",
+  "cancelled": "已取消",
+  "byOrganizer": "由 {{organizer}}"
+}

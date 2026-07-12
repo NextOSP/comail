@@ -1,0 +1,17 @@
+{
+  "db": "Lỗi cơ sở dữ liệu",
+  "io": "Lỗi hệ thống tệp",
+  "imap": "Lỗi máy chủ thư (IMAP)",
+  "smtp": "Không thể gửi (lỗi SMTP)",
+  "tls": "Lỗi kết nối bảo mật (TLS)",
+  "auth": "Xác thực thất bại",
+  "needs_reauth": "Tài khoản này cần được kết nối lại",
+  "keyring": "Lỗi lưu trữ bảo mật",
+  "mime": "Lỗi định dạng thư",
+  "not_found": "Không tìm thấy",
+  "offline": "Bạn đang ngoại tuyến",
+  "other": "Đã xảy ra lỗi",
+  "unknown": "Đã xảy ra lỗi",
+  "oauthFailed": "Đăng nhập OAuth thất bại",
+  "connectionFailed": "Kết nối thất bại"
+}

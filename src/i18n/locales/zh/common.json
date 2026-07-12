@@ -1,0 +1,104 @@
+{
+  "view": {
+    "inbox": "收件箱",
+    "starred": "已加星标",
+    "snoozed": "已暂停",
+    "sent": "已发送",
+    "drafts": "草稿",
+    "done": "已完成",
+    "trash": "垃圾箱",
+    "spam": "垃圾邮件",
+    "all": "全部邮件"
+  },
+  "syncState": {
+    "idle": "空闲",
+    "syncing": "同步中",
+    "error": "错误",
+    "needs_reauth": "需重新授权",
+    "offline": "离线"
+  },
+  "unit": {
+    "bytes": "B",
+    "kilobytes": "KB",
+    "megabytes": "MB"
+  },
+  "action": {
+    "done": "完成",
+    "snooze": "暂停",
+    "star": "加星标",
+    "read": "已读",
+    "trash": "删除",
+    "spam": "垃圾邮件",
+    "clear": "清除",
+    "close": "关闭",
+    "back": "返回",
+    "cancel": "取消",
+    "dismiss": "忽略",
+    "undo": "撤销"
+  },
+  "topbar": {
+    "search": "搜索",
+    "offline": "离线",
+    "syncing": "同步中",
+    "waitingForChord": "等待组合键",
+    "settings": "设置",
+    "settingsWithShortcut": "设置（{{shortcut}}）",
+    "allAccounts": "所有账户"
+  },
+  "loading": "加载中…",
+  "selectedCount": "已选 {{count}} 项",
+  "undoSuffix": "{{label}} · 按 Z 撤销",
+  "palette": {
+    "placeholder": "输入命令…",
+    "empty": "无匹配命令"
+  },
+  "search": {
+    "placeholder": "搜索邮件…",
+    "try": "试试",
+    "emptyHint": "在所有账户、文件夹和邮件中搜索。",
+    "noResults": "没有关于“{{query}}”的结果"
+  },
+  "shortcutHelp": {
+    "title": "键盘快捷键",
+    "escToClose": "按 Esc 关闭",
+    "then": "然后"
+  },
+  "move": {
+    "title": "移动到文件夹",
+    "placeholder": "筛选文件夹…",
+    "noMatches": "无匹配文件夹",
+    "loading": "加载文件夹…",
+    "movedTo": "已移动到 {{folder}}"
+  },
+  "snoozePopover": {
+    "snoozeUntil": "暂停至",
+    "snoozed": "已暂停",
+    "snoozedUntil": "已暂停至 {{label}}"
+  },
+  "timePopover": {
+    "placeholder": "试试“明天”“2h”“周一 9am”…",
+    "keepTyping": "继续输入…"
+  },
+  "snoozeFmt": {
+    "today": "今天 {{time}}",
+    "tomorrow": "明天 {{time}}",
+    "dateAt": "{{date}} {{time}}"
+  },
+  "snoozePreset": {
+    "later today": "今天晚些时候",
+    "tonight": "今晚",
+    "tomorrow": "明天",
+    "this weekend": "本周末",
+    "next week": "下周"
+  },
+  "splitTabs": {
+    "tabToSwitch": "按 Tab 切换"
+  },
+  "threadRow": {
+    "hasAttachments": "含附件",
+    "attachment": "附件",
+    "starred": "已加星标",
+    "select": "选择",
+    "deselect": "取消选择"
+  }
+}

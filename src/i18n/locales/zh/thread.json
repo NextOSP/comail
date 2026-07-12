@@ -1,0 +1,34 @@
+{
+  "couldntLoad": "无法加载此会话。",
+  "backToList": "返回列表（Esc）",
+  "back": "返回",
+  "noSubject": "（无主题）",
+  "messages_one": "{{count}} 封邮件",
+  "messages_other": "{{count}} 封邮件",
+  "snoozedBadge": "已暂停",
+  "positionOf": "第 {{pos}} / {{total}}",
+  "footer": {
+    "replyAll": "回复全部",
+    "reply": "回复",
+    "forward": "转发",
+    "done": "完成",
+    "snooze": "暂停",
+    "summarize": "总结",
+    "nextPrev": "下一个 / 上一个"
+  },
+  "aiSummary": {
+    "title": "AI 摘要",
+    "pending": "总结中…",
+    "dismiss": "关闭摘要"
+  },
+  "draftBadge": "草稿",
+  "msgTo": "收件人",
+  "msgCc": "抄送",
+  "loadingMessage": "加载邮件…",
+  "messageBodyTitle": "邮件正文",
+  "attachment": {
+    "fallbackName": "附件",
+    "savedMock": "已保存 {{name}}（模拟）",
+    "openFailed": "无法打开附件：{{detail}}"
+  }
+}

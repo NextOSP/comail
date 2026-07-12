@@ -1,0 +1,55 @@
+[package]
+name = "comail-core"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+# email protocols
+async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls-tls", "builder", "pool", "hostname"] }
+mail-parser = "0.11"
+mail-builder = "0.4"
+
+# TLS
+tokio-rustls = "0.26"
+rustls = "0.23"
+webpki-roots = "0.26"
+futures = "0.3"
+
+# storage
+rusqlite = { version = "0.37", features = ["bundled", "backup", "functions"] }
+dirs = "6"
+
+# local embeddings (pure Rust, CPU backend only - no MKL/CUDA/Accelerate,
+# no oniguruma C lib, rustls for downloads - keeps comail a clean static binary)
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
+hf-hub = { version = "1", default-features = false, features = ["rustls-tls"] }
+
+# auth
+keyring = { version = "3", features = ["sync-secret-service", "apple-native", "windows-native"] }
+base64 = "0.22"
+sha2 = "0.10"
+url = "2"
+
+# misc
+ammonia = "4"
+deunicode = "1"
+rand = "0.9"
+regex = "1"
+once_cell = "1"
+
+[dev-dependencies]
+tempfile = "3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

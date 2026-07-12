@@ -1,0 +1,15 @@
+{
+  "today": "Hoy",
+  "tomorrow": "Mañana",
+  "thisWeek": "Esta semana",
+  "hintWeek": "2 para la semana",
+  "hintToday": "0 para hoy",
+  "escCloses": "Esc cierra",
+  "closeAria": "Cerrar calendario",
+  "noEventsToday": "No hay eventos hoy",
+  "noEventsWeek": "No hay eventos esta semana",
+  "allDay": "Todo el día",
+  "noTitle": "(sin título)",
+  "cancelled": "Cancelado",
+  "byOrganizer": "por {{organizer}}"
+}

@@ -1,0 +1,17 @@
+{
+  "db": "Erreur de base de données",
+  "io": "Erreur du système de fichiers",
+  "imap": "Erreur du serveur de messagerie (IMAP)",
+  "smtp": "Envoi impossible (erreur SMTP)",
+  "tls": "Erreur de connexion sécurisée (TLS)",
+  "auth": "Échec de l’authentification",
+  "needs_reauth": "Ce compte doit être reconnecté",
+  "keyring": "Erreur de stockage sécurisé",
+  "mime": "Erreur de format du message",
+  "not_found": "Introuvable",
+  "offline": "Vous êtes hors ligne",
+  "other": "Une erreur s’est produite",
+  "unknown": "Une erreur s’est produite",
+  "oauthFailed": "Échec de la connexion OAuth",
+  "connectionFailed": "Échec de la connexion"
+}

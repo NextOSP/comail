@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Cancel superseded runs on the same ref
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Fewer incremental artifacts, faster cold builds in CI
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint-test:
+    name: Lint & test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libssl-dev libdbus-1-dev build-essential curl wget file pkg-config
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (tsc)
+        run: pnpm typecheck
+
+      - name: Frontend unit tests (vitest)
+        run: pnpm test
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Rustfmt (check)
+        working-directory: src-tauri
+        run: cargo fmt --all --check
+
+      # Not `-D warnings` yet: the tree was never clippy-gated. Tighten once clean.
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --workspace --all-targets
+
+      # e2e tests are env-gated (COMAIL_TEST_IMAP / COMAIL_TEST_SINK_DIR) and
+      # auto-skip without a Dovecot service - this runs unit tests only.
+      - name: Cargo test (unit)
+        working-directory: src-tauri
+        run: cargo test -p comail-core
+
+  build-check:
+    name: Tauri build check (Linux)
+    runs-on: ubuntu-22.04
+    needs: lint-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libssl-dev libdbus-1-dev build-essential curl wget file pkg-config
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Full package to catch bundling breakage. deb exercises the same release
+      # build as appimage; skip appimage here to save minutes.
+      - name: Build (deb)
+        run: pnpm tauri build --bundles deb

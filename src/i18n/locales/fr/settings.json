@@ -1,0 +1,194 @@
+{
+  "title": "Paramètres",
+  "section": {
+    "preferences": "Préférences",
+    "ai": "IA",
+    "oauthApps": "Applications OAuth",
+    "accounts": "Comptes",
+    "splitInbox": "Boîte divisée",
+    "snippets": "Extraits",
+    "labels": "Libellés"
+  },
+  "search": {
+    "placeholder": "Rechercher dans les réglages…",
+    "noResults": "Aucun réglage ne correspond à « {{query}} »."
+  },
+  "theme": {
+    "label": "Thème",
+    "hint": "Snow est clair, Carbon est sombre.",
+    "snow": "Snow",
+    "carbon": "Carbon",
+    "system": "Système"
+  },
+  "language": {
+    "label": "Langue",
+    "hint": "Système suit la langue de votre appareil.",
+    "system": "Système"
+  },
+  "undoSend": {
+    "label": "Délai d’annulation d’envoi",
+    "hint": "Durée pendant laquelle un envoi peut être annulé avec Z.",
+    "seconds": "{{n}}s"
+  },
+  "loadRemoteImages": {
+    "label": "Charger les images distantes",
+    "hint": "Désactivé bloque les pixels espions et le contenu distant dans les e-mails HTML."
+  },
+  "toast": {
+    "settingsSaveFailed": "Impossible d’enregistrer les paramètres : {{detail}}"
+  },
+  "ai": {
+    "statusLabel": "État",
+    "statusHint": "La clé est stockée dans le trousseau système et n’est jamais affichée.",
+    "configured": "Configuré · {{model}}",
+    "notConfigured": "Non configuré",
+    "loading": "…",
+    "apiKeyLabel": "Clé API",
+    "apiKeyHint": "Enregistrer vide pour effacer la clé stockée.",
+    "apiKeyPlaceholder": "sk-or-…",
+    "save": "Enregistrer",
+    "keySaved": "Clé IA enregistrée",
+    "keyCleared": "Clé IA effacée",
+    "baseUrlLabel": "URL de base",
+    "baseUrlHint": "Point de terminaison compatible OpenAI.",
+    "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
+    "modelLabel": "Modèle",
+    "modelsAvailable": "{{n}} modèles disponibles depuis le point de terminaison.",
+    "modelHintEmpty": "Saisissez un identifiant de modèle, ou choisissez-en un une fois la liste du point de terminaison chargée.",
+    "modelPlaceholder": "anthropic/claude-sonnet",
+    "providerLabel": "Fournisseur",
+    "providerHint": "Les préréglages remplissent l’URL de base ; choisissez Point de terminaison personnalisé pour utiliser toute URL compatible OpenAI. Les serveurs locaux ne nécessitent aucune clé API.",
+    "customProvider": "Point de terminaison personnalisé"
+  },
+  "oauth": {
+    "description": "Se connecter avec Google / Microsoft nécessite votre propre enregistrement d’application (un client ID). Créez un client OAuth <b>Application de bureau</b> dans Google Cloud Console, ou une application <b>Mobile et bureau</b> dans Microsoft Entra avec l’URI de redirection <code>http://localhost</code>. Guide complet ci-dessous.",
+    "googleClientIdLabel": "Client ID Google",
+    "googleClientIdPlaceholder": "1234-abc.apps.googleusercontent.com",
+    "googleClientSecretLabel": "Secret client Google",
+    "googleClientSecretHint": "Les clients d’application de bureau en reçoivent un ; il n’est pas considéré comme confidentiel par Google.",
+    "googleClientSecretPlaceholder": "GOCSPX-…",
+    "msClientIdLabel": "Client ID Microsoft",
+    "msClientIdHint": "ID d’application (client) de l’enregistrement d’application Entra.",
+    "msClientIdPlaceholder": "00000000-0000-0000-0000-000000000000",
+    "msClientSecretLabel": "Secret client Microsoft",
+    "msClientSecretHint": "Laissez vide pour les enregistrements de bureau (client public). Seuls les enregistrements de type Web utilisent un secret.",
+    "msClientSecretPlaceholder": "facultatif",
+    "guide": {
+      "title": "Configuration pas à pas",
+      "googleTitle": "Google (Gmail)",
+      "openGoogle": "Ouvrir Google Cloud Console",
+      "g1": "Créez un projet sur console.cloud.google.com, puis accédez à API et services.",
+      "g2": "Écran de consentement OAuth : choisissez Externe, renseignez le nom de l’application et ajoutez votre propre adresse Gmail comme utilisateur test.",
+      "g3": "Scopes : ajoutez https://mail.google.com/ (le seul scope accepté par Google pour IMAP/SMTP).",
+      "g4": "Identifiants : Créer des identifiants, ID client OAuth, type d’application Application de bureau.",
+      "g5": "Copiez le client ID et le secret client dans les champs ci-dessous.",
+      "g6": "Une fois que cela fonctionne, publiez l’écran de consentement en Production. En statut Test, Google fait expirer les connexions après 7 jours.",
+      "msTitle": "Microsoft (Outlook / 365)",
+      "openMs": "Ouvrir Microsoft Entra",
+      "m1": "Sur entra.microsoft.com, allez dans Inscriptions d’applications, Nouvelle inscription.",
+      "m2": "Types de comptes pris en charge : tout annuaire organisationnel et comptes Microsoft personnels.",
+      "m3": "URI de redirection : plateforme Applications mobiles et de bureau, valeur http://localhost.",
+      "m4": "Autorisations d’API : Microsoft Graph, Déléguées : IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
+      "m5": "Copiez l’ID d’application (client) dans le champ ci-dessous. Laissez le secret vide pour ce type d’application."
+    }
+  },
+  "accounts": {
+    "provider": {
+      "imap": "IMAP",
+      "gmail": "Google",
+      "microsoft": "Microsoft"
+    },
+    "remove": "Supprimer",
+    "reallyRemove": "Vraiment supprimer ?",
+    "removed": "{{email}} supprimé",
+    "removeFailed": "Impossible de supprimer le compte : {{detail}}",
+    "connected": "Compte connecté. Synchronisation…",
+    "configureOauthFirst": "Remplissez d’abord la section Applications OAuth ci-dessus. Le guide pas à pas s’y trouve.",
+    "empty": "Aucun compte connecté.",
+    "addImap": "Ajouter un compte (IMAP)",
+    "waitingGoogle": "En attente de Google…",
+    "signInGoogle": "Se connecter avec Google",
+    "waitingMicrosoft": "En attente de Microsoft…",
+    "signInMicrosoft": "Se connecter avec Microsoft"
+  },
+  "snippets": {
+    "title": "Extraits",
+    "deleteFailed": "Impossible de supprimer l’extrait : {{detail}}",
+    "expandHint": "Saisissez <kbd>;raccourci</kbd> dans le compositeur pour développer un extrait.",
+    "new": "Nouvel extrait",
+    "usedCount": "utilisé {{n}}×",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "reallyDelete": "Vraiment supprimer ?",
+    "empty": "Aucun extrait pour l’instant. Créez-en un pour accélérer vos réponses.",
+    "saveFailed": "Impossible d’enregistrer l’extrait : {{detail}}",
+    "nameLabel": "Nom",
+    "namePlaceholder": "ex. Planification",
+    "shortcutLabel": "Raccourci",
+    "shortcutPlaceholder": "planif",
+    "subjectLabel": "Objet (facultatif)",
+    "subjectPlaceholder": "Remplit l’objet s’il est vide",
+    "bodyLabel": "Corps",
+    "bodyPlaceholder": "Texte de l’extrait…",
+    "saving": "Enregistrement…",
+    "saveChanges": "Enregistrer les modifications",
+    "create": "Créer l’extrait",
+    "cancel": "Annuler"
+  },
+  "splits": {
+    "title": "Divisions de la boîte",
+    "describe": {
+      "from": "de {{senders}}",
+      "subjectHas": "l’objet contient {{subjects}}",
+      "automatedOnly": "automatisés uniquement",
+      "humanOnly": "humains uniquement",
+      "nothing": "ne correspond à rien"
+    },
+    "reorderFailed": "Impossible de réorganiser les divisions : {{detail}}",
+    "deleteFailed": "Impossible de supprimer la division : {{detail}}",
+    "builtin": {
+      "importantName": "Important",
+      "importantDesc": "messages de personnes",
+      "otherName": "Autres",
+      "otherDesc": "messages automatisés",
+      "badge": "Intégré"
+    },
+    "builtinNote": "Important et Autres sont intégrés et ne peuvent pas être modifiés. Les divisions personnalisées ci-dessous obtiennent leur propre onglet ; tout ce qu’elles capturent quitte Important/Autres.",
+    "customSplits": "Divisions personnalisées",
+    "new": "Nouvelle division",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "reallyDelete": "Vraiment supprimer ?",
+    "empty": "Aucune division personnalisée pour l’instant. Créez-en une pour donner aux expéditeurs leur propre onglet.",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "saveFailed": "Impossible d’enregistrer la division : {{detail}}",
+    "nameLabel": "Nom",
+    "namePlaceholder": "ex. GitHub",
+    "senderLabel": "L’expéditeur est (adresses ou @domaines séparés par des virgules)",
+    "senderPlaceholder": "@github.com, boss@co.com",
+    "subjectLabel": "L’objet contient (séparés par des virgules)",
+    "subjectPlaceholder": "facture, reçu",
+    "automatedLabel": "Messages automatisés",
+    "automated": {
+      "any": "Tous",
+      "automated": "Automatisés uniquement",
+      "human": "Humains uniquement"
+    },
+    "addCondition": "Ajoutez au moins une condition.",
+    "saving": "Enregistrement…",
+    "saveChanges": "Enregistrer les modifications",
+    "create": "Créer la division",
+    "cancel": "Annuler"
+  },
+  "about": {
+    "section": "À propos",
+    "version": "Version",
+    "versionHint": "Rechercher et installer la dernière version depuis GitHub.",
+    "checkUpdates": "Rechercher des mises à jour",
+    "checking": "Vérification…",
+    "upToDate": "Vous avez la dernière version.",
+    "updateAvailable": "La version {{version}} est disponible.",
+    "restartInstall": "Redémarrer et installer"
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "view": {
+    "inbox": "Bandeja de entrada",
+    "starred": "Destacados",
+    "snoozed": "Pospuestos",
+    "sent": "Enviados",
+    "drafts": "Borradores",
+    "done": "Hecho",
+    "trash": "Papelera",
+    "spam": "Spam",
+    "all": "Todos los mensajes"
+  },
+  "syncState": {
+    "idle": "inactivo",
+    "syncing": "sincronizando",
+    "error": "error",
+    "needs_reauth": "requiere reautenticación",
+    "offline": "sin conexión"
+  },
+  "unit": {
+    "bytes": "B",
+    "kilobytes": "KB",
+    "megabytes": "MB"
+  },
+  "action": {
+    "done": "Hecho",
+    "snooze": "Posponer",
+    "star": "Destacar",
+    "read": "Leer",
+    "trash": "Papelera",
+    "spam": "Spam",
+    "clear": "Borrar",
+    "close": "Cerrar",
+    "back": "Atrás",
+    "cancel": "Cancelar",
+    "dismiss": "Descartar",
+    "undo": "Deshacer"
+  },
+  "topbar": {
+    "search": "Buscar",
+    "offline": "Sin conexión",
+    "syncing": "Sincronizando",
+    "waitingForChord": "Esperando combinación",
+    "settings": "Ajustes",
+    "settingsWithShortcut": "Ajustes ({{shortcut}})",
+    "allAccounts": "Todas las cuentas"
+  },
+  "loading": "Cargando…",
+  "selectedCount": "{{count}} seleccionados",
+  "undoSuffix": "{{label}} · Z para deshacer",
+  "palette": {
+    "placeholder": "Escribe un comando…",
+    "empty": "No hay comandos coincidentes"
+  },
+  "search": {
+    "placeholder": "Buscar en el correo…",
+    "try": "Prueba",
+    "emptyHint": "Busca en cada cuenta, carpeta y mensaje.",
+    "noResults": "Sin resultados para “{{query}}”"
+  },
+  "shortcutHelp": {
+    "title": "Atajos de teclado",
+    "escToClose": "Esc para cerrar",
+    "then": "luego"
+  },
+  "move": {
+    "title": "Mover a carpeta",
+    "placeholder": "Filtrar carpetas…",
+    "noMatches": "No hay carpetas coincidentes",
+    "loading": "Cargando carpetas…",
+    "movedTo": "Movido a {{folder}}"
+  },
+  "snoozePopover": {
+    "snoozeUntil": "Posponer hasta",
+    "snoozed": "Pospuesto",
+    "snoozedUntil": "Pospuesto hasta {{label}}"
+  },
+  "timePopover": {
+    "placeholder": "Prueba \"mañana\", \"2h\", \"lunes 9am\"…",
+    "keepTyping": "Sigue escribiendo…"
+  },
+  "snoozeFmt": {
+    "today": "Hoy, {{time}}",
+    "tomorrow": "Mañana, {{time}}",
+    "dateAt": "{{date}}, {{time}}"
+  },
+  "snoozePreset": {
+    "later today": "Más tarde hoy",
+    "tonight": "Esta noche",
+    "tomorrow": "Mañana",
+    "this weekend": "Este fin de semana",
+    "next week": "La próxima semana"
+  },
+  "splitTabs": {
+    "tabToSwitch": "Tab para cambiar"
+  },
+  "threadRow": {
+    "hasAttachments": "Tiene adjuntos",
+    "attachment": "Adjunto",
+    "starred": "Destacado",
+    "select": "Seleccionar",
+    "deselect": "Deseleccionar"
+  }
+}

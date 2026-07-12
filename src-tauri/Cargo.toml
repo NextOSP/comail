@@ -1,0 +1,45 @@
+[workspace]
+members = ["crates/comail-core"]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[package]
+name = "comail"
+version = "0.1.0"
+description = "Comail - a fast, offline-first, keyboard-driven email client"
+authors = ["hello@deanoss.com"]
+license = "AGPL-3.0-only"
+edition = "2021"
+
+[lib]
+name = "comail_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+comail-core = { path = "crates/comail-core" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tauri-plugin-dialog = "2.7.1"
+
+[profile.release]
+lto = true
+codegen-units = 1

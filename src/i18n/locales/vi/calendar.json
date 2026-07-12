@@ -1,0 +1,15 @@
+{
+  "today": "Hôm nay",
+  "tomorrow": "Ngày mai",
+  "thisWeek": "Tuần này",
+  "hintWeek": "2 để xem tuần",
+  "hintToday": "0 để xem hôm nay",
+  "escCloses": "Esc để đóng",
+  "closeAria": "Đóng lịch",
+  "noEventsToday": "Không có sự kiện hôm nay",
+  "noEventsWeek": "Không có sự kiện tuần này",
+  "allDay": "Cả ngày",
+  "noTitle": "(không có tiêu đề)",
+  "cancelled": "Đã hủy",
+  "byOrganizer": "bởi {{organizer}}"
+}

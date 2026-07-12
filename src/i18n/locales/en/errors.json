@@ -1,0 +1,17 @@
+{
+  "db": "Database error",
+  "io": "File system error",
+  "imap": "Mail server (IMAP) error",
+  "smtp": "Could not send (SMTP error)",
+  "tls": "Secure connection (TLS) error",
+  "auth": "Authentication failed",
+  "needs_reauth": "This account needs to be reconnected",
+  "keyring": "Secure storage error",
+  "mime": "Message format error",
+  "not_found": "Not found",
+  "offline": "You're offline",
+  "other": "Something went wrong",
+  "unknown": "Something went wrong",
+  "oauthFailed": "OAuth sign-in failed",
+  "connectionFailed": "Connection failed"
+}

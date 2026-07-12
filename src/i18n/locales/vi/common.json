@@ -1,0 +1,104 @@
+{
+  "view": {
+    "inbox": "Hộp thư đến",
+    "starred": "Gắn sao",
+    "snoozed": "Tạm ẩn",
+    "sent": "Đã gửi",
+    "drafts": "Bản nháp",
+    "done": "Hoàn tất",
+    "trash": "Thùng rác",
+    "spam": "Thư rác",
+    "all": "Tất cả thư"
+  },
+  "syncState": {
+    "idle": "chờ",
+    "syncing": "đang đồng bộ",
+    "error": "lỗi",
+    "needs_reauth": "cần xác thực lại",
+    "offline": "ngoại tuyến"
+  },
+  "unit": {
+    "bytes": "B",
+    "kilobytes": "KB",
+    "megabytes": "MB"
+  },
+  "action": {
+    "done": "Hoàn tất",
+    "snooze": "Tạm ẩn",
+    "star": "Gắn sao",
+    "read": "Đã đọc",
+    "trash": "Thùng rác",
+    "spam": "Thư rác",
+    "clear": "Xóa",
+    "close": "Đóng",
+    "back": "Quay lại",
+    "cancel": "Hủy",
+    "dismiss": "Bỏ qua",
+    "undo": "Hoàn tác"
+  },
+  "topbar": {
+    "search": "Tìm kiếm",
+    "offline": "Ngoại tuyến",
+    "syncing": "Đang đồng bộ",
+    "waitingForChord": "Đang chờ tổ hợp phím",
+    "settings": "Cài đặt",
+    "settingsWithShortcut": "Cài đặt ({{shortcut}})",
+    "allAccounts": "Tất cả tài khoản"
+  },
+  "loading": "Đang tải…",
+  "selectedCount": "Đã chọn {{count}}",
+  "undoSuffix": "{{label}} · Z để hoàn tác",
+  "palette": {
+    "placeholder": "Nhập một lệnh…",
+    "empty": "Không có lệnh phù hợp"
+  },
+  "search": {
+    "placeholder": "Tìm thư…",
+    "try": "Thử",
+    "emptyHint": "Tìm trên mọi tài khoản, thư mục và tin nhắn.",
+    "noResults": "Không có kết quả cho “{{query}}”"
+  },
+  "shortcutHelp": {
+    "title": "Phím tắt",
+    "escToClose": "Esc để đóng",
+    "then": "rồi"
+  },
+  "move": {
+    "title": "Chuyển đến thư mục",
+    "placeholder": "Lọc thư mục…",
+    "noMatches": "Không có thư mục phù hợp",
+    "loading": "Đang tải thư mục…",
+    "movedTo": "Đã chuyển đến {{folder}}"
+  },
+  "snoozePopover": {
+    "snoozeUntil": "Tạm ẩn đến",
+    "snoozed": "Đã tạm ẩn",
+    "snoozedUntil": "Tạm ẩn đến {{label}}"
+  },
+  "timePopover": {
+    "placeholder": "Thử \"ngày mai\", \"2h\", \"thứ hai 9 giờ\"…",
+    "keepTyping": "Tiếp tục nhập…"
+  },
+  "snoozeFmt": {
+    "today": "Hôm nay, {{time}}",
+    "tomorrow": "Ngày mai, {{time}}",
+    "dateAt": "{{date}}, {{time}}"
+  },
+  "snoozePreset": {
+    "later today": "Cuối ngày hôm nay",
+    "tonight": "Tối nay",
+    "tomorrow": "Ngày mai",
+    "this weekend": "Cuối tuần này",
+    "next week": "Tuần sau"
+  },
+  "splitTabs": {
+    "tabToSwitch": "Tab để chuyển"
+  },
+  "threadRow": {
+    "hasAttachments": "Có tệp đính kèm",
+    "attachment": "Tệp đính kèm",
+    "starred": "Gắn sao",
+    "select": "Chọn",
+    "deselect": "Bỏ chọn"
+  }
+}

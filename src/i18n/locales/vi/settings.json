@@ -1,0 +1,194 @@
+{
+  "title": "Cài đặt",
+  "section": {
+    "preferences": "Tùy chọn",
+    "ai": "AI",
+    "oauthApps": "Ứng dụng OAuth",
+    "accounts": "Tài khoản",
+    "splitInbox": "Hộp thư chia cột",
+    "snippets": "Mẫu văn bản",
+    "labels": "Nhãn"
+  },
+  "search": {
+    "placeholder": "Tìm cài đặt…",
+    "noResults": "Không có cài đặt nào khớp với “{{query}}”."
+  },
+  "theme": {
+    "label": "Giao diện",
+    "hint": "Snow là sáng, Carbon là tối.",
+    "snow": "Snow",
+    "carbon": "Carbon",
+    "system": "Hệ thống"
+  },
+  "language": {
+    "label": "Ngôn ngữ",
+    "hint": "Hệ thống theo ngôn ngữ thiết bị của bạn.",
+    "system": "Hệ thống"
+  },
+  "undoSend": {
+    "label": "Khoảng thời gian hoàn tác gửi",
+    "hint": "Thời gian có thể hủy gửi bằng phím Z.",
+    "seconds": "{{n}}s"
+  },
+  "loadRemoteImages": {
+    "label": "Tải hình ảnh từ xa",
+    "hint": "Tắt sẽ chặn pixel theo dõi và nội dung từ xa trong thư HTML."
+  },
+  "toast": {
+    "settingsSaveFailed": "Không thể lưu cài đặt: {{detail}}"
+  },
+  "ai": {
+    "statusLabel": "Trạng thái",
+    "statusHint": "Khóa được lưu trong keychain hệ thống và không bao giờ hiển thị.",
+    "configured": "Đã cấu hình · {{model}}",
+    "notConfigured": "Chưa cấu hình",
+    "loading": "…",
+    "apiKeyLabel": "Khóa API",
+    "apiKeyHint": "Lưu để trống để xóa khóa đã lưu.",
+    "apiKeyPlaceholder": "sk-or-…",
+    "save": "Lưu",
+    "keySaved": "Đã lưu khóa AI",
+    "keyCleared": "Đã xóa khóa AI",
+    "baseUrlLabel": "URL cơ sở",
+    "baseUrlHint": "Điểm cuối tương thích OpenAI.",
+    "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
+    "modelLabel": "Mô hình",
+    "modelsAvailable": "Có {{n}} mô hình từ điểm cuối.",
+    "modelHintEmpty": "Nhập id mô hình, hoặc chọn một khi danh sách điểm cuối tải xong.",
+    "modelPlaceholder": "anthropic/claude-sonnet",
+    "providerLabel": "Nhà cung cấp",
+    "providerHint": "Cài đặt sẵn điền URL cơ sở; chọn Điểm cuối tùy chỉnh để dùng bất kỳ URL tương thích OpenAI nào. Máy chủ cục bộ không cần khóa API.",
+    "customProvider": "Điểm cuối tùy chỉnh"
+  },
+  "oauth": {
+    "description": "Đăng nhập bằng Google / Microsoft cần đăng ký ứng dụng riêng của bạn (một client ID). Tạo một client OAuth <b>Ứng dụng máy tính</b> trong Google Cloud Console, hoặc một ứng dụng <b>Mobile and desktop</b> trong Microsoft Entra với URI chuyển hướng <code>http://localhost</code>. Hướng dẫn đầy đủ bên dưới.",
+    "googleClientIdLabel": "Client ID Google",
+    "googleClientIdPlaceholder": "1234-abc.apps.googleusercontent.com",
+    "googleClientSecretLabel": "Client secret Google",
+    "googleClientSecretHint": "Client ứng dụng máy tính có một cái; Google không coi nó là bí mật.",
+    "googleClientSecretPlaceholder": "GOCSPX-…",
+    "msClientIdLabel": "Client ID Microsoft",
+    "msClientIdHint": "ID ứng dụng (client) của bản đăng ký ứng dụng Entra.",
+    "msClientIdPlaceholder": "00000000-0000-0000-0000-000000000000",
+    "msClientSecretLabel": "Client secret Microsoft",
+    "msClientSecretHint": "Để trống cho bản đăng ký máy tính (public client). Chỉ bản đăng ký loại Web mới dùng secret.",
+    "msClientSecretPlaceholder": "tùy chọn",
+    "guide": {
+      "title": "Thiết lập từng bước",
+      "googleTitle": "Google (Gmail)",
+      "openGoogle": "Mở Google Cloud Console",
+      "g1": "Tạo một dự án tại console.cloud.google.com, rồi vào APIs & Services.",
+      "g2": "Màn hình chấp thuận OAuth: chọn External, điền tên ứng dụng và thêm địa chỉ Gmail của bạn làm người dùng thử nghiệm.",
+      "g3": "Phạm vi: thêm https://mail.google.com/ (phạm vi duy nhất Google chấp nhận cho IMAP/SMTP).",
+      "g4": "Thông tin đăng nhập: Create credentials, OAuth client ID, loại ứng dụng Desktop app.",
+      "g5": "Sao chép client ID và client secret vào các ô bên dưới.",
+      "g6": "Khi hoạt động, hãy xuất bản màn hình chấp thuận lên Production. Ở trạng thái Testing, Google làm hết hạn đăng nhập sau 7 ngày.",
+      "msTitle": "Microsoft (Outlook / 365)",
+      "openMs": "Mở Microsoft Entra",
+      "m1": "Tại entra.microsoft.com vào App registrations, New registration.",
+      "m2": "Loại tài khoản được hỗ trợ: mọi thư mục tổ chức và tài khoản Microsoft cá nhân.",
+      "m3": "URI chuyển hướng: nền tảng Mobile and desktop applications, giá trị http://localhost.",
+      "m4": "Quyền API: Microsoft Graph, Delegated: IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
+      "m5": "Sao chép ID ứng dụng (client) vào ô bên dưới. Để trống secret cho loại ứng dụng này."
+    }
+  },
+  "accounts": {
+    "provider": {
+      "imap": "IMAP",
+      "gmail": "Google",
+      "microsoft": "Microsoft"
+    },
+    "remove": "Xóa",
+    "reallyRemove": "Thực sự xóa?",
+    "removed": "Đã xóa {{email}}",
+    "removeFailed": "Không thể xóa tài khoản: {{detail}}",
+    "connected": "Đã kết nối tài khoản. Đang đồng bộ…",
+    "configureOauthFirst": "Hãy điền mục Ứng dụng OAuth ở trên trước. Hướng dẫn từng bước ngay tại đó.",
+    "empty": "Chưa kết nối tài khoản nào.",
+    "addImap": "Thêm tài khoản (IMAP)",
+    "waitingGoogle": "Đang chờ Google…",
+    "signInGoogle": "Đăng nhập bằng Google",
+    "waitingMicrosoft": "Đang chờ Microsoft…",
+    "signInMicrosoft": "Đăng nhập bằng Microsoft"
+  },
+  "snippets": {
+    "title": "Mẫu văn bản",
+    "deleteFailed": "Không thể xóa mẫu: {{detail}}",
+    "expandHint": "Nhập <kbd>;phím tắt</kbd> trong trình soạn thảo để chèn mẫu.",
+    "new": "Mẫu mới",
+    "usedCount": "đã dùng {{n}}×",
+    "edit": "Sửa",
+    "delete": "Xóa",
+    "reallyDelete": "Thực sự xóa?",
+    "empty": "Chưa có mẫu nào. Tạo một mẫu để trả lời nhanh hơn.",
+    "saveFailed": "Không thể lưu mẫu: {{detail}}",
+    "nameLabel": "Tên",
+    "namePlaceholder": "vd. Lên lịch",
+    "shortcutLabel": "Phím tắt",
+    "shortcutPlaceholder": "lich",
+    "subjectLabel": "Chủ đề (tùy chọn)",
+    "subjectPlaceholder": "Điền chủ đề nếu đang trống",
+    "bodyLabel": "Nội dung",
+    "bodyPlaceholder": "Nội dung mẫu…",
+    "saving": "Đang lưu…",
+    "saveChanges": "Lưu thay đổi",
+    "create": "Tạo mẫu",
+    "cancel": "Hủy"
+  },
+  "splits": {
+    "title": "Phân nhóm hộp thư",
+    "describe": {
+      "from": "từ {{senders}}",
+      "subjectHas": "chủ đề có {{subjects}}",
+      "automatedOnly": "chỉ thư tự động",
+      "humanOnly": "chỉ thư người gửi",
+      "nothing": "không khớp gì"
+    },
+    "reorderFailed": "Không thể sắp xếp lại nhóm: {{detail}}",
+    "deleteFailed": "Không thể xóa nhóm: {{detail}}",
+    "builtin": {
+      "importantName": "Quan trọng",
+      "importantDesc": "thư từ mọi người",
+      "otherName": "Khác",
+      "otherDesc": "thư tự động",
+      "badge": "Tích hợp sẵn"
+    },
+    "builtinNote": "Quan trọng và Khác là tích hợp sẵn và không thể chỉnh sửa. Các nhóm tùy chỉnh bên dưới có tab hộp thư riêng; bất kỳ thư nào khớp sẽ rời khỏi Quan trọng/Khác.",
+    "customSplits": "Nhóm tùy chỉnh",
+    "new": "Nhóm mới",
+    "edit": "Sửa",
+    "delete": "Xóa",
+    "reallyDelete": "Thực sự xóa?",
+    "empty": "Chưa có nhóm tùy chỉnh nào. Tạo một nhóm để người gửi có tab riêng.",
+    "moveUp": "Di chuyển lên",
+    "moveDown": "Di chuyển xuống",
+    "saveFailed": "Không thể lưu nhóm: {{detail}}",
+    "nameLabel": "Tên",
+    "namePlaceholder": "vd. GitHub",
+    "senderLabel": "Người gửi là (địa chỉ hoặc @tên miền, cách nhau bằng dấu phẩy)",
+    "senderPlaceholder": "@github.com, boss@co.com",
+    "subjectLabel": "Chủ đề chứa (cách nhau bằng dấu phẩy)",
+    "subjectPlaceholder": "hóa đơn, biên nhận",
+    "automatedLabel": "Thư tự động",
+    "automated": {
+      "any": "Bất kỳ",
+      "automated": "Chỉ thư tự động",
+      "human": "Chỉ thư người gửi"
+    },
+    "addCondition": "Thêm ít nhất một điều kiện.",
+    "saving": "Đang lưu…",
+    "saveChanges": "Lưu thay đổi",
+    "create": "Tạo nhóm",
+    "cancel": "Hủy"
+  },
+  "about": {
+    "section": "Giới thiệu",
+    "version": "Phiên bản",
+    "versionHint": "Kiểm tra và cài đặt phiên bản mới nhất từ GitHub.",
+    "checkUpdates": "Kiểm tra cập nhật",
+    "checking": "Đang kiểm tra…",
+    "upToDate": "Bạn đang dùng phiên bản mới nhất.",
+    "updateAvailable": "Đã có phiên bản {{version}}.",
+    "restartInstall": "Khởi động lại và cài đặt"
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "title": "Ajustes",
+  "section": {
+    "preferences": "Preferencias",
+    "ai": "IA",
+    "oauthApps": "Apps OAuth",
+    "accounts": "Cuentas",
+    "splitInbox": "Bandeja dividida",
+    "snippets": "Fragmentos",
+    "labels": "Etiquetas"
+  },
+  "search": {
+    "placeholder": "Buscar ajustes…",
+    "noResults": "Ningún ajuste coincide con «{{query}}»."
+  },
+  "theme": {
+    "label": "Tema",
+    "hint": "Snow es claro, Carbon es oscuro.",
+    "snow": "Snow",
+    "carbon": "Carbon",
+    "system": "Sistema"
+  },
+  "language": {
+    "label": "Idioma",
+    "hint": "Sistema usa el idioma de tu dispositivo.",
+    "system": "Sistema"
+  },
+  "undoSend": {
+    "label": "Ventana para deshacer el envío",
+    "hint": "Cuánto tiempo se puede cancelar un envío con Z.",
+    "seconds": "{{n}}s"
+  },
+  "loadRemoteImages": {
+    "label": "Cargar imágenes remotas",
+    "hint": "Desactivado bloquea píxeles de rastreo y contenido remoto en el correo HTML."
+  },
+  "toast": {
+    "settingsSaveFailed": "No se pudieron guardar los ajustes: {{detail}}"
+  },
+  "ai": {
+    "statusLabel": "Estado",
+    "statusHint": "La clave se guarda en el llavero del sistema y nunca se muestra.",
+    "configured": "Configurado · {{model}}",
+    "notConfigured": "Sin configurar",
+    "loading": "…",
+    "apiKeyLabel": "Clave de API",
+    "apiKeyHint": "Guarda en blanco para borrar la clave almacenada.",
+    "apiKeyPlaceholder": "sk-or-…",
+    "save": "Guardar",
+    "keySaved": "Clave de IA guardada",
+    "keyCleared": "Clave de IA borrada",
+    "baseUrlLabel": "URL base",
+    "baseUrlHint": "Endpoint compatible con OpenAI.",
+    "baseUrlPlaceholder": "https://openrouter.ai/api/v1",
+    "modelLabel": "Modelo",
+    "modelsAvailable": "{{n}} modelos disponibles en el endpoint.",
+    "modelHintEmpty": "Escribe un id de modelo, o elige uno cuando cargue la lista del endpoint.",
+    "modelPlaceholder": "anthropic/claude-sonnet",
+    "providerLabel": "Proveedor",
+    "providerHint": "Los preajustes rellenan la URL base; elige Endpoint personalizado para usar cualquier URL compatible con OpenAI. Los servidores locales no necesitan clave de API.",
+    "customProvider": "Endpoint personalizado"
+  },
+  "oauth": {
+    "description": "Iniciar sesión con Google / Microsoft necesita tu propio registro de aplicación (un ID de cliente). Crea un cliente OAuth de <b>App de escritorio</b> en Google Cloud Console, o una app <b>Móvil y de escritorio</b> en Microsoft Entra con URI de redirección <code>http://localhost</code>. Guía completa a continuación.",
+    "googleClientIdLabel": "ID de cliente de Google",
+    "googleClientIdPlaceholder": "1234-abc.apps.googleusercontent.com",
+    "googleClientSecretLabel": "Secreto de cliente de Google",
+    "googleClientSecretHint": "Los clientes de app de escritorio reciben uno; Google no lo trata como confidencial.",
+    "googleClientSecretPlaceholder": "GOCSPX-…",
+    "msClientIdLabel": "ID de cliente de Microsoft",
+    "msClientIdHint": "ID de aplicación (cliente) del registro de la app en Entra.",
+    "msClientIdPlaceholder": "00000000-0000-0000-0000-000000000000",
+    "msClientSecretLabel": "Secreto de cliente de Microsoft",
+    "msClientSecretHint": "Déjalo vacío para registros de escritorio (cliente público). Solo los registros de tipo Web usan un secreto.",
+    "msClientSecretPlaceholder": "opcional",
+    "guide": {
+      "title": "Configuración paso a paso",
+      "googleTitle": "Google (Gmail)",
+      "openGoogle": "Abrir Google Cloud Console",
+      "g1": "Crea un proyecto en console.cloud.google.com y ve a APIs y servicios.",
+      "g2": "Pantalla de consentimiento de OAuth: elige Externo, rellena el nombre de la app y añade tu propia dirección de Gmail como usuario de prueba.",
+      "g3": "Ámbitos: añade https://mail.google.com/ (el único ámbito que Google acepta para IMAP/SMTP).",
+      "g4": "Credenciales: Crear credenciales, ID de cliente de OAuth, tipo de aplicación App de escritorio.",
+      "g5": "Copia el ID de cliente y el secreto de cliente en los campos de abajo.",
+      "g6": "Cuando funcione, publica la pantalla de consentimiento en Producción. En estado de Pruebas, Google caduca los inicios de sesión tras 7 días.",
+      "msTitle": "Microsoft (Outlook / 365)",
+      "openMs": "Abrir Microsoft Entra",
+      "m1": "En entra.microsoft.com ve a Registros de aplicaciones, Nuevo registro.",
+      "m2": "Tipos de cuenta admitidos: cualquier directorio organizativo y cuentas personales de Microsoft.",
+      "m3": "URI de redirección: plataforma Aplicaciones móviles y de escritorio, valor http://localhost.",
+      "m4": "Permisos de API: Microsoft Graph, Delegados: IMAP.AccessAsUser.All, SMTP.Send, offline_access.",
+      "m5": "Copia el ID de aplicación (cliente) en el campo de abajo. Deja el secreto vacío para este tipo de app."
+    }
+  },
+  "accounts": {
+    "provider": {
+      "imap": "IMAP",
+      "gmail": "Google",
+      "microsoft": "Microsoft"
+    },
+    "remove": "Eliminar",
+    "reallyRemove": "¿Eliminar de verdad?",
+    "removed": "{{email}} eliminada",
+    "removeFailed": "No se pudo eliminar la cuenta: {{detail}}",
+    "connected": "Cuenta conectada. Sincronizando…",
+    "configureOauthFirst": "Rellena primero la sección Apps OAuth de arriba. La guía paso a paso está ahí mismo.",
+    "empty": "No hay cuentas conectadas.",
+    "addImap": "Añadir cuenta (IMAP)",
+    "waitingGoogle": "Esperando a Google…",
+    "signInGoogle": "Iniciar sesión con Google",
+    "waitingMicrosoft": "Esperando a Microsoft…",
+    "signInMicrosoft": "Iniciar sesión con Microsoft"
+  },
+  "snippets": {
+    "title": "Fragmentos",
+    "deleteFailed": "No se pudo eliminar el fragmento: {{detail}}",
+    "expandHint": "Escribe <kbd>;atajo</kbd> en el redactor para expandir un fragmento.",
+    "new": "Nuevo fragmento",
+    "usedCount": "usado {{n}}×",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "reallyDelete": "¿Eliminar de verdad?",
+    "empty": "Aún no hay fragmentos. Crea uno para agilizar las respuestas.",
+    "saveFailed": "No se pudo guardar el fragmento: {{detail}}",
+    "nameLabel": "Nombre",
+    "namePlaceholder": "p. ej. Agenda",
+    "shortcutLabel": "Atajo",
+    "shortcutPlaceholder": "agenda",
+    "subjectLabel": "Asunto (opcional)",
+    "subjectPlaceholder": "Rellena el asunto si está vacío",
+    "bodyLabel": "Cuerpo",
+    "bodyPlaceholder": "Texto del fragmento…",
+    "saving": "Guardando…",
+    "saveChanges": "Guardar cambios",
+    "create": "Crear fragmento",
+    "cancel": "Cancelar"
+  },
+  "splits": {
+    "title": "Divisiones de la bandeja",
+    "describe": {
+      "from": "de {{senders}}",
+      "subjectHas": "el asunto contiene {{subjects}}",
+      "automatedOnly": "solo automatizado",
+      "humanOnly": "solo humano",
+      "nothing": "no coincide con nada"
+    },
+    "reorderFailed": "No se pudieron reordenar las divisiones: {{detail}}",
+    "deleteFailed": "No se pudo eliminar la división: {{detail}}",
+    "builtin": {
+      "importantName": "Importante",
+      "importantDesc": "correo de personas",
+      "otherName": "Otros",
+      "otherDesc": "correo automatizado",
+      "badge": "Integrada"
+    },
+    "builtinNote": "Importante y Otros están integradas y no se pueden editar. Las divisiones personalizadas de abajo tienen su propia pestaña de bandeja; todo lo que coincida con ellas sale de Importante/Otros.",
+    "customSplits": "Divisiones personalizadas",
+    "new": "Nueva división",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "reallyDelete": "¿Eliminar de verdad?",
+    "empty": "Aún no hay divisiones personalizadas. Crea una para dar a los remitentes su propia pestaña.",
+    "moveUp": "Subir",
+    "moveDown": "Bajar",
+    "saveFailed": "No se pudo guardar la división: {{detail}}",
+    "nameLabel": "Nombre",
+    "namePlaceholder": "p. ej. GitHub",
+    "senderLabel": "El remitente es (direcciones o @dominios separados por comas)",
+    "senderPlaceholder": "@github.com, jefe@empresa.com",
+    "subjectLabel": "El asunto contiene (separado por comas)",
+    "subjectPlaceholder": "factura, recibo",
+    "automatedLabel": "Correo automatizado",
+    "automated": {
+      "any": "Cualquiera",
+      "automated": "Solo automatizado",
+      "human": "Solo humano"
+    },
+    "addCondition": "Añade al menos una condición.",
+    "saving": "Guardando…",
+    "saveChanges": "Guardar cambios",
+    "create": "Crear división",
+    "cancel": "Cancelar"
+  },
+  "about": {
+    "section": "Acerca de",
+    "version": "Versión",
+    "versionHint": "Busca e instala la última versión desde GitHub.",
+    "checkUpdates": "Buscar actualizaciones",
+    "checking": "Comprobando…",
+    "upToDate": "Tienes la última versión.",
+    "updateAvailable": "La versión {{version}} está disponible.",
+    "restartInstall": "Reiniciar e instalar"
+  }
+}

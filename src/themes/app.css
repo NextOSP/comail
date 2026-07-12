@@ -1,0 +1,330 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Comail themes - "Snow" (light) & "Carbon" (dark)
+   Exactly 5 gray steps per theme. Never pure black/white.
+--------------------------------------------------------------------------- */
+
+:root,
+:root[data-theme="snow"] {
+  color-scheme: light;
+  --bg0: #faf9f7; /* canvas */
+  --bg1: #f4f2ee;
+  --bg2: #eceae4;
+  --bg3: #e1ded6;
+  --bg4: #d2cfc5;
+  --ink: 32 30 27; /* rgb triplet for the text family */
+  --text: rgb(var(--ink) / 0.92);
+  --text-muted: rgb(var(--ink) / 0.62);
+  --text-faint: rgb(var(--ink) / 0.42);
+  --accent: #714cb6;
+  --info: #4c7ecb;
+  --star: #e8a91c; /* amber reads better on light */
+  --danger: #c0503f;
+  --ok: #4f8f5c;
+  --hairline: rgb(var(--ink) / 0.09);
+  --hairline-strong: rgb(var(--ink) / 0.16);
+  --elev-1: 0 1px 2px rgb(32 30 27 / 0.04);
+  --elev-2: 0 4px 24px rgb(32 30 27 / 0.10), 0 1px 3px rgb(32 30 27 / 0.06);
+  --row-hover: rgb(var(--ink) / 0.035);
+  --selected-bg: color-mix(in srgb, var(--accent) 7%, transparent);
+  --iframe-scheme: light;
+}
+
+:root[data-theme="carbon"] {
+  color-scheme: dark;
+  --bg0: #141413; /* canvas */
+  --bg1: #1b1b19;
+  --bg2: #232320;
+  --bg3: #2d2d29;
+  --bg4: #3a3a35;
+  --ink: 236 233 226;
+  --text: rgb(var(--ink) / 0.92);
+  --text-muted: rgb(var(--ink) / 0.60);
+  --text-faint: rgb(var(--ink) / 0.38);
+  --accent: #9d7fd8; /* lifted for dark */
+  --info: #7ba3e3;
+  --star: #ffbf47;
+  --danger: #e0705e;
+  --ok: #74b381;
+  --hairline: rgb(var(--ink) / 0.09);
+  --hairline-strong: rgb(var(--ink) / 0.17);
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.3);
+  --elev-2: 0 8px 32px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.35);
+  --row-hover: rgb(var(--ink) / 0.045);
+  --selected-bg: color-mix(in srgb, var(--accent) 11%, transparent);
+  --iframe-scheme: dark;
+}
+
+@theme inline {
+  --color-bg0: var(--bg0);
+  --color-bg1: var(--bg1);
+  --color-bg2: var(--bg2);
+  --color-bg3: var(--bg3);
+  --color-bg4: var(--bg4);
+  --color-ink: var(--text);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-info: var(--info);
+  --color-star: var(--star);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  font-feature-settings: "cv02", "cv05", "ss01", "tnum" 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* Scrollbars: quiet */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg4) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--bg4);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+/* Focus rings only for keyboard */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   Motion
+-------------------------------------------------------------------------- */
+
+@keyframes co-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.965) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes co-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes co-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes co-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes co-row-out {
+  to {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@keyframes co-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes co-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.co-pop-in {
+  animation: co-pop-in 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.co-sheet-in {
+  animation: co-sheet-in 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.co-fade-in {
+  animation: co-fade-in 150ms ease-out;
+}
+.co-toast-in {
+  animation: co-toast-in 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.co-row-leaving {
+  animation: co-row-out 150ms ease-in forwards;
+  pointer-events: none;
+}
+.co-spinner {
+  animation: co-spin 0.9s linear infinite;
+}
+.co-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg2) 30%,
+    color-mix(in srgb, var(--bg2) 45%, var(--bg4)) 50%,
+    var(--bg2) 70%
+  );
+  background-size: 200% 100%;
+  animation: co-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Pieces
+-------------------------------------------------------------------------- */
+
+/* Selected thread row: left accent bar, not just bg */
+.co-row {
+  position: relative;
+  transition: background-color 90ms ease;
+}
+.co-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: transparent;
+  transition: background-color 90ms ease;
+}
+.co-row:hover {
+  background: var(--row-hover);
+}
+.co-row[data-selected="true"] {
+  background: var(--selected-bg);
+}
+.co-row[data-selected="true"]::before {
+  background: var(--accent);
+}
+
+.co-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45em;
+  height: 1.5em;
+  padding: 0 0.4em;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg2);
+  border: 1px solid var(--hairline-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+.co-hairline-b {
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Inbox-zero aurora */
+.co-aurora {
+  position: absolute;
+  inset: -25%;
+  filter: blur(60px);
+  opacity: 0.5;
+  /* Static on purpose: animating this blurred oversized layer forces WebKitGTK
+     to re-blur every frame (100% CPU under software compositing). */
+  background:
+    radial-gradient(38% 45% at 28% 32%, color-mix(in srgb, var(--accent) 42%, transparent), transparent 70%),
+    radial-gradient(42% 48% at 72% 28%, color-mix(in srgb, var(--info) 36%, transparent), transparent 70%),
+    radial-gradient(40% 44% at 55% 75%, color-mix(in srgb, var(--star) 22%, transparent), transparent 70%);
+}
+:root[data-theme="carbon"] .co-aurora {
+  opacity: 0.34;
+}
+
+.co-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--bg1);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.co-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  /* Slightly stronger tint stands in for the removed backdrop-filter:blur -
+     blur is extremely expensive on WebKitGTK's software compositing path and
+     janks every overlay/palette open. */
+  background: color-mix(in srgb, var(--bg0) 60%, transparent);
+}
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] input {
+  -webkit-app-region: no-drag;
+}

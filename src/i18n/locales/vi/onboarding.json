@@ -1,0 +1,48 @@
+{
+  "provider": {
+    "fastmail": "Fastmail",
+    "icloud": "iCloud",
+    "gmail": "Gmail (thủ công)",
+    "custom": "Tùy chỉnh"
+  },
+  "note": {
+    "fastmail": "Dùng mật khẩu ứng dụng từ cài đặt Fastmail.",
+    "icloud": "Cần mật khẩu riêng cho ứng dụng từ appleid.apple.com.",
+    "gmail": "Bật IMAP trong cài đặt Gmail và dùng mật khẩu ứng dụng."
+  },
+  "settingsTitle": "Cài đặt (Ctrl+,)",
+  "settingsAria": "Cài đặt",
+  "closeAria": "Đóng",
+  "titleAddAccount": "Thêm tài khoản",
+  "subtitleAddAccount": "Kết nối hộp thư khác qua IMAP / SMTP.",
+  "subtitleWelcome": "Email nhanh như suy nghĩ. Thêm tài khoản đầu tiên để bắt đầu.",
+  "addAccountImapSmtp": "Thêm tài khoản (IMAP / SMTP)",
+  "waitingForGoogle": "Đang chờ Google…",
+  "signInWithGoogle": "Đăng nhập bằng Google",
+  "waitingForMicrosoft": "Đang chờ Microsoft…",
+  "signInWithMicrosoft": "Đăng nhập bằng Microsoft",
+  "field": {
+    "provider": "Nhà cung cấp",
+    "email": "Email",
+    "displayName": "Tên hiển thị",
+    "password": "Mật khẩu",
+    "imapHost": "Máy chủ IMAP",
+    "smtpHost": "Máy chủ SMTP",
+    "port": "Cổng"
+  },
+  "placeholder": {
+    "email": "you@example.com",
+    "displayName": "Tùy chọn",
+    "password": "Mật khẩu ứng dụng",
+    "imapHost": "imap.example.com",
+    "smtpHost": "smtp.example.com"
+  },
+  "testingConnection": "Đang kiểm tra kết nối…",
+  "adding": "Đang thêm…",
+  "connect": "Kết nối",
+  "back": "Quay lại",
+  "connectionFailed": "Kết nối thất bại",
+  "accountConnected": "Đã kết nối {{email}}. Đang đồng bộ…",
+  "oauthConnected": "Đã kết nối tài khoản. Đang đồng bộ…",
+  "oauthNotConfigured": "Hãy thêm client ID OAuth của bạn trước. Đang mở Cài đặt, xem hướng dẫn từng bước trong mục Ứng dụng OAuth."
+}

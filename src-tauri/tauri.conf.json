@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Comail",
+  "version": "0.1.0",
+  "identifier": "com.nextwaves.comail",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Comail",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 480
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: cid: asset: http://asset.localhost https: http:; style-src 'self' 'unsafe-inline'; frame-src 'self' data:; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage"],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": ["resources/models/**/*"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU0MUYwODhGNzhDQTA0NzQKUldSMEJNcDRqd2dmNUFRenVJYkE3ZDZFZWdXSUNscmQ3VS9iMFBBa2FIRXlGTDhuWDFYdTUxU0UK",
+      "endpoints": [
+        "https://github.com/NextOSP/comail/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

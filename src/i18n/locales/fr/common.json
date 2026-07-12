@@ -1,0 +1,104 @@
+{
+  "view": {
+    "inbox": "Boîte de réception",
+    "starred": "Suivis",
+    "snoozed": "En attente",
+    "sent": "Envoyés",
+    "drafts": "Brouillons",
+    "done": "Terminés",
+    "trash": "Corbeille",
+    "spam": "Spam",
+    "all": "Tous les messages"
+  },
+  "syncState": {
+    "idle": "inactif",
+    "syncing": "synchronisation",
+    "error": "erreur",
+    "needs_reauth": "reconnexion requise",
+    "offline": "hors ligne"
+  },
+  "unit": {
+    "bytes": "B",
+    "kilobytes": "KB",
+    "megabytes": "MB"
+  },
+  "action": {
+    "done": "Terminé",
+    "snooze": "Reporter",
+    "star": "Suivre",
+    "read": "Lire",
+    "trash": "Corbeille",
+    "spam": "Spam",
+    "clear": "Effacer",
+    "close": "Fermer",
+    "back": "Retour",
+    "cancel": "Annuler",
+    "dismiss": "Ignorer",
+    "undo": "Annuler"
+  },
+  "topbar": {
+    "search": "Rechercher",
+    "offline": "Hors ligne",
+    "syncing": "Synchronisation",
+    "waitingForChord": "En attente d’un raccourci",
+    "settings": "Paramètres",
+    "settingsWithShortcut": "Paramètres ({{shortcut}})",
+    "allAccounts": "Tous les comptes"
+  },
+  "loading": "Chargement…",
+  "selectedCount": "{{count}} sélectionné(s)",
+  "undoSuffix": "{{label}} · Z pour annuler",
+  "palette": {
+    "placeholder": "Saisir une commande…",
+    "empty": "Aucune commande correspondante"
+  },
+  "search": {
+    "placeholder": "Rechercher dans les messages…",
+    "try": "Essayez",
+    "emptyHint": "Recherchez dans tous les comptes, dossiers et messages.",
+    "noResults": "Aucun résultat pour « {{query}} »"
+  },
+  "shortcutHelp": {
+    "title": "Raccourcis clavier",
+    "escToClose": "Esc pour fermer",
+    "then": "puis"
+  },
+  "move": {
+    "title": "Déplacer vers un dossier",
+    "placeholder": "Filtrer les dossiers…",
+    "noMatches": "Aucun dossier correspondant",
+    "loading": "Chargement des dossiers…",
+    "movedTo": "Déplacé vers {{folder}}"
+  },
+  "snoozePopover": {
+    "snoozeUntil": "Reporter jusqu’à",
+    "snoozed": "En attente",
+    "snoozedUntil": "En attente jusqu’au {{label}}"
+  },
+  "timePopover": {
+    "placeholder": "Essayez « demain », « 2h », « lundi 9h »…",
+    "keepTyping": "Continuez à saisir…"
+  },
+  "snoozeFmt": {
+    "today": "Aujourd’hui, {{time}}",
+    "tomorrow": "Demain, {{time}}",
+    "dateAt": "{{date}}, {{time}}"
+  },
+  "snoozePreset": {
+    "later today": "Plus tard aujourd’hui",
+    "tonight": "Ce soir",
+    "tomorrow": "Demain",
+    "this weekend": "Ce week-end",
+    "next week": "La semaine prochaine"
+  },
+  "splitTabs": {
+    "tabToSwitch": "Tab pour changer"
+  },
+  "threadRow": {
+    "hasAttachments": "Contient des pièces jointes",
+    "attachment": "Pièce jointe",
+    "starred": "Suivi",
+    "select": "Sélectionner",
+    "deselect": "Désélectionner"
+  }
+}
