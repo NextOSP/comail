@@ -22,7 +22,7 @@ mail-builder = "0.4"
 # TLS
 tokio-rustls = "0.26"
 rustls = "0.23"
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 futures = "0.3"
 
 # storage
