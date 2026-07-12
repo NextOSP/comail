@@ -56,6 +56,12 @@ pub async fn start_oauth(
         .map_err(err)
 }
 
+#[tauri::command]
+pub async fn cancel_oauth(state: State<'_, AppState>) -> CmdResult<()> {
+    state.core.cancel_oauth();
+    Ok(())
+}
+
 // ---------- reading ----------
 
 #[tauri::command]

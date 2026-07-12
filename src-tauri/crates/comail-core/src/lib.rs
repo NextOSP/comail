@@ -84,6 +84,9 @@ pub struct Core {
     handles: Arc<RwLock<HashMap<i64, AccountHandle>>>,
     cal_handles: Arc<RwLock<HashMap<i64, caldav::task::CalTaskHandle>>>,
     embed: Arc<embed::EmbedState>,
+    /// Fired by `cancel_oauth` to abort a pending browser sign-in (the
+    /// loopback wait otherwise blocks the UI until its 5-minute timeout).
+    oauth_cancel: Arc<tokio::sync::Notify>,
 }
 
 impl Core {
@@ -99,6 +102,7 @@ impl Core {
             handles: Arc::new(RwLock::new(HashMap::new())),
             cal_handles: Arc::new(RwLock::new(HashMap::new())),
             embed: Arc::new(embed::EmbedState::new()),
+            oauth_cancel: Arc::new(tokio::sync::Notify::new()),
         };
 
         // Make saved OAuth app registrations available before any actor
@@ -316,12 +320,23 @@ impl Core {
             .ok_or_else(|| CoreError::NotFound("account".into()))
     }
 
+    /// Abort any sign-in currently waiting on the browser redirect.
+    pub fn cancel_oauth(&self) {
+        tracing::info!("oauth: sign-in cancelled by user");
+        self.oauth_cancel.notify_waiters();
+    }
+
     pub async fn start_oauth(
         &self,
         provider: Provider,
         open_url: impl FnOnce(String) + Send,
     ) -> Result<Account> {
-        let outcome = oauth::flow::authorize(provider, open_url).await?;
+        let outcome = tokio::select! {
+            r = oauth::flow::authorize(provider, open_url) => r?,
+            _ = self.oauth_cancel.notified() => {
+                return Err(CoreError::Auth("sign-in cancelled".into()));
+            }
+        };
         let servers = match provider {
             Provider::Gmail => &accounts::providers::GMAIL,
             Provider::Microsoft => &accounts::providers::MICROSOFT,
@@ -1419,13 +1434,17 @@ impl Core {
             ));
         }
 
-        let outcome = oauth::flow::authorize_with(
-            Provider::Gmail,
-            &[oauth::providers::GOOGLE_CALENDAR_SCOPE],
-            Some(&account.email),
-            open_url,
-        )
-        .await?;
+        let outcome = tokio::select! {
+            r = oauth::flow::authorize_with(
+                Provider::Gmail,
+                &[oauth::providers::GOOGLE_CALENDAR_SCOPE],
+                Some(&account.email),
+                open_url,
+            ) => r?,
+            _ = self.oauth_cancel.notified() => {
+                return Err(CoreError::Auth("sign-in cancelled".into()));
+            }
+        };
         if !outcome.email.eq_ignore_ascii_case(&account.email) {
             return Err(CoreError::Auth(format!(
                 "consent was granted for {} - expected {}",

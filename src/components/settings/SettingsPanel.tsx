@@ -911,7 +911,7 @@ function OAuthGuide() {
       title: t("settings:oauth.guide.msTitle"),
       linkLabel: t("settings:oauth.guide.openMs"),
       url: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
-      steps: ["m1", "m2", "m3", "m4", "m5"],
+      steps: ["m1", "m2", "m3", "m4", "m5", "m6"],
     },
   ];
   return (
@@ -1210,18 +1210,24 @@ function AccountsSection() {
       pushToast({ kind: "info", message: t("settings:accounts.connected") });
     } catch (err) {
       const message = err instanceof Error ? err.message : t("errors:oauthFailed");
-      pushToast(
-        message.includes("no OAuth app configured")
-          ? {
-              kind: "info",
-              message: t("settings:accounts.configureOauthFirst"),
-              durationMs: 6000,
-            }
-          : { kind: "error", message },
-      );
+      if (!message.includes("sign-in cancelled")) {
+        pushToast(
+          message.includes("no OAuth app configured")
+            ? {
+                kind: "info",
+                message: t("settings:accounts.configureOauthFirst"),
+                durationMs: 6000,
+              }
+            : { kind: "error", message },
+        );
+      }
     } finally {
       setOauthBusy(null);
     }
+  };
+
+  const cancelOauth = () => {
+    void call("cancel_oauth", {}).catch(() => {});
   };
 
   return (
@@ -1265,20 +1271,24 @@ function AccountsSection() {
         </button>
         <button
           className={ghostBtnCls}
-          disabled={oauthBusy != null}
-          onClick={() => void oauth("gmail")}
+          disabled={oauthBusy != null && oauthBusy !== "gmail"}
+          onClick={() => (oauthBusy === "gmail" ? cancelOauth() : void oauth("gmail"))}
         >
           {oauthBusy === "gmail"
-            ? t("settings:accounts.waitingGoogle")
+            ? t("settings:accounts.cancelWaiting", {
+                waiting: t("settings:accounts.waitingGoogle"),
+              })
             : t("settings:accounts.signInGoogle")}
         </button>
         <button
           className={ghostBtnCls}
-          disabled={oauthBusy != null}
-          onClick={() => void oauth("microsoft")}
+          disabled={oauthBusy != null && oauthBusy !== "microsoft"}
+          onClick={() => (oauthBusy === "microsoft" ? cancelOauth() : void oauth("microsoft"))}
         >
           {oauthBusy === "microsoft"
-            ? t("settings:accounts.waitingMicrosoft")
+            ? t("settings:accounts.cancelWaiting", {
+                waiting: t("settings:accounts.waitingMicrosoft"),
+              })
             : t("settings:accounts.signInMicrosoft")}
         </button>
       </div>
