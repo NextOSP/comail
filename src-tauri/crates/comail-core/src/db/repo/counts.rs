@@ -121,7 +121,8 @@ impl Q {
         let sql = format!(
             "SELECT COUNT(*) FROM threads t LEFT JOIN snoozes s ON s.thread_id = t.id {where_sql}"
         );
-        let params: Vec<&dyn rusqlite::types::ToSql> = self.bind.iter().map(|b| b.as_ref()).collect();
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            self.bind.iter().map(|b| b.as_ref()).collect();
         Ok(conn.query_row(&sql, params.as_slice(), |r| r.get(0))?)
     }
 }
@@ -140,8 +141,14 @@ pub fn unread_counts(
     labels: &[Label],
 ) -> Result<UnreadCounts> {
     let inbox = Q::unread(account_id).inbox().run(conn)?;
-    let important = Q::unread(account_id).inbox().split(&automated(false)).run(conn)?;
-    let other = Q::unread(account_id).inbox().split(&automated(true)).run(conn)?;
+    let important = Q::unread(account_id)
+        .inbox()
+        .split(&automated(false))
+        .run(conn)?;
+    let other = Q::unread(account_id)
+        .inbox()
+        .split(&automated(true))
+        .run(conn)?;
 
     let mut splits_map = HashMap::new();
     for sp in splits {
@@ -158,11 +165,15 @@ pub fn unread_counts(
     let mut views = HashMap::new();
     views.insert(
         "starred".to_string(),
-        Q::unread(account_id).clause("t.starred_count > 0").run(conn)?,
+        Q::unread(account_id)
+            .clause("t.starred_count > 0")
+            .run(conn)?,
     );
     views.insert(
         "snoozed".to_string(),
-        Q::unread(account_id).clause("s.thread_id IS NOT NULL").run(conn)?,
+        Q::unread(account_id)
+            .clause("s.thread_id IS NOT NULL")
+            .run(conn)?,
     );
     // Drafts badge = number of threads with a draft, unread or not.
     views.insert(
@@ -249,7 +260,9 @@ mod tests {
         )
         .unwrap();
         let msg_id: i64 = conn
-            .query_row("SELECT id FROM messages WHERE thread_id = 1", [], |r| r.get(0))
+            .query_row("SELECT id FROM messages WHERE thread_id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         conn.execute(
             "INSERT INTO message_labels (message_id, label_id) VALUES (?1, 5)",

@@ -405,8 +405,7 @@ pub fn get(conn: &Connection, event_id: i64) -> Result<Option<CalendarEvent>> {
 
 /// The stored iCal UID + sequence (needed to build an RSVP reply).
 pub fn uid_and_sequence(conn: &Connection, event_id: i64) -> Result<Option<(String, i64)>> {
-    let mut stmt =
-        conn.prepare("SELECT ical_uid, sequence FROM calendar_events WHERE id = ?1")?;
+    let mut stmt = conn.prepare("SELECT ical_uid, sequence FROM calendar_events WHERE id = ?1")?;
     let mut rows = stmt.query_map(params![event_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.next().transpose()?)
 }
@@ -451,7 +450,11 @@ pub fn for_message(conn: &Connection, message_id: i64) -> Result<Vec<CalendarEve
 /// Non-recurring events starting within the reminder window that have not
 /// been notified for this start time yet. (Recurring occurrences are handled
 /// by the caller via the expander; the notified_at gate is per-occurrence.)
-pub fn upcoming_for_notify(conn: &Connection, now: i64, lead_ms: i64) -> Result<Vec<CalendarEvent>> {
+pub fn upcoming_for_notify(
+    conn: &Connection,
+    now: i64,
+    lead_ms: i64,
+) -> Result<Vec<CalendarEvent>> {
     let mut stmt = conn.prepare(
         "SELECT * FROM calendar_events
          WHERE deleted = 0 AND all_day = 0
@@ -568,7 +571,17 @@ mod tests {
         testutil::seed_account(&c);
         let cal = seed_calendar(&c);
         let id = insert_local(
-            &c, 1, "u1@comail", "Edit me", None, None, None, "me@test.dev", &[], 5_000, 6_000,
+            &c,
+            1,
+            "u1@comail",
+            "Edit me",
+            None,
+            None,
+            None,
+            "me@test.dev",
+            &[],
+            5_000,
+            6_000,
             false,
         )
         .unwrap();
@@ -583,7 +596,10 @@ mod tests {
             starts_at: 7_000,
             ends_at: 8_000,
             all_day: false,
-            attendees: vec![Address { name: None, email: "bob@test.dev".into() }],
+            attendees: vec![Address {
+                name: None,
+                email: "bob@test.dev".into(),
+            }],
             notify: true,
         };
         let atts = vec![EventAttendee {
@@ -601,8 +617,20 @@ mod tests {
         let mut remote = sample_ics_event();
         remote.uid = "u1@comail".into();
         remote.summary = Some("Server version".into());
-        upsert_remote(&c, 1, cal, "/cal/u1.ics", "\"e1\"", "BEGIN:VCALENDAR", &remote).unwrap();
-        assert_eq!(get(&c, id).unwrap().unwrap().summary.as_deref(), Some("Edited"));
+        upsert_remote(
+            &c,
+            1,
+            cal,
+            "/cal/u1.ics",
+            "\"e1\"",
+            "BEGIN:VCALENDAR",
+            &remote,
+        )
+        .unwrap();
+        assert_eq!(
+            get(&c, id).unwrap().unwrap().summary.as_deref(),
+            Some("Edited")
+        );
 
         // Successful push clears dirty and records server identity.
         clear_dirty_set_etag(&c, id, cal, "/cal/u1.ics", Some("\"e2\""), "ICSDATA").unwrap();
@@ -634,7 +662,16 @@ mod tests {
         upsert(&c, 1, msg, &sample_ics_event()).unwrap();
         let cal = seed_calendar(&c);
 
-        upsert_remote(&c, 1, cal, "/cal/evt-1.ics", "\"e1\"", "ICS", &sample_ics_event()).unwrap();
+        upsert_remote(
+            &c,
+            1,
+            cal,
+            "/cal/evt-1.ics",
+            "\"e1\"",
+            "ICS",
+            &sample_ics_event(),
+        )
+        .unwrap();
         // Still one row, now carrying CalDAV identity.
         let n: i64 = c
             .query_row("SELECT COUNT(*) FROM calendar_events", [], |r| r.get(0))
@@ -649,7 +686,17 @@ mod tests {
         let c = testutil::conn();
         testutil::seed_account(&c);
         let id = insert_local(
-            &c, 1, "n1@comail", "Standup", None, None, None, "me@test.dev", &[], 100_000, 101_000,
+            &c,
+            1,
+            "n1@comail",
+            "Standup",
+            None,
+            None,
+            None,
+            "me@test.dev",
+            &[],
+            100_000,
+            101_000,
             false,
         )
         .unwrap();
@@ -661,7 +708,17 @@ mod tests {
         assert!(upcoming_for_notify(&c, 95_000, 10_000).unwrap().is_empty());
         // Declined events never notify.
         let id2 = insert_local(
-            &c, 1, "n2@comail", "Skip", None, None, None, "me@test.dev", &[], 100_000, 101_000,
+            &c,
+            1,
+            "n2@comail",
+            "Skip",
+            None,
+            None,
+            None,
+            "me@test.dev",
+            &[],
+            100_000,
+            101_000,
             false,
         )
         .unwrap();

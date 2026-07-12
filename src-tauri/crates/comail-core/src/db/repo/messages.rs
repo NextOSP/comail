@@ -359,7 +359,11 @@ pub fn list_sent_bodies(
     let params_ref: Vec<&dyn rusqlite::types::ToSql> = bind.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
         .query_map(params_ref.as_slice(), |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)

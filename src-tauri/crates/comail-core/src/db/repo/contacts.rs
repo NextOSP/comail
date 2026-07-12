@@ -59,10 +59,7 @@ pub fn backfill_folded(conn: &Connection) -> Result<()> {
 /// Build the WHERE fragment requiring every folded query token to appear in
 /// `contacts.folded`, pushing one `%tok%` bind per token. Returns None for
 /// queries with no usable tokens.
-fn folded_clauses(
-    query: &str,
-    bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
-) -> Option<String> {
+fn folded_clauses(query: &str, bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>) -> Option<String> {
     let folded = fold(query);
     let tokens: Vec<&str> = folded.split_whitespace().collect();
     if tokens.is_empty() {
@@ -71,9 +68,15 @@ fn folded_clauses(
     let mut clauses = Vec::with_capacity(tokens.len());
     for tok in tokens {
         // Escape LIKE wildcards so a literal % or _ in the query can't scan-match.
-        let esc = tok.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let esc = tok
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         bind.push(Box::new(format!("%{esc}%")));
-        clauses.push(format!("COALESCE(folded, email) LIKE ?{} ESCAPE '\\'", bind.len()));
+        clauses.push(format!(
+            "COALESCE(folded, email) LIKE ?{} ESCAPE '\\'",
+            bind.len()
+        ));
     }
     Some(clauses.join(" AND "))
 }
@@ -135,8 +138,10 @@ pub fn affinity_for(
         "SELECT email, send_count * 3 + recv_count FROM contacts WHERE email IN ({placeholders})"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-        emails.iter().map(|e| e as &dyn rusqlite::types::ToSql).collect();
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> = emails
+        .iter()
+        .map(|e| e as &dyn rusqlite::types::ToSql)
+        .collect();
     let rows = stmt.query_map(params_ref.as_slice(), |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
     })?;

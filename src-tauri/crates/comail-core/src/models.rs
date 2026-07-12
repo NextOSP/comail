@@ -851,7 +851,10 @@ mod tests {
 
     #[test]
     fn settings_serde_defaults_for_new_fields() {
-        let s: Settings = serde_json::from_str(r#"{"theme":"snow","undoSendSeconds":5,"loadRemoteImages":false}"#).unwrap();
+        let s: Settings = serde_json::from_str(
+            r#"{"theme":"snow","undoSendSeconds":5,"loadRemoteImages":false}"#,
+        )
+        .unwrap();
         assert!(s.notifications_enabled);
         assert!(s.auto_advance);
         assert!(s.auto_labels_enabled);

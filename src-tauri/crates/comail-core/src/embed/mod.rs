@@ -256,7 +256,11 @@ impl Embedder for LocalCandle {
             .map_err(map)?
             .unsqueeze(2)
             .map_err(map)?; // [b, seq, 1]
-        let summed = out.broadcast_mul(&mask_f).map_err(map)?.sum(1).map_err(map)?; // [b, h]
+        let summed = out
+            .broadcast_mul(&mask_f)
+            .map_err(map)?
+            .sum(1)
+            .map_err(map)?; // [b, h]
         let counts = mask_f.sum(1).map_err(map)?; // [b, 1]
         let mean = summed.broadcast_div(&counts).map_err(map)?;
 
@@ -435,7 +439,10 @@ mod tests {
         assert_eq!(emb.dim(), 384);
 
         let vecs = emb
-            .embed(&["a cat sat on the mat".to_string(), "kitten on a rug".to_string()])
+            .embed(&[
+                "a cat sat on the mat".to_string(),
+                "kitten on a rug".to_string(),
+            ])
             .unwrap();
         assert_eq!(vecs.len(), 2);
         assert_eq!(vecs[0].len(), 384);

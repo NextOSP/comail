@@ -18,13 +18,18 @@ fn summary_from_row(row: &Row) -> rusqlite::Result<ThreadSummary> {
         is_starred: row.get::<_, i64>("starred_count")? > 0,
         has_attachments: row.get::<_, i64>("attachment_count")? > 0,
         snoozed_until: row.get("snoozed_until")?,
-        labels: parse_id_list(&row.get::<_, Option<String>>("label_ids")?.unwrap_or_default()),
+        labels: parse_id_list(
+            &row.get::<_, Option<String>>("label_ids")?
+                .unwrap_or_default(),
+        ),
     })
 }
 
 /// Parse a SQLite `group_concat` result ("1,3,5") into a list of ids.
 fn parse_id_list(csv: &str) -> Vec<i64> {
-    csv.split(',').filter_map(|s| s.trim().parse().ok()).collect()
+    csv.split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect()
 }
 
 const SUMMARY_SELECT: &str = "

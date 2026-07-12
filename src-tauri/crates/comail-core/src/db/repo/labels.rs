@@ -161,7 +161,11 @@ mod tests {
     #[test]
     fn migration_seeds_four_auto_labels() {
         let c = testutil::conn();
-        let auto: Vec<Label> = list(&c).unwrap().into_iter().filter(|l| l.is_auto).collect();
+        let auto: Vec<Label> = list(&c)
+            .unwrap()
+            .into_iter()
+            .filter(|l| l.is_auto)
+            .collect();
         let keywords: Vec<&str> = auto.iter().map(|l| l.keyword.as_str()).collect();
         assert_eq!(auto.len(), 4);
         for k in [
@@ -188,10 +192,15 @@ mod tests {
     fn delete_refuses_auto_rows() {
         let c = testutil::conn();
         let auto_id: i64 = c
-            .query_row("SELECT id FROM labels WHERE is_auto = 1 LIMIT 1", [], |r| r.get(0))
+            .query_row("SELECT id FROM labels WHERE is_auto = 1 LIMIT 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         delete(&c, auto_id).unwrap();
-        assert!(get(&c, auto_id).unwrap().is_some(), "auto label must survive delete");
+        assert!(
+            get(&c, auto_id).unwrap().is_some(),
+            "auto label must survive delete"
+        );
 
         let manual = save(&c, None, "Temp", "#fff", 0).unwrap();
         delete(&c, manual.id).unwrap();
@@ -221,7 +230,10 @@ mod tests {
         let changed = reconcile_keywords(&c, msg, &[]).unwrap();
         assert!(changed);
         let remaining = for_thread(&c, 1).unwrap();
-        assert!(remaining.contains(&auto_id), "auto label was stripped by reconcile");
+        assert!(
+            remaining.contains(&auto_id),
+            "auto label was stripped by reconcile"
+        );
         assert!(!remaining.contains(&manual.id));
 
         // Server later reports the manual keyword: membership comes back.

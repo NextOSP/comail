@@ -218,5 +218,8 @@ async fn hundred_k_messages_stay_instant() {
     assert!(deep_ms < 50, "deep page took {deep_ms}ms (budget 50ms)");
     assert!(search_ms < 100, "search took {search_ms}ms (budget 100ms)");
     assert!(op_ms < 150, "operator search took {op_ms}ms (budget 150ms)");
-    assert!(hybrid_ms < 150, "hybrid search took {hybrid_ms}ms (budget 150ms)");
+    assert!(
+        hybrid_ms < 150,
+        "hybrid search took {hybrid_ms}ms (budget 150ms)"
+    );
 }

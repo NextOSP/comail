@@ -27,7 +27,14 @@ fn addr(name: &str, email: &str) -> Address {
     }
 }
 
-fn insert_message(conn: &Connection, id: i64, thread: i64, subject: &str, from: &Address, date: i64) {
+fn insert_message(
+    conn: &Connection,
+    id: i64,
+    thread: i64,
+    subject: &str,
+    from: &Address,
+    date: i64,
+) {
     conn.execute(
         "INSERT OR IGNORE INTO threads (id,account_id,subject_norm,last_message_at,message_count)
          VALUES (?1,1,?2,?3,1)",
@@ -82,7 +89,9 @@ fn autocomplete_backfill_covers_pre_fold_rows() {
     )
     .unwrap();
     // Row predates the folded column; suggest can't see it until backfill.
-    assert!(repo::contacts::suggest(&conn, "tran duc", 5).unwrap().is_empty());
+    assert!(repo::contacts::suggest(&conn, "tran duc", 5)
+        .unwrap()
+        .is_empty());
     repo::contacts::backfill_folded(&conn).unwrap();
     let hits = repo::contacts::suggest(&conn, "tran duc", 5).unwrap();
     assert_eq!(hits.len(), 1);
