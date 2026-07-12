@@ -31,7 +31,7 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf \
             libssl-dev libdbus-1-dev build-essential curl wget file pkg-config
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
@@ -87,7 +87,7 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf \
             libssl-dev libdbus-1-dev build-essential curl wget file pkg-config
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
