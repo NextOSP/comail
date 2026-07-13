@@ -139,9 +139,8 @@ fn init_logging() {
     // ("foster parenting not implemented" and friends). That's routine for real
     // email and nothing we can act on, so quiet those targets by default.
     let filter = || {
-        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            "info,comail_core=debug,html5ever=off,markup5ever=off".into()
-        })
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info,comail_core=debug,html5ever=off,markup5ever=off".into())
     };
 
     let file = (|| {

@@ -232,8 +232,10 @@ async fn fetch_bodies_batch(
         items.sort_unstable_by_key(|(uid, _)| *uid);
         let uids: Vec<u32> = items.iter().map(|(u, _)| *u).collect();
         let set = imap::uid_set(&uids);
-        let fetched: HashMap<u32, Vec<u8>> =
-            imap::fetch_full_batch(session, &set).await?.into_iter().collect();
+        let fetched: HashMap<u32, Vec<u8>> = imap::fetch_full_batch(session, &set)
+            .await?
+            .into_iter()
+            .collect();
         for (uid, message_id) in items {
             match fetched.get(&uid) {
                 // A single message deleted mid-fetch would FK-fail its persist;
@@ -316,7 +318,11 @@ async fn run_actor(
                         account_id,
                         idle = supports_idle == Some(true),
                         "receive: connected; IDLE push {}",
-                        if supports_idle == Some(true) { "enabled" } else { "unavailable, polling" },
+                        if supports_idle == Some(true) {
+                            "enabled"
+                        } else {
+                            "unavailable, polling"
+                        },
                     );
                     session = Some(s);
                     backoff_secs = 1;
@@ -453,9 +459,12 @@ async fn run_actor(
                                         }) => {
                                             if let Some(ref mut s) = session {
                                                 if let Err(e) =
-                                                    fetch_one_body(&ctx, &config, s, message_id).await
+                                                    fetch_one_body(&ctx, &config, s, message_id)
+                                                        .await
                                                 {
-                                                    tracing::warn!("priority body fetch failed: {e}");
+                                                    tracing::warn!(
+                                                        "priority body fetch failed: {e}"
+                                                    );
                                                 }
                                             }
                                         }
@@ -708,7 +717,8 @@ async fn sync_folder(
                     since_uid = last_seen,
                     "receive: new mail on server",
                 );
-                let (thread_ids, fresh) = store_headers(ctx, config, &fresh_folder, new, true).await?;
+                let (thread_ids, fresh) =
+                    store_headers(ctx, config, &fresh_folder, new, true).await?;
                 if !thread_ids.is_empty() {
                     ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
                 }

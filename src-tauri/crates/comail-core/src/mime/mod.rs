@@ -124,7 +124,11 @@ pub fn normalize_cid(id: &str) -> String {
 pub fn rewrite_cid_src(html: &str, map: &std::collections::HashMap<String, String>) -> String {
     CID_SRC
         .replace_all(html, |caps: &regex::Captures| {
-            let cid = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("");
+            let cid = caps
+                .get(1)
+                .or_else(|| caps.get(2))
+                .map(|m| m.as_str())
+                .unwrap_or("");
             match map.get(&normalize_cid(cid)) {
                 Some(data_uri) => format!("src=\"{data_uri}\""),
                 None => caps.get(0).unwrap().as_str().to_string(),
@@ -141,17 +145,26 @@ mod cid_tests {
     #[test]
     fn rewrites_known_cid_and_leaves_unknown() {
         let mut map = HashMap::new();
-        map.insert("logo@x".to_string(), "data:image/png;base64,AAAA".to_string());
+        map.insert(
+            "logo@x".to_string(),
+            "data:image/png;base64,AAAA".to_string(),
+        );
         let html = r#"<img src="cid:logo@x"><img src='cid:missing@y'>"#;
         let out = rewrite_cid_src(html, &map);
         assert!(out.contains(r#"src="data:image/png;base64,AAAA""#));
-        assert!(out.contains("cid:missing@y"), "unknown cid untouched: {out}");
+        assert!(
+            out.contains("cid:missing@y"),
+            "unknown cid untouched: {out}"
+        );
     }
 
     #[test]
     fn matches_angle_bracketed_content_id() {
         let mut map = HashMap::new();
-        map.insert(normalize_cid("<abc@host>"), "data:image/gif;base64,BBBB".to_string());
+        map.insert(
+            normalize_cid("<abc@host>"),
+            "data:image/gif;base64,BBBB".to_string(),
+        );
         let out = rewrite_cid_src(r#"<img src="cid:abc@host">"#, &map);
         assert!(out.contains("data:image/gif;base64,BBBB"));
     }
@@ -187,9 +200,9 @@ fn resolve_via(msg: &mail_parser::Message, from: Option<&Address>) -> Option<Str
         .map(|a| a.email);
     let return_path = match msg.return_path() {
         mail_parser::HeaderValue::Text(t) => Some(t.trim_matches(['<', '>', ' ']).to_string()),
-        mail_parser::HeaderValue::TextList(l) => {
-            l.last().map(|t| t.trim_matches(['<', '>', ' ']).to_string())
-        }
+        mail_parser::HeaderValue::TextList(l) => l
+            .last()
+            .map(|t| t.trim_matches(['<', '>', ' ']).to_string()),
         _ => None,
     }
     .filter(|s| !s.is_empty());

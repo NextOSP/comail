@@ -372,10 +372,7 @@ pub async fn fetch_full(session: &mut Session, uid: u32) -> Result<Option<Vec<u8
 /// Full raw bytes for a whole UID set in a single FETCH round-trip, returned as
 /// (uid, bytes) pairs. Backfill fetches bodies in bulk this way: one command
 /// for a chunk of messages instead of one round-trip per message.
-pub async fn fetch_full_batch(
-    session: &mut Session,
-    uid_set: &str,
-) -> Result<Vec<(u32, Vec<u8>)>> {
+pub async fn fetch_full_batch(session: &mut Session, uid_set: &str) -> Result<Vec<(u32, Vec<u8>)>> {
     let mut out = Vec::new();
     {
         let mut stream = session
@@ -555,7 +552,8 @@ pub async fn idle_wait<C>(
     };
 
     // Leave IDLE. Bound DONE so a server that never acks can't wedge the actor.
-    let session = match tokio::time::timeout(std::time::Duration::from_secs(10), idle.done()).await {
+    let session = match tokio::time::timeout(std::time::Duration::from_secs(10), idle.done()).await
+    {
         Ok(r) => r.map_err(|e| CoreError::Imap(e.to_string()))?,
         Err(_) => return Err(CoreError::Imap("IDLE DONE timed out".into())),
     };

@@ -113,7 +113,11 @@ impl Core {
         // Recover any actions orphaned mid-flight by a previous crash/kill, so a
         // send that was executing when the app died retries instead of sticking
         // on "Sending…" forever.
-        match core.db.write(|conn| repo::actions::recover_inflight(conn)).await {
+        match core
+            .db
+            .write(|conn| repo::actions::recover_inflight(conn))
+            .await
+        {
             Ok(n) if n > 0 => tracing::info!("recovered {n} orphaned in-flight action(s)"),
             _ => {}
         }
@@ -2149,7 +2153,9 @@ impl Core {
         let parsed = crate::search::parse(query);
         // Semantic branch only carries meaning for queries of a few chars+.
         let vec_hits = if parsed.text.chars().count() >= 3 {
-            self.vector_hits(&parsed.text, 200).await.unwrap_or_default()
+            self.vector_hits(&parsed.text, 200)
+                .await
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -2189,7 +2195,10 @@ impl Core {
             );
         }
         let limit = args["limit"].as_u64().unwrap_or(6).clamp(1, 8) as usize;
-        let details = self.retrieve_search(&query, limit).await.unwrap_or_default();
+        let details = self
+            .retrieve_search(&query, limit)
+            .await
+            .unwrap_or_default();
 
         let mut block = String::new();
         let mut added = 0;

@@ -162,7 +162,11 @@ fn structured_message_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Resul
         return Ok(Vec::new());
     }
 
-    let rank_expr = if q.fts.is_empty() { "0.0" } else { "f.fts_rank" };
+    let rank_expr = if q.fts.is_empty() {
+        "0.0"
+    } else {
+        "f.fts_rank"
+    };
     let where_sql = if where_clauses.is_empty() {
         String::new()
     } else {
@@ -191,7 +195,11 @@ fn structured_message_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Resul
 /// from:/to:/is:/etc. before fusing.
 fn allowed_message_ids(conn: &Connection, q: &ParsedQuery, ids: &[i64]) -> Result<Vec<i64>> {
     let allowed = allowed_message_threads(conn, q, ids)?;
-    Ok(ids.iter().copied().filter(|id| allowed.contains_key(id)).collect())
+    Ok(ids
+        .iter()
+        .copied()
+        .filter(|id| allowed.contains_key(id))
+        .collect())
 }
 
 /// Message-level hybrid retrieval for RAG / agentic tools: fuse operator-aware
@@ -207,9 +215,13 @@ pub fn message_hits(
     let lexical = structured_message_ids(conn, q, candidate_cap(limit) as i64)?;
 
     let sem_ids: Vec<i64> = vec_hits.iter().map(|(id, _)| *id).collect();
-    let allowed: std::collections::HashSet<i64> =
-        allowed_message_ids(conn, q, &sem_ids)?.into_iter().collect();
-    let semantic: Vec<i64> = sem_ids.into_iter().filter(|id| allowed.contains(id)).collect();
+    let allowed: std::collections::HashSet<i64> = allowed_message_ids(conn, q, &sem_ids)?
+        .into_iter()
+        .collect();
+    let semantic: Vec<i64> = sem_ids
+        .into_iter()
+        .filter(|id| allowed.contains(id))
+        .collect();
 
     let lists: Vec<Vec<i64>> = [lexical, semantic]
         .into_iter()

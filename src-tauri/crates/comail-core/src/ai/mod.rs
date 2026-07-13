@@ -96,7 +96,11 @@ fn split_reasoning(text: &str) -> (String, String) {
 
     (
         answer.trim().to_string(),
-        reasoning.join(" ").split_whitespace().collect::<Vec<_>>().join(" "),
+        reasoning
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
     )
 }
 
@@ -381,7 +385,8 @@ pub async fn chat_stream(
     let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
     let body = json!({ "model": cfg.model, "messages": messages.clone(), "stream": true });
     let mut noop = |_: &str| {};
-    let (full, _reasoning) = stream_split(&url, &cfg.api_key, &body, &mut on_delta, &mut noop).await?;
+    let (full, _reasoning) =
+        stream_split(&url, &cfg.api_key, &body, &mut on_delta, &mut noop).await?;
     if !full.trim().is_empty() {
         return Ok(full);
     }
@@ -490,8 +495,11 @@ pub async fn chat_stream_json_split(
     if let Some(err) = parsed.get("error") {
         return Err(CoreError::Other(format!("ai api: {err}")));
     }
-    let (answer, reasoning) =
-        split_reasoning(parsed["choices"][0]["message"]["content"].as_str().unwrap_or(""));
+    let (answer, reasoning) = split_reasoning(
+        parsed["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or(""),
+    );
     if !reasoning.is_empty() {
         on_reasoning(&reasoning);
     }

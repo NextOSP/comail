@@ -155,7 +155,14 @@ fn sender_name_match_outranks_body_only_match() {
     let be = addr("Bé Dọn Dẹp", "hello@begroup.vn");
     let other = addr("Random Shop", "noreply@shop.com");
     // Same date; "be" appears in the stranger's subject but IS the friend's name.
-    insert_message(&conn, 100, 10, "Best deals to be had this week", &other, 5_000);
+    insert_message(
+        &conn,
+        100,
+        10,
+        "Best deals to be had this week",
+        &other,
+        5_000,
+    );
     insert_message(&conn, 101, 20, "Lịch dọn nhà tuần này", &be, 5_000);
 
     let q = search::parse("be");

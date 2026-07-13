@@ -134,10 +134,7 @@ pub async fn cancel_send(
 }
 
 #[tauri::command]
-pub async fn send_now(
-    state: State<'_, AppState>,
-    action_id: i64,
-) -> CmdResult<serde_json::Value> {
+pub async fn send_now(state: State<'_, AppState>, action_id: i64) -> CmdResult<serde_json::Value> {
     let sent = state.core.send_now(action_id).await.map_err(err)?;
     Ok(serde_json::json!({ "sent": sent }))
 }
@@ -178,7 +175,9 @@ pub async fn get_attachment(state: State<'_, AppState>, attachment_id: i64) -> C
 /// logged.
 #[tauri::command]
 pub fn open_logs_dir(app: tauri::AppHandle) -> CmdResult<()> {
-    let dir = comail_core::config::Paths::default_dirs().data_dir.join("logs");
+    let dir = comail_core::config::Paths::default_dirs()
+        .data_dir
+        .join("logs");
     std::fs::create_dir_all(&dir).map_err(|e| err(e.into()))?;
     app.opener()
         .open_path(dir.to_string_lossy(), None::<String>)
