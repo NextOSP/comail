@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod notifications;
 
 use comail_core::config::Paths;
 use comail_core::Core;
@@ -188,6 +189,30 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // Backstop for external links the in-webview JS interception didn't catch
+        // (email-body links in the sandboxed iframe, AI-answer links): open
+        // external web/mailto targets in the OS default browser and cancel the
+        // in-app navigation so the SPA is never replaced. Internal app
+        // navigations (tauri://, localhost, about:, data:) proceed untouched.
+        .plugin(
+            // Pin the (unused) plugin-config type to `()`; only the runtime is
+            // inferred. Without this the config type param can't be resolved.
+            tauri::plugin::Builder::<_, ()>::new("comail-external-links")
+                .on_navigation(|_webview, url| {
+                    let host = url.host_str().unwrap_or("");
+                    let app_host = host.is_empty()
+                        || host == "localhost"
+                        || host == "tauri.localhost"
+                        || host.ends_with(".localhost");
+                    let external_web = matches!(url.scheme(), "http" | "https") && !app_host;
+                    if external_web || url.scheme() == "mailto" {
+                        let _ = tauri_plugin_opener::open_url(url.as_str(), None::<&str>);
+                        return false;
+                    }
+                    true
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -237,7 +262,8 @@ pub fn run() {
                     .expect("failed to start comail core");
                 events::spawn_forwarder(handle.clone(), core.bus.subscribe());
                 let lang = resolve_lang(&core.get_settings().await.unwrap_or_default().language);
-                handle.manage(AppState { core });
+                handle.manage(AppState { core: core.clone() });
+                notifications::spawn_dispatcher(handle.clone(), core);
                 lang
             });
 
@@ -278,6 +304,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::ui_ready,
             commands::list_accounts,
             commands::add_account_password,
             commands::test_connection,
@@ -326,6 +353,7 @@ pub fn run() {
             commands::update_event,
             commands::delete_event,
             commands::connect_calendar,
+            commands::create_teams_meeting,
             commands::disconnect_calendar,
             commands::list_calendars,
             commands::set_calendar_enabled,

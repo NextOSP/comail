@@ -7,7 +7,8 @@
     "accounts": "Comptes",
     "splitInbox": "Boîte divisée",
     "snippets": "Extraits",
-    "labels": "Libellés"
+    "labels": "Libellés",
+    "sync": "Synchronisation"
   },
   "search": {
     "placeholder": "Rechercher dans les réglages…",
@@ -36,6 +37,28 @@
   },
   "toast": {
     "settingsSaveFailed": "Impossible d’enregistrer les paramètres : {{detail}}"
+  },
+  "sync": {
+    "intro": "La boîte de réception est vérifiée en premier. L’historique, le contenu hors ligne et l’index de recherche continuent en arrière-plan.",
+    "foreground": "Boîte de réception",
+    "background": "Tâches en arrière-plan",
+    "checking": "Vérification du courrier…",
+    "upToDate": "À jour",
+    "complete": "Terminé",
+    "phase": {
+      "headers": "Synchronisation de l’historique",
+      "content": "Mise en cache du courrier",
+      "indexing": "Indexation du courrier",
+      "retrying": "Nouvelle tentative des échecs"
+    },
+    "progress": "{{done}} / {{total}}",
+    "failed": "{{count}} en échec",
+    "syncNow": "Synchroniser",
+    "syncingNow": "Vérification…",
+    "syncNowAccount": "Synchroniser {{email}}",
+    "syncComplete": "Boîte de réception vérifiée pour {{email}}.",
+    "syncFailed": "Impossible de synchroniser {{email}} : {{detail}}",
+    "noAccounts": "Aucun compte connecté."
   },
   "ai": {
     "statusLabel": "État",

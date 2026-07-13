@@ -5,7 +5,16 @@ import i18n, { setLanguage, SUPPORTED_LANGUAGES, SYSTEM_LANGUAGE } from "../../i
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { appVersion, checkForUpdate, installUpdate } from "../../ipc/updater";
-import type { AiTier, Provider, Settings, Signature, SyncState } from "../../ipc/types";
+import type {
+  AiTier,
+  Provider,
+  Settings,
+  Signature,
+  SyncBackgroundPhase,
+  SyncState,
+  SyncStatus,
+} from "../../ipc/types";
+import { normalizeSyncStatus } from "../../lib/syncStatus";
 import { RichBody } from "../compose/RichBody";
 import { queryClient } from "../../queries/client";
 import {
@@ -17,7 +26,7 @@ import {
   useSettings,
 } from "../../queries/hooks";
 import { commandScore } from "../../keyboard/commandScore";
-import { useUi } from "../../stores/ui";
+import { useUi, type SettingsTab } from "../../stores/ui";
 import { CalendarSettings } from "./CalendarSettings";
 import { LabelsSection } from "./LabelsPanel";
 import { SnippetsSection } from "./SnippetsPanel";
@@ -35,8 +44,6 @@ import {
   SettingRow,
   Toggle,
 } from "./panelKit";
-
-type SettingsTab = "general" | "splits" | "snippets" | "labels" | "ai" | "accounts";
 
 /** Endonyms for the language picker - a language is named in its own language. */
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -109,7 +116,15 @@ export function SettingsPanel() {
   const [tab, setTab] = useState<SettingsTab>("general");
   const [query, setQuery] = useState("");
 
-  const TAB_KEYS: SettingsTab[] = ["general", "splits", "snippets", "labels", "ai", "accounts"];
+  const TAB_KEYS: SettingsTab[] = [
+    "general",
+    "splits",
+    "snippets",
+    "labels",
+    "ai",
+    "accounts",
+    "sync",
+  ];
 
   // Adopt a requested tab (sidebar chevron, "Split inbox rules" row, palette).
   useEffect(() => {
@@ -140,6 +155,7 @@ export function SettingsPanel() {
     labels: t("settings:section.labels"),
     ai: t("settings:section.ai"),
     accounts: t("settings:section.accounts"),
+    sync: t("settings:section.sync"),
   };
 
   // Flat index of every setting, so search can jump straight to its tab.
@@ -163,6 +179,8 @@ export function SettingsPanel() {
     { tab: "accounts", label: t("settings:section.accounts"), keywords: "accounts add remove gmail microsoft imap oauth" },
     { tab: "accounts", label: t("settings:signature.section"), keywords: "signature sign-off footer" },
     { tab: "accounts", label: t("settings:section.oauthApps"), keywords: "oauth client id secret google microsoft app credentials" },
+    { tab: "sync", label: t("settings:section.sync"), keywords: "sync synchronize refresh check mail inbox status progress" },
+    { tab: "sync", label: t("settings:sync.background"), keywords: "background cache caching history headers content indexing failed retry" },
     { tab: "general", label: t("settings:about.section"), keywords: "about version update upgrade release check" },
   ];
 
@@ -198,7 +216,7 @@ export function SettingsPanel() {
 
   if (q !== "") {
     return (
-      <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} tabs={tabs} search={search} width={640}>
+      <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} tabs={tabs} search={search} width={680}>
         {results.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-ink-faint">
             {t("settings:search.noResults", { query: q })}
@@ -224,7 +242,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} tabs={tabs} search={search} width={640}>
+    <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} tabs={tabs} search={search} width={680}>
       <div className="flex flex-col gap-7">
         {tab === "general" && (
           <section className="flex flex-col gap-4">
@@ -397,6 +415,8 @@ export function SettingsPanel() {
             <OAuthSection settings={s} />
           </>
         )}
+
+        {tab === "sync" && <SyncSection />}
       </div>
     </PanelShell>
   );
@@ -1051,6 +1071,163 @@ const SYNC_DOT: Record<SyncState, string> = {
   needs_reauth: "var(--danger)",
   offline: "var(--bg4)",
 };
+
+function SyncSection() {
+  const { t } = useTranslation();
+  const { data: accounts } = useAccounts();
+  const syncStatuses = useUi((state) => state.syncStatuses);
+  const replaceSyncStatuses = useUi((state) => state.replaceSyncStatuses);
+  const pushToast = useUi((state) => state.pushToast);
+  const [busyAccountId, setBusyAccountId] = useState<number | null>(null);
+
+  const phaseLabel = (phase: SyncBackgroundPhase) => {
+    switch (phase) {
+      case "headers":
+        return t("settings:sync.phase.headers");
+      case "content":
+        return t("settings:sync.phase.content");
+      case "indexing":
+        return t("settings:sync.phase.indexing");
+      case "retrying":
+        return t("settings:sync.phase.retrying");
+    }
+  };
+
+  const syncNow = async (accountId: number, email: string) => {
+    setBusyAccountId(accountId);
+    try {
+      // This command resolves after the account's foreground Inbox pass, not
+      // merely after enqueueing it. Refresh views and the authoritative status
+      // snapshot only after that boundary.
+      await call("sync_now", { accountId });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["threads"] }),
+        queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+      ]);
+      const statuses = (await call("get_sync_status", {}))
+        .map(normalizeSyncStatus)
+        .filter((status): status is SyncStatus => status != null);
+      replaceSyncStatuses(statuses);
+      pushToast({ kind: "info", message: t("settings:sync.syncComplete", { email }) });
+    } catch (error) {
+      pushToast({
+        kind: "error",
+        message: t("settings:sync.syncFailed", { email, detail: errorMessage(error) }),
+      });
+    } finally {
+      setBusyAccountId(null);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-4">
+      <div>
+        <SectionLabel>{t("settings:section.sync")}</SectionLabel>
+        <p className="text-[12.5px] leading-relaxed text-ink-faint">
+          {t("settings:sync.intro")}
+        </p>
+      </div>
+
+      {(accounts ?? []).length === 0 && (
+        <p className="rounded-lg border border-hairline bg-bg0 px-3 py-4 text-[12.5px] text-ink-faint">
+          {t("settings:sync.noAccounts")}
+        </p>
+      )}
+
+      {(accounts ?? []).map((account) => {
+        const status: SyncStatus = syncStatuses[account.id] ?? {
+          accountId: account.id,
+          state: account.syncState,
+          foregroundPhase: account.syncState === "syncing" ? "inbox" : "idle",
+          background: null,
+        };
+        const busy = busyAccountId === account.id;
+        const foreground =
+          status.foregroundPhase === "inbox"
+            ? t("settings:sync.checking")
+            : status.state === "idle"
+              ? t("settings:sync.upToDate")
+              : t(`common:syncState.${status.state}`);
+        const background = status.background;
+        const percent =
+          background && background.total > 0
+            ? Math.min(100, Math.max(0, (background.done / background.total) * 100))
+            : 0;
+
+        return (
+          <div
+            key={account.id}
+            className="rounded-xl border border-hairline bg-bg0/50 p-4"
+          >
+            <div className="flex items-center gap-2.5">
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ background: SYNC_DOT[status.state] }}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13.5px] font-medium text-ink">{account.email}</div>
+                <div className="text-[11.5px] text-ink-faint">
+                  {t(`settings:accounts.provider.${account.provider}`)} ·{" "}
+                  {t(`common:syncState.${status.state}`)}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={primaryBtnCls}
+                disabled={busyAccountId != null || status.foregroundPhase === "inbox"}
+                aria-label={t("settings:sync.syncNowAccount", { email: account.email })}
+                onClick={() => void syncNow(account.id, account.email)}
+              >
+                {busy || status.foregroundPhase === "inbox"
+                  ? t("settings:sync.syncingNow")
+                  : t("settings:sync.syncNow")}
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-hairline pt-3 text-[12.5px]">
+              <span className="text-ink-faint">{t("settings:sync.foreground")}</span>
+              <span className="text-ink">{foreground}</span>
+
+              <span className="text-ink-faint">{t("settings:sync.background")}</span>
+              {background ? (
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-ink">{phaseLabel(background.phase)}</span>
+                    <span className="shrink-0 tabular-nums text-ink-muted">
+                      {t("settings:sync.progress", {
+                        done: background.done.toLocaleString(),
+                        total: background.total.toLocaleString(),
+                      })}
+                    </span>
+                  </div>
+                  <div
+                    className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg3"
+                    role="progressbar"
+                    aria-label={phaseLabel(background.phase)}
+                    aria-valuemin={0}
+                    aria-valuemax={background.total}
+                    aria-valuenow={Math.min(background.done, background.total)}
+                  >
+                    <div
+                      className="h-full rounded-full bg-accent transition-[width] duration-200"
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                  <div className="mt-1.5 text-[11.5px] text-ink-faint">
+                    {t("settings:sync.failed", { count: background.failed })}
+                  </div>
+                </div>
+              ) : (
+                <span className="text-ink">{t("settings:sync.complete")}</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
 
 /** Rich signatures, many per account, with Gmail-style new/reply defaults. */
 function SignaturesSection({ settings }: { settings: Settings }) {

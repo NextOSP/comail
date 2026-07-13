@@ -246,8 +246,19 @@ export interface FolderInfo {
 export interface SyncStatus {
   accountId: number;
   state: SyncState;
-  /** 0..1 backfill progress when syncing, null otherwise */
-  progress: number | null;
+  /** Foreground Inbox readiness. This alone controls the top-bar spinner. */
+  foregroundPhase: "idle" | "inbox";
+  /** Lower-priority historical work that continues after the Inbox is usable. */
+  background: SyncBackgroundProgress | null;
+}
+
+export type SyncBackgroundPhase = "headers" | "content" | "indexing" | "retrying";
+
+export interface SyncBackgroundProgress {
+  phase: SyncBackgroundPhase;
+  done: number;
+  total: number;
+  failed: number;
 }
 
 /** Exact unread badge counts; map keys are stringified split/label ids. */
@@ -425,6 +436,24 @@ export interface AiIntent {
   view: string | null;
 }
 
+/** One chronological beat of a thread, for the AI summary timeline. */
+export interface TimelineEntry {
+  /** Who acted — a person's name, or "You" for the account owner. */
+  actor: string;
+  /** A terse, past-tense description of what they did. */
+  event: string;
+}
+
+/** Structured, sidebar-ready AI read of a whole thread (from `ai_summarize`). */
+export interface AiThreadSummary {
+  timeline: TimelineEntry[];
+  keyPoints: string[];
+  /** The single next thing to do, or null if nothing is owed. */
+  nextAction: string | null;
+  /** A ready-to-send draft reply, or null if no reply is warranted. */
+  proposedReply: string | null;
+}
+
 export interface SearchArgs {
   query: string;
   limit?: number;
@@ -468,6 +497,9 @@ export interface SyncProgressEvent {
   done: number;
   total: number;
 }
+
+/** Authoritative per-account foreground and background synchronization state. */
+export type SyncStatusEvent = SyncStatus;
 
 export interface MailNewEvent {
   accountId: number;
@@ -546,6 +578,7 @@ export interface CalendarConflictEvent {
 }
 
 export interface EventMap {
+  "sync:status": SyncStatusEvent;
   "sync:progress": SyncProgressEvent;
   "mail:new": MailNewEvent;
   "mail:updated": MailUpdatedEvent;
@@ -652,9 +685,23 @@ export interface Commands {
     args: { accountId: number; kind: "google" | "generic"; url?: string; username?: string; password?: string };
   }): Promise<Calendar[]>;
   disconnect_calendar(args: { accountId: number }): Promise<void>;
+  /**
+   * Create a Teams online meeting (Microsoft accounts only) and return its
+   * join URL. May open the browser for one-time Graph consent on first use.
+   */
+  create_teams_meeting(args: {
+    accountId: number;
+    subject: string;
+    startMs: number;
+    endMs: number;
+  }): Promise<{ joinUrl: string }>;
   list_calendars(args: { accountId?: number | null }): Promise<Calendar[]>;
   set_calendar_enabled(args: { calendarId: number; enabled: boolean }): Promise<void>;
   calendar_sync_now(args: { accountId?: number | null }): Promise<void>;
+
+  /** Startup show (first-run intro) is done, or absent: release the deferred
+   *  account sync (and with it the first OS keyring access). */
+  ui_ready(args: Record<string, never>): Promise<void>;
 
   ai_status(args: Record<string, never>): Promise<AiStatus>;
   /** Model ids from the endpoint's GET /models (OpenAI-compatible). */
@@ -662,7 +709,7 @@ export interface Commands {
   set_ai_key(args: { apiKey: string }): Promise<void>;
   /** Parse a natural-language palette query into an executable intent. */
   ai_command(args: { query: string }): Promise<AiIntent>;
-  ai_summarize(args: { threadId: number }): Promise<string>;
+  ai_summarize(args: { threadId: number }): Promise<AiThreadSummary>;
   ai_draft(args: {
     threadId: number | null;
     /** The message the user hit reply on, so the draft targets the right one. */

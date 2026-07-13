@@ -21,7 +21,13 @@
   "aiSummary": {
     "title": "AI 摘要",
     "pending": "总结中…",
-    "dismiss": "关闭摘要"
+    "dismiss": "关闭摘要",
+    "empty": "尚无摘要。",
+    "timeline": "时间线",
+    "keyPoints": "要点",
+    "nextAction": "下一步",
+    "proposedReply": "建议回复",
+    "useReply": "用作回复"
   },
   "draftBadge": "草稿",
   "sendingBadge": "发送中…",

@@ -16,15 +16,19 @@ import { MOCK_MODE } from "../ipc/mock";
 import type { Settings } from "../ipc/types";
 import { queryClient } from "../queries/client";
 
-type SoundName = "new-email" | "send";
+type SoundName = "new-email" | "send" | "intro";
 
 const FILES: Record<SoundName, string> = {
   "new-email": "/sounds/new-email.wav",
   send: "/sounds/send.wav",
+  intro: "/sounds/intro.wav",
 };
 
 let audioCtx: AudioContext | null = null;
 const buffers = new Map<SoundName, AudioBuffer>();
+// Decode promises, so the intro music can start as soon as its (large) clip
+// finishes decoding instead of silently missing the show.
+const loads = new Map<SoundName, Promise<AudioBuffer | null>>();
 
 // The new-mail chime is suppressed until this time, to cover the initial
 // catch-up sync after launch: reopening the app shouldn't replay a chime for
@@ -69,13 +73,17 @@ export function initSounds(): void {
   audioCtx = ctx;
 
   for (const name of Object.keys(FILES) as SoundName[]) {
-    void fetch(FILES[name])
-      .then((r) => r.arrayBuffer())
-      .then((raw) => ctx.decodeAudioData(raw))
-      .then((buf) => buffers.set(name, buf))
-      .catch(() => {
-        /* clip missing/undecodable: that sound stays silent */
-      });
+    loads.set(
+      name,
+      fetch(FILES[name])
+        .then((r) => r.arrayBuffer())
+        .then((raw) => ctx.decodeAudioData(raw))
+        .then((buf) => {
+          buffers.set(name, buf);
+          return buf;
+        })
+        .catch(() => null /* clip missing/undecodable: that sound stays silent */),
+    );
   }
 
   // The context starts suspended under the webview's autoplay policy; any
@@ -121,7 +129,7 @@ export function extendStartupQuiet(): void {
 }
 
 /** Play a bundled UI sound. Best-effort: never throws, no-op in mock mode. */
-export function playSound(name: SoundName): void {
+export function playSound(name: Exclude<SoundName, "intro">): void {
   if (MOCK_MODE) return;
   try {
     if (!soundsEnabled()) return;
@@ -154,4 +162,113 @@ export function playSound(name: SoundName): void {
   } catch {
     /* best-effort */
   }
+}
+
+// Film-style gain envelope for the intro soundtrack, in clip-time seconds:
+// silence under the fade-to-black, a swell as the lamp warms up, a calm
+// sustain under the photographs and the typewriter, a swell for the title,
+// then a fade-out across the tail. The 30s track ends at the envelope's tail.
+const INTRO_ENVELOPE: Array<[number, number]> = [
+  [0, 0],
+  [2.4, 0.1], // barely-there rumble while the screen fades to black
+  [5.2, 0.55], // rising as the lamp warms up
+  [7.0, 0.9], // full presence under the photographs and the typewriter
+  [15.5, 0.85],
+  [17.8, 1.0], // title swell
+  [22.0, 0.95],
+  [26.0, 0.8],
+  [30.0, 0], // resolve; if the user clicks earlier, the stop fade takes over
+];
+
+/**
+ * Start the intro soundtrack with its cinematic gain envelope. Call when the
+ * space intro mounts; returns a stop function taking an optional fade-out in
+ * seconds. The default is a fast fade for effect cleanup (StrictMode's dev
+ * double-mount must not leave two overlapping tracks); pass a longer fade for
+ * the user-triggered exit so the score releases with the scene.
+ *
+ * The webview may not allow audio before a user gesture. We try to resume the
+ * context immediately (Tauri usually permits it); if that fails, the first
+ * pointer/key gesture starts the music offset-synced into the clip, so it
+ * joins the scene in progress instead of restarting from the top. The same
+ * offset logic covers a slow decode of the (large) clip.
+ */
+export function playIntroMusic(): (fadeS?: number) => void {
+  if (MOCK_MODE) return () => {};
+  // The intro mounts before App's own initSounds() effect runs (child effects
+  // fire first), so make sure the context + decodes exist. Idempotent.
+  initSounds();
+  const ctx = audioCtx;
+  const load = loads.get("intro");
+  if (!ctx || !load || !soundsEnabled()) return () => {};
+
+  const introStart = performance.now();
+  let stopped = false;
+  let started = false;
+  let src: AudioBufferSourceNode | null = null;
+  let gain: GainNode | null = null;
+
+  const begin = (buf: AudioBuffer) => {
+    if (stopped || started || ctx.state !== "running") return;
+    // How far into the intro we are (a gesture unlock or slow decode may have
+    // delayed the start). Past that point there is nothing left worth playing.
+    const offset = (performance.now() - introStart) / 1000;
+    if (offset >= buf.duration - 1) return;
+    started = true;
+    detach();
+
+    gain = ctx.createGain();
+    // Schedule the envelope on the clip's own clock: t0 is where clip-time 0
+    // maps onto the context clock. Points already in the past collapse into an
+    // immediate jump, which is exactly the catch-up we want on a late start.
+    const t0 = ctx.currentTime - offset;
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    for (const [t, v] of INTRO_ENVELOPE) {
+      gain.gain.linearRampToValueAtTime(v, Math.max(t0 + t, ctx.currentTime));
+    }
+
+    src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    src.start(0, offset);
+  };
+
+  const attempt = () => {
+    if (stopped || started) return;
+    void ctx
+      .resume()
+      .then(() => load)
+      .then((buf) => {
+        if (buf) begin(buf);
+      })
+      .catch(() => {
+        /* wait for the next gesture */
+      });
+  };
+  const detach = () => {
+    window.removeEventListener("pointerdown", attempt);
+    window.removeEventListener("keydown", attempt);
+  };
+
+  attempt();
+  window.addEventListener("pointerdown", attempt);
+  window.addEventListener("keydown", attempt);
+
+  return (fadeS = 0.2) => {
+    if (stopped) return;
+    stopped = true;
+    detach();
+    try {
+      if (src && gain) {
+        // Fade instead of a hard cut, however we're stopped mid-track.
+        gain.gain.cancelScheduledValues(ctx.currentTime);
+        gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeS);
+        src.stop(ctx.currentTime + fadeS + 0.05);
+      }
+    } catch {
+      /* best-effort */
+    }
+  };
 }

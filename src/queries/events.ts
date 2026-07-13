@@ -1,15 +1,32 @@
 import { useEffect } from "react";
 import i18n from "../i18n";
 import { call } from "../ipc/commands";
-import { onEvent } from "../ipc/events";
+import { onEvent, subscribeEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
-import type { CalendarEvent, NewEventInfo, Settings } from "../ipc/types";
+import type {
+  AccountStateEvent,
+  CalendarEvent,
+  NewEventInfo,
+  Settings,
+  SyncProgressEvent,
+  SyncStatus,
+} from "../ipc/types";
 import { parseMailto } from "../lib/mailto";
 import { extendStartupQuiet, markSoundsReady, playSound } from "../lib/sound";
+import { normalizeSyncStatus } from "../lib/syncStatus";
 import { useUi } from "../stores/ui";
 import { queryClient } from "./client";
 
 let notifyPermission: boolean | null = null;
+
+/** Mark mail-derived queries stale and refetch the ones currently on screen. */
+async function refreshMailQueries() {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["threads"] }),
+    queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
+    queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+  ]);
+}
 
 /** Setting + OS-permission gate shared by every desktop notification. */
 async function notificationsAllowed(): Promise<boolean> {
@@ -34,33 +51,6 @@ async function focusMainWindow() {
     await call("focus_main_window", {});
   } catch {
     // best-effort
-  }
-}
-
-/** Desktop notification for new mail, gated by the setting. */
-async function notifyNewMail(threadIds: number[]) {
-  if (MOCK_MODE) return;
-
-  try {
-    if (!(await notificationsAllowed())) return;
-    const { sendNotification } = await import("@tauri-apps/plugin-notification");
-
-    if (threadIds.length === 1) {
-      // Single thread: show its subject/sender.
-      const detail = await call("get_thread", { threadId: threadIds[0] });
-      const last = detail.messages[detail.messages.length - 1];
-      sendNotification({
-        title: last ? (last.from.name ?? last.from.email) : "Comail",
-        body: detail.thread.subject || detail.thread.snippet,
-      });
-    } else {
-      sendNotification({
-        title: "Comail",
-        body: i18n.t("common:notification.newMessages", { count: threadIds.length }),
-      });
-    }
-  } catch {
-    // notifications are best-effort
   }
 }
 
@@ -163,17 +153,13 @@ export function useBackendEvents() {
   }, []);
 
   useEffect(() => {
-    // Only arm the new-mail chime after a real sync has run and settled, so an
-    // early/spurious "idle" at startup can't un-suppress the backlog.
-    let sawSyncing = false;
     const offs = [
-      onEvent("mail:new", ({ threadIds }) => {
+      onEvent("mail:new", () => {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
         void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
         // calendar invites arrive by mail
         void queryClient.invalidateQueries({ queryKey: ["events"] });
         playSound("new-email");
-        void notifyNewMail(threadIds);
       }),
       onEvent("mail:updated", ({ threadIds }) => {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
@@ -209,22 +195,6 @@ export function useBackendEvents() {
       }),
       onEvent("network:state", ({ online }) => {
         useUi.getState().set({ offline: !online });
-      }),
-      onEvent("sync:progress", ({ phase, done, total }) => {
-        useUi.getState().set({ syncing: phase !== "idle", syncDone: done, syncTotal: total });
-        // Once a real catch-up sync settles, allow the new-mail chime for
-        // genuinely live arrivals (the backlog already synced silently).
-        // While that first sync is still running, keep extending the quiet
-        // window — a big backlog outlasts the fixed startup grace period.
-        if (phase !== "idle") {
-          sawSyncing = true;
-          extendStartupQuiet();
-        } else if (sawSyncing) {
-          markSoundsReady();
-        }
-      }),
-      onEvent("account:state", () => {
-        void queryClient.invalidateQueries({ queryKey: ["accounts"] });
       }),
       onEvent("calendar:updated", () => {
         void queryClient.invalidateQueries({ queryKey: ["events"] });
@@ -267,5 +237,180 @@ export function useBackendEvents() {
       }),
     ];
     return () => offs.forEach((off) => off());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let subscriptionsReady = false;
+    let eventRevision = 0;
+    let lastRecoveryAt = 0;
+    const unlisteners: Array<() => void> = [];
+    const foregroundSeen = new Set<number>();
+    const authoritativeAccounts = new Set<number>();
+
+    const observeStatus = (status: SyncStatus, previous: SyncStatus | undefined) => {
+      if (status.foregroundPhase === "inbox") {
+        foregroundSeen.add(status.accountId);
+        // A foreground catch-up may outlast the fixed startup grace period.
+        extendStartupQuiet();
+        return;
+      }
+
+      const hadForegroundWork =
+        previous?.foregroundPhase === "inbox" || foregroundSeen.has(status.accountId);
+      foregroundSeen.delete(status.accountId);
+      if (hadForegroundWork) {
+        markSoundsReady();
+        void refreshMailQueries();
+      }
+    };
+
+    const applyStatus = (value: unknown, fromEvent = true) => {
+      const status = normalizeSyncStatus(value);
+      if (!status || cancelled) return;
+      if (fromEvent) eventRevision += 1;
+      const previous = useUi.getState().syncStatuses[status.accountId];
+      useUi.getState().upsertSyncStatus(status);
+      observeStatus(status, previous);
+    };
+
+    const applySnapshot = (statuses: SyncStatus[]) => {
+      const previous = useUi.getState().syncStatuses;
+      useUi.getState().replaceSyncStatuses(statuses);
+      for (const status of statuses) observeStatus(status, previous[status.accountId]);
+
+      // The subscribed authoritative snapshot makes an idle startup safe: the
+      // backend has already established its no-notification startup baseline.
+      if (statuses.every((status) => status.foregroundPhase === "idle")) {
+        markSoundsReady();
+      }
+    };
+
+    const refreshStatusSnapshot = async () => {
+      if (!subscriptionsReady || cancelled) return;
+      try {
+        // If an event lands while the command is in flight, discard that
+        // potentially older response and read once more. This preserves the
+        // subscribe-then-snapshot ordering guarantee without UI flicker.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const revisionBefore = eventRevision;
+          const rawStatuses = await call("get_sync_status", {});
+          const statuses = rawStatuses
+            .map(normalizeSyncStatus)
+            .filter((status): status is SyncStatus => status != null);
+          if (cancelled) return;
+          if (revisionBefore === eventRevision) {
+            for (const raw of rawStatuses) {
+              if (Object.prototype.hasOwnProperty.call(raw, "foregroundPhase")) {
+                authoritativeAccounts.add(raw.accountId);
+              }
+            }
+            applySnapshot(statuses);
+            return;
+          }
+        }
+      } catch {
+        // Transient startup/focus failures are retried on the next recovery.
+      }
+    };
+
+    const legacyProgress = (progress: SyncProgressEvent): SyncStatus => {
+      const previous = useUi.getState().syncStatuses[progress.accountId];
+      if (progress.phase === "idle") {
+        return {
+          accountId: progress.accountId,
+          state: "idle",
+          foregroundPhase: "idle",
+          background: previous?.background ?? null,
+        };
+      }
+      if (progress.phase === "bodies" || progress.phase === "history") {
+        return {
+          accountId: progress.accountId,
+          state: "idle",
+          foregroundPhase: "idle",
+          background: {
+            phase: progress.phase === "bodies" ? "content" : "headers",
+            done: progress.done,
+            total: progress.total,
+            failed: 0,
+          },
+        };
+      }
+
+      // Legacy headers only represent foreground work when they belong to the
+      // Inbox. Other folders become passive history progress.
+      const inbox = progress.phase === "folders" || progress.folder.toUpperCase() === "INBOX";
+      return {
+        accountId: progress.accountId,
+        state: inbox ? "syncing" : "idle",
+        foregroundPhase: inbox ? "inbox" : "idle",
+        background: inbox
+          ? previous?.background ?? null
+          : { phase: "headers", done: progress.done, total: progress.total, failed: 0 },
+      };
+    };
+
+    const legacyAccountState = ({ accountId, syncState }: AccountStateEvent): SyncStatus => {
+      const previous = useUi.getState().syncStatuses[accountId];
+      const foregroundPhase = syncState === "syncing" ? "inbox" : "idle";
+      return {
+        accountId,
+        state: syncState,
+        foregroundPhase,
+        background: previous?.background ?? null,
+      };
+    };
+
+    void (async () => {
+      const installed = await Promise.all([
+        subscribeEvent("sync:status", (status) => {
+          authoritativeAccounts.add(status.accountId);
+          applyStatus(status);
+        }),
+        subscribeEvent("sync:progress", (progress) => {
+          if (!authoritativeAccounts.has(progress.accountId)) {
+            applyStatus(legacyProgress(progress));
+          }
+        }),
+        subscribeEvent("account:state", (state) => {
+          void queryClient.invalidateQueries({ queryKey: ["accounts"] });
+          if (!authoritativeAccounts.has(state.accountId)) {
+            applyStatus(legacyAccountState(state));
+          }
+        }),
+      ]);
+      if (cancelled) {
+        installed.forEach((off) => off());
+        return;
+      }
+      unlisteners.push(...installed);
+      subscriptionsReady = true;
+      await refreshStatusSnapshot();
+    })().catch(() => {
+      // A focus recovery will retry the authoritative read if listener setup or
+      // the initial IPC request failed during startup.
+    });
+
+    const recoverVisibleMail = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastRecoveryAt < 250) return;
+      lastRecoveryAt = now;
+      void refreshMailQueries();
+      void refreshStatusSnapshot();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") recoverVisibleMail();
+    };
+    window.addEventListener("focus", recoverVisibleMail);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", recoverVisibleMail);
+      document.removeEventListener("visibilitychange", onVisibility);
+      unlisteners.forEach((off) => off());
+    };
   }, []);
 }

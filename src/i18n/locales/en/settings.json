@@ -7,7 +7,8 @@
     "accounts": "Accounts",
     "splitInbox": "Split inbox",
     "snippets": "Snippets",
-    "labels": "Labels"
+    "labels": "Labels",
+    "sync": "Sync"
   },
   "search": {
     "placeholder": "Search settings…",
@@ -36,6 +37,28 @@
   },
   "toast": {
     "settingsSaveFailed": "Couldn't save settings: {{detail}}"
+  },
+  "sync": {
+    "intro": "Inbox checks run first. Historical headers, offline content, and search indexing continue in the background.",
+    "foreground": "Inbox",
+    "background": "Background work",
+    "checking": "Checking mail…",
+    "upToDate": "Up to date",
+    "complete": "Complete",
+    "phase": {
+      "headers": "Syncing history",
+      "content": "Caching mail",
+      "indexing": "Indexing mail",
+      "retrying": "Retrying failed work"
+    },
+    "progress": "{{done}} / {{total}}",
+    "failed": "{{count}} failed",
+    "syncNow": "Sync now",
+    "syncingNow": "Checking…",
+    "syncNowAccount": "Sync {{email}} now",
+    "syncComplete": "Inbox checked for {{email}}.",
+    "syncFailed": "Couldn't sync {{email}}: {{detail}}",
+    "noAccounts": "No accounts connected."
   },
   "ai": {
     "statusLabel": "Status",

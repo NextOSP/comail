@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { call } from "../../ipc/commands";
@@ -439,7 +439,7 @@ function HtmlBody({ html: fullHtml }: { html: string }) {
     const imgSrc = loadRemoteImages ? "data: cid: http: https:" : "data: cid:";
     return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}">
-<base target="_blank">
+<base target="_top">
 <style>
   :root { color-scheme: ${scheme}; }
   /* height:auto defeats emails whose layout is sized to height:100% — against
@@ -558,6 +558,25 @@ function HtmlBody({ html: fullHtml }: { html: string }) {
     // registry directly. It applies its own guards (typing in a field or
     // activating a focused link is left native), so we forward every key.
     doc.addEventListener("keydown", (e) => dispatchKeyboardEvent(e));
+    // The sandboxed iframe runs no scripts, so links can't reach a browser on
+    // their own. Intercept clicks from out here and hand http(s)/mailto links to
+    // the OS (default browser / mail client). If this ever misses, the link's
+    // target="_top" escalates to a top navigation caught by the Rust
+    // on_navigation backstop.
+    doc.addEventListener(
+      "click",
+      (e) => {
+        const anchor = (e.target as HTMLElement | null)?.closest?.("a[href]") as
+          | HTMLAnchorElement
+          | null;
+        const href = anchor?.href;
+        if (href && /^(https?|mailto):/i.test(href)) {
+          e.preventDefault();
+          void openUrl(href).catch(() => {});
+        }
+      },
+      true,
+    );
   };
 
   useEffect(() => () => observerRef.current?.disconnect(), []);
@@ -641,7 +660,11 @@ function HtmlBody({ html: fullHtml }: { html: string }) {
       <iframe
         ref={iframeRef}
         data-app-iframe
-        sandbox="allow-same-origin"
+        // allow-top-navigation-by-user-activation lets a clicked link (base
+        // target="_top") escalate to a top-level navigation, which the Rust
+        // on_navigation backstop intercepts and opens in the OS browser if the
+        // JS click handler below didn't already.
+        sandbox="allow-same-origin allow-top-navigation-by-user-activation"
         srcDoc={srcDoc}
         onLoad={onLoad}
         className={`w-full border-0 ${measured ? "co-fade-in" : "invisible absolute inset-x-0 top-0"}`}

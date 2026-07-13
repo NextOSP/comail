@@ -21,7 +21,13 @@
   "aiSummary": {
     "title": "Tóm tắt AI",
     "pending": "Đang tóm tắt…",
-    "dismiss": "Bỏ tóm tắt"
+    "dismiss": "Bỏ tóm tắt",
+    "empty": "Chưa có tóm tắt.",
+    "timeline": "Dòng thời gian",
+    "keyPoints": "Điểm chính",
+    "nextAction": "Việc cần làm",
+    "proposedReply": "Trả lời gợi ý",
+    "useReply": "Dùng làm trả lời"
   },
   "draftBadge": "Bản nháp",
   "sendingBadge": "Đang gửi…",

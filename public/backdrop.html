@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title></title>
+    <!-- Cinema backdrop for the first-run intro: a transparent borderless
+         window covering the monitor behind the app window, holding one black
+         sheet that fades in as the show starts and fades away at the handoff
+         (on the "cinema:fade-out" event from SpaceIntro.tsx, which then closes
+         this window). Requires the window to be created with transparent: true
+         (macOSPrivateApi on macOS). -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+      }
+      #sheet {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+        /* Matches the app window's own fade-to-black (BLACKOUT_MS), so the
+           whole screen dims together - darker and darker, never a hard cut. */
+        transition: opacity 2400ms ease-in;
+      }
+      #sheet.out {
+        opacity: 0;
+        transition: opacity 1800ms ease;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sheet"></div>
+    <script>
+      var sheet = document.getElementById("sheet");
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          sheet.style.opacity = "1";
+        });
+      });
+      var tauri = window.__TAURI__;
+      if (tauri && tauri.event) {
+        tauri.event.listen("cinema:fade-out", function () {
+          sheet.classList.add("out");
+          sheet.style.opacity = "0";
+          // Self-destruct after the fade: even if the app-side close never
+          // reaches this window, the backdrop must not outlive the show.
+          setTimeout(function () {
+            try {
+              tauri.window.getCurrentWindow().close();
+            } catch (e) {
+              /* the app-side close remains as fallback */
+            }
+          }, 2000);
+        });
+      }
+    </script>
+  </body>
+</html>

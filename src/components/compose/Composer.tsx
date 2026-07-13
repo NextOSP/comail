@@ -78,6 +78,8 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
     return { to: [], cc: [], bcc: [], subject: "", bodyHtml: "", quote: "" };
   }
   const notSelf = (a: Address) => !selfEmails.has(a.email.toLowerCase());
+  // A passage the user selected in the thread seeds the body as a blockquote.
+  const prefillHtml = c.prefillQuote ? selectionQuoteHtml(c.prefillQuote) : "";
   const reSubject = /^re:/i.test(m.subject)
     ? m.subject
     : i18n.t("compose:replyPrefix", { subject: m.subject });
@@ -100,7 +102,7 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
       cc: [],
       bcc: [],
       subject: reSubject,
-      bodyHtml: "",
+      bodyHtml: prefillHtml,
       quote: quote(m),
     };
   }
@@ -112,9 +114,16 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
     cc: m.cc.filter(notSelf),
     bcc: [],
     subject: reSubject,
-    bodyHtml: "",
+    bodyHtml: prefillHtml,
     quote: quote(m),
   };
+}
+
+/** A passage selected from the thread, rendered as a leading blockquote with a
+ *  blank line after it for the reply. Shared by the seeded-reply path and the
+ *  "insert into the open composer" action. */
+function selectionQuoteHtml(text: string): string {
+  return `<blockquote>${textToHtml(text)}</blockquote><div><br></div>`;
 }
 
 /** The plain-text wire quote rendered as HTML: attribution line + blockquote. */
@@ -175,6 +184,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   /** one-shot undo: body as it was before the last AI replacement */
   const [aiPrevBody, setAiPrevBody] = useState<string | null>(null);
   const [proofPending, setProofPending] = useState(false);
+  const [teamsPending, setTeamsPending] = useState(false);
   const aiInputRef = useRef<HTMLInputElement>(null);
 
   const bodyRef = useRef<RichBodyHandle>(null);
@@ -487,6 +497,42 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proofPending, pushToast, t]);
 
+  // Teams meetings are a Microsoft-Graph feature: only offer the button on
+  // Microsoft accounts.
+  const isMicrosoftAccount =
+    accounts?.find((acc) => acc.id === accountId)?.provider === "microsoft";
+
+  // "Teams meeting": mint an online meeting via Graph and drop the join link
+  // into the body. First use may open the browser for one-time consent.
+  const createTeamsMeeting = useCallback(async () => {
+    if (teamsPending) return;
+    setTeamsPending(true);
+    try {
+      const f = fieldsRef.current;
+      const start = Date.now();
+      const { joinUrl } = await call("create_teams_meeting", {
+        accountId: f.accountId,
+        subject: f.subject || t("compose:teamsMeetingTitle"),
+        startMs: start,
+        endMs: start + 30 * 60 * 1000,
+      });
+      const block =
+        `<p><strong>${escapeHtml(t("compose:teamsMeetingTitle"))}</strong></p>` +
+        `<p><a href="${escapeHtml(joinUrl)}">${escapeHtml(t("compose:teamsMeetingJoin"))}</a></p>`;
+      markDirty();
+      requestAnimationFrame(() => bodyRef.current?.insertHtml(block));
+      pushToast({ kind: "info", message: t("compose:teamsMeetingAdded"), durationMs: 2500 });
+    } catch (err) {
+      pushToast({
+        kind: "error",
+        message: t("compose:teamsMeetingError", { error: errorMessage(err) }),
+      });
+    } finally {
+      setTeamsPending(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamsPending, pushToast, t]);
+
   const restorePreviousBody = () => {
     if (aiPrevBody == null) return;
     setBody(aiPrevBody);
@@ -497,7 +543,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
 
   // Keyboard bridge: Cmd+Enter etc. arrive via the shared command registry.
   useEffect(() => {
-    return onComposerAction((action) => {
+    return onComposerAction((action, text) => {
       if (action === "send") void doSend();
       else if (action === "send_done") void doSend({ markDone: true });
       else if (action === "send_later") setSendLaterOpen(true);
@@ -506,7 +552,12 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       else if (action === "attach") void attachFiles();
       else if (action === "share_availability") useUi.getState().set({ availabilityOpen: true });
       else if (action === "proofread") void runProofread();
-      else if (action === "ai") {
+      else if (action === "quote_selection") {
+        if (text) {
+          markDirty();
+          requestAnimationFrame(() => bodyRef.current?.insertHtml(selectionQuoteHtml(text)));
+        }
+      } else if (action === "ai") {
         setAiOpen(true);
         requestAnimationFrame(() => aiInputRef.current?.focus());
       }
@@ -842,6 +893,19 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             )}
             {t("compose:proofread")}
           </button>
+          {isMicrosoftAccount && (
+            <button
+              className="flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 disabled:opacity-50"
+              onClick={() => void createTeamsMeeting()}
+              disabled={teamsPending}
+              title={t("compose:teamsMeetingTip")}
+            >
+              {teamsPending && (
+                <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+              )}
+              {t("compose:teamsMeeting")}
+            </button>
+          )}
           <span className="text-[11.5px] text-ink-faint">
             {t("compose:footerHints", { mod: MOD_LABEL })}
           </span>

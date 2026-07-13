@@ -8,11 +8,13 @@ pub mod embeddings;
 pub mod folders;
 pub mod labels;
 pub mod messages;
+pub mod notifications;
 pub mod search;
 pub mod settings;
 pub mod snippets;
 pub mod snoozes;
 pub mod splits;
+pub mod sync_failures;
 pub mod threads;
 
 use crate::models::Address;

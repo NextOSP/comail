@@ -14,7 +14,9 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   const focusedMessageId = useUi((s) => s.focusedMessageId);
   const visibleThreadIds = useUi((s) => s.visibleThreadIds);
   const openThread = useUi((s) => s.openThread);
+  const openComposer = useUi((s) => s.openComposer);
   const set = useUi((s) => s.set);
+  const hasSummary = useUi((s) => s.aiSummaries[threadId] != null);
   // Pointer selection (hover / click) makes a message the reply target without
   // scrolling the view — only keyboard nav (N/P) scrolls the cursor into view.
   const selectMessage = (id: number) => {
@@ -103,6 +105,29 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
     nonDraft[nonDraft.length - 1]?.id ??
     null;
   const selectedId = focusedMessageId ?? defaultTargetId;
+
+  // Seed a reply composer with the AI's proposed answer, targeting the same
+  // message a manual reply would (the highlighted one), quote and recipients
+  // included — the user reviews and sends.
+  const useProposedReply = (text: string) => {
+    const target =
+      nonDraft.find((m) => m.id === selectedId) ??
+      [...nonDraft].reverse().find((m) => !m.isOutgoing) ??
+      nonDraft[nonDraft.length - 1];
+    if (!target) return;
+    openComposer({
+      mode: "reply",
+      replyTo: target,
+      accountId: target.accountId,
+      initial: {
+        to: target.isOutgoing ? target.to : [target.from],
+        subject: /^re:/i.test(target.subject)
+          ? target.subject
+          : t("compose:replyPrefix", { subject: target.subject }),
+        body: text,
+      },
+    });
+  };
   // Expansion follows explicit toggles, the last message, and unread state —
   // NOT the selection, so hovering to pick a reply target never expands or
   // collapses a message. Keyboard nav (N/P) expands its target via the effect
@@ -114,7 +139,8 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   };
 
   return (
-    <div className="co-fade-in min-h-0 flex-1 overflow-y-auto">
+    <div className="co-fade-in flex min-h-0 flex-1 overflow-hidden">
+      <div className="min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-6 py-6 pb-24">
         <header className="flex items-start justify-between gap-4">
           <div>
@@ -150,8 +176,6 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
             </span>
           )}
         </header>
-
-        <AiSummaryBanner threadId={threadId} />
 
         <div className="flex flex-col gap-1.5">
           {messages.map((m) => (
@@ -192,6 +216,9 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
           <kbd className="co-kbd">K</kbd> {t("thread:footer.nextPrev")}
         </footer>
       </div>
+      </div>
+
+      {hasSummary && <AiSummarySidebar threadId={threadId} onUseReply={useProposedReply} />}
     </div>
   );
 }
@@ -205,8 +232,28 @@ function InlineComposerAnchor({ children }: { children: React.ReactNode }) {
   return <div ref={ref}>{children}</div>;
 }
 
-/** Dismissible AI thread summary pinned above the messages (Shift+J). */
-function AiSummaryBanner({ threadId }: { threadId: number }) {
+/** A section heading in the summary sidebar. */
+function SummarySection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-[10.5px] font-semibold tracking-[0.12em] text-ink-faint uppercase">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The structured AI thread read, docked to the right of the conversation
+ * (opened with Shift+J). Timeline, key points, the one next action, and a
+ * proposed reply the user can drop straight into the composer.
+ */
+function AiSummarySidebar({
+  threadId,
+  onUseReply,
+}: {
+  threadId: number;
+  onUseReply: (text: string) => void;
+}) {
   const { t } = useTranslation();
   const entry = useUi((s) => s.aiSummaries[threadId]);
   const set = useUi((s) => s.set);
@@ -218,32 +265,95 @@ function AiSummaryBanner({ threadId }: { threadId: number }) {
     set({ aiSummaries: cur });
   };
 
+  const s = entry.summary;
+
   return (
-    <div
+    <aside
       data-testid="ai-summary"
-      className="co-fade-in flex items-start gap-3 border border-hairline bg-bg1 py-3 pr-3 pl-4"
-      style={{ borderLeft: "3px solid var(--accent)", boxShadow: "var(--elev-card)" }}
+      className="co-fade-in flex w-[326px] shrink-0 flex-col overflow-y-auto border-l border-hairline bg-bg1"
     >
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 text-[10.5px] font-semibold tracking-[0.12em] text-accent uppercase">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-hairline bg-bg1 px-4 py-3">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.12em] text-accent uppercase">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2zM19 14l.9 2.6L22.5 17l-2.6.9L19 20l-.9-2.1L15.5 17l2.6-.4L19 14z" />
+          </svg>
           {t("thread:aiSummary.title")}
         </div>
-        {entry.pending ? (
-          <div className="flex items-center gap-2 text-[13px] text-ink-faint italic">
-            <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-            {t("thread:aiSummary.pending")}
-          </div>
-        ) : (
-          <p className="text-[13.5px] leading-relaxed text-ink-muted italic">{entry.text}</p>
-        )}
+        <button
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-[13px] text-ink-faint hover:bg-bg2 hover:text-ink"
+          onClick={dismiss}
+          aria-label={t("thread:aiSummary.dismiss")}
+        >
+          ✕
+        </button>
       </div>
-      <button
-        className="shrink-0 rounded-md px-1.5 py-0.5 text-ink-faint hover:bg-bg2 hover:text-ink"
-        onClick={dismiss}
-        aria-label={t("thread:aiSummary.dismiss")}
-      >
-        ✕
-      </button>
-    </div>
+
+      {entry.pending ? (
+        <div className="flex items-center gap-2 px-4 py-4 text-[13px] text-ink-faint italic">
+          <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+          {t("thread:aiSummary.pending")}
+        </div>
+      ) : !s ? (
+        <div className="px-4 py-4 text-[13px] text-ink-faint">{t("thread:aiSummary.empty")}</div>
+      ) : (
+        <div className="flex flex-col gap-5 px-4 py-4">
+          {s.timeline.length > 0 && (
+            <SummarySection title={t("thread:aiSummary.timeline")}>
+              <ol className="flex flex-col gap-2.5">
+                {s.timeline.map((e, i) => (
+                  <li key={i} className="relative flex gap-2.5 pl-1">
+                    <span className="mt-1 flex flex-col items-center">
+                      <span className="size-1.5 shrink-0 rounded-full bg-accent" />
+                      {i < s.timeline.length - 1 && <span className="mt-1 w-px flex-1 bg-hairline" />}
+                    </span>
+                    <p className="text-[12.5px] leading-snug text-ink-muted">
+                      <span className="font-medium text-ink">{e.actor}</span> {e.event}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </SummarySection>
+          )}
+
+          {s.keyPoints.length > 0 && (
+            <SummarySection title={t("thread:aiSummary.keyPoints")}>
+              <ul className="flex flex-col gap-1.5">
+                {s.keyPoints.map((p, i) => (
+                  <li key={i} className="flex gap-2 text-[12.5px] leading-snug text-ink-muted">
+                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-ink-faint" />
+                    <span>{p}</span>
+                  </li>
+                ))}
+              </ul>
+            </SummarySection>
+          )}
+
+          {s.nextAction && (
+            <SummarySection title={t("thread:aiSummary.nextAction")}>
+              <p
+                className="border border-hairline bg-bg0 px-3 py-2 text-[12.5px] leading-snug text-ink"
+                style={{ borderLeft: "3px solid var(--accent)" }}
+              >
+                {s.nextAction}
+              </p>
+            </SummarySection>
+          )}
+
+          {s.proposedReply && (
+            <SummarySection title={t("thread:aiSummary.proposedReply")}>
+              <p className="border border-hairline bg-bg0 px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-muted">
+                {s.proposedReply}
+              </p>
+              <button
+                className="mt-0.5 self-start rounded-md bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90"
+                onClick={() => onUseReply(s.proposedReply!)}
+              >
+                {t("thread:aiSummary.useReply")}
+              </button>
+            </SummarySection>
+          )}
+        </div>
+      )}
+    </aside>
   );
 }

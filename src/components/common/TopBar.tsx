@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { folderLeafName } from "../../lib/folders";
 import { accountColor, accountLabel, IS_MAC, MOD_LABEL } from "../../lib/format";
+import { aggregateSyncStatuses } from "../../lib/syncStatus";
 import { displayShortcut } from "../../keyboard/registry";
 import { useAccounts, useFolders } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
@@ -13,15 +14,14 @@ export function TopBar() {
   const calendarScreen = useUi((s) => s.calendarScreen);
   const searchOpen = useUi((s) => s.searchOpen);
   const offline = useUi((s) => s.offline);
-  const syncing = useUi((s) => s.syncing);
-  const syncDone = useUi((s) => s.syncDone);
-  const syncTotal = useUi((s) => s.syncTotal);
+  const syncStatuses = useUi((s) => s.syncStatuses);
   const keySequence = useUi((s) => s.keySequence);
   const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
   const { data: accounts } = useAccounts();
   const { data: folders } = useFolders(accountFilter);
   const [menuOpen, setMenuOpen] = useState(false);
+  const sync = aggregateSyncStatuses(syncStatuses, accountFilter);
 
   const active = accounts?.find((a) => a.id === accountFilter);
   const activeFolder = folders?.find((f) => f.id === folderFilter);
@@ -59,14 +59,10 @@ export function TopBar() {
 
       <div className="grow" />
 
-      {syncing && (
-        <span className="flex items-center gap-1.5 text-[11.5px] text-ink-muted" title={t("common:topbar.syncing")}>
+      {sync.foregroundSyncing && (
+        <span className="flex items-center gap-1.5 text-[11.5px] text-ink-muted" title={t("common:topbar.checkingMail")}>
           <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-          {syncTotal > 0 && (
-            <span className="tabular-nums">
-              {t("common:topbar.syncing")} {syncDone.toLocaleString()}/{syncTotal.toLocaleString()}
-            </span>
-          )}
+          <span>{t("common:topbar.checkingMail")}</span>
         </span>
       )}
       {offline && (

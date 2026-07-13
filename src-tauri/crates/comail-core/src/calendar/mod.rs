@@ -5,7 +5,8 @@
 //! calendars for outbound mail.
 
 use crate::models::Address;
-use chrono::{NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct IcsAttendee {
@@ -102,7 +103,8 @@ fn param<'a>(params: &'a [(String, String)], key: &str) -> Option<&'a str> {
 }
 
 /// Parse "20260711", "20260711T130000", "20260711T130000Z" to (ms, all_day).
-/// Naive datetimes (with or without TZID) are treated as local time.
+/// A bare naive datetime is treated as machine-local; callers with a TZID and a
+/// VTIMEZONE table use [`resolve_dt`] instead so the invite's own zone wins.
 pub(crate) fn parse_dt(value: &str) -> Option<(i64, bool)> {
     let v = value.trim();
     if let Ok(d) = NaiveDate::parse_from_str(v, "%Y%m%d") {
@@ -125,6 +127,221 @@ pub(crate) fn parse_dt(value: &str) -> Option<(i64, bool)> {
             .timestamp_millis(),
         false,
     ))
+}
+
+/// One STANDARD/DAYLIGHT observance from a VTIMEZONE: the UTC offset it applies
+/// and, for zones with DST, the yearly rule for when it takes effect.
+#[derive(Debug, Clone)]
+struct TzObservance {
+    /// Offset from UTC in seconds (TZOFFSETTO). Wall clock = UTC + this.
+    offset_to: i32,
+    /// Transition month (BYMONTH), 1-12. None for a fixed, ruleless observance.
+    month: Option<u32>,
+    /// Nth weekday of the month (BYDAY): 1..=5, or -1 for "last".
+    nth: i32,
+    weekday: Option<Weekday>,
+    /// Seconds past midnight the switch happens (from the observance DTSTART).
+    time_sec: u32,
+}
+
+/// Parse "+0700" / "-0430" (±HHMM) to an offset in seconds.
+fn parse_offset(v: &str) -> Option<i32> {
+    let v = v.trim();
+    let (sign, rest) = match v.strip_prefix('-') {
+        Some(r) => (-1, r),
+        None => (1, v.strip_prefix('+').unwrap_or(v)),
+    };
+    if rest.len() < 4 {
+        return None;
+    }
+    let h: i32 = rest[0..2].parse().ok()?;
+    let m: i32 = rest[2..4].parse().ok()?;
+    Some(sign * (h * 3600 + m * 60))
+}
+
+/// Parse a BYDAY token like "2SU" or "-1SU" into (nth, weekday).
+fn parse_byday(v: &str) -> Option<(i32, Weekday)> {
+    let v = v.trim();
+    let split = v.len().saturating_sub(2);
+    let (num, day) = v.split_at(split);
+    let weekday = match day.to_ascii_uppercase().as_str() {
+        "SU" => Weekday::Sun,
+        "MO" => Weekday::Mon,
+        "TU" => Weekday::Tue,
+        "WE" => Weekday::Wed,
+        "TH" => Weekday::Thu,
+        "FR" => Weekday::Fri,
+        "SA" => Weekday::Sat,
+        _ => return None,
+    };
+    let nth = if num.is_empty() { 1 } else { num.parse().ok()? };
+    Some((nth, weekday))
+}
+
+/// Date of the nth `weekday` in `year`/`month` (nth = -1 means the last one).
+fn nth_weekday(year: i32, month: u32, weekday: Weekday, nth: i32) -> Option<NaiveDate> {
+    if nth < 0 {
+        // Walk back from the last day of the month.
+        let first_next = if month == 12 {
+            NaiveDate::from_ymd_opt(year + 1, 1, 1)?
+        } else {
+            NaiveDate::from_ymd_opt(year, month + 1, 1)?
+        };
+        let mut d = first_next.pred_opt()?;
+        while d.weekday() != weekday {
+            d = d.pred_opt()?;
+        }
+        return Some(d);
+    }
+    let first = NaiveDate::from_ymd_opt(year, month, 1)?;
+    let shift = (7 + weekday.num_days_from_sunday() as i64
+        - first.weekday().num_days_from_sunday() as i64)
+        % 7;
+    let day = 1 + shift + (nth as i64 - 1) * 7;
+    NaiveDate::from_ymd_opt(year, month, day as u32)
+}
+
+/// Collect VTIMEZONE definitions into TZID -> observances. Uses the offsets the
+/// invite carries in-band, so we never need a Windows/IANA zone-name table.
+fn parse_vtimezones(lines: &[String]) -> HashMap<String, Vec<TzObservance>> {
+    let mut map: HashMap<String, Vec<TzObservance>> = HashMap::new();
+    let mut tzid: Option<String> = None;
+    let mut in_sub = false;
+    let mut cur: Option<TzObservance> = None;
+
+    for line in lines {
+        let Some((key, _params, value)) = split_prop(line) else {
+            continue;
+        };
+        match key.as_str() {
+            "BEGIN" if value.eq_ignore_ascii_case("VTIMEZONE") => tzid = Some(String::new()),
+            "END" if value.eq_ignore_ascii_case("VTIMEZONE") => tzid = None,
+            "TZID" if tzid.is_some() && !in_sub => tzid = Some(value.trim().to_string()),
+            "BEGIN"
+                if value.eq_ignore_ascii_case("STANDARD")
+                    || value.eq_ignore_ascii_case("DAYLIGHT") =>
+            {
+                in_sub = true;
+                cur = Some(TzObservance {
+                    offset_to: 0,
+                    month: None,
+                    nth: 1,
+                    weekday: None,
+                    time_sec: 0,
+                });
+            }
+            "END"
+                if value.eq_ignore_ascii_case("STANDARD")
+                    || value.eq_ignore_ascii_case("DAYLIGHT") =>
+            {
+                if let (Some(id), Some(obs)) = (tzid.as_deref(), cur.take()) {
+                    if !id.is_empty() {
+                        map.entry(id.to_string()).or_default().push(obs);
+                    }
+                }
+                in_sub = false;
+            }
+            "TZOFFSETTO" if in_sub => {
+                if let (Some(c), Some(off)) = (cur.as_mut(), parse_offset(&value)) {
+                    c.offset_to = off;
+                }
+            }
+            "DTSTART" if in_sub => {
+                if let (Some(c), Some(t)) = (cur.as_mut(), value.trim().split_once('T')) {
+                    let hms = t.1;
+                    if hms.len() >= 6 {
+                        let h: u32 = hms[0..2].parse().unwrap_or(0);
+                        let m: u32 = hms[2..4].parse().unwrap_or(0);
+                        let s: u32 = hms[4..6].parse().unwrap_or(0);
+                        c.time_sec = h * 3600 + m * 60 + s;
+                    }
+                }
+            }
+            "RRULE" if in_sub => {
+                if let Some(c) = cur.as_mut() {
+                    for kv in value.split(';') {
+                        match kv.split_once('=') {
+                            Some((k, v)) if k.eq_ignore_ascii_case("BYMONTH") => {
+                                c.month = v.trim().parse().ok();
+                            }
+                            Some((k, v)) if k.eq_ignore_ascii_case("BYDAY") => {
+                                if let Some((n, wd)) = parse_byday(v) {
+                                    c.nth = n;
+                                    c.weekday = Some(wd);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    map
+}
+
+/// The UTC offset (seconds) a zone applies at a given wall-clock instant. For a
+/// no-DST zone (one observance, or all offsets equal) this is constant; for a
+/// DST zone we pick the observance whose yearly transition most recently
+/// preceded `local`, which is the standard "which side of the boundary" rule.
+fn offset_for(obs: &[TzObservance], local: NaiveDateTime) -> Option<i32> {
+    match obs.len() {
+        0 => None,
+        1 => Some(obs[0].offset_to),
+        _ => {
+            let year = local.year();
+            // Transition wall-clock time for each observance in this year.
+            let mut with_trans: Vec<(NaiveDateTime, i32)> = obs
+                .iter()
+                .filter_map(|o| {
+                    let (month, wd) = (o.month?, o.weekday?);
+                    let date = nth_weekday(year, month, wd, o.nth)?;
+                    let dt = date.and_hms_opt(0, 0, 0)? + Duration::seconds(o.time_sec as i64);
+                    Some((dt, o.offset_to))
+                })
+                .collect();
+            if with_trans.len() < 2 {
+                // Missing rules: fall back to the first offset.
+                return Some(obs[0].offset_to);
+            }
+            with_trans.sort_by_key(|(dt, _)| *dt);
+            // Latest transition at or before `local`; before the year's first
+            // transition, the last one (previous year's) is still in effect.
+            let chosen = with_trans
+                .iter()
+                .rev()
+                .find(|(dt, _)| *dt <= local)
+                .or_else(|| with_trans.last())
+                .map(|(_, off)| *off);
+            chosen
+        }
+    }
+}
+
+/// Resolve a DTSTART/DTEND value honoring its TZID against the invite's
+/// VTIMEZONE table. UTC (`…Z`) and date-only values ignore the TZID; a floating
+/// value with a known TZID is converted from that zone's offset; anything else
+/// falls back to [`parse_dt`]'s machine-local interpretation.
+fn resolve_dt(
+    value: &str,
+    tzid: Option<&str>,
+    tztable: &HashMap<String, Vec<TzObservance>>,
+) -> Option<(i64, bool)> {
+    let v = value.trim();
+    // UTC and date-only forms are unambiguous; TZID does not apply.
+    if v.ends_with('Z') || !v.contains('T') {
+        return parse_dt(v);
+    }
+    if let Some(obs) = tzid.and_then(|id| tztable.get(id)) {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S") {
+            if let Some(off) = offset_for(obs, naive) {
+                let as_utc = Utc.from_utc_datetime(&naive).timestamp_millis();
+                return Some((as_utc - off as i64 * 1000, false));
+            }
+        }
+    }
+    parse_dt(v)
 }
 
 fn unescape(v: &str) -> String {
@@ -176,6 +393,7 @@ pub fn find_join_url(text: &str) -> Option<String> {
 
 pub fn parse_ics(text: &str) -> Vec<IcsEvent> {
     let lines = unfold(text);
+    let tztable = parse_vtimezones(&lines);
     let mut method: Option<String> = None;
     let mut events = Vec::new();
     let mut current: Option<IcsEvent> = None;
@@ -244,16 +462,18 @@ pub fn parse_ics(text: &str) -> Vec<IcsEvent> {
                         }
                     }
                     "DTSTART" => {
-                        if let Some((ms, all_day)) = parse_dt(&value) {
+                        let tzid = param(&params, "TZID");
+                        if let Some((ms, all_day)) = resolve_dt(&value, tzid, &tztable) {
                             ev.starts_at_ms = ms;
                             ev.all_day = all_day;
                         }
-                        if let Some(tz) = param(&params, "TZID") {
+                        if let Some(tz) = tzid {
                             ev.tzid = Some(tz.to_string());
                         }
                     }
                     "DTEND" => {
-                        if let Some((ms, _)) = parse_dt(&value) {
+                        let tzid = param(&params, "TZID");
+                        if let Some((ms, _)) = resolve_dt(&value, tzid, &tztable) {
                             ev.ends_at_ms = Some(ms);
                         }
                     }
@@ -487,6 +707,60 @@ mod tests {
         assert_eq!(ev.organizer.as_deref(), Some("alice@example.com"));
         assert!(!ev.all_day);
         assert_eq!(ev.ends_at_ms.unwrap() - ev.starts_at_ms, 3_600_000);
+    }
+
+    #[test]
+    fn tzid_no_dst_zone_uses_embedded_offset() {
+        // Exchange invite: SE Asia (+07, no DST). The floating DTSTART must be
+        // read in +07 regardless of the machine's own timezone.
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VTIMEZONE\r\nTZID:SE Asia Standard Time\r\nBEGIN:STANDARD\r\nDTSTART:16010101T000000\r\nTZOFFSETFROM:+0700\r\nTZOFFSETTO:+0700\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010101T000000\r\nTZOFFSETFROM:+0700\r\nTZOFFSETTO:+0700\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:tz-1\r\nSUMMARY:Standup\r\nDTSTART;TZID=SE Asia Standard Time:20260714T080000\r\nDTEND;TZID=SE Asia Standard Time:20260714T083000\r\nEND:VEVENT\r\nEND:VCALENDAR";
+        let ev = &parse_ics(ics)[0];
+        // 08:00 +07 == 01:00 UTC.
+        let expect = Utc
+            .with_ymd_and_hms(2026, 7, 14, 1, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(ev.starts_at_ms, expect);
+        assert_eq!(ev.ends_at_ms.unwrap() - ev.starts_at_ms, 30 * 60_000);
+        assert_eq!(ev.tzid.as_deref(), Some("SE Asia Standard Time"));
+    }
+
+    #[test]
+    fn tzid_dst_zone_picks_correct_side_of_transition() {
+        // US Eastern: EDT (-04) Mar..Nov, EST (-05) otherwise. A July meeting is
+        // in EDT; a January one is in EST.
+        let vtz = "BEGIN:VTIMEZONE\r\nTZID:Eastern Standard Time\r\nBEGIN:STANDARD\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nRRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nRRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n";
+        let july = format!("BEGIN:VCALENDAR\r\n{vtz}BEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=Eastern Standard Time:20260715T090000\r\nEND:VEVENT\r\nEND:VCALENDAR");
+        // 09:00 EDT (-04) == 13:00 UTC.
+        let ev = &parse_ics(&july)[0];
+        assert_eq!(
+            ev.starts_at_ms,
+            Utc.with_ymd_and_hms(2026, 7, 15, 13, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+        );
+        let jan = format!("BEGIN:VCALENDAR\r\n{vtz}BEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=Eastern Standard Time:20260115T090000\r\nEND:VEVENT\r\nEND:VCALENDAR");
+        // 09:00 EST (-05) == 14:00 UTC.
+        let ev = &parse_ics(&jan)[0];
+        assert_eq!(
+            ev.starts_at_ms,
+            Utc.with_ymd_and_hms(2026, 1, 15, 14, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+        );
+    }
+
+    #[test]
+    fn utc_and_unknown_tzid_still_parse() {
+        // A `Z` value ignores any TZID; an unknown TZID falls back gracefully.
+        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=Nonexistent/Zone:20260715T140000Z\r\nEND:VEVENT\r\nEND:VCALENDAR";
+        let ev = &parse_ics(ics)[0];
+        assert_eq!(
+            ev.starts_at_ms,
+            Utc.with_ymd_and_hms(2026, 7, 15, 14, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+        );
     }
 
     #[test]

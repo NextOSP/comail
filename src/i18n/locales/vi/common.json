@@ -46,6 +46,17 @@
     "search": "Tìm kiếm",
     "offline": "Ngoại tuyến",
     "syncing": "Đang đồng bộ",
+    "checkingMail": "Đang kiểm tra thư…",
+    "inboxUpToDate": "Hộp thư đến đã cập nhật",
+    "backgroundTitle": "Đã xong {{done}}/{{total}} · {{failed}} lỗi",
+    "backgroundFailed": "{{count}} lỗi",
+    "background": {
+      "headers": "Đang đồng bộ lịch sử",
+      "content": "Đang lưu thư ngoại tuyến",
+      "indexing": "Đang lập chỉ mục thư",
+      "retrying": "Đang thử đồng bộ lại",
+      "mixed": "Đang hoàn tất đồng bộ nền"
+    },
     "waitingForChord": "Đang chờ tổ hợp phím",
     "settings": "Cài đặt",
     "settingsWithShortcut": "Cài đặt ({{shortcut}})",

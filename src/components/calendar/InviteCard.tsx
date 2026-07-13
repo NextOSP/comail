@@ -1,5 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { errorMessage } from "../../ipc/errors";
@@ -14,6 +14,25 @@ function startOfDay(ms: number): number {
   const d = new Date(ms);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
+}
+
+/** Short, human recurrence label from an RRULE's FREQ (falls back to generic
+ *  for rules we don't spell out, so any repeat is still surfaced). */
+function recurrenceKey(rrule: string | null): string | null {
+  if (!rrule) return null;
+  const freq = /FREQ=([A-Z]+)/i.exec(rrule)?.[1]?.toUpperCase();
+  switch (freq) {
+    case "DAILY":
+      return "calendar:recurrence.daily";
+    case "WEEKLY":
+      return "calendar:recurrence.weekly";
+    case "MONTHLY":
+      return "calendar:recurrence.monthly";
+    case "YEARLY":
+      return "calendar:recurrence.yearly";
+    default:
+      return "calendar:recurrence.generic";
+  }
 }
 
 function whenLabel(ev: CalendarEvent): string {
@@ -51,6 +70,15 @@ function InviteEvent({ event }: { event: CalendarEvent }) {
   const set = useUi((s) => s.set);
   const pushToast = useUi((s) => s.pushToast);
   const rsvp = useRsvpEvent();
+  const [expanded, setExpanded] = useState(false);
+
+  const recurrence = recurrenceKey(event.rrule);
+  const description = event.description?.trim() || null;
+  // The card normally shows the first six attendees; expanding reveals the rest
+  // alongside the full description, so a long invite stays compact by default.
+  const hasMoreAttendees = event.attendees.length > 6;
+  const hasDetails = Boolean(description) || hasMoreAttendees;
+  const shownAttendees = expanded ? event.attendees : event.attendees.slice(0, 6);
 
   const cancelled =
     event.status?.toUpperCase() === "CANCELLED" || event.method?.toUpperCase() === "CANCEL";
@@ -123,18 +151,43 @@ function InviteEvent({ event }: { event: CalendarEvent }) {
               {t("calendar:byOrganizer", { organizer: event.organizer })}
             </div>
           )}
+          {recurrence && (
+            <div className="text-[12px] text-ink-faint">{t(recurrence)}</div>
+          )}
           {event.attendees.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {event.attendees.slice(0, 6).map((a) => (
+              {shownAttendees.map((a) => (
                 <span key={a.email} className="co-chip" title={a.email}>
                   {a.partstat === "ACCEPTED" ? "✓ " : a.partstat === "DECLINED" ? "✗ " : ""}
                   {a.name ?? a.email}
                 </span>
               ))}
-              {event.attendees.length > 6 && (
+              {!expanded && hasMoreAttendees && (
                 <span className="co-chip">+{event.attendees.length - 6}</span>
               )}
             </div>
+          )}
+          {expanded && description && (
+            <div className="mt-2">
+              <div className="text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+                {t("calendar:descriptionLabel")}
+              </div>
+              <p className="mt-0.5 max-h-40 overflow-auto text-[12px] leading-[1.5] whitespace-pre-wrap text-ink-muted select-text">
+                {description}
+              </p>
+            </div>
+          )}
+          {hasDetails && (
+            <button
+              type="button"
+              className="mt-1 text-[11.5px] font-medium text-accent hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((v) => !v);
+              }}
+            >
+              {t(expanded ? "calendar:hideDetails" : "calendar:showDetails")}
+            </button>
           )}
           {conflict && !cancelled && (
             <div className="mt-1 text-[11.5px] font-medium text-danger">

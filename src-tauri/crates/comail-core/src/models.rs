@@ -381,10 +381,20 @@ pub struct FolderInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SyncBackgroundProgress {
+    pub phase: String,
+    pub done: u64,
+    pub total: u64,
+    pub failed: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub account_id: i64,
     pub state: String,
-    pub progress: Option<f64>,
+    pub foreground_phase: String,
+    pub background: Option<SyncBackgroundProgress>,
 }
 
 /// Structured action parsed by AI from a natural-language palette query.
@@ -403,6 +413,38 @@ pub struct AiIntent {
     pub body: Option<String>,
     pub query: Option<String>,
     pub view: Option<String>,
+}
+
+/// One chronological beat of a thread: who acted, and what they did.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineEntry {
+    /// The person who acted ("Ana Moreau", or "You" for the account owner).
+    #[serde(default)]
+    pub actor: String,
+    /// A terse, past-tense description of what they said or did.
+    #[serde(default)]
+    pub event: String,
+}
+
+/// A structured, sidebar-ready read of a whole thread: how it unfolded, what
+/// matters, what the user must do next, and a ready-to-send draft reply.
+/// (Distinct from [`ThreadSummary`], which is a thread-list *row*.)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AiThreadSummary {
+    /// Chronological beats, oldest first.
+    #[serde(default)]
+    pub timeline: Vec<TimelineEntry>,
+    /// The essential facts and decisions, as short bullet lines.
+    #[serde(default)]
+    pub key_points: Vec<String>,
+    /// The single next thing the user should do, or `None` if nothing is owed.
+    #[serde(default)]
+    pub next_action: Option<String>,
+    /// A short draft reply the user could send, or `None` if no reply is needed.
+    #[serde(default)]
+    pub proposed_reply: Option<String>,
 }
 
 /// Exact unread badge counts for split tabs and sidebar rows.

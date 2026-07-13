@@ -438,9 +438,9 @@ textarea {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  /* Deep-space base under the canvas - guarantees the intro is never a white
+  /* Warm-black base under the canvas - guarantees the intro is never a white
      flash even for the first frame or if the canvas is briefly unsized. */
-  background: #06060a;
+  background: #0c0a08;
 }
 /* Fill explicitly (not via % height, which needs a definite-height chain) so the
    starfield always covers the viewport. */
@@ -461,26 +461,125 @@ textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 30px;
+  gap: 38px;
   pointer-events: none;
 }
-.co-intro-mark {
-  width: clamp(66px, 9vw, 96px);
-  height: clamp(66px, 9vw, 96px);
+/* Top slot: the flipping photographs, in a fixed-height cell so the flips
+   never shift the layout below. */
+.co-intro-topslot {
+  display: grid;
+  place-items: center;
+  height: min(430px, 44vh);
+}
+.co-intro-topslot > * {
+  grid-area: 1 / 1;
+}
+/* A photographic print: aged paper frame, deeper bottom margin, real shadow.
+   The image is desaturated toward archive stock. Flip is driven per-frame. */
+.co-intro-photo {
+  padding: 12px 12px 32px;
+  background: #ece4d2;
+  border-radius: 3px;
+  box-shadow:
+    0 22px 60px rgba(0, 0, 0, 0.55),
+    0 2px 10px rgba(0, 0, 0, 0.4);
   transform-origin: center;
   will-change: opacity, transform;
 }
+.co-intro-photo img {
+  display: block;
+  width: min(580px, 58vw);
+  height: min(360px, 36vh);
+  object-fit: cover;
+  filter: sepia(0.38) contrast(0.92) brightness(0.94);
+}
+/* The finale layer: the title row and the continue button, centered on the
+   viewport independently of the story column, so the (by then empty) photo
+   slot never pushes them off middle. */
+.co-intro-titlelayer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 42px;
+  pointer-events: none;
+}
+/* The story line: a typewriter, struck onto the frame letter by letter
+   (driven from SpaceIntro.tsx). Warm paper ink, slight aged softness. */
 .co-intro-line {
-  max-width: 84vw;
-  padding: 0 6vw;
+  max-width: 86vw;
+  padding: 0 5vw;
   text-align: center;
-  font-size: clamp(30px, 5.2vw, 56px);
-  font-weight: 600;
+  font-family: "American Typewriter", "Courier Prime", "Courier New", monospace;
+  font-size: clamp(22px, 3.2vw, 36px);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: rgba(240, 231, 214, 0.92);
+  text-shadow: 0 1px 22px rgba(0, 0, 0, 0.5);
+  will-change: opacity;
+}
+/* The title card: the wordmark in the app's own font - the end point of the
+   story's typeface evolution (typewriter, Times, Comic Sans... and now this).
+   Solid ink, brand-tight tracking; opacity and a tiny settle are driven
+   per-frame from SpaceIntro.tsx. */
+.co-intro-title {
+  max-width: 92vw;
+  padding: 0 3vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(20px, 2.4vw, 34px);
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: clamp(44px, 7vw, 88px);
+  font-weight: 650;
   letter-spacing: -0.02em;
-  line-height: 1.15;
-  color: rgba(245, 244, 250, 0.94);
-  text-shadow: 0 2px 34px rgba(0, 0, 0, 0.55);
+  line-height: 1.08;
+  color: rgba(248, 247, 252, 0.97);
+  text-shadow: 0 2px 40px rgba(0, 0, 0, 0.55);
+  transform-origin: center;
   will-change: opacity, transform;
+}
+/* The mark sits on the same line as the wordmark, sized to its cap height. */
+.co-intro-title-mark {
+  width: clamp(56px, 7vw, 92px);
+  height: clamp(56px, 7vw, 92px);
+  flex: none;
+}
+/* The held end-state's continue button: a translucent ring that glows on
+   hover, with the arrow nudging forward. Fade-in is driven from SpaceIntro.tsx. */
+.co-intro-cta {
+  width: 56px;
+  height: 56px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(245, 244, 250, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(245, 244, 250, 0.9);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    border-color 200ms ease,
+    background 200ms ease,
+    box-shadow 200ms ease;
+  will-change: opacity;
+}
+.co-intro-cta:hover,
+.co-intro-cta:focus-visible {
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 28px rgba(214, 168, 110, 0.4);
+  outline: none;
+}
+.co-intro-cta-arrow {
+  transition: transform 200ms ease;
+}
+.co-intro-cta:hover .co-intro-cta-arrow,
+.co-intro-cta:focus-visible .co-intro-cta-arrow {
+  transform: translateX(2px);
 }
 .co-intro-hint {
   animation: co-fade-in 400ms ease-out;

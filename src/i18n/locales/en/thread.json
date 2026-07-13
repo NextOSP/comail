@@ -21,7 +21,13 @@
   "aiSummary": {
     "title": "AI summary",
     "pending": "Summarizing…",
-    "dismiss": "Dismiss summary"
+    "dismiss": "Dismiss summary",
+    "empty": "No summary yet.",
+    "timeline": "Timeline",
+    "keyPoints": "Key points",
+    "nextAction": "Next action",
+    "proposedReply": "Suggested reply",
+    "useReply": "Use as reply"
   },
   "draftBadge": "Draft",
   "sendingBadge": "Sending…",

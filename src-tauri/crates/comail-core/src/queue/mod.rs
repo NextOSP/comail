@@ -10,107 +10,153 @@ use crate::imap::{self, Session};
 use crate::models::*;
 use crate::smtp;
 use crate::sync::engine::SyncCtx;
+use tokio::time::{Duration, Instant};
 
 const MAX_ATTEMPTS: i64 = 8;
+const MAX_ACTIONS_PER_SLICE: i64 = 20;
+const MAX_SLICE_DURATION: Duration = Duration::from_secs(2);
+
+/// Outcome of one fair pending-action execution slice.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ActionSliceResult {
+    /// Actions atomically claimed and attempted during this slice.
+    pub processed: usize,
+    /// More IMAP/SMTP actions are ready now; the caller should schedule another
+    /// slice without waiting for the normal sync interval.
+    pub due_remaining: bool,
+}
 
 pub async fn execute_due(
     ctx: &SyncCtx,
     config: &AccountConfig,
     session: &mut Session,
-) -> Result<()> {
+) -> Result<ActionSliceResult> {
     let account_id = config.id;
-    loop {
-        let due = ctx
-            .db
-            .read(move |conn| repo::actions::due(conn, account_id, now_ms(), 20))
-            .await?;
-        if due.is_empty() {
-            return Ok(());
+    let started = Instant::now();
+    let due = ctx
+        .db
+        .read(move |conn| repo::actions::due(conn, account_id, now_ms(), MAX_ACTIONS_PER_SLICE))
+        .await?;
+    let mut processed = 0;
+
+    for action in due {
+        // This is a cooperative budget: never abandon an action midway through
+        // an IMAP/SMTP command, but do not start another after the slice expires.
+        if started.elapsed() >= MAX_SLICE_DURATION {
+            break;
         }
-        for action in due {
-            let action_id = action.id;
-            // Atomic claim: if undo/cancel got here first, skip.
-            let claimed = ctx
-                .db
-                .write(move |conn| repo::actions::try_claim(conn, action_id))
-                .await?;
-            if !claimed {
-                continue;
+
+        let action_id = action.id;
+        // Atomic claim: if undo/cancel got here first, skip.
+        let claimed = ctx
+            .db
+            .write(move |conn| repo::actions::try_claim(conn, action_id))
+            .await?;
+        if !claimed {
+            continue;
+        }
+        processed += 1;
+
+        let outcome = execute_one(ctx, config, session, &action).await;
+        match outcome {
+            Ok(()) => {
+                ctx.db
+                    .write(move |conn| repo::actions::set_state(conn, action_id, "done", None))
+                    .await?;
+                ctx.bus.emit(CoreEvent::ActionState {
+                    action_id,
+                    state: "done".into(),
+                    error: None,
+                });
             }
-            let outcome = execute_one(ctx, config, session, &action).await;
-            match outcome {
-                Ok(()) => {
+            Err(e @ (CoreError::NeedsReauth | CoreError::Auth(_))) => {
+                // Leave pending; the actor will pause on reauth. Log the real
+                // cause: for SMTP this is usually the mail host rejecting auth
+                // (e.g. Office365 tenants disable SMTP AUTH by default), which
+                // was previously silent and looked like a stuck "Sending…".
+                tracing::warn!(
+                    account_id, action_id, kind = %action.kind, error = %e,
+                    "action needs auth; pausing (check mail-host auth / SMTP AUTH enabled)",
+                );
+                let msg = "authentication required".to_string();
+                ctx.db
+                    .write(move |conn| {
+                        repo::actions::bump_attempt(conn, action_id, now_ms() + 60_000, &msg)
+                    })
+                    .await?;
+                return Err(CoreError::NeedsReauth);
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                let attempts = action.attempts + 1;
+                tracing::warn!(
+                    account_id, action_id, kind = %action.kind, attempts, error = %msg,
+                    "action attempt failed",
+                );
+                if attempts >= MAX_ATTEMPTS || is_permanent(&msg) {
+                    let m = msg.clone();
                     ctx.db
-                        .write(move |conn| repo::actions::set_state(conn, action_id, "done", None))
+                        .write(move |conn| {
+                            repo::actions::set_state(conn, action_id, "failed", Some(&m))
+                        })
                         .await?;
                     ctx.bus.emit(CoreEvent::ActionState {
                         action_id,
-                        state: "done".into(),
-                        error: None,
+                        state: "failed".into(),
+                        error: Some(msg),
                     });
-                }
-                Err(e @ (CoreError::NeedsReauth | CoreError::Auth(_))) => {
-                    // Leave pending; the actor will pause on reauth. Log the real
-                    // cause: for SMTP this is usually the mail host rejecting auth
-                    // (e.g. Office365 tenants disable SMTP AUTH by default), which
-                    // was previously silent and looked like a stuck "Sending…".
-                    tracing::warn!(
-                        account_id, action_id, kind = %action.kind, error = %e,
-                        "action needs auth; pausing (check mail-host auth / SMTP AUTH enabled)",
-                    );
-                    let msg = "authentication required".to_string();
+                } else {
+                    // Exponential backoff with jitter.
+                    let delay = (1 << attempts.min(8)) * 1000 + (action_id % 997);
+                    let m = msg.clone();
                     ctx.db
                         .write(move |conn| {
-                            repo::actions::bump_attempt(conn, action_id, now_ms() + 60_000, &msg)
+                            repo::actions::bump_attempt(conn, action_id, now_ms() + delay, &m)
                         })
                         .await?;
-                    return Err(CoreError::NeedsReauth);
-                }
-                Err(e) => {
-                    let msg = e.to_string();
-                    let attempts = action.attempts + 1;
-                    tracing::warn!(
-                        account_id, action_id, kind = %action.kind, attempts, error = %msg,
-                        "action attempt failed",
-                    );
-                    if attempts >= MAX_ATTEMPTS || is_permanent(&msg) {
-                        let m = msg.clone();
-                        ctx.db
-                            .write(move |conn| {
-                                repo::actions::set_state(conn, action_id, "failed", Some(&m))
-                            })
-                            .await?;
-                        ctx.bus.emit(CoreEvent::ActionState {
-                            action_id,
-                            state: "failed".into(),
-                            error: Some(msg),
-                        });
-                    } else {
-                        // Exponential backoff with jitter.
-                        let delay = (1 << attempts.min(8)) * 1000 + (action_id % 997);
-                        let m = msg.clone();
-                        ctx.db
-                            .write(move |conn| {
-                                repo::actions::bump_attempt(conn, action_id, now_ms() + delay, &m)
-                            })
-                            .await?;
-                        // Connection-level errors: bail out, actor reconnects.
-                        if msg.contains("connect")
-                            || msg.contains("broken")
-                            || msg.contains("closed")
-                        {
-                            return Err(e);
-                        }
+                    // Connection-level errors: bail out, actor reconnects.
+                    if is_connection_failure(&msg) {
+                        return Err(e);
                     }
                 }
             }
         }
     }
+
+    let due_remaining = ctx
+        .db
+        .read(move |conn| repo::actions::has_due(conn, account_id, now_ms()))
+        .await?;
+    Ok(ActionSliceResult {
+        processed,
+        due_remaining,
+    })
 }
 
 fn is_permanent(msg: &str) -> bool {
     // IMAP tagged NO responses and SMTP 5xx are not going to succeed on retry.
     msg.contains("NO ") || msg.contains("550") || msg.contains("553") || msg.contains("bad ")
+}
+
+fn is_connection_failure(msg: &str) -> bool {
+    let msg = msg.to_ascii_lowercase();
+    msg.contains("connect")
+        || msg.contains("broken")
+        || msg.contains("closed")
+        || msg.contains("timed out")
+        || msg.contains("unexpected eof")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timed_out_action_forces_a_fresh_session() {
+        assert!(is_connection_failure("UID MOVE timed out after 30s"));
+        assert!(is_connection_failure("connection closed"));
+        assert!(!is_connection_failure("temporary mailbox quota"));
+    }
 }
 
 async fn execute_one(

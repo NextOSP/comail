@@ -72,6 +72,57 @@ impl TokenProvider {
         Ok(refreshed.access_token)
     }
 
+    /// Mint an access token for a *specific* resource scope (e.g. Microsoft
+    /// Graph), separate from the cached mail token. Microsoft issues
+    /// single-resource tokens, so the mail token cannot be reused against
+    /// `graph.microsoft.com`; this runs a dedicated refresh-token grant with an
+    /// explicit `scope` and returns the resulting (Graph-audience) token
+    /// without disturbing the mail cache or the stored mail access token.
+    ///
+    /// The refresh token may be rotated by this grant; the new one is persisted
+    /// (it stays multi-resource, so mail refresh keeps working). A rejected
+    /// grant usually means the extra scope was never consented, surfaced as
+    /// `NeedsReauth` so the caller can trigger incremental consent.
+    pub async fn access_token_for_scope(
+        &self,
+        account_id: i64,
+        provider: Provider,
+        scope: &str,
+    ) -> Result<String> {
+        let cfg =
+            for_provider(provider).ok_or_else(|| CoreError::Auth("not an oauth account".into()))?;
+        let (client_id, client_secret) = crate::oauth::providers::resolve_credentials(provider)?;
+        let refresh_token = credentials::load_async(account_id, Slot::RefreshToken).await?;
+
+        let mut form = vec![
+            ("grant_type".to_string(), "refresh_token".to_string()),
+            ("refresh_token".to_string(), refresh_token),
+            ("client_id".to_string(), client_id),
+            // offline_access keeps a (rotated) refresh token coming back.
+            ("scope".to_string(), format!("{scope} offline_access")),
+        ];
+        if let Some(cs) = client_secret {
+            form.push(("client_secret".to_string(), cs));
+        }
+
+        let body = post_form(cfg.token_url, &form).await?;
+        let tok: TokenResponse = serde_json::from_str(&body).map_err(|_| {
+            // invalid_grant / consent_required => the scope was never granted.
+            if body.contains("invalid_grant") || body.contains("AADSTS65001") {
+                CoreError::NeedsReauth
+            } else {
+                CoreError::Auth(format!("scoped token request failed: {body}"))
+            }
+        })?;
+
+        // Do NOT overwrite Slot::AccessToken (that is the mail token, a
+        // different audience). Only persist the rotated refresh token.
+        if let Some(rt) = tok.refresh_token {
+            credentials::store_async(account_id, Slot::RefreshToken, rt).await?;
+        }
+        Ok(tok.access_token)
+    }
+
     async fn refresh(&self, account_id: i64, provider: Provider) -> Result<CachedToken> {
         let cfg =
             for_provider(provider).ok_or_else(|| CoreError::Auth("not an oauth account".into()))?;

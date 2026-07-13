@@ -7,7 +7,8 @@
     "accounts": "Tài khoản",
     "splitInbox": "Hộp thư chia cột",
     "snippets": "Mẫu văn bản",
-    "labels": "Nhãn"
+    "labels": "Nhãn",
+    "sync": "Đồng bộ"
   },
   "search": {
     "placeholder": "Tìm cài đặt…",
@@ -36,6 +37,28 @@
   },
   "toast": {
     "settingsSaveFailed": "Không thể lưu cài đặt: {{detail}}"
+  },
+  "sync": {
+    "intro": "Hộp thư đến được kiểm tra trước. Tiêu đề thư cũ, nội dung ngoại tuyến và chỉ mục tìm kiếm tiếp tục chạy trong nền.",
+    "foreground": "Hộp thư đến",
+    "background": "Tác vụ nền",
+    "checking": "Đang kiểm tra thư…",
+    "upToDate": "Đã cập nhật",
+    "complete": "Hoàn tất",
+    "phase": {
+      "headers": "Đang đồng bộ lịch sử",
+      "content": "Đang lưu thư ngoại tuyến",
+      "indexing": "Đang lập chỉ mục thư",
+      "retrying": "Đang thử lại tác vụ lỗi"
+    },
+    "progress": "{{done}} / {{total}}",
+    "failed": "{{count}} lỗi",
+    "syncNow": "Đồng bộ ngay",
+    "syncingNow": "Đang kiểm tra…",
+    "syncNowAccount": "Đồng bộ {{email}} ngay",
+    "syncComplete": "Đã kiểm tra hộp thư đến của {{email}}.",
+    "syncFailed": "Không thể đồng bộ {{email}}: {{detail}}",
+    "noAccounts": "Chưa kết nối tài khoản nào."
   },
   "ai": {
     "statusLabel": "Trạng thái",

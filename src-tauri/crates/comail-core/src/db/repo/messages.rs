@@ -1,4 +1,5 @@
 use crate::error::{CoreError, Result};
+use crate::mime::{MimePlan, PlannedAttachment};
 use crate::models::*;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
@@ -175,18 +176,44 @@ pub fn set_starred(conn: &Connection, id: i64, is_starred: bool) -> Result<()> {
     Ok(())
 }
 
-/// (bodies cached, total messages) for an account - drives the "Sync x/total"
-/// progress indicator while bodies backfill.
-pub fn body_progress(conn: &Connection, account_id: i64) -> Result<(u64, u64)> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentProgress {
+    pub done: u64,
+    pub total: u64,
+    pub failed: u64,
+}
+
+/// Text-content cache progress. Local-only/orphaned rows cannot be fetched from
+/// IMAP and therefore must not hold completion open forever.
+pub fn content_progress(conn: &Connection, account_id: i64) -> Result<ContentProgress> {
     conn.query_row(
         "SELECT
-           COALESCE(SUM(body_state = 'cached'), 0),
-           COUNT(*)
-         FROM messages WHERE account_id = ?1",
+           COALESCE(SUM(m.body_state = 'cached'), 0),
+           COUNT(*),
+           COALESCE(SUM(m.body_state != 'cached' AND sf.id IS NOT NULL), 0)
+         FROM messages m
+         JOIN folders f ON f.id = m.folder_id
+         JOIN accounts a ON a.id = m.account_id
+         LEFT JOIN sync_failures sf
+           ON sf.stage = 'content' AND sf.message_id = m.id
+         WHERE m.account_id = ?1 AND m.uid IS NOT NULL
+           AND (a.provider = 'gmail' OR COALESCE(f.role, '') <> 'all')",
         params![account_id],
-        |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)),
+        |r| {
+            Ok(ContentProgress {
+                done: r.get::<_, i64>(0)? as u64,
+                total: r.get::<_, i64>(1)? as u64,
+                failed: r.get::<_, i64>(2)? as u64,
+            })
+        },
     )
     .map_err(Into::into)
+}
+
+/// Compatibility tuple used by the existing body worker.
+pub fn body_progress(conn: &Connection, account_id: i64) -> Result<(u64, u64)> {
+    let progress = content_progress(conn, account_id)?;
+    Ok((progress.done, progress.total))
 }
 
 pub fn set_body_state(conn: &Connection, id: i64, state: &str) -> Result<()> {
@@ -195,6 +222,32 @@ pub fn set_body_state(conn: &Connection, id: i64, state: &str) -> Result<()> {
         params![id, state],
     )?;
     Ok(())
+}
+
+pub fn set_mime_plan(conn: &Connection, id: i64, plan: Option<&MimePlan>) -> Result<()> {
+    let json = plan.map(serde_json::to_string).transpose()?;
+    let changed = conn.execute(
+        "UPDATE messages SET mime_plan_json = ?2 WHERE id = ?1",
+        params![id, json],
+    )?;
+    if changed == 0 {
+        return Err(CoreError::NotFound(format!("message {id}")));
+    }
+    Ok(())
+}
+
+pub fn mime_plan(conn: &Connection, id: i64) -> Result<Option<MimePlan>> {
+    let json: Option<String> = conn
+        .query_row(
+            "SELECT mime_plan_json FROM messages WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    json.map(|value| serde_json::from_str(&value))
+        .transpose()
+        .map_err(Into::into)
 }
 
 pub fn store_body(
@@ -239,26 +292,245 @@ pub fn replace_attachments(
     message_id: i64,
     atts: &[NewAttachment],
 ) -> Result<()> {
-    conn.execute(
-        "DELETE FROM attachments WHERE message_id = ?1",
-        params![message_id],
-    )?;
-    for a in atts {
-        conn.execute(
-            "INSERT INTO attachments (message_id, part_id, filename, mime_type, size, content_id, is_inline)
-             VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            params![
-                a.message_id,
-                a.part_id,
-                a.filename,
-                a.mime_type,
-                a.size,
-                a.content_id,
-                a.is_inline as i64
-            ],
+    #[derive(Debug)]
+    struct Existing {
+        id: i64,
+        part_id: Option<String>,
+        filename: Option<String>,
+        mime_type: Option<String>,
+        size: Option<i64>,
+        content_id: Option<String>,
+        has_file: bool,
+        has_imap_section: bool,
+    }
+
+    let existing = {
+        let mut stmt = conn.prepare(
+            "SELECT id, part_id, filename, mime_type, size, content_id,
+                    file_path IS NOT NULL, imap_section IS NOT NULL
+             FROM attachments WHERE message_id = ?1 ORDER BY id",
         )?;
+        let rows = stmt.query_map(params![message_id], |row| {
+            Ok(Existing {
+                id: row.get(0)?,
+                part_id: row.get(1)?,
+                filename: row.get(2)?,
+                mime_type: row.get(3)?,
+                size: row.get(4)?,
+                content_id: row.get(5)?,
+                has_file: row.get::<_, i64>(6)? != 0,
+                has_imap_section: row.get::<_, i64>(7)? != 0,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let mut used = std::collections::HashSet::new();
+
+    for a in atts {
+        // Full-message parsing uses attachment indexes while BODYSTRUCTURE
+        // uses IMAP section ids. Match by the strongest immutable metadata so
+        // an explicit-open fallback does not destroy planned row IDs or an
+        // attachment file already cached on disk.
+        let matched = existing
+            .iter()
+            .filter(|item| !used.contains(&item.id))
+            .filter_map(|item| {
+                let score = if a.part_id.is_some() && item.part_id.as_deref() == a.part_id {
+                    Some(0)
+                } else if a.content_id.is_some() && item.content_id.as_deref() == a.content_id {
+                    Some(1)
+                } else if a.filename.is_some()
+                    && item.filename.as_deref() == a.filename
+                    && (a.mime_type.is_none() || item.mime_type.as_deref() == a.mime_type)
+                {
+                    Some(2)
+                } else if a.filename.is_none()
+                    && a.content_id.is_none()
+                    && item.filename.is_none()
+                    && item.content_id.is_none()
+                    && item.mime_type.as_deref() == a.mime_type
+                    && item.size == a.size
+                {
+                    Some(3)
+                } else {
+                    None
+                };
+                score.map(|score| (score, item.id))
+            })
+            .min()
+            .map(|(_, id)| id);
+
+        if let Some(id) = matched {
+            used.insert(id);
+            conn.execute(
+                "UPDATE attachments
+                 SET part_id = ?2, filename = ?3, mime_type = ?4, size = ?5,
+                     content_id = ?6, is_inline = ?7
+                 WHERE id = ?1",
+                params![
+                    id,
+                    a.part_id,
+                    a.filename,
+                    a.mime_type,
+                    a.size,
+                    a.content_id,
+                    a.is_inline as i64,
+                ],
+            )?;
+        } else {
+            conn.execute(
+                "INSERT INTO attachments (
+                   message_id, part_id, filename, mime_type, size, content_id, is_inline
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    message_id,
+                    a.part_id,
+                    a.filename,
+                    a.mime_type,
+                    a.size,
+                    a.content_id,
+                    a.is_inline as i64,
+                ],
+            )?;
+            used.insert(conn.last_insert_rowid());
+        }
+    }
+
+    // Remove stale, uncached legacy-only descriptors. Planned IMAP rows and
+    // downloaded files are intentionally retained if a quirky full parser
+    // cannot match them; losing either would break stable UI IDs/offline use.
+    for item in existing {
+        if !used.contains(&item.id) && !item.has_file && !item.has_imap_section {
+            conn.execute("DELETE FROM attachments WHERE id = ?1", params![item.id])?;
+        }
     }
     Ok(())
+}
+
+pub fn set_attachment_imap_section(
+    conn: &Connection,
+    attachment_id: i64,
+    imap_section: Option<&str>,
+) -> Result<()> {
+    let changed = conn.execute(
+        "UPDATE attachments SET imap_section = ?2 WHERE id = ?1",
+        params![attachment_id, imap_section],
+    )?;
+    if changed == 0 {
+        return Err(CoreError::NotFound(format!("attachment {attachment_id}")));
+    }
+    Ok(())
+}
+
+pub fn attachment_by_imap_section(
+    conn: &Connection,
+    message_id: i64,
+    imap_section: &str,
+) -> Result<Option<i64>> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM attachments WHERE message_id = ?1 AND imap_section = ?2",
+            params![message_id, imap_section],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+/// Insert or refresh BODYSTRUCTURE attachment descriptors without replacing
+/// rows. Stable IDs and already-downloaded `file_path` values are therefore
+/// preserved across header re-syncs and plan upgrades.
+///
+/// Legacy rows have no `imap_section`; where possible they are adopted by
+/// Content-ID, then by filename + MIME type, before a new row is inserted.
+pub fn upsert_planned_attachments(
+    conn: &Connection,
+    message_id: i64,
+    attachments: &[PlannedAttachment],
+) -> Result<Vec<i64>> {
+    let mut ids = Vec::with_capacity(attachments.len());
+    for attachment in attachments {
+        let existing = conn
+            .query_row(
+                "SELECT id FROM attachments
+                 WHERE message_id = ?1 AND imap_section = ?2",
+                params![message_id, attachment.section],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+
+        let legacy = match existing {
+            Some(id) => Some(id),
+            None if attachment.content_id.is_some() => conn
+                .query_row(
+                    "SELECT id FROM attachments
+                     WHERE message_id = ?1 AND imap_section IS NULL
+                       AND content_id = ?2
+                     ORDER BY (file_path IS NOT NULL) DESC, id
+                     LIMIT 1",
+                    params![message_id, attachment.content_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?,
+            None => None,
+        };
+        let legacy = match legacy {
+            Some(id) => Some(id),
+            None if attachment.filename.is_some() => conn
+                .query_row(
+                    "SELECT id FROM attachments
+                     WHERE message_id = ?1 AND imap_section IS NULL
+                       AND filename = ?2
+                       AND (mime_type = ?3 OR mime_type IS NULL)
+                     ORDER BY (file_path IS NOT NULL) DESC, id
+                     LIMIT 1",
+                    params![message_id, attachment.filename, attachment.mime_type],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?,
+            None => None,
+        };
+
+        let id = if let Some(id) = legacy {
+            conn.execute(
+                "UPDATE attachments
+                 SET imap_section = ?2,
+                     filename = COALESCE(?3, filename),
+                     mime_type = COALESCE(?4, mime_type),
+                     size = COALESCE(?5, size),
+                     content_id = COALESCE(?6, content_id),
+                     is_inline = ?7
+                 WHERE id = ?1",
+                params![
+                    id,
+                    attachment.section,
+                    attachment.filename,
+                    attachment.mime_type,
+                    attachment.size as i64,
+                    attachment.content_id,
+                    attachment.is_inline as i64,
+                ],
+            )?;
+            id
+        } else {
+            conn.execute(
+                "INSERT INTO attachments (
+                   message_id, filename, mime_type, size, content_id, is_inline, imap_section
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    message_id,
+                    attachment.filename,
+                    attachment.mime_type,
+                    attachment.size as i64,
+                    attachment.content_id,
+                    attachment.is_inline as i64,
+                    attachment.section,
+                ],
+            )?;
+            conn.last_insert_rowid()
+        };
+        ids.push(id);
+    }
+    Ok(ids)
 }
 
 /// Remove a message that was expunged remotely.
@@ -414,13 +686,207 @@ pub fn filter_sent(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>> {
 
 /// Messages in a folder still lacking bodies, newest first.
 pub fn missing_bodies(conn: &Connection, folder_id: i64, limit: i64) -> Result<Vec<(i64, i64)>> {
+    missing_bodies_at(conn, folder_id, limit, now_ms())
+}
+
+fn missing_bodies_at(
+    conn: &Connection,
+    folder_id: i64,
+    limit: i64,
+    now: i64,
+) -> Result<Vec<(i64, i64)>> {
     let mut stmt = conn.prepare(
-        "SELECT id, uid FROM messages
-         WHERE folder_id = ?1 AND uid IS NOT NULL AND body_state = 'none'
-         ORDER BY date DESC LIMIT ?2",
+        "SELECT m.id, m.uid
+         FROM messages m
+         JOIN folders f ON f.id = m.folder_id
+         JOIN accounts a ON a.id = m.account_id
+         LEFT JOIN sync_failures sf
+           ON sf.stage = 'content' AND sf.message_id = m.id
+         WHERE m.folder_id = ?1 AND m.uid IS NOT NULL AND m.body_state = 'none'
+           AND (a.provider = 'gmail' OR COALESCE(f.role, '') <> 'all')
+           AND (sf.id IS NULL OR sf.next_retry_at IS NULL OR sf.next_retry_at <= ?3)
+         ORDER BY m.date DESC LIMIT ?2",
     )?;
     let rows = stmt
-        .query_map(params![folder_id, limit], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map(params![folder_id, limit, now], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{repo::sync_failures, testutil};
+
+    #[test]
+    fn content_progress_counts_only_remotely_fetchable_messages() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (_, cached_id) = testutil::seed_message(&c, "one@test.dev", "Cached", false);
+        let (_, missing_id) = testutil::seed_message(&c, "two@test.dev", "Missing", false);
+        c.execute(
+            "UPDATE messages SET body_state = 'cached' WHERE id = ?1",
+            params![cached_id],
+        )
+        .unwrap();
+        // Neither local drafts nor rows detached from a remote UID are
+        // actionable by the body/content pool.
+        c.execute(
+            "INSERT INTO messages (account_id, subject, date, is_draft, folder_id, uid)
+             VALUES (1, 'Local', 1, 1, NULL, NULL),
+                    (1, 'No UID', 2, 0, 1, NULL)",
+            [],
+        )
+        .unwrap();
+        // Generic IMAP accounts intentionally skip a special-use All folder;
+        // rows left there by an older build must not hold progress open.
+        c.execute_batch(
+            "INSERT INTO folders (id, account_id, imap_name, role)
+             VALUES (2, 1, 'All', 'all');
+             INSERT INTO messages (account_id, subject, date, folder_id, uid)
+             VALUES (1, 'Skipped duplicate', 3, 2, 9)",
+        )
+        .unwrap();
+        sync_failures::record_content_at(&c, missing_id, None, "decode", 10).unwrap();
+
+        assert_eq!(
+            content_progress(&c, 1).unwrap(),
+            ContentProgress {
+                done: 1,
+                total: 2,
+                failed: 1,
+            }
+        );
+        assert_eq!(body_progress(&c, 1).unwrap(), (1, 2));
+    }
+
+    #[test]
+    fn missing_bodies_obeys_content_retry_deadlines_and_all_folder_policy() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (_, no_failure) = testutil::seed_message(&c, "one@test.dev", "No failure", false);
+        let (_, future) = testutil::seed_message(&c, "two@test.dev", "Future retry", false);
+        let (_, due) = testutil::seed_message(&c, "three@test.dev", "Due retry", false);
+        let (_, no_deadline) =
+            testutil::seed_message(&c, "four@test.dev", "Retry without deadline", false);
+        const NOW: i64 = 1_000;
+        sync_failures::record_content_at(&c, future, Some(NOW + 1), "fetch", 10).unwrap();
+        sync_failures::record_content_at(&c, due, Some(NOW), "fetch", 10).unwrap();
+        sync_failures::record_content_at(&c, no_deadline, None, "decode", 10).unwrap();
+
+        let eligible = missing_bodies_at(&c, 1, 20, NOW).unwrap();
+        let eligible: std::collections::HashSet<i64> =
+            eligible.into_iter().map(|(id, _)| id).collect();
+        assert_eq!(
+            eligible,
+            std::collections::HashSet::from([no_failure, due, no_deadline])
+        );
+        assert!(!eligible.contains(&future));
+
+        // Generic IMAP accounts must not download duplicate content from the
+        // special-use All folder. Gmail keeps All Mail as its canonical copy.
+        c.execute(
+            "INSERT INTO folders (id, account_id, imap_name, role)
+             VALUES (2, 1, 'All', 'all')",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO messages (account_id, folder_id, uid, subject, date)
+             VALUES (1, 2, 99, 'All copy', 2)",
+            [],
+        )
+        .unwrap();
+        assert!(missing_bodies_at(&c, 2, 20, NOW).unwrap().is_empty());
+        c.execute("UPDATE accounts SET provider = 'gmail' WHERE id = 1", [])
+            .unwrap();
+        assert_eq!(missing_bodies_at(&c, 2, 20, NOW).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn mime_plan_and_imap_section_roundtrip_without_replacing_legacy_ids() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (_, message_id) = testutil::seed_message(&c, "a@test.dev", "MIME", false);
+        let plan = MimePlan {
+            version: crate::mime::MIME_PLAN_VERSION,
+            text_sections: vec![crate::mime::PlannedTextSection {
+                section: "1".into(),
+                kind: crate::mime::TextSectionKind::Plain,
+                mime_type: "text/plain".into(),
+                charset: Some("utf-8".into()),
+                transfer_encoding: "quoted-printable".into(),
+                size: 42,
+            }],
+            attachments: Vec::new(),
+        };
+        set_mime_plan(&c, message_id, Some(&plan)).unwrap();
+        assert_eq!(mime_plan(&c, message_id).unwrap(), Some(plan.clone()));
+
+        c.execute(
+            "INSERT INTO attachments (message_id, part_id, filename, mime_type, file_path)
+             VALUES (?1, 'legacy-2', 'a.pdf', 'application/pdf', '/cache/a.pdf')",
+            params![message_id],
+        )
+        .unwrap();
+        let attachment_id = c.last_insert_rowid();
+        let planned = PlannedAttachment {
+            section: "2".into(),
+            filename: Some("a.pdf".into()),
+            mime_type: "application/pdf".into(),
+            size: 900,
+            content_id: None,
+            is_inline: false,
+            transfer_encoding: "base64".into(),
+        };
+        assert_eq!(
+            upsert_planned_attachments(&c, message_id, &[planned.clone()]).unwrap(),
+            vec![attachment_id]
+        );
+        assert_eq!(
+            upsert_planned_attachments(&c, message_id, &[planned]).unwrap(),
+            vec![attachment_id]
+        );
+        assert_eq!(
+            attachment_by_imap_section(&c, message_id, "2").unwrap(),
+            Some(attachment_id)
+        );
+        replace_attachments(
+            &c,
+            message_id,
+            &[NewAttachment {
+                message_id,
+                part_id: Some("0"),
+                filename: Some("a.pdf"),
+                mime_type: Some("application/pdf"),
+                size: Some(900),
+                content_id: None,
+                is_inline: false,
+            }],
+        )
+        .unwrap();
+        let legacy: (String, String, i64) = c
+            .query_row(
+                "SELECT part_id, file_path, size FROM attachments WHERE id = ?1",
+                params![attachment_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(legacy, ("0".into(), "/cache/a.pdf".into(), 900));
+        assert_eq!(
+            attachment_by_imap_section(&c, message_id, "2").unwrap(),
+            Some(attachment_id)
+        );
+        assert_eq!(
+            c.query_row(
+                "SELECT COUNT(*) FROM attachments WHERE message_id = ?1",
+                params![message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
+    }
 }

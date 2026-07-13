@@ -7,7 +7,8 @@
     "accounts": "Cuentas",
     "splitInbox": "Bandeja dividida",
     "snippets": "Fragmentos",
-    "labels": "Etiquetas"
+    "labels": "Etiquetas",
+    "sync": "Sincronización"
   },
   "search": {
     "placeholder": "Buscar ajustes…",
@@ -36,6 +37,28 @@
   },
   "toast": {
     "settingsSaveFailed": "No se pudieron guardar los ajustes: {{detail}}"
+  },
+  "sync": {
+    "intro": "La bandeja de entrada se comprueba primero. Los encabezados históricos, el contenido sin conexión y el índice de búsqueda continúan en segundo plano.",
+    "foreground": "Bandeja de entrada",
+    "background": "Trabajo en segundo plano",
+    "checking": "Comprobando correo…",
+    "upToDate": "Actualizada",
+    "complete": "Completo",
+    "phase": {
+      "headers": "Sincronizando historial",
+      "content": "Guardando correo",
+      "indexing": "Indexando correo",
+      "retrying": "Reintentando tareas fallidas"
+    },
+    "progress": "{{done}} / {{total}}",
+    "failed": "{{count}} fallidos",
+    "syncNow": "Sincronizar ahora",
+    "syncingNow": "Comprobando…",
+    "syncNowAccount": "Sincronizar {{email}} ahora",
+    "syncComplete": "Se comprobó la bandeja de entrada de {{email}}.",
+    "syncFailed": "No se pudo sincronizar {{email}}: {{detail}}",
+    "noAccounts": "No hay cuentas conectadas."
   },
   "ai": {
     "statusLabel": "Estado",

@@ -33,6 +33,7 @@ import {
   installMouseNav,
   registerCommands,
 } from "./keyboard/registry";
+import { call } from "./ipc/commands";
 import { checkForUpdate, installUpdate } from "./ipc/updater";
 import { hasSeenIntro, markIntroSeen } from "./lib/intro";
 import { initSounds } from "./lib/sound";
@@ -81,6 +82,13 @@ export default function App() {
   // drops the intro once the fade completes.
   const [showIntro, setShowIntro] = useState(() => PREVIEW_INTRO || !hasSeenIntro());
   const [cardReady, setCardReady] = useState(false);
+
+  // Tell the backend when the startup show is out of the way (or absent):
+  // it holds back the account sync - whose OAuth token loads are the first
+  // OS keyring access - so the keychain prompt never lands on the intro.
+  useEffect(() => {
+    if (!showIntro) void call("ui_ready", {});
+  }, [showIntro]);
 
   // Replies/forwards render inside the conversation (thread stays visible);
   // only a brand-new message takes over the screen as its own compose view.
