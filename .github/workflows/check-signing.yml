@@ -1,0 +1,44 @@
+name: Check Apple signing secrets
+
+# Manual, ~30s sanity check for the macOS code-signing secrets: imports
+# APPLE_CERTIFICATE into a throwaway keychain exactly like the release build
+# does. Run this after touching the APPLE_* secrets, before cutting a tag.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: macos-14
+    steps:
+      - name: Import certificate into a temp keychain
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE}" ]; then
+            echo "::error::APPLE_CERTIFICATE secret is empty or unset"
+            exit 1
+          fi
+          printf '%s' "$APPLE_CERTIFICATE" | base64 -d > /tmp/cert.p12 \
+            || { echo "::error::APPLE_CERTIFICATE is not valid base64"; exit 1; }
+          security create-keychain -p ci /tmp/check.keychain
+          security import /tmp/cert.p12 -k /tmp/check.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign \
+            || { echo "::error::import failed - wrong APPLE_CERTIFICATE_PASSWORD or malformed p12"; exit 1; }
+          # Put the temp keychain on the search list so trust evaluation can
+          # find the bundled intermediate CA, then require a VALID identity.
+          security list-keychains -d user -s /tmp/check.keychain
+          security find-identity -v -p codesigning /tmp/check.keychain
+          security find-identity -v -p codesigning /tmp/check.keychain \
+            | grep -q "1 valid identities found" \
+            || { echo "::error::identity imported but not valid for codesigning"; exit 1; }
+          echo "Signing identity OK:"
+          security find-identity -v -p codesigning /tmp/check.keychain | head -2
+          if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            security find-identity -v -p codesigning /tmp/check.keychain \
+              | grep -qF "$APPLE_SIGNING_IDENTITY" \
+              || { echo "::error::APPLE_SIGNING_IDENTITY does not match the certificate"; exit 1; }
+            echo "APPLE_SIGNING_IDENTITY matches."
+          fi
