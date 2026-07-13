@@ -1,9 +1,12 @@
-//! Per-account sync actor. One IMAP connection per account runs a cycle loop:
-//! drain commands -> execute due pending actions -> sync folders (new mail,
-//! flags, expunges) -> extend historical backfill. Bulk message bodies are NOT
-//! downloaded on this connection: a separate backfill pool (`run_backfill_pool`)
-//! drains them with up to BODY_POOL_CONNS concurrent IMAP connections, so body
-//! downloads run in parallel with header sync and never block the cycle.
+//! Per-account sync actors. The main actor's IMAP connection runs a cycle
+//! loop of only the cheap, latency-sensitive work: drain commands -> execute
+//! due pending actions -> per-folder new-mail checks and flag/expunge
+//! reconciliation. Everything heavy runs on its own connections in parallel:
+//! first-time header backfills and historical extension on the dedicated
+//! history connection (`run_history_backfill`), and bulk body downloads on a
+//! pool of up to BODY_POOL_CONNS connections (`run_backfill_pool`). Cycles
+//! therefore finish in seconds and the actor is back in IDLE almost
+//! immediately, so new mail keeps arriving fast even during a huge backfill.
 //!
 //! On servers that support it the actor waits in IMAP IDLE between cycles, so
 //! new inbox mail wakes it within seconds; the full 60s cycle still runs as a
@@ -85,14 +88,22 @@ pub fn spawn_account(ctx: SyncCtx, config: AccountConfig) -> AccountHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let (body_tx, body_rx) = mpsc::unbounded_channel();
     let (pool_tx, pool_rx) = mpsc::unbounded_channel();
+    let (hist_tx, hist_rx) = mpsc::unbounded_channel();
     let handle = AccountHandle {
         account_id: config.id,
         tx,
         body_tx,
     };
-    tokio::spawn(run_actor(ctx.clone(), config.clone(), rx, pool_tx));
+    tokio::spawn(run_actor(
+        ctx.clone(),
+        config.clone(),
+        rx,
+        pool_tx.clone(),
+        hist_tx,
+    ));
     tokio::spawn(run_body_fetcher(ctx.clone(), config.clone(), body_rx));
-    tokio::spawn(run_backfill_pool(ctx, config, pool_rx));
+    tokio::spawn(run_backfill_pool(ctx.clone(), config.clone(), pool_rx));
+    tokio::spawn(run_history_backfill(ctx, config, hist_rx, pool_tx));
     handle
 }
 
@@ -279,6 +290,7 @@ async fn run_actor(
     config: AccountConfig,
     mut rx: mpsc::UnboundedReceiver<SyncCmd>,
     pool_tx: mpsc::UnboundedSender<()>,
+    hist_tx: mpsc::UnboundedSender<()>,
 ) {
     let account_id = config.id;
     tracing::debug!(account_id, "sync actor started");
@@ -345,7 +357,7 @@ async fn run_actor(
         // Bulk body downloads run on the backfill pool's own connections, so a
         // cycle is only folder/header/flag/action work and stays short.
         tracing::debug!(account_id, cycle, "sync cycle start");
-        let cycle_result = run_cycle(&ctx, &config, &mut s, cycle, &pool_tx).await;
+        let cycle_result = run_cycle(&ctx, &config, &mut s, cycle, &hist_tx).await;
         tracing::debug!(
             account_id,
             cycle,
@@ -558,7 +570,7 @@ async fn run_cycle(
     config: &AccountConfig,
     session: &mut Session,
     cycle: u64,
-    pool_tx: &mpsc::UnboundedSender<()>,
+    hist_tx: &mpsc::UnboundedSender<()>,
 ) -> Result<()> {
     let account_id = config.id;
 
@@ -594,16 +606,9 @@ async fn run_cycle(
         // Non-inbox folders get new-mail checks every cycle but heavy
         // reconciliation (flags/expunge) only every 5th cycle.
         let heavy = folder.role.as_deref() == Some(roles::INBOX) || cycle % 5 == 0;
-        let first_time = folder.backfill_cursor.is_none();
-        if let Err(e) = sync_folder(ctx, config, session, folder, heavy).await {
+        if let Err(e) = sync_folder(ctx, config, session, folder, heavy, hist_tx).await {
             tracing::warn!(folder = %folder.imap_name, "folder sync failed: {e}");
             return Err(e); // connection likely broken; reconnect
-        }
-        // Right after the inbox lands for the first time, kick the body pool
-        // so recent mail becomes readable within seconds of onboarding, while
-        // this connection keeps syncing the remaining folders' headers.
-        if first_time && folder.role.as_deref() == Some(roles::INBOX) {
-            let _ = pool_tx.send(());
         }
     }
 
@@ -650,6 +655,7 @@ async fn sync_folder(
     session: &mut Session,
     folder: &Folder,
     heavy: bool,
+    hist_tx: &mpsc::UnboundedSender<()>,
 ) -> Result<()> {
     let account_id = config.id;
     let selected = imap::select(session, &folder.imap_name).await?;
@@ -680,7 +686,11 @@ async fn sync_folder(
     };
 
     if fresh_folder.backfill_cursor.is_none() {
-        initial_backfill(ctx, config, session, &fresh_folder).await?;
+        // First-time folder: header backfill runs on the dedicated history
+        // connection (run_history_backfill), so this cycle stays short and the
+        // actor gets back to IDLE — new mail keeps landing within seconds even
+        // while months of history download.
+        let _ = hist_tx.send(());
     } else {
         // New mail since last seen UID.
         let last_seen = fresh_folder.last_seen_uid.max(0) as u32;
@@ -711,12 +721,125 @@ async fn sync_folder(
             reconcile_flags(ctx, session, &fresh_folder).await?;
             reconcile_expunges(ctx, session, &fresh_folder).await?;
         }
-        // Historical backfill: extend the window downward.
+        // Historical backfill (extending the window downward) also runs on the
+        // history connection; just make sure it's awake.
         if !fresh_folder.backfill_done {
-            extend_history(ctx, config, session, &fresh_folder).await?;
+            let _ = hist_tx.send(());
         }
     }
     Ok(())
+}
+
+/// Dedicated header-backfill connection. Performs first-time folder backfills
+/// and extends the historical window on its own IMAP session, so the sync
+/// actor's cycles stay short (actions, new-mail checks, reconciliation) and it
+/// can sit in IDLE — new mail keeps landing within seconds even while months
+/// of history are downloading. Woken by the actor's nudges or a backstop tick;
+/// exits when the account handle is dropped.
+async fn run_history_backfill(
+    ctx: SyncCtx,
+    config: AccountConfig,
+    mut rx: mpsc::UnboundedReceiver<()>,
+    pool_tx: mpsc::UnboundedSender<()>,
+) {
+    let account_id = config.id;
+    let mut session: Option<Session> = None;
+    loop {
+        if let Ok(None) =
+            tokio::time::timeout(std::time::Duration::from_secs(CYCLE_SECS), rx.recv()).await
+        {
+            return; // channel closed: account removed / shutdown
+        }
+        while rx.try_recv().is_ok() {} // coalesce piled-up nudges
+
+        // Work passes: each pass advances every folder that still needs
+        // headers by one step — a full (resumable) initial backfill, or one
+        // HISTORY_CHUNK extension — until nothing is left or the connection
+        // breaks. One step per pass keeps folders progressing evenly.
+        'work: loop {
+            let folders = match ctx
+                .db
+                .read(move |conn| repo::folders::list(conn, Some(account_id)))
+                .await
+            {
+                Ok(f) => f,
+                Err(_) => break,
+            };
+            let mut ordered: Vec<&Folder> = folders.iter().collect();
+            ordered.sort_by_key(|f| match f.role.as_deref() {
+                Some(roles::INBOX) => 0,
+                Some(roles::SENT) => 1,
+                Some(roles::DRAFTS) => 2,
+                Some(roles::ARCHIVE) => 3,
+                _ => 4,
+            });
+
+            let mut progressed = false;
+            for folder in ordered {
+                if folder.role.as_deref() == Some(roles::ALL) && config.provider != Provider::Gmail
+                {
+                    continue;
+                }
+                if folder.backfill_cursor.is_some() && folder.backfill_done {
+                    continue;
+                }
+                if session.is_none() {
+                    match connect(&ctx, &config).await {
+                        Ok(s) => session = Some(s),
+                        Err(e) => {
+                            tracing::warn!(account_id, error = %e, "history backfill: connect failed");
+                            break 'work; // retry on the next nudge/tick
+                        }
+                    }
+                }
+                let s = session.as_mut().unwrap();
+                let step = async {
+                    imap::select(s, &folder.imap_name).await?;
+                    // Re-read: the sync actor may have advanced this folder.
+                    let fid = folder.id;
+                    let fresh = ctx
+                        .db
+                        .read(move |conn| repo::folders::get(conn, fid))
+                        .await?
+                        .ok_or_else(|| CoreError::NotFound("folder".into()))?;
+                    if fresh.backfill_cursor.is_none() {
+                        initial_backfill(&ctx, &config, s, &fresh).await?;
+                    } else if !fresh.backfill_done {
+                        extend_history(&ctx, &config, s, &fresh).await?;
+                    }
+                    Ok::<(), CoreError>(())
+                }
+                .await;
+                match step {
+                    Ok(()) => {
+                        progressed = true;
+                        // New headers mean new missing bodies.
+                        let _ = pool_tx.send(());
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            account_id,
+                            folder = %folder.imap_name,
+                            error = %e,
+                            "history backfill: step failed; dropping session",
+                        );
+                        if let Some(s) = session.take() {
+                            imap::logout(s).await;
+                        }
+                        break 'work; // retry on the next nudge/tick
+                    }
+                }
+            }
+            if !progressed {
+                // Fully caught up. Don't hold an idle connection open between
+                // ticks — servers reap them and the next step would fail.
+                if let Some(s) = session.take() {
+                    imap::logout(s).await;
+                }
+                break;
+            }
+        }
+    }
 }
 
 async fn initial_backfill(
