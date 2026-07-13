@@ -68,17 +68,18 @@ export function initSounds(): void {
     unlocked = true;
     for (const name of Object.keys(FILES) as SoundName[]) {
       const audio = get(name);
+      // Belt and braces: mute AND zero the volume while priming, so the
+      // unlock play can never be audible even if the webview applies one of
+      // the two late (an audible blip on the first click otherwise).
       audio.muted = true;
-      audio
-        .play()
-        .then(() => {
-          audio.pause();
-          audio.currentTime = 0;
-          audio.muted = false;
-        })
-        .catch(() => {
-          audio.muted = false;
-        });
+      audio.volume = 0;
+      const restore = () => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+        audio.volume = 1;
+      };
+      audio.play().then(restore).catch(restore);
     }
     window.removeEventListener("pointerdown", unlock);
     window.removeEventListener("keydown", unlock);

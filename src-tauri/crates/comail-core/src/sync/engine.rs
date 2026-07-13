@@ -1102,10 +1102,13 @@ async fn store_headers(
                 if !thread_ids.contains(&thread_id) {
                     thread_ids.push(thread_id);
                 }
-                // Chime-worthy: unread + incoming (is_read folds in both) and
-                // actually recent, so replayed old mail (UIDVALIDITY resets,
-                // server-side moves) stays silent.
+                // Chime-worthy: unread + incoming (is_read folds in both),
+                // actually recent (so replayed old mail from UIDVALIDITY
+                // resets / server-side moves stays silent), and not automated
+                // bulk mail - a monitoring/newsletter flood shouldn't ring
+                // the bell every minute.
                 if !nm.is_read
+                    && !nm.is_automated
                     && now_ms() - date_ms < CHIME_RECENT_MS
                     && !fresh_ids.contains(&thread_id)
                 {
