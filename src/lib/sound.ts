@@ -1,12 +1,17 @@
-// Short UI sounds (new mail, send) played through the webview audio element.
-// This is deliberately independent of OS notifications: desktop banners need a
+// Short UI sounds (new mail, send) played through Web Audio. This is
+// deliberately independent of OS notifications: desktop banners need a
 // properly signed/installed build to appear, but these sounds play regardless,
 // so the user still gets an audible new-mail / sent cue.
 //
-// Webviews (WKWebView on macOS especially) block audio that isn't tied to a
-// user gesture. We work around that by "unlocking" each clip on the first user
-// interaction (muted play/pause), after which programmatic plays — including
-// the new-mail chime while the app is backgrounded — are allowed.
+// Web Audio, not <audio>, on purpose. Webviews (WKWebView on macOS especially)
+// block audio that isn't tied to a user gesture; the classic HTMLAudioElement
+// workaround "unlocks" each clip by playing it muted on the first interaction,
+// but on some WebKit builds that muted priming is AUDIBLE - the app would blow
+// the send whoosh on the user's first click or keypress after launch. An
+// AudioContext instead unlocks by resume(), which produces no sound by
+// definition; nothing can ever reach the speakers except an explicit
+// playSound(). Decoded buffers also start with zero latency and keep working
+// while the app is backgrounded.
 import { MOCK_MODE } from "../ipc/mock";
 import type { Settings } from "../ipc/types";
 import { queryClient } from "../queries/client";
@@ -18,8 +23,8 @@ const FILES: Record<SoundName, string> = {
   send: "/sounds/send.wav",
 };
 
-const cache = new Map<SoundName, HTMLAudioElement>();
-let unlocked = false;
+let audioCtx: AudioContext | null = null;
+const buffers = new Map<SoundName, AudioBuffer>();
 
 // The new-mail chime is suppressed until this time, to cover the initial
 // catch-up sync after launch: reopening the app shouldn't replay a chime for
@@ -35,16 +40,6 @@ const MAX_CHIMES = 5; // most new-mail chimes allowed per window
 const lastPlayedAt = new Map<SoundName, number>();
 const chimeTimes: number[] = [];
 
-function get(name: SoundName): HTMLAudioElement {
-  let audio = cache.get(name);
-  if (!audio) {
-    audio = new Audio(FILES[name]);
-    audio.preload = "auto";
-    cache.set(name, audio);
-  }
-  return audio;
-}
-
 function soundsEnabled(): boolean {
   // Dedicated sound toggle; default on when settings haven't loaded yet.
   const settings = queryClient.getQueryData<Settings>(["settings"]);
@@ -52,38 +47,53 @@ function soundsEnabled(): boolean {
 }
 
 /**
- * Prime audio playback on the first user gesture, so later programmatic plays
- * (e.g. the new-mail chime while backgrounded) aren't blocked by the webview's
- * autoplay policy. Mount once at app startup; safe to call more than once.
+ * Create the audio context, start decoding the clips, and arm a first-gesture
+ * unlock (`AudioContext.resume()` - silent, unlike the old muted-<audio>
+ * priming). Mount once at app startup; safe to call more than once.
  */
 export function initSounds(): void {
   if (MOCK_MODE) return;
   // Arm the new-mail chime after a startup grace window (a floor, in case the
   // initial sync's "settled" signal never arrives). markSoundsReady() can arm
-  // it sooner once the first sync completes.
+  // it sooner once the first sync completes; extendStartupQuiet() pushes it
+  // out while that sync is still running.
   chimeReadyAt = Date.now() + STARTUP_GRACE_MS;
-  if (unlocked) return;
+  if (audioCtx) return;
+
+  let ctx: AudioContext;
+  try {
+    ctx = new AudioContext();
+  } catch {
+    return; // no audio output available; sounds stay off
+  }
+  audioCtx = ctx;
+
+  for (const name of Object.keys(FILES) as SoundName[]) {
+    void fetch(FILES[name])
+      .then((r) => r.arrayBuffer())
+      .then((raw) => ctx.decodeAudioData(raw))
+      .then((buf) => buffers.set(name, buf))
+      .catch(() => {
+        /* clip missing/undecodable: that sound stays silent */
+      });
+  }
+
+  // The context starts suspended under the webview's autoplay policy; any
+  // user gesture may resume it. Keep trying until it actually runs.
   const unlock = () => {
-    if (unlocked) return;
-    unlocked = true;
-    for (const name of Object.keys(FILES) as SoundName[]) {
-      const audio = get(name);
-      // Belt and braces: mute AND zero the volume while priming, so the
-      // unlock play can never be audible even if the webview applies one of
-      // the two late (an audible blip on the first click otherwise).
-      audio.muted = true;
-      audio.volume = 0;
-      const restore = () => {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.muted = false;
-        audio.volume = 1;
-      };
-      audio.play().then(restore).catch(restore);
-    }
-    window.removeEventListener("pointerdown", unlock);
-    window.removeEventListener("keydown", unlock);
+    void ctx
+      .resume()
+      .then(() => {
+        if (ctx.state === "running") {
+          window.removeEventListener("pointerdown", unlock);
+          window.removeEventListener("keydown", unlock);
+        }
+      })
+      .catch(() => {
+        /* try again on the next gesture */
+      });
   };
+  unlock();
   window.addEventListener("pointerdown", unlock);
   window.addEventListener("keydown", unlock);
 }
@@ -120,6 +130,12 @@ export function playSound(name: SoundName): void {
     // whoosh is never suppressed.
     if (name === "new-email" && Date.now() < chimeReadyAt) return;
 
+    const ctx = audioCtx;
+    const buf = buffers.get(name);
+    // Not decoded yet, or no user gesture has resumed the context: skip
+    // (matches the old autoplay-blocked behavior).
+    if (!ctx || !buf || ctx.state !== "running") return;
+
     const now = Date.now();
     // Coalesce a rapid burst of the same sound into a single play.
     if (now - (lastPlayedAt.get(name) ?? 0) < COOLDOWN_MS) return;
@@ -131,11 +147,10 @@ export function playSound(name: SoundName): void {
     }
     lastPlayedAt.set(name, now);
 
-    const audio = get(name);
-    audio.currentTime = 0;
-    void audio.play().catch(() => {
-      /* autoplay blocked / not ready: ignore */
-    });
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start();
   } catch {
     /* best-effort */
   }
