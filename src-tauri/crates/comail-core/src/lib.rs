@@ -1724,12 +1724,7 @@ impl Core {
             // Local endpoints (LM Studio, Ollama over http://) need no key;
             // hosted ones do, so fail early with a pointer to Settings.
             Err(_) if settings.ai_base_url.starts_with("http://") => String::new(),
-            Err(_) => {
-                return Err(CoreError::Other(
-                    "AI is not configured. Add an API key in Settings (not needed for local endpoints like LM Studio)"
-                        .into(),
-                ))
-            }
+            Err(_) => return Err(CoreError::AiNotConfigured),
         };
         Ok(ai::AiConfig {
             base_url: settings.ai_base_url.clone(),

@@ -5,7 +5,7 @@ import { onEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
 import type { CalendarEvent, NewEventInfo, Settings } from "../ipc/types";
 import { parseMailto } from "../lib/mailto";
-import { playSound } from "../lib/sound";
+import { markSoundsReady, playSound } from "../lib/sound";
 import { useUi } from "../stores/ui";
 import { queryClient } from "./client";
 
@@ -129,6 +129,9 @@ async function notifyNewEvents(events: NewEventInfo[]) {
 /** Wire backend push events into targeted query invalidations. Mount once. */
 export function useBackendEvents() {
   useEffect(() => {
+    // Only arm the new-mail chime after a real sync has run and settled, so an
+    // early/spurious "idle" at startup can't un-suppress the backlog.
+    let sawSyncing = false;
     const offs = [
       onEvent("mail:new", ({ threadIds }) => {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
@@ -175,6 +178,10 @@ export function useBackendEvents() {
       }),
       onEvent("sync:progress", ({ phase, done, total }) => {
         useUi.getState().set({ syncing: phase !== "idle", syncDone: done, syncTotal: total });
+        // Once a real catch-up sync settles, allow the new-mail chime for
+        // genuinely live arrivals (the backlog already synced silently).
+        if (phase !== "idle") sawSyncing = true;
+        else if (sawSyncing) markSoundsReady();
       }),
       onEvent("account:state", () => {
         void queryClient.invalidateQueries({ queryKey: ["accounts"] });

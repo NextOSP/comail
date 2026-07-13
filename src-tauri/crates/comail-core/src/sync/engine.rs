@@ -210,8 +210,13 @@ async fn fetch_bodies_batch(
         let folder = ctx
             .db
             .read(move |conn| repo::folders::get(conn, folder_id))
-            .await?
-            .ok_or_else(|| CoreError::NotFound("folder".into()))?;
+            .await?;
+        let Some(folder) = folder else {
+            // Folder row gone (deleted/renamed mid-flight): don't fail the whole
+            // batch — just release these back to "none" for a later retry.
+            reset_bodies_none(ctx, items.iter().map(|(_, m)| *m)).await;
+            continue;
+        };
         imap::select(session, &folder.imap_name).await?;
         items.sort_unstable_by_key(|(uid, _)| *uid);
         let uids: Vec<u32> = items.iter().map(|(u, _)| *u).collect();
@@ -220,19 +225,34 @@ async fn fetch_bodies_batch(
             imap::fetch_full_batch(session, &set).await?.into_iter().collect();
         for (uid, message_id) in items {
             match fetched.get(&uid) {
-                Some(raw) => persist_body(ctx, config, message_id, raw).await?,
+                // A single message deleted mid-fetch would FK-fail its persist;
+                // keep that from aborting (and endlessly retrying) the whole
+                // batch — log, release it, and move on.
+                Some(raw) => {
+                    if let Err(e) = persist_body(ctx, config, message_id, raw).await {
+                        tracing::warn!(message_id, error = %e, "persist body failed; releasing");
+                        reset_bodies_none(ctx, std::iter::once(message_id)).await;
+                    }
+                }
                 None => {
                     // Message vanished from the server; roll back so a reopen or
                     // the backfill retries and expunge reconciliation cleans up.
-                    let _ = ctx
-                        .db
-                        .write(move |conn| repo::messages::set_body_state(conn, message_id, "none"))
-                        .await;
+                    reset_bodies_none(ctx, std::iter::once(message_id)).await;
                 }
             }
         }
     }
     Ok(())
+}
+
+/// Best-effort reset of message body_state back to "none" (release for retry).
+async fn reset_bodies_none(ctx: &SyncCtx, ids: impl Iterator<Item = i64>) {
+    for message_id in ids {
+        let _ = ctx
+            .db
+            .write(move |conn| repo::messages::set_body_state(conn, message_id, "none"))
+            .await;
+    }
 }
 
 async fn imap_credentials(ctx: &SyncCtx, config: &AccountConfig) -> Result<ImapCredentials> {
@@ -280,6 +300,12 @@ async fn run_actor(
                     // Probe IDLE support once per connection; on error assume
                     // no push and fall back to polling.
                     supports_idle = Some(imap::supports_idle(&mut s).await.unwrap_or(false));
+                    tracing::info!(
+                        account_id,
+                        idle = supports_idle == Some(true),
+                        "receive: connected; IDLE push {}",
+                        if supports_idle == Some(true) { "enabled" } else { "unavailable, polling" },
+                    );
                     session = Some(s);
                     backoff_secs = 1;
                     ctx.bus.emit(CoreEvent::NetworkState { online: true });
@@ -388,6 +414,11 @@ async fn run_actor(
                                 .saturating_duration_since(tokio::time::Instant::now())
                                 .min(std::time::Duration::from_secs(IDLE_MAX_SECS))
                                 .max(std::time::Duration::from_secs(1));
+                            tracing::info!(
+                                account_id,
+                                max_secs = max.as_secs(),
+                                "receive: waiting in IDLE for new mail",
+                            );
                             match imap::idle_wait(s, &mut rx, max).await {
                                 Ok((s, outcome)) => {
                                     session = Some(s);
@@ -697,12 +728,30 @@ async fn initial_backfill(
     let account_id = config.id;
     let since = chrono::Utc::now().date_naive() - chrono::Duration::days(BACKFILL_DAYS);
     let uids = imap::uid_search_since(session, since).await?;
-    let total = uids.len() as u64;
+
+    // Resume support: a previous run may have died partway (flaky server, app
+    // quit) — skip UIDs whose headers already landed so a restart only fetches
+    // what's missing instead of re-downloading the whole window every time.
+    let existing: std::collections::HashSet<i64> = {
+        let fid = folder.id;
+        ctx.db
+            .read(move |conn| repo::messages::uids_in_folder(conn, fid))
+            .await?
+            .into_iter()
+            .map(|(_, uid)| uid)
+            .collect()
+    };
+    let missing: Vec<u32> = uids
+        .iter()
+        .copied()
+        .filter(|u| !existing.contains(&(*u as i64)))
+        .collect();
+    let total = missing.len() as u64;
     let mut done: u64 = 0;
 
     // Newest chunks first: the top of the inbox fills in immediately instead
     // of after the whole window has downloaded.
-    for chunk in uids.chunks(HEADER_CHUNK).rev() {
+    for chunk in missing.chunks(HEADER_CHUNK).rev() {
         let set = imap::uid_set(chunk);
         if set.is_empty() {
             continue;
@@ -714,6 +763,18 @@ async fn initial_backfill(
             // Let the UI fill in live while the backfill runs.
             ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
         }
+        // Checkpoint after every chunk. Chunks run newest-first, so everything
+        // from this chunk's lowest UID upward is stored; recording it as the
+        // backfill cursor means a dropped connection or app restart resumes
+        // from here via the incremental path (extend_history walks on down)
+        // instead of restarting the whole window. Before this checkpoint
+        // existed, a server that reset connections mid-backfill (Office 365
+        // throttling) made every launch re-sync thousands of headers forever.
+        let ck = chunk.first().copied().unwrap_or(1) as i64;
+        let fid = folder.id;
+        ctx.db
+            .write(move |conn| repo::folders::set_backfill(conn, fid, Some(ck), ck <= 1))
+            .await?;
         ctx.bus.emit(CoreEvent::SyncProgress(SyncProgress {
             account_id,
             folder: folder.imap_name.clone(),
@@ -1125,8 +1186,15 @@ async fn drain_missing_bodies(ctx: &SyncCtx, config: &AccountConfig) -> Result<(
 
         // Fan the queue out to a pool of connections. Each worker owns its own
         // session and pops chunks until the queue is empty or its connection
-        // breaks, so a slow chunk never stalls the others.
-        let workers = BODY_POOL_CONNS.min(chunks.len());
+        // breaks, so a slow chunk never stalls the others. Office 365 throttles
+        // concurrent IMAP FETCH streams hard (it resets extra connections), so
+        // it gets a smaller pool — more workers there just die and burn
+        // reconnect round-trips.
+        let cap = match config.provider {
+            Provider::Microsoft => 2,
+            _ => BODY_POOL_CONNS,
+        };
+        let workers = cap.min(chunks.len());
         let queue = Arc::new(tokio::sync::Mutex::new(chunks));
         let persisted = Arc::new(AtomicU64::new(0));
         let mut handles = Vec::with_capacity(workers);

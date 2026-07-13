@@ -10,6 +10,7 @@
   "mime": "Message format error",
   "not_found": "Not found",
   "offline": "You're offline",
+  "ai_not_configured": "AI is not configured. Add an API key in Settings (not needed for local endpoints like LM Studio).",
   "other": "Something went wrong",
   "unknown": "Something went wrong",
   "oauthFailed": "OAuth sign-in failed",

@@ -258,12 +258,17 @@ export const RichBody = forwardRef<
     },
   }));
 
-  /** ";shortcut " typed at the caret expands in place. */
-  const maybeExpandSnippet = () => {
-    if (!expandShortcut) return;
+  /**
+   * ";shortcut" typed at the caret expands in place. A trailing space/nbsp
+   * triggers it while typing; pressing Enter or Tab (`atCaretEnd`) commits the
+   * shortcut sitting right before the caret with no separator. Returns true
+   * when an expansion happened so callers can swallow the key.
+   */
+  const maybeExpandSnippet = (atCaretEnd = false): boolean => {
+    if (!expandShortcut) return false;
     const el = elRef.current;
     const sel = document.getSelection();
-    if (!el || !sel || !sel.isCollapsed || sel.rangeCount === 0) return;
+    if (!el || !sel || !sel.isCollapsed || sel.rangeCount === 0) return false;
 
     // Resolve the caret to a text node + offset. On replies, focusStart leaves an
     // element-level caret and WebKit keeps anchorNode on the contenteditable div
@@ -278,7 +283,7 @@ export const RichBody = forwardRef<
         offset = child.textContent?.length ?? 0;
       }
     }
-    if (!node || node.nodeType !== Node.TEXT_NODE || !el.contains(node)) return;
+    if (!node || node.nodeType !== Node.TEXT_NODE || !el.contains(node)) return false;
 
     // Text leading up to the caret. WebKit splits a line into adjacent text
     // nodes around IME commits (Vietnamese input) and nbsp insertion, so the
@@ -295,10 +300,10 @@ export const RichBody = forwardRef<
       upto = (prev.textContent ?? "") + upto;
     }
 
-    const m = /;([a-z0-9_-]+)([ \u00a0])$/i.exec(upto);
-    if (!m) return;
+    const m = (atCaretEnd ? /;([a-z0-9_-]+)()$/i : /;([a-z0-9_-]+)([ \u00a0])$/i).exec(upto);
+    if (!m) return false;
     const replacement = expandShortcut(m[1]);
-    if (replacement == null) return;
+    if (replacement == null) return false;
 
     // Map the match start back onto a (text node, offset) pair \u2014 it may sit
     // in an earlier node than the caret's.
@@ -319,6 +324,7 @@ export const RichBody = forwardRef<
     range.setEnd(node, offset);
     replaceRangeWithText(range, sel, replacement + m[2]);
     emit();
+    return true;
   };
 
   const insertImageFile = (file: File) => {
@@ -514,6 +520,19 @@ export const RichBody = forwardRef<
         data-placeholder={placeholder}
         onMouseDown={() => {
           if (linkOpen) setLinkOpen(false);
+        }}
+        onKeyDown={(e) => {
+          // Enter or Tab commits a ";shortcut" sitting at the caret. Swallow the
+          // key only when an expansion actually fired so normal newlines/tabs are
+          // unaffected. Skipped mid-IME-composition (Enter confirms the compose).
+          if (
+            (e.key === "Enter" && !e.shiftKey) ||
+            (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey)
+          ) {
+            if (!(e.nativeEvent as KeyboardEvent).isComposing && maybeExpandSnippet(true)) {
+              e.preventDefault();
+            }
+          }
         }}
         onInput={(e) => {
           // Never rewrite the DOM mid-IME-composition (Vietnamese input):

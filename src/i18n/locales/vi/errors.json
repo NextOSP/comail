@@ -10,6 +10,7 @@
   "mime": "Lỗi định dạng thư",
   "not_found": "Không tìm thấy",
   "offline": "Bạn đang ngoại tuyến",
+  "ai_not_configured": "AI chưa được cấu hình. Thêm khóa API trong Cài đặt (không cần với máy chủ cục bộ như LM Studio).",
   "other": "Đã xảy ra lỗi",
   "unknown": "Đã xảy ra lỗi",
   "oauthFailed": "Đăng nhập OAuth thất bại",

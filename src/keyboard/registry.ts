@@ -101,7 +101,10 @@ function isEditable(el: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
 }
 
-function dispatch(e: KeyboardEvent) {
+/** Run a keydown through the command registry. Exported so keystrokes that fire
+ *  outside the main document — inside a sandboxed email iframe, which the window
+ *  listener never sees — can be routed here with the real event. */
+export function dispatchKeyboardEvent(e: KeyboardEvent) {
   const token = normalizeEvent(e);
   if (token === null) return;
 
@@ -166,7 +169,7 @@ let installed = false;
 export function installKeyboard() {
   if (installed) return () => {};
   installed = true;
-  const handler = (e: KeyboardEvent) => dispatch(e);
+  const handler = (e: KeyboardEvent) => dispatchKeyboardEvent(e);
   window.addEventListener("keydown", handler);
   return () => {
     installed = false;

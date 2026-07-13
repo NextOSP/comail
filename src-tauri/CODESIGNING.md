@@ -73,9 +73,21 @@ membership ($99/yr) and a **Developer ID Application** certificate.
 | `APPLE_PASSWORD` | an app-specific password from https://account.apple.com → Sign-In & Security → App-Specific Passwords |
 | `APPLE_TEAM_ID` | your 10-char Team ID (developer.apple.com → Membership) |
 
-Once all six exist, the next tagged release signs with Developer ID, notarizes,
-and staples automatically. Users then get **no** repeated keychain prompts across
-updates and no Gatekeeper warning.
+### Turn signing on
+
+The workflow only passes these secrets when signing is explicitly enabled — an
+invalid/missing `APPLE_CERTIFICATE` otherwise fails the whole build at
+`security import`. After adding the six secrets, set a repository **variable**:
+
+- repo → Settings → Secrets and variables → Actions → **Variables** tab → New
+  repository variable → `ENABLE_APPLE_SIGNING` = `true`
+
+(Leave it unset / not `true` to keep ad-hoc signing, which always builds.)
+
+Once the six secrets exist **and** `ENABLE_APPLE_SIGNING=true`, the next tagged
+release signs with Developer ID, notarizes, and staples automatically. Users
+then get **no** repeated keychain prompts across updates and no Gatekeeper
+warning.
 
 > App-Store-Connect API-key notarization (`APPLE_API_KEY` / `APPLE_API_ISSUER` /
 > `APPLE_API_KEY_PATH`) is an alternative to `APPLE_ID` + `APPLE_PASSWORD` if you
