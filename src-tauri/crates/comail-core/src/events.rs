@@ -13,6 +13,16 @@ pub struct SyncProgress {
     pub total: u64,
 }
 
+/// Minimal description of an event the pull just discovered, enough for a
+/// "new event" desktop notification without shipping the whole row.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewEventInfo {
+    pub summary: Option<String>,
+    pub starts_at: i64,
+    pub all_day: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
     SyncProgress(SyncProgress),
@@ -56,6 +66,12 @@ pub enum CoreEvent {
     /// Calendar data changed (CalDAV pull or local mutation synced).
     CalendarUpdated {
         account_id: i64,
+    },
+    /// New events the incremental CalDAV pull discovered (not initial backfill),
+    /// for a "new event" notification.
+    CalendarEventsAdded {
+        account_id: i64,
+        events: Vec<NewEventInfo>,
     },
     /// A meeting starts within the reminder window.
     EventReminder {

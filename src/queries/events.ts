@@ -3,8 +3,9 @@ import i18n from "../i18n";
 import { call } from "../ipc/commands";
 import { onEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
-import type { CalendarEvent, Settings } from "../ipc/types";
+import type { CalendarEvent, NewEventInfo, Settings } from "../ipc/types";
 import { parseMailto } from "../lib/mailto";
+import { playSound } from "../lib/sound";
 import { useUi } from "../stores/ui";
 import { queryClient } from "./client";
 
@@ -26,9 +27,9 @@ async function notificationsAllowed(): Promise<boolean> {
   return notifyPermission;
 }
 
-/** Desktop notification for new mail, gated by the setting and window focus. */
+/** Desktop notification for new mail, gated by the setting. */
 async function notifyNewMail(threadIds: number[]) {
-  if (MOCK_MODE || document.hasFocus()) return;
+  if (MOCK_MODE) return;
 
   try {
     if (!(await notificationsAllowed())) return;
@@ -89,6 +90,42 @@ async function notifyMeetingReminder(event: CalendarEvent, occurrenceStart: numb
   }
 }
 
+/** Desktop notification for new calendar events an incremental sync pulled in. */
+async function notifyNewEvents(events: NewEventInfo[]) {
+  if (MOCK_MODE || events.length === 0) return;
+  try {
+    if (!(await notificationsAllowed())) return;
+    const { sendNotification } = await import("@tauri-apps/plugin-notification");
+
+    if (events.length === 1) {
+      const ev = events[0];
+      const when = ev.allDay
+        ? new Date(ev.startsAt).toLocaleDateString(i18n.language, {
+            month: "short",
+            day: "numeric",
+          })
+        : new Date(ev.startsAt).toLocaleString(i18n.language, {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+      sendNotification({
+        title: ev.summary ?? i18n.t("calendar:noTitle"),
+        body: i18n.t("calendar:newEventBody", { when }),
+      });
+    } else {
+      sendNotification({
+        title: "Comail",
+        body: i18n.t("calendar:newEvents", { count: events.length }),
+      });
+    }
+  } catch {
+    // notifications are best-effort
+  }
+}
+
 /** Wire backend push events into targeted query invalidations. Mount once. */
 export function useBackendEvents() {
   useEffect(() => {
@@ -98,6 +135,7 @@ export function useBackendEvents() {
         void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
         // calendar invites arrive by mail
         void queryClient.invalidateQueries({ queryKey: ["events"] });
+        playSound("new-email");
         void notifyNewMail(threadIds);
       }),
       onEvent("mail:updated", ({ threadIds }) => {
@@ -111,20 +149,32 @@ export function useBackendEvents() {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
         void queryClient.invalidateQueries({ queryKey: ["thread", threadId] });
       }),
-      onEvent("action:state", ({ state, error }) => {
+      onEvent("action:state", ({ actionId, state, error }) => {
+        const ui = useUi.getState();
+        // Clear the send's undo state once it reaches a terminal state, so the
+        // "Sending…" badge doesn't linger after the send finished or failed.
+        if (
+          (state === "done" || state === "failed") &&
+          ui.lastUndo?.type === "send" &&
+          ui.lastUndo.actionId === actionId
+        ) {
+          ui.set({ lastUndo: null });
+        }
         if (state === "failed") {
-          useUi.getState().pushToast({
+          ui.pushToast({
             kind: "error",
-            message: error ? `Action failed: ${error}` : "An action failed to sync",
+            message: error ? `Couldn't send: ${error}` : "Sending failed",
           });
+          void queryClient.invalidateQueries({ queryKey: ["threads"] });
+        } else if (state === "done") {
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
         }
       }),
       onEvent("network:state", ({ online }) => {
         useUi.getState().set({ offline: !online });
       }),
-      onEvent("sync:progress", ({ phase }) => {
-        useUi.getState().set({ syncing: phase !== "idle" });
+      onEvent("sync:progress", ({ phase, done, total }) => {
+        useUi.getState().set({ syncing: phase !== "idle", syncDone: done, syncTotal: total });
       }),
       onEvent("account:state", () => {
         void queryClient.invalidateQueries({ queryKey: ["accounts"] });
@@ -133,6 +183,10 @@ export function useBackendEvents() {
         void queryClient.invalidateQueries({ queryKey: ["events"] });
         void queryClient.invalidateQueries({ queryKey: ["messageEvents"] });
         void queryClient.invalidateQueries({ queryKey: ["calendars"] });
+      }),
+      onEvent("calendar:new", ({ events }) => {
+        void queryClient.invalidateQueries({ queryKey: ["events"] });
+        void notifyNewEvents(events);
       }),
       onEvent("calendar:reminder", ({ event, occurrenceStart }) => {
         void notifyMeetingReminder(event, occurrenceStart);

@@ -231,9 +231,17 @@
     "label": "Desktop notifications",
     "hint": "Notify when new mail arrives while the window is unfocused."
   },
+  "sound": {
+    "label": "Sound",
+    "hint": "Play a sound on new mail and when sending."
+  },
   "autoAdvance": {
     "label": "Auto-advance",
     "hint": "After Done/Snooze in a conversation, open the next thread instead of returning to the list."
+  },
+  "groupByDate": {
+    "label": "Group by date",
+    "hint": "Show Today / Yesterday / … headers between conversations in the list."
   },
   "signature": {
     "section": "Signatures",

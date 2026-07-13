@@ -5,6 +5,7 @@
   "noSubject": "(sin asunto)",
   "messages_one": "{{count}} mensaje",
   "messages_other": "{{count}} mensajes",
+  "jumpToLatest": "Ir al mensaje más reciente",
   "snoozedBadge": "Pospuesto",
   "positionOf": "{{pos}} de {{total}}",
   "footer": {
@@ -14,7 +15,8 @@
     "done": "hecho",
     "snooze": "posponer",
     "summarize": "resumir",
-    "nextPrev": "siguiente / anterior"
+    "message": "mensaje",
+    "nextPrev": "hilo sig. / ant."
   },
   "aiSummary": {
     "title": "Resumen de IA",
@@ -25,16 +27,33 @@
   "sendingBadge": "Enviando…",
   "msgTo": "para",
   "msgCc": "cc",
+  "details": {
+    "toggle": "Mostrar detalles",
+    "from": "de",
+    "to": "para",
+    "cc": "cc",
+    "via": "vía",
+    "date": "fecha",
+    "subject": "asunto"
+  },
   "loadingMessage": "Cargando mensaje…",
   "messageBodyTitle": "Cuerpo del mensaje",
+  "remoteImages": {
+    "hidden": "No se muestran las imágenes de este mensaje.",
+    "load": "Cargar imágenes"
+  },
   "attachment": {
     "fallbackName": "adjunto",
     "savedMock": "{{name}} guardado (simulado)",
+    "view": "Ver archivo",
+    "openExternalHint": "Alt-clic para abrir en la app predeterminada",
     "openFailed": "No se pudo abrir el adjunto: {{detail}}",
     "preview": {
       "loading": "Cargando vista previa…",
       "failed": "No se pudo previsualizar el adjunto: {{detail}}",
       "openExternally": "Abrir en la app",
+      "download": "Descargar",
+      "downloaded": "{{name}} guardado",
       "unsupported": "No hay vista previa para este tipo de archivo; ábrelo externamente.",
       "tooLarge": "Este archivo es demasiado grande para previsualizarlo; ábrelo externamente.",
       "truncated": "Vista previa truncada",

@@ -105,29 +105,77 @@ pub enum ImapCredentials {
 
 struct XOAuth2Authenticator {
     response: String,
+    /// The initial client response is sent exactly once. Any further challenge
+    /// is the server's SASL *error* response, which must be answered per RFC.
+    sent_initial: bool,
 }
 
 impl async_imap::Authenticator for XOAuth2Authenticator {
     type Response = String;
-    fn process(&mut self, _challenge: &[u8]) -> Self::Response {
-        // Server error challenges get an empty continuation per RFC; sending
-        // the same response again is also accepted by Gmail/Outlook.
-        self.response.clone()
+    fn process(&mut self, challenge: &[u8]) -> Self::Response {
+        if !self.sent_initial {
+            // First challenge (empty `+`): send the base64 XOAUTH2 credential.
+            self.sent_initial = true;
+            return self.response.clone();
+        }
+        // Auth failed: the server sent an error challenge (a base64 JSON blob
+        // like {"status":"...","schemes":"Bearer",...}). Per SASL XOAUTH2
+        // (RFC 7628) the client MUST reply with an EMPTY response so the server
+        // can emit the tagged `NO <reason>`. Echoing the credential again makes
+        // Gmail/Outlook keep issuing error challenges, deadlocking the exchange
+        // until the socket times out (the "sync never starts" hang).
+        tracing::warn!(
+            challenge = %String::from_utf8_lossy(challenge),
+            "imap xoauth2: server rejected token; replying empty to surface the error"
+        );
+        String::new()
     }
 }
 
 pub async fn connect(host: &str, port: u16, creds: ImapCredentials) -> Result<Session> {
+    // Bound the whole handshake so a silent stall (server never sends the
+    // greeting, or an AUTHENTICATE that never gets a tagged response) surfaces
+    // as an error instead of hanging the sync actor forever.
+    const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    tokio::time::timeout(CONNECT_TIMEOUT, connect_inner(host, port, creds))
+        .await
+        .map_err(|_| {
+            tracing::warn!(%host, port, "imap connect: timed out after 30s");
+            CoreError::Imap(format!("connect {host}:{port}: timed out"))
+        })?
+}
+
+async fn connect_inner(host: &str, port: u16, creds: ImapCredentials) -> Result<Session> {
+    tracing::debug!(%host, port, "imap connect: opening TCP");
     let tcp = TcpStream::connect((host, port))
         .await
         .map_err(|e| CoreError::Imap(format!("connect {host}:{port}: {e}")))?;
     tcp.set_nodelay(true).ok();
     let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
         .map_err(|e| CoreError::Tls(e.to_string()))?;
+    tracing::debug!(%host, "imap connect: TCP up, starting TLS");
     let tls = tls_connector()
         .connect(server_name, tcp)
         .await
         .map_err(|e| CoreError::Tls(e.to_string()))?;
-    let client = async_imap::Client::new(tls);
+    tracing::debug!(%host, "imap connect: TLS up, reading greeting");
+    let mut client = async_imap::Client::new(tls);
+    // async-imap requires the caller to consume the server greeting before
+    // issuing any command. Skipping it leaves `* OK ...ready` in the buffer,
+    // which the login/AUTHENTICATE handshake then reads in place of the real
+    // tagged/continuation response - desyncing the exchange so it hangs until
+    // the socket times out (the "stuck Offline, never syncs" bug).
+    match client.read_response().await {
+        Ok(Some(greeting)) => {
+            tracing::debug!(%host, greeting = ?greeting.parsed(), "imap connect: greeting received, authenticating");
+        }
+        Ok(None) => {
+            return Err(CoreError::Imap(format!(
+                "{host}: connection closed before IMAP greeting"
+            )))
+        }
+        Err(e) => return Err(CoreError::Imap(format!("{host}: reading greeting: {e}"))),
+    }
 
     let session = match creds {
         ImapCredentials::Password { user, password } => client
@@ -137,6 +185,7 @@ pub async fn connect(host: &str, port: u16, creds: ImapCredentials) -> Result<Se
         ImapCredentials::XOAuth2 { user, access_token } => {
             let auth = XOAuth2Authenticator {
                 response: crate::oauth::xoauth2::raw_response(&user, &access_token),
+                sent_initial: false,
             };
             client
                 .authenticate("XOAUTH2", auth)
@@ -144,6 +193,7 @@ pub async fn connect(host: &str, port: u16, creds: ImapCredentials) -> Result<Se
                 .map_err(|(e, _)| CoreError::Auth(format!("imap xoauth2: {e}")))?
         }
     };
+    tracing::debug!(%host, "imap connect: authenticated");
     Ok(session)
 }
 
@@ -215,6 +265,28 @@ pub struct FetchedHeader {
     pub internal_date_ms: Option<i64>,
     pub size: Option<u32>,
     pub header_bytes: Vec<u8>,
+    /// Derived from BODYSTRUCTURE so the list can flag attachments before the
+    /// full body is ever downloaded.
+    pub has_attachments: bool,
+}
+
+/// Walk a BODYSTRUCTURE for any part disposed as an attachment. Inline parts
+/// (signature logos, embedded images) use "inline" and are ignored, so this is
+/// a truer "has a file" signal than counting every non-body MIME part.
+fn bodystructure_has_attachment(bs: &async_imap::imap_proto::BodyStructure) -> bool {
+    use async_imap::imap_proto::BodyStructure as Bs;
+    let is_attachment = |common: &async_imap::imap_proto::BodyContentCommon| {
+        common
+            .disposition
+            .as_ref()
+            .is_some_and(|d| d.ty.eq_ignore_ascii_case("attachment"))
+    };
+    match bs {
+        Bs::Multipart { bodies, .. } => bodies.iter().any(bodystructure_has_attachment),
+        Bs::Basic { common, .. } | Bs::Text { common, .. } | Bs::Message { common, .. } => {
+            is_attachment(common)
+        }
+    }
 }
 
 fn flags_of(fetch: &async_imap::types::Fetch) -> FetchedFlags {
@@ -236,7 +308,7 @@ const HEADER_FIELDS: &str = "BODY.PEEK[HEADER.FIELDS (MESSAGE-ID IN-REPLY-TO REF
 
 /// Fetch envelope headers + flags for a UID set (e.g. "100:200" or "5,7,9").
 pub async fn fetch_headers(session: &mut Session, uid_set: &str) -> Result<Vec<FetchedHeader>> {
-    let query = format!("(UID FLAGS INTERNALDATE RFC822.SIZE {HEADER_FIELDS})");
+    let query = format!("(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {HEADER_FIELDS})");
     let mut out = Vec::new();
     {
         let mut stream = session
@@ -252,6 +324,9 @@ pub async fn fetch_headers(session: &mut Session, uid_set: &str) -> Result<Vec<F
                 internal_date_ms: fetch.internal_date().map(|d| d.timestamp_millis()),
                 size: fetch.size,
                 header_bytes: fetch.header().map(|h| h.to_vec()).unwrap_or_default(),
+                has_attachments: fetch
+                    .bodystructure()
+                    .is_some_and(bodystructure_has_attachment),
             });
         }
     }
@@ -292,6 +367,29 @@ pub async fn fetch_full(session: &mut Session, uid: u32) -> Result<Option<Vec<u8
         }
     }
     Ok(body)
+}
+
+/// Full raw bytes for a whole UID set in a single FETCH round-trip, returned as
+/// (uid, bytes) pairs. Backfill fetches bodies in bulk this way: one command
+/// for a chunk of messages instead of one round-trip per message.
+pub async fn fetch_full_batch(
+    session: &mut Session,
+    uid_set: &str,
+) -> Result<Vec<(u32, Vec<u8>)>> {
+    let mut out = Vec::new();
+    {
+        let mut stream = session
+            .uid_fetch(uid_set, "(UID BODY.PEEK[])")
+            .await
+            .map_err(|e| CoreError::Imap(e.to_string()))?;
+        while let Some(item) = stream.next().await {
+            let fetch = item.map_err(|e| CoreError::Imap(e.to_string()))?;
+            if let (Some(uid), Some(b)) = (fetch.uid, fetch.body()) {
+                out.push((uid, b.to_vec()));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// All UIDs currently in the selected folder (for expunge reconciliation).
@@ -392,24 +490,76 @@ pub async fn logout(mut session: Session) {
     let _ = session.logout().await;
 }
 
-/// Enter IDLE on the selected folder; resolves when the server reports
-/// activity or the timeout passes. Returns (session, saw_activity).
-pub async fn idle_wait(session: Session, timeout: std::time::Duration) -> Result<(Session, bool)> {
+/// Whether the server advertises the IDLE extension (RFC 2177). Issues a
+/// CAPABILITY command; callers cache the result for the connection's lifetime.
+pub async fn supports_idle(session: &mut Session) -> Result<bool> {
+    let caps = session
+        .capabilities()
+        .await
+        .map_err(|e| CoreError::Imap(e.to_string()))?;
+    Ok(caps.has_str("IDLE"))
+}
+
+/// Why an `idle_wait` returned. Generic over the actor's command type `C` so
+/// this module stays free of any `sync::engine` dependency.
+pub enum IdleOutcome<C> {
+    /// The server pushed unsolicited data (likely new mail): run a sync.
+    Activity,
+    /// The max-idle cap elapsed with no activity: run a sync as a backstop.
+    Timeout,
+    /// A command arrived on the actor channel; hand it back to the caller.
+    Command(C),
+    /// The command channel closed (sender dropped): caller should shut down.
+    ChannelClosed,
+}
+
+/// Enter IDLE on the currently-selected mailbox and wait until the server
+/// reports activity, `max` elapses, or a command arrives on `rx` — whichever
+/// comes first. Always leaves IDLE (`DONE`) on the happy path so the returned
+/// session is reusable. On any IMAP/IO error the session is consumed and `Err`
+/// is returned; the caller must reconnect.
+pub async fn idle_wait<C>(
+    session: Session,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<C>,
+    max: std::time::Duration,
+) -> Result<(Session, IdleOutcome<C>)> {
+    use async_imap::extensions::idle::IdleResponse;
+
     let mut idle = session.idle();
     idle.init()
         .await
         .map_err(|e| CoreError::Imap(e.to_string()))?;
-    let (wait_fut, _interrupt) = idle.wait_with_timeout(timeout);
-    let outcome = wait_fut.await;
-    let activity = matches!(
-        outcome,
-        Ok(async_imap::extensions::idle::IdleResponse::NewData(_))
-    );
-    let session = idle
-        .done()
-        .await
-        .map_err(|e| CoreError::Imap(e.to_string()))?;
-    Ok((session, activity))
+
+    // The wait future borrows `idle` mutably and `done()` consumes it, so the
+    // future and its StopSource must live only inside this block and be dropped
+    // before we call `done()`. `_stop` is named (not a bare `_`) so it is NOT
+    // dropped early — dropping it would interrupt the wait immediately.
+    let outcome = {
+        let (wait_fut, _stop) = idle.wait_with_timeout(max);
+        tokio::pin!(wait_fut);
+        tokio::select! {
+            res = &mut wait_fut => match res {
+                Ok(IdleResponse::NewData(_)) => IdleOutcome::Activity,
+                // We interrupt via `rx.recv()`, not the StopSource, so a
+                // ManualInterrupt here is unexpected; treat it as a backstop.
+                Ok(IdleResponse::Timeout) | Ok(IdleResponse::ManualInterrupt) => IdleOutcome::Timeout,
+                // Connection broke mid-IDLE: don't attempt DONE on a dead
+                // socket. Dropping `idle` closes it; the caller reconnects.
+                Err(e) => return Err(CoreError::Imap(e.to_string())),
+            },
+            cmd = rx.recv() => match cmd {
+                Some(c) => IdleOutcome::Command(c),
+                None => IdleOutcome::ChannelClosed,
+            },
+        }
+    };
+
+    // Leave IDLE. Bound DONE so a server that never acks can't wedge the actor.
+    let session = match tokio::time::timeout(std::time::Duration::from_secs(10), idle.done()).await {
+        Ok(r) => r.map_err(|e| CoreError::Imap(e.to_string()))?,
+        Err(_) => return Err(CoreError::Imap("IDLE DONE timed out".into())),
+    };
+    Ok((session, outcome))
 }
 
 /// Compress a sorted UID list into an IMAP set string ("1:5,8,10:12").

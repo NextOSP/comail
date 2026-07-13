@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { splitQuotedTail, stripQuoteMarkers } from "./quotes";
+import {
+  splitQuotedHtml,
+  splitQuotedTail,
+  stripQuoteMarkers,
+  trimTrailingEmptyHtml,
+} from "./quotes";
+
+describe("trimTrailingEmptyHtml", () => {
+  it("drops trailing empty blocks, brs and nbsp", () => {
+    const html =
+      "<p>RFID band. Xem thử.</p><div><br></div><p>&nbsp;</p><div>&nbsp;<br></div>";
+    expect(trimTrailingEmptyHtml(html)).toBe("<p>RFID band. Xem thử.</p>");
+  });
+
+  it("unwinds nested empty wrappers", () => {
+    expect(trimTrailingEmptyHtml("<p>Hi</p><div><div><br></div></div>")).toBe("<p>Hi</p>");
+  });
+
+  it("keeps trailing content intact", () => {
+    const html = "<p>Line one</p><p>Line two</p>";
+    expect(trimTrailingEmptyHtml(html)).toBe(html);
+  });
+
+  it("does not strip a trailing image", () => {
+    const html = '<p>See logo</p><div><img src="cid:x"></div>';
+    expect(trimTrailingEmptyHtml(html)).toBe(html);
+  });
+});
 
 describe("splitQuotedTail", () => {
   it("returns the whole text when there is no quote", () => {
@@ -60,6 +87,62 @@ describe("splitQuotedTail", () => {
     const [visible, quoted] = splitQuotedTail(body);
     expect(visible).toBe("FYI");
     expect(quoted).toContain("Forwarded message");
+  });
+});
+
+describe("splitQuotedHtml", () => {
+  it("returns the whole html when there is no quote", () => {
+    const html = "<p>Hi there</p><p>All good.</p>";
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe(html);
+    expect(quoted).toBeNull();
+  });
+
+  it("splits off a Gmail quote", () => {
+    const html =
+      '<div dir="ltr">Thanks!</div><div class="gmail_quote"><blockquote>old stuff</blockquote></div>';
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe('<div dir="ltr">Thanks!</div>');
+    expect(quoted).toContain("gmail_quote");
+  });
+
+  it("splits off a top-posted Outlook reply header (id/class stripped)", () => {
+    // What our sanitizer leaves: no id/class, just the visible header labels.
+    const html =
+      "<p>See below.</p><div><b>From:</b> Alice &lt;a@x.com&gt;<br>" +
+      "<b>Sent:</b> Friday<br><b>To:</b> Bob<br><b>Subject:</b> Re: hi</div>" +
+      "<div>Original message text.</div>";
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe("<p>See below.</p>");
+    expect(quoted).toContain("Subject:");
+  });
+
+  it("ignores a stray 'From:' with no To/Subject header nearby", () => {
+    const html = "<p>Quote from: the book, chapter two. My thoughts follow.</p>";
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe(html);
+    expect(quoted).toBeNull();
+  });
+
+  it("splits at a bare blockquote", () => {
+    const html = "<p>My reply.</p><blockquote>earlier</blockquote>";
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe("<p>My reply.</p>");
+    expect(quoted).toBe("<blockquote>earlier</blockquote>");
+  });
+
+  it("keeps everything when the pre-quote part is empty (bare forward)", () => {
+    const html = '<div class="gmail_quote"><blockquote>only a quote</blockquote></div>';
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe(html);
+    expect(quoted).toBeNull();
+  });
+
+  it("does not split when only empty wrappers precede the quote", () => {
+    const html = '<div><br></div><blockquote>quote</blockquote>';
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe(html);
+    expect(quoted).toBeNull();
   });
 });
 

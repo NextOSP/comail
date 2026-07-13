@@ -96,6 +96,7 @@ async fn seed(db: &Db, port: u16) -> (i64, i64) {
             snippet: "please review".into(),
             references: vec![],
             list_unsubscribe: None,
+            sender_addr: None,
         };
         repo::messages::insert(conn, &msg, thread_id)?;
         repo::threads::recompute(conn, thread_id)?;
@@ -162,12 +163,12 @@ async fn offline_actions_queue_locally_and_survive_restart() {
     .expect("archive offline");
 
     let inbox = core
-        .list_threads(View::Inbox, None, None, None, None, 10)
+        .list_threads(View::Inbox, None, None, None, None, None, 10)
         .await
         .unwrap();
     assert!(inbox.threads.is_empty(), "archive applied locally");
     let done = core
-        .list_threads(View::Done, None, None, None, None, 10)
+        .list_threads(View::Done, None, None, None, None, None, 10)
         .await
         .unwrap();
     assert_eq!(done.threads.len(), 1, "thread visible in Done");
@@ -222,7 +223,7 @@ async fn offline_actions_queue_locally_and_survive_restart() {
         "all actions still pending after restart"
     );
     let inbox = core
-        .list_threads(View::Inbox, None, None, None, None, 10)
+        .list_threads(View::Inbox, None, None, None, None, None, 10)
         .await
         .unwrap();
     assert!(inbox.threads.is_empty(), "archived state survives restart");

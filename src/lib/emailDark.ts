@@ -128,3 +128,48 @@ export function adaptDocumentForDarkMode(root: HTMLElement): void {
     // Best-effort: a failed adaptation leaves the email in its original colors.
   }
 }
+
+/** The painted background behind `el`: the first ancestor (including `el`)
+ *  with an opaque-enough background color, or null if nothing paints one and
+ *  the email is sitting on the app's (light) surface. */
+function paintedBackground(
+  el: HTMLElement,
+  getStyle: (el: Element) => CSSStyleDeclaration,
+): [number, number, number, number] | null {
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) {
+    const bg = parseColor(getStyle(node).backgroundColor);
+    if (bg && bg[3] >= 0.5) return bg;
+  }
+  return null;
+}
+
+/** Rescue text the sender colored light for a dark background it no longer has
+ *  — the sanitizer keeps inline `color` but drops the `<style>`/class rule (or
+ *  `bgcolor`-less wrapper) that painted the dark surface, so near-white text
+ *  renders invisibly on our light card. For each text element whose color is
+ *  too light to read on the light backdrop and that has no dark background of
+ *  its own, reset it to the theme's default ink. Runs on the light theme; the
+ *  dark theme is handled by [`adaptDocumentForDarkMode`]. */
+export function fixInvisibleText(root: HTMLElement, defaultColor: string): void {
+  try {
+    const win = root.ownerDocument.defaultView;
+    if (!win) return;
+    const getStyle = (el: Element) => win.getComputedStyle(el);
+    const walkFix = (el: HTMLElement) => {
+      const tag = el.tagName;
+      if (tag !== "IMG" && tag !== "SVG" && tag !== "CANVAS" && tag !== "VIDEO" && hasDirectText(el)) {
+        const col = parseColor(getStyle(el).color);
+        // Only near-white text is at risk on a light surface; leave mid-grays.
+        if (col && col[3] >= 0.5 && luminance(col) > 0.7) {
+          const bg = paintedBackground(el, getStyle);
+          // Light text is fine only when it sits on a genuinely dark surface.
+          if (!bg || luminance(bg) > 0.4) el.style.setProperty("color", defaultColor, "important");
+        }
+      }
+      for (const child of el.children) walkFix(child as HTMLElement);
+    };
+    walkFix(root);
+  } catch {
+    // Best-effort: on failure the email keeps its original colors.
+  }
+}

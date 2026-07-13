@@ -1,4 +1,6 @@
 {
+  "draftLabel": "草稿",
+  "draftTo": "发给 {{names}}",
   "modeTitles": {
     "new": "新邮件",
     "reply": "回复",
@@ -45,6 +47,7 @@
   "scheduled": "已计划。将于 {{date}} 发送",
   "sendingIn": "{s} 秒后发送 · 按 Z 撤销",
   "undo": "撤销",
+  "sendNow": "立即发送",
   "couldntSend": "无法发送：{{error}}",
   "couldntPickFiles": "无法选择文件：{{error}}",
   "showQuoted": "显示引用内容",

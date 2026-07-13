@@ -68,7 +68,6 @@ PALETTES = {
 
 def build_icon(pal, N=1024, SS=3):
     SIZE = N * SS
-    R = int(0.14 * SIZE)
     mesh = vgrad(SIZE, SIZE, pal["top"], pal["bot"])
     for color, fx, fy, fr, st in pal["blobs"]:
         mesh = blob(mesh, color, SIZE * fx, SIZE * fy, SIZE * fr, st)
@@ -95,10 +94,32 @@ def build_icon(pal, N=1024, SS=3):
     grain = Image.effect_noise((SIZE, SIZE), 26).convert("RGB")
     comp = Image.blend(comp, ImageChops.overlay(comp, grain), 0.055)
 
-    tile = Image.new("L", (SIZE, SIZE), 0)
-    ImageDraw.Draw(tile).rounded_rectangle([0, 0, SIZE - 1, SIZE - 1], radius=R, fill=255)
+    # macOS icon grid: the rounded tile must occupy only ~80% of the canvas with
+    # transparent margin around it (Apple's template is an 824px body in a 1024px
+    # image). Without this margin macOS renders the icon full-bleed, so it looks
+    # oversized and too square next to other Dock apps.
+    MARGIN = 0.098                              # ~100/1024 per side
+    inset = int(SIZE * (1 - 2 * MARGIN))        # tile edge length
+    off = (SIZE - inset) // 2
+    radius = int(inset * 0.2237)                # Apple continuous-corner squircle
+
+    tile = Image.new("L", (inset, inset), 0)
+    ImageDraw.Draw(tile).rounded_rectangle(
+        [0, 0, inset - 1, inset - 1], radius=radius, fill=255
+    )
+    art = comp.resize((inset, inset), Image.LANCZOS)
+
     out = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    out.paste(comp, (0, 0), tile)
+    # subtle soft drop shadow sitting in the bottom margin
+    shadow = Image.new("L", (SIZE, SIZE), 0)
+    sh = Image.new("L", (inset, inset), 0)
+    ImageDraw.Draw(sh).rounded_rectangle(
+        [0, 0, inset - 1, inset - 1], radius=radius, fill=70
+    )
+    shadow.paste(sh, (off, off + int(SIZE * 0.018)))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(SIZE * 0.016))
+    out.paste(Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 255)), (0, 0), shadow)
+    out.paste(art, (off, off), tile)
     return out.resize((N, N), Image.LANCZOS)
 
 if __name__ == "__main__":

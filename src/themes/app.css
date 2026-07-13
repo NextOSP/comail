@@ -8,12 +8,12 @@
 :root,
 :root[data-theme="snow"] {
   color-scheme: light;
-  --bg0: #faf9f7; /* canvas */
-  --bg1: #f4f2ee;
-  --bg2: #eceae4;
-  --bg3: #e1ded6;
-  --bg4: #d2cfc5;
-  --ink: 32 30 27; /* rgb triplet for the text family */
+  --bg0: #f5f6f8; /* canvas - clean near-white, faint cool neutral (not kraft/beige) */
+  --bg1: #ffffff; /* card/surface - crisp white, floats above via shadow */
+  --bg2: #ebedf0; /* hover / interactive step off a white surface */
+  --bg3: #e0e2e6;
+  --bg4: #cfd2d7;
+  --ink: 28 30 34; /* rgb triplet for the text family - neutral, faintly cool */
   --text: rgb(var(--ink) / 0.92);
   --text-muted: rgb(var(--ink) / 0.62);
   --text-faint: rgb(var(--ink) / 0.42);
@@ -24,8 +24,11 @@
   --ok: #4f8f5c;
   --hairline: rgb(var(--ink) / 0.09);
   --hairline-strong: rgb(var(--ink) / 0.16);
-  --elev-1: 0 1px 2px rgb(32 30 27 / 0.04);
-  --elev-2: 0 4px 24px rgb(32 30 27 / 0.10), 0 1px 3px rgb(32 30 27 / 0.06);
+  --elev-1: 0 1px 2px rgb(28 30 34 / 0.05);
+  --elev-2: 0 4px 24px rgb(28 30 34 / 0.10), 0 1px 3px rgb(28 30 34 / 0.07);
+  /* Soft card float for message cards - gentler than elev-2 so stacked cards
+     in a long thread don't feel heavy. */
+  --elev-card: 0 1px 3px rgb(28 30 34 / 0.07), 0 8px 22px rgb(28 30 34 / 0.10);
   --row-hover: rgb(var(--ink) / 0.035);
   --selected-bg: color-mix(in srgb, var(--accent) 7%, transparent);
   --checked-bg: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -52,6 +55,7 @@
   --hairline-strong: rgb(var(--ink) / 0.17);
   --elev-1: 0 1px 2px rgb(0 0 0 / 0.3);
   --elev-2: 0 8px 32px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.35);
+  --elev-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 6px 18px rgb(0 0 0 / 0.4);
   --row-hover: rgb(var(--ink) / 0.045);
   --selected-bg: color-mix(in srgb, var(--accent) 11%, transparent);
   --checked-bg: color-mix(in srgb, var(--accent) 22%, transparent);
@@ -333,7 +337,7 @@ textarea {
 }
 
 /* --------------------------------------------------------------------------
-   Ambient animated backdrop
+   Ambient animated backdrop (shown only on the empty-inbox / onboarding states)
 
    Softness comes from each blob's *own* radial-gradient alpha falloff, never
    from `filter: blur` — blurring an oversized layer (or any backdrop-filter)
@@ -397,7 +401,7 @@ textarea {
   50% { transform: translate3d(-12%, -14%, 0) scale(0.9); }
 }
 
-/* Frosted, translucent chrome — the moving backdrop reads through it.
+/* Frosted, translucent chrome — the calm canvas reads through it.
    Deliberately no backdrop-filter (blur is the expensive path on WebKitGTK);
    translucency + a hairline top sheen carries the "matte glass" look. */
 .co-glass {

@@ -22,8 +22,13 @@ export interface ToastItem {
   /** label for the inline action button, e.g. "Undo" */
   actionLabel?: string;
   onAction?: () => void;
+  /** optional second inline action, e.g. "Send now" */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   /** ms epoch when the toast auto-dismisses */
   expiresAt: number;
+  /** total lifetime in ms (drives the countdown progress bar) */
+  durationMs?: number;
   /** show a live countdown of remaining seconds (undo send) */
   countdown?: boolean;
 }
@@ -65,6 +70,8 @@ interface UiState {
   accountFilter: number | null;
   /** when set, the thread list is filtered to this label (across all folders) */
   labelFilter: number | null;
+  /** when set, the thread list shows one IMAP user folder's contents */
+  folderFilter: number | null;
 
   /** Thread ids in current list order (synced by ThreadOrderSync). */
   visibleThreadIds: number[];
@@ -72,8 +79,12 @@ interface UiState {
   selectedIndex: number;
   selectedThreadId: number | null;
   openThreadId: number | null;
-  /** message index focused inside the conversation (N/P) */
+  /** message focused inside the conversation — the reply target (hover, click,
+   *  or N/P keyboard). */
   focusedMessageId: number | null;
+  /** how focusedMessageId was last set; keyboard nav scrolls it into view,
+   *  pointer selection (hover/click) must not, or the view would jump. */
+  messageCursorSource: "keyboard" | "pointer";
 
   selection: number[]; // multi-select (X)
   /** anchor row for Shift+click / drag range selection (thread id) */
@@ -148,6 +159,9 @@ interface UiState {
   toasts: ToastItem[];
   offline: boolean;
   syncing: boolean;
+  /** live body-backfill progress for the "Sync x/total" indicator */
+  syncDone: number;
+  syncTotal: number;
   lastUndo: Undoable | null;
 
   // actions
@@ -155,6 +169,8 @@ interface UiState {
   setView: (view: View, splitId?: number | null) => void;
   /** Filter the list by a label (null clears back to the current view). */
   selectLabel: (labelId: number | null) => void;
+  /** Show one IMAP user folder's contents (null clears back to the current view). */
+  selectFolder: (folderId: number | null) => void;
   selectThread: (index: number, id: number | null) => void;
   openThread: (id: number | null) => void;
   toggleSelect: (id: number) => void;
@@ -179,11 +195,13 @@ export const useUi = create<UiState>((set, get) => ({
   splitId: SPLIT_IMPORTANT,
   accountFilter: null,
   labelFilter: null,
+  folderFilter: null,
   visibleThreadIds: [],
   selectedIndex: 0,
   selectedThreadId: null,
   openThreadId: null,
   focusedMessageId: null,
+  messageCursorSource: "keyboard",
   selection: [],
   selectAnchorId: null,
   paletteOpen: false,
@@ -217,6 +235,8 @@ export const useUi = create<UiState>((set, get) => ({
   toasts: [],
   offline: false,
   syncing: false,
+  syncDone: 0,
+  syncTotal: 0,
   lastUndo: null,
 
   set: (partial) => set(partial),
@@ -226,6 +246,7 @@ export const useUi = create<UiState>((set, get) => ({
       view,
       splitId: splitId !== undefined ? splitId : view === "inbox" ? SPLIT_IMPORTANT : null,
       labelFilter: null,
+      folderFilter: null,
       openThreadId: null,
       focusedMessageId: null,
       searchOpen: false,
@@ -238,7 +259,24 @@ export const useUi = create<UiState>((set, get) => ({
   selectLabel: (labelId) =>
     set({
       labelFilter: labelId,
+      folderFilter: null,
       // Label filter spans folders, so show it against the "all" view.
+      view: "all",
+      splitId: null,
+      openThreadId: null,
+      focusedMessageId: null,
+      searchOpen: false,
+      selection: [],
+      selectAnchorId: null,
+      selectedIndex: 0,
+      selectedThreadId: null,
+    }),
+
+  selectFolder: (folderId) =>
+    set({
+      folderFilter: folderId,
+      labelFilter: null,
+      // A folder is a concrete mailbox; show it against the unfiltered "all" list.
       view: "all",
       splitId: null,
       openThreadId: null,
@@ -325,7 +363,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   pushToast: ({ durationMs = 5000, ...t }) => {
     const id = toastSeq++;
-    const toast: ToastItem = { ...t, id, expiresAt: Date.now() + durationMs };
+    const toast: ToastItem = { ...t, id, durationMs, expiresAt: Date.now() + durationMs };
     set({ toasts: [...get().toasts.slice(-3), toast] });
     const timer = setTimeout(() => get().dismissToast(id), durationMs);
     toastTimers.set(id, timer);

@@ -19,23 +19,26 @@ export const threadsKey = (
   splitId: number | null,
   accountId: number | null,
   labelId: number | null = null,
-) => ["threads", view, splitId, accountId, labelId] as const;
+  folderId: number | null = null,
+) => ["threads", view, splitId, accountId, labelId, folderId] as const;
 
-/** Infinite thread list for a view (+ inbox split, + optional label filter). */
+/** Infinite thread list for a view (+ inbox split, + optional label/folder filter). */
 export function useThreads(
   view: View,
   splitId: number | null,
   accountId: number | null,
   labelId: number | null = null,
+  folderId: number | null = null,
 ) {
   return useInfiniteQuery({
-    queryKey: threadsKey(view, splitId, accountId, labelId),
+    queryKey: threadsKey(view, splitId, accountId, labelId, folderId),
     queryFn: ({ pageParam }) =>
       call("list_threads", {
         view,
         splitId: view === "inbox" ? splitId : null,
         accountId,
         labelId,
+        folderId,
         cursor: pageParam,
         limit: PAGE_SIZE,
       }),
@@ -113,8 +116,8 @@ export function useSplits() {
 export function useFolders(accountId: number | null) {
   return useQuery({
     queryKey: ["folders", accountId],
+    // accountId null lists folders across every account (backend handles null).
     queryFn: () => call("list_folders", { accountId }),
-    enabled: accountId != null,
     staleTime: 60_000,
   });
 }

@@ -13,6 +13,7 @@ import { addressName, longTime, MOD_LABEL } from "../../lib/format";
 import { stripQuoteMarkers } from "../../lib/quotes";
 import { decodeEntities, escapeHtml, htmlToText, isHtmlEmpty, textToHtml } from "../../lib/richtext";
 import { pickSignature, signaturesForAccount, type ComposeMode } from "../../lib/signatures";
+import { playSound } from "../../lib/sound";
 import { RichBody, type RichBodyHandle } from "./RichBody";
 import { performThreadAction } from "../../queries/actions";
 import { queryClient } from "../../queries/client";
@@ -302,6 +303,9 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       }
       if (sending) return;
       setSending(true);
+      // Play the "whoosh" synchronously on the user's send gesture — webviews
+      // block audio started later from an async callback (no user activation).
+      playSound("send");
       try {
         const id = await saveDraft();
         const sendAt = opts.instant ? Date.now() : opts.sendAt;
@@ -349,6 +353,12 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             message: t("compose:sendingIn"),
             countdown: true,
             durationMs,
+            secondaryLabel: t("compose:sendNow"),
+            onSecondary: () => {
+              void call("send_now", { actionId: res.actionId });
+              useUi.getState().set({ lastUndo: null });
+              void queryClient.invalidateQueries({ queryKey: ["threads"] });
+            },
             actionLabel: t("compose:undo"),
             onAction: () => buildCommandContext().undo(),
           });
@@ -571,14 +581,15 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     <div
       className={
         inline
-          ? "co-composer co-fade-in border-t border-hairline pt-3"
+          ? "co-composer co-fade-in border border-hairline bg-bg1"
           : "co-composer co-fade-in min-h-0 flex-1 overflow-y-auto"
       }
+      style={inline ? { boxShadow: "var(--elev-card)" } : undefined}
     >
       <div
         className={
           inline
-            ? "relative flex w-full flex-col"
+            ? "relative flex w-full flex-col px-5 py-4"
             : "relative mx-auto flex w-full max-w-[860px] flex-col px-6 py-6 pb-24"
         }
       >
@@ -598,10 +609,14 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
         {/* fields */}
         <div className="flex flex-col">
           {inline && (
-            <div className="flex items-center gap-3 pb-1">
-              <span className="text-[11px] font-semibold tracking-[0.08em] text-ink-muted uppercase">
-                {t(`compose:modeTitles.${state.mode}`)}
-              </span>
+            <div className="flex items-baseline gap-1.5 pb-1.5">
+              {/* Superhuman-style draft header: green "Draft" + muted recipients. */}
+              <span className="text-[14px] font-semibold text-ok">{t("compose:draftLabel")}</span>
+              {to.length > 0 && (
+                <span className="min-w-0 truncate text-[14px] text-ink-muted">
+                  {t("compose:draftTo", { names: to.map(addressName).join(", ") })}
+                </span>
+              )}
               <div className="grow" />
               {accountSelect}
             </div>

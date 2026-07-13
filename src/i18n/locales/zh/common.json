@@ -1,4 +1,10 @@
 {
+  "dateGroup": {
+    "today": "今天",
+    "yesterday": "昨天",
+    "thisWeek": "本周",
+    "thisMonth": "本月"
+  },
   "view": {
     "inbox": "收件箱",
     "starred": "已加星标",
@@ -116,6 +122,7 @@
     "snippets": "片段",
     "splits": "分栏收件箱规则",
     "labels": "标签",
+    "folders": "文件夹",
     "manageLabels": "管理标签",
     "settings": "设置",
     "accountSettings": "账户设置",

@@ -101,7 +101,7 @@ async fn reply_send_reaches_smtp_and_sent_folder() {
     // Wait for Alice's message to sync in.
     let thread = wait_for("alice thread", Duration::from_secs(60), || async {
         let p = core
-            .list_threads(View::Inbox, None, None, None, None, 10)
+            .list_threads(View::Inbox, None, None, None, None, None, 10)
             .await
             .unwrap();
         p.threads.into_iter().next()

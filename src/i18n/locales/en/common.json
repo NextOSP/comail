@@ -1,4 +1,10 @@
 {
+  "dateGroup": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This Week",
+    "thisMonth": "This Month"
+  },
   "view": {
     "inbox": "Inbox",
     "starred": "Starred",
@@ -116,6 +122,7 @@
     "snippets": "Snippets",
     "splits": "Split inbox rules",
     "labels": "Labels",
+    "folders": "Folders",
     "manageLabels": "Manage labels",
     "settings": "Settings",
     "accountSettings": "Account settings",

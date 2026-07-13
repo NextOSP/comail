@@ -130,6 +130,40 @@ pub fn try_claim(conn: &Connection, id: i64) -> Result<bool> {
     Ok(n > 0)
 }
 
+/// Reset actions abandoned mid-flight (the app was killed/crashed while one was
+/// executing) back to pending so they get retried. An `inflight` row can only be
+/// orphaned at startup because no actor is running yet; left as-is it would be
+/// invisible to `due()` and stick forever (e.g. a send stuck on "Sending…").
+/// Returns how many were recovered.
+pub fn recover_inflight(conn: &Connection) -> Result<usize> {
+    let n = conn.execute(
+        "UPDATE pending_actions SET state = 'pending', not_before = ?1
+         WHERE state = 'inflight'",
+        params![now_ms()],
+    )?;
+    Ok(n)
+}
+
+/// Make a still-pending action due immediately ("send now" / skip the undo
+/// window). Returns the action's account_id so the caller can nudge that actor,
+/// or None if it was already claimed/cancelled/sent.
+pub fn expedite(conn: &Connection, id: i64) -> Result<Option<i64>> {
+    let n = conn.execute(
+        "UPDATE pending_actions SET not_before = ?2 WHERE id = ?1 AND state = 'pending'",
+        params![id, now_ms()],
+    )?;
+    if n == 0 {
+        return Ok(None);
+    }
+    Ok(conn
+        .query_row(
+            "SELECT account_id FROM pending_actions WHERE id = ?1",
+            params![id],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()?)
+}
+
 /// Transition pending -> cancelled; returns false if it was no longer pending.
 pub fn try_cancel(conn: &Connection, id: i64) -> Result<bool> {
     let n = conn.execute(

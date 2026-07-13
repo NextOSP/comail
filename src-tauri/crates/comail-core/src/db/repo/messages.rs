@@ -30,6 +30,10 @@ pub struct NewMessage {
     pub snippet: String,
     pub references: Vec<String>,
     pub list_unsubscribe: Option<String>,
+    /// Transmitting party misaligned with From: (see mime::resolve_via) —
+    /// email or bare DKIM domain, shown as "via" in the UI. None when the
+    /// transmitting domain aligns with From:.
+    pub sender_addr: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -94,8 +98,8 @@ pub fn insert(conn: &Connection, m: &NewMessage, thread_id: i64) -> Result<i64> 
         "INSERT INTO messages (account_id, thread_id, folder_id, uid, message_id, gm_msgid, gm_thrid,
             subject, from_name, from_addr, to_json, cc_json, bcc_json, date, internal_date,
             is_read, is_starred, is_draft, is_outgoing, is_automated, has_attachments, size, snippet,
-            list_unsubscribe)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)",
+            list_unsubscribe, sender_addr)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",
         params![
             m.account_id,
             thread_id,
@@ -121,6 +125,7 @@ pub fn insert(conn: &Connection, m: &NewMessage, thread_id: i64) -> Result<i64> 
             m.size,
             m.snippet,
             m.list_unsubscribe,
+            m.sender_addr,
         ],
     )?;
     let id = conn.last_insert_rowid();
@@ -168,6 +173,20 @@ pub fn set_starred(conn: &Connection, id: i64, is_starred: bool) -> Result<()> {
         params![id, is_starred as i64],
     )?;
     Ok(())
+}
+
+/// (bodies cached, total messages) for an account - drives the "Sync x/total"
+/// progress indicator while bodies backfill.
+pub fn body_progress(conn: &Connection, account_id: i64) -> Result<(u64, u64)> {
+    conn.query_row(
+        "SELECT
+           COALESCE(SUM(body_state = 'cached'), 0),
+           COUNT(*)
+         FROM messages WHERE account_id = ?1",
+        params![account_id],
+        |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)),
+    )
+    .map_err(Into::into)
 }
 
 pub fn set_body_state(conn: &Connection, id: i64, state: &str) -> Result<()> {
@@ -282,6 +301,7 @@ pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
                 html_body: row.get("html_body")?,
                 attachments: Vec::new(),
                 list_unsubscribe: row.get("list_unsubscribe")?,
+                via: row.get("sender_addr")?,
             })
         })
         .optional()?

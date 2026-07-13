@@ -7,24 +7,12 @@ use crate::calendar::parse_ics;
 use crate::db::repo;
 use crate::db::Db;
 use crate::error::{CoreError, Result};
-use crate::events::{CoreEvent, EventBus};
+use crate::events::{CoreEvent, EventBus, NewEventInfo};
 use crate::models::now_ms;
 
 use super::{err, push, xml, Transport};
 
-/// Query window for the non-incremental fallback.
-const PAST_DAYS: i64 = 90;
-const FUTURE_DAYS: i64 = 550;
 const MULTIGET_BATCH: usize = 50;
-
-fn fmt_utc(ms: i64) -> String {
-    use chrono::TimeZone;
-    chrono::Utc
-        .timestamp_millis_opt(ms)
-        .earliest()
-        .map(|d| d.format("%Y%m%dT%H%M%SZ").to_string())
-        .unwrap_or_else(|| "19700101T000000Z".into())
-}
 
 /// Normalize an href to path form so stored values compare stably no matter
 /// whether the server answered with absolute URLs or paths.
@@ -49,10 +37,14 @@ pub async fn sync_account(
         .read(move |conn| repo::caldav::list_calendars(conn, Some(account_id)))
         .await?;
     let mut changed_any = pushed;
+    let mut new_events: Vec<NewEventInfo> = Vec::new();
 
     for cal in calendars.into_iter().filter(|c| c.enabled) {
         match sync_calendar(db, t, account_id, cal.id, &cal.url).await {
-            Ok(changed) => changed_any |= changed,
+            Ok((changed, fresh)) => {
+                changed_any |= changed;
+                new_events.extend(fresh);
+            }
             Err(CoreError::NeedsReauth) => return Err(CoreError::NeedsReauth),
             Err(e) => {
                 tracing::warn!("calendar {} sync failed: {e}", cal.id);
@@ -66,6 +58,12 @@ pub async fn sync_account(
     if changed_any {
         bus.emit(CoreEvent::CalendarUpdated { account_id });
     }
+    if !new_events.is_empty() {
+        bus.emit(CoreEvent::CalendarEventsAdded {
+            account_id,
+            events: new_events,
+        });
+    }
     Ok(changed_any)
 }
 
@@ -75,7 +73,7 @@ async fn sync_calendar(
     account_id: i64,
     calendar_id: i64,
     calendar_url: &str,
-) -> Result<bool> {
+) -> Result<(bool, Vec<NewEventInfo>)> {
     let (stored_ctag, stored_token) = db
         .read(move |conn| repo::caldav::sync_state(conn, calendar_id))
         .await?;
@@ -101,7 +99,7 @@ async fn sync_calendar(
         (None, None)
     };
     if ctag.is_some() && ctag == stored_ctag {
-        return Ok(false);
+        return Ok((false, Vec::new()));
     }
 
     // Changed hrefs via incremental sync, else the time-range fallback.
@@ -140,13 +138,14 @@ async fn sync_calendar(
     }
 
     if !incremental_ok {
-        let now = now_ms();
-        let body = xml::report_calendar_query(
-            &fmt_utc(now - PAST_DAYS * 86_400_000),
-            &fmt_utc(now + FUTURE_DAYS * 86_400_000),
-        );
         let resp = t
-            .request("REPORT", calendar_url, Some("1"), &[], Some(body))
+            .request(
+                "REPORT",
+                calendar_url,
+                Some("1"),
+                &[],
+                Some(xml::report_calendar_query()),
+            )
             .await?;
         if resp.status != 207 {
             return Err(err(format!("calendar-query: HTTP {}", resp.status)));
@@ -190,6 +189,10 @@ async fn sync_calendar(
     }
 
     let mut changed_any = false;
+    // Events inserted for the first time, surfaced as "new event" notifications
+    // - but only for an incremental pull. The initial full sync would otherwise
+    // flag every existing event as new.
+    let mut new_events: Vec<NewEventInfo> = Vec::new();
 
     // Fetch changed resources in batches.
     for batch in changed.chunks(MULTIGET_BATCH) {
@@ -223,33 +226,49 @@ async fn sync_calendar(
             continue;
         }
         changed_any = true;
-        db.write(move |conn| {
-            let tx = conn.transaction()?;
-            for (href, etag, ics) in &items {
-                // The master is the VEVENT without RECURRENCE-ID; overrides
-                // ride along inside ical_raw for the expander.
-                let events = parse_ics(ics);
-                let Some(master) = events
-                    .iter()
-                    .find(|e| e.recurrence_id_ms.is_none())
-                    .or_else(|| events.first())
-                else {
-                    continue;
-                };
-                repo::calendar::upsert_remote(
-                    &tx,
-                    account_id,
-                    calendar_id,
-                    href,
-                    etag,
-                    ics,
-                    master,
-                )?;
-            }
-            tx.commit()?;
-            Ok(())
-        })
-        .await?;
+        let batch_new = db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                let mut fresh: Vec<NewEventInfo> = Vec::new();
+                for (href, etag, ics) in &items {
+                    // The master is the VEVENT without RECURRENCE-ID; overrides
+                    // ride along inside ical_raw for the expander.
+                    let events = parse_ics(ics);
+                    let Some(master) = events
+                        .iter()
+                        .find(|e| e.recurrence_id_ms.is_none())
+                        .or_else(|| events.first())
+                    else {
+                        continue;
+                    };
+                    let inserted = repo::calendar::upsert_remote(
+                        &tx,
+                        account_id,
+                        calendar_id,
+                        href,
+                        etag,
+                        ics,
+                        master,
+                    )?;
+                    if inserted {
+                        fresh.push(NewEventInfo {
+                            summary: master.summary.clone(),
+                            starts_at: master.starts_at_ms,
+                            all_day: master.all_day,
+                        });
+                    }
+                }
+                tx.commit()?;
+                Ok(fresh)
+            })
+            .await?;
+        new_events.extend(batch_new);
+    }
+
+    // Only the incremental path yields genuinely-new events worth announcing;
+    // the initial/fallback full pull inserts the whole collection.
+    if !incremental_ok {
+        new_events.clear();
     }
 
     if !removed.is_empty() {
@@ -276,7 +295,7 @@ async fn sync_calendar(
         )
     })
     .await?;
-    Ok(changed_any)
+    Ok((changed_any, new_events))
 }
 
 #[cfg(test)]

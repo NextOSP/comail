@@ -49,8 +49,15 @@ pub async fn execute_due(
                         error: None,
                     });
                 }
-                Err(CoreError::NeedsReauth) | Err(CoreError::Auth(_)) => {
-                    // Leave pending; the actor will pause on reauth.
+                Err(e @ (CoreError::NeedsReauth | CoreError::Auth(_))) => {
+                    // Leave pending; the actor will pause on reauth. Log the real
+                    // cause: for SMTP this is usually the mail host rejecting auth
+                    // (e.g. Office365 tenants disable SMTP AUTH by default), which
+                    // was previously silent and looked like a stuck "Sending…".
+                    tracing::warn!(
+                        account_id, action_id, kind = %action.kind, error = %e,
+                        "action needs auth; pausing (check mail-host auth / SMTP AUTH enabled)",
+                    );
                     let msg = "authentication required".to_string();
                     ctx.db
                         .write(move |conn| {
@@ -62,6 +69,10 @@ pub async fn execute_due(
                 Err(e) => {
                     let msg = e.to_string();
                     let attempts = action.attempts + 1;
+                    tracing::warn!(
+                        account_id, action_id, kind = %action.kind, attempts, error = %msg,
+                        "action attempt failed",
+                    );
                     if attempts >= MAX_ATTEMPTS || is_permanent(&msg) {
                         let m = msg.clone();
                         ctx.db
@@ -257,6 +268,7 @@ async fn send_action(
     let Some(draft_id) = action.payload["draftId"].as_i64() else {
         return Err(CoreError::Other("send action without draftId".into()));
     };
+    tracing::info!(account_id = config.id, draft_id, "smtp send: starting");
 
     // Load everything needed to build the message.
     let (detail, references) = ctx
@@ -372,6 +384,17 @@ async fn send_action(
         attachments,
     };
     let (msg_id, raw) = crate::mime::build_message(&out)?;
+    tracing::debug!(
+        account_id = config.id,
+        draft_id,
+        message_id = %msg_id,
+        bytes = raw.len(),
+        attachments = out.attachments.len(),
+        to = detail.to.len(),
+        cc = detail.cc.len(),
+        bcc = bcc.len(),
+        "smtp send: message built",
+    );
 
     // SMTP auth.
     let auth = match config.auth_kind {
@@ -394,7 +417,15 @@ async fn send_action(
         return Err(CoreError::Smtp("no recipients".into()));
     }
 
+    tracing::info!(
+        account_id = config.id,
+        host = %config.smtp_host,
+        port = config.smtp_port,
+        recipients = recipients.len(),
+        "smtp send: dispatching",
+    );
     smtp::send_raw(config, &auth, &config.email, &recipients, &raw).await?;
+    tracing::info!(account_id = config.id, "smtp send: accepted by server");
 
     // Append to Sent (Gmail does this automatically).
     if config.provider != Provider::Gmail {
@@ -406,8 +437,13 @@ async fn send_action(
             })
             .await?;
         if let Some(sent) = sent {
-            if let Err(e) = imap::append(session, &sent.imap_name, &raw, true).await {
-                tracing::warn!("append to sent failed (message was sent): {e}");
+            match imap::append(session, &sent.imap_name, &raw, true).await {
+                Ok(_) => tracing::debug!(
+                    account_id = config.id,
+                    folder = %sent.imap_name,
+                    "smtp send: appended copy to Sent",
+                ),
+                Err(e) => tracing::warn!("append to sent failed (message was sent): {e}"),
             }
         }
     }
@@ -453,6 +489,12 @@ async fn send_action(
             thread_ids: vec![tid],
         });
     }
+    tracing::info!(
+        account_id = config.id,
+        draft_id,
+        thread_id = ?thread_id,
+        "smtp send: complete",
+    );
     Ok(())
 }
 

@@ -108,6 +108,12 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
         CoreEvent::CalendarUpdated { account_id } => {
             let _ = app.emit("calendar:updated", json!({ "accountId": account_id }));
         }
+        CoreEvent::CalendarEventsAdded { account_id, events } => {
+            let _ = app.emit(
+                "calendar:new",
+                json!({ "accountId": account_id, "events": events }),
+            );
+        }
         CoreEvent::EventReminder {
             event,
             occurrence_start,

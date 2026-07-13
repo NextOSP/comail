@@ -94,5 +94,7 @@
   },
   "screenHint": "Esc or 1 back · click a slot to create",
   "reminderBody": "Starts at {{time}}",
+  "newEventBody": "New event · {{when}}",
+  "newEvents": "{{count}} new events on your calendar",
   "syncConflict": "“{{summary}}” changed on the server — your edit was kept as a copy"
 }

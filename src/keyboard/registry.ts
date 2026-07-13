@@ -51,6 +51,7 @@ export function displayShortcut(keys: string | undefined): string {
   const out: string[] = [];
   for (const p of parts) {
     if (p === "mod") out.push(IS_MAC ? "⌘" : "Ctrl");
+    else if (p === "ctrl") out.push(IS_MAC ? "⌃" : "Ctrl");
     else if (p === "shift") out.push(IS_MAC ? "⇧" : "Shift");
     else if (p === "alt") out.push(IS_MAC ? "⌥" : "Alt");
     else if (p === "enter") out.push("↵");
@@ -81,6 +82,11 @@ function normalizeEvent(e: KeyboardEvent): string | null {
 
   let token = "";
   if (mod) token += "mod+";
+  // On macOS `mod` is Cmd, so a held Ctrl is a separate modifier we can bind
+  // (e.g. Ctrl+1 for account switching, distinct from Cmd+1). On other
+  // platforms Ctrl *is* mod, so it's already captured above.
+  if (IS_MAC && e.ctrlKey) token += "ctrl+";
+  if (e.altKey) token += "alt+";
   // For single printable characters the char itself already encodes shift
   // ("#", "?", "!"), except letters which we lowercase.
   const needsShift = e.shiftKey && (raw.length > 1 || /^[a-zA-Z]$/.test(raw));
@@ -165,5 +171,48 @@ export function installKeyboard() {
   return () => {
     installed = false;
     window.removeEventListener("keydown", handler);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Mouse back/forward (buttons 3 and 4)
+// ---------------------------------------------------------------------------
+
+let mouseInstalled = false;
+
+/** Route the extra mouse buttons to app navigation, and swallow the webview's
+ *  own (empty) history back/forward so the SPA doesn't blank out.
+ *  Back (3): step out of the current view (same stack as Esc).
+ *  Forward (4): re-open the thread the cursor is on. */
+function handleMouseNav(e: MouseEvent) {
+  // 3 = browser-back button, 4 = browser-forward button.
+  if (e.button !== 3 && e.button !== 4) return;
+  e.preventDefault();
+  // Act once, on release; mousedown/auxclick only suppress the default.
+  if (e.type !== "mouseup") return;
+
+  const ctx = buildCommandContext();
+  if (e.button === 3) {
+    ctx.escape();
+  } else if (!ctx.composerOpen && !ctx.inConversation) {
+    // Forward only makes sense from the list; inside a thread there's
+    // nothing "forward" to go to.
+    ctx.openSelected();
+  }
+}
+
+/** Install the global mouse back/forward handler (idempotent). */
+export function installMouseNav() {
+  if (mouseInstalled) return () => {};
+  mouseInstalled = true;
+  // Suppress the default on down/up/auxclick; the action fires on mouseup.
+  window.addEventListener("mousedown", handleMouseNav);
+  window.addEventListener("mouseup", handleMouseNav);
+  window.addEventListener("auxclick", handleMouseNav);
+  return () => {
+    mouseInstalled = false;
+    window.removeEventListener("mousedown", handleMouseNav);
+    window.removeEventListener("mouseup", handleMouseNav);
+    window.removeEventListener("auxclick", handleMouseNav);
   };
 }

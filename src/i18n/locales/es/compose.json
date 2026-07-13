@@ -1,4 +1,6 @@
 {
+  "draftLabel": "Borrador",
+  "draftTo": "para {{names}}",
   "modeTitles": {
     "new": "Mensaje nuevo",
     "reply": "Responder",
@@ -45,6 +47,7 @@
   "scheduled": "Programado. Se enviará {{date}}",
   "sendingIn": "Enviando en {s}s · Z para deshacer",
   "undo": "Deshacer",
+  "sendNow": "Enviar ahora",
   "couldntSend": "No se pudo enviar: {{error}}",
   "couldntPickFiles": "No se pudieron seleccionar archivos: {{error}}",
   "showQuoted": "Mostrar texto citado",

@@ -1,4 +1,6 @@
 {
+  "draftLabel": "Bản nháp",
+  "draftTo": "gửi {{names}}",
   "modeTitles": {
     "new": "Thư mới",
     "reply": "Trả lời",
@@ -45,6 +47,7 @@
   "scheduled": "Đã lên lịch. Sẽ gửi {{date}}",
   "sendingIn": "Sẽ gửi sau {s}s · Z để hoàn tác",
   "undo": "Hoàn tác",
+  "sendNow": "Gửi ngay",
   "couldntSend": "Không thể gửi: {{error}}",
   "couldntPickFiles": "Không thể chọn tệp: {{error}}",
   "showQuoted": "Hiện văn bản trích dẫn",

@@ -114,6 +114,8 @@ export interface MessageDetail {
   attachments: AttachmentMeta[];
   /** raw List-Unsubscribe header value, e.g. `"<https://x/unsub>, <mailto:u@x>"` */
   listUnsubscribe: string | null;
+  /** Email from the Sender: header; shown as "via <domain>" when it differs from `from`. */
+  via: string | null;
 }
 
 export interface ThreadDetail {
@@ -236,6 +238,8 @@ export interface FolderInfo {
   id: number;
   accountId: number;
   imapName: string;
+  /** IMAP hierarchy delimiter (e.g. "/" or "."), for nesting user folders. */
+  delimiter: string | null;
   role: string | null;
 }
 
@@ -301,10 +305,13 @@ export interface Settings {
   msClientSecret: string;
   /** Desktop notification on new mail. */
   notificationsEnabled: boolean;
+  soundEnabled: boolean;
   /** After archiving from a conversation, open the next thread (vs. back to list). */
   autoAdvance: boolean;
   /** Automatic Marketing/News/Social/Pitch categorization at sync time. */
   autoLabelsEnabled: boolean;
+  /** Group the thread list under date headers (Today / Yesterday / …). */
+  groupByDate: boolean;
   /** Legacy plain-text signature map; superseded by signatureList/Defaults and
    *  folded in by the backend on read. Kept for type/serde compatibility. */
   signatures: Record<string, string>;
@@ -510,6 +517,19 @@ export interface CalendarReminderEvent {
   occurrenceStart: number;
 }
 
+/** Minimal shape of an event the incremental CalDAV pull just discovered. */
+export interface NewEventInfo {
+  summary: string | null;
+  startsAt: number;
+  allDay: boolean;
+}
+
+/** New calendar events arrived via an incremental sync (not initial backfill). */
+export interface CalendarNewEvent {
+  accountId: number;
+  events: NewEventInfo[];
+}
+
 /** A local edit lost a CalDAV conflict (server won; edit kept as a copy). */
 export interface CalendarConflictEvent {
   eventId: number;
@@ -528,6 +548,7 @@ export interface EventMap {
   "ai:ask:token": AskTokenEvent;
   "ai:ask:done": AskDoneEvent;
   "calendar:updated": CalendarUpdatedEvent;
+  "calendar:new": CalendarNewEvent;
   "calendar:reminder": CalendarReminderEvent;
   "calendar:conflict": CalendarConflictEvent;
   /** OS mailto: deep link; payload is the raw mailto URL. */
@@ -549,6 +570,7 @@ export interface Commands {
     splitId?: number | null;
     accountId?: number | null;
     labelId?: number | null;
+    folderId?: number | null;
     cursor?: number | null;
     limit?: number;
   }): Promise<ThreadPage>;
@@ -556,6 +578,8 @@ export interface Commands {
   get_body(args: { messageId: number }): Promise<MessageDetail>;
   /** Extracts the attachment to disk and returns the file path. */
   get_attachment(args: { attachmentId: number }): Promise<string>;
+  /** Saves (downloads) the attachment to a chosen destination path. */
+  save_attachment(args: { attachmentId: number; dest: string }): Promise<void>;
   /** Converts the attachment to a safe in-app preview payload. */
   preview_attachment(args: { attachmentId: number }): Promise<AttachmentPreview>;
   list_folders(args: { accountId?: number | null }): Promise<FolderInfo[]>;
@@ -563,6 +587,7 @@ export interface Commands {
   perform_action(args: { args: PerformActionArgs }): Promise<ActionResult>;
   undo_last(args: Record<string, never>): Promise<{ undone: boolean }>;
   cancel_send(args: { actionId: number }): Promise<{ cancelled: boolean }>;
+  send_now(args: { actionId: number }): Promise<{ sent: boolean }>;
 
   save_draft(args: { args: SaveDraftArgs }): Promise<{ draftId: number }>;
   delete_draft(args: { draftId: number }): Promise<void>;

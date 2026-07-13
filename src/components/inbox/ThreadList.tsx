@@ -10,12 +10,36 @@ import {
 import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
 import { buildCommandContext } from "../../keyboard/context";
-import { primaryCorrespondent } from "../../lib/format";
+import { dateGroup, primaryCorrespondent } from "../../lib/format";
 import { useUi } from "../../stores/ui";
 import { ContactPane } from "./ContactPane";
 import { ThreadRow } from "./ThreadRow";
 
 const ROW_HEIGHT = 42;
+
+/** One virtualized row: a date header or a thread. Headers occupy a full
+ *  ROW_HEIGHT so the list stays uniform-height (keeps the cursor + gutter-sweep
+ *  math simple). */
+type ListItem =
+  | { kind: "header"; key: string; label: string }
+  | { kind: "thread"; thread: ThreadSummary };
+
+/** Interleave date-group headers into the thread rows. When grouping is off the
+ *  result is just the threads, one item each — identical to the old behavior. */
+function buildListItems(threads: ThreadSummary[], grouped: boolean): ListItem[] {
+  if (!grouped) return threads.map((thread) => ({ kind: "thread", thread }));
+  const items: ListItem[] = [];
+  let lastKey: string | null = null;
+  for (const thread of threads) {
+    const g = dateGroup(thread.lastMessageAt);
+    if (g.key !== lastKey) {
+      items.push({ kind: "header", key: g.key, label: g.label });
+      lastKey = g.key;
+    }
+    items.push({ kind: "thread", thread });
+  }
+  return items;
+}
 
 type ThreadListProps = {
   /** Flattened thread summaries in display order. */
@@ -25,6 +49,11 @@ type ThreadListProps = {
   /** Infinite scroll: called when the viewport nears the end of the list. */
   onEndReached?: () => void;
   isFetchingMore?: boolean;
+  /** Insert Today / Yesterday / … date headers. Only for date-sorted lists
+   *  (the inbox); off for relevance-ranked search results. */
+  groupByDate?: boolean;
+  /** Reveal ⌘/Ctrl+1..9 jump numbers on the first nine rows (search screen). */
+  jumpHints?: boolean;
 };
 
 /**
@@ -38,6 +67,8 @@ export function ThreadList({
   labelMap,
   onEndReached,
   isFetchingMore,
+  groupByDate = false,
+  jumpHints = false,
 }: ThreadListProps) {
   const { t } = useTranslation();
   const selectedThreadId = useUi((s) => s.selectedThreadId);
@@ -53,6 +84,22 @@ export function ThreadList({
   const [leavingIds, setLeavingIds] = useState<ReadonlySet<number>>(new Set());
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+
+  // Virtualized items: threads plus interleaved date headers. `rows` stays the
+  // thread-only array (selection, keyboard cursor, leave animation all index by
+  // thread), while `items` is what the virtualizer lays out.
+  const items = useMemo(() => buildListItems(rows, groupByDate), [rows, groupByDate]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  // While ⌘/Ctrl is held on the search screen, map the first nine threads to
+  // their jump-to number so each row can show its ⌘/Ctrl+1..9 badge.
+  const jumpNumbers = useMemo(() => {
+    if (!jumpHints) return null;
+    const m = new Map<number, string>();
+    rows.slice(0, 9).forEach((r, i) => m.set(r.id, String(i + 1)));
+    return m;
+  }, [jumpHints, rows]);
 
   // Contact pane: the highlighted thread and this correspondent's recent
   // conversations. Derive from `rows` (not `threads`) so the pane stays valid
@@ -115,22 +162,26 @@ export function ThreadList({
     useUi.getState().set({ selectAnchorId: id });
     el?.classList.add("select-none");
 
-    const indexFromY = (clientY: number): number => {
+    // Uniform ROW_HEIGHT (headers included), so pointer Y maps straight to an
+    // item index; range selection then filters that slice down to thread ids.
+    const itemIndexFromY = (clientY: number): number => {
       if (!el) return 0;
       const r = el.getBoundingClientRect();
       const y = clientY - r.top + el.scrollTop;
-      return Math.max(0, Math.min(Math.floor(y / ROW_HEIGHT), rowsRef.current.length - 1));
+      return Math.max(0, Math.min(Math.floor(y / ROW_HEIGHT), itemsRef.current.length - 1));
     };
 
     const onMove = (ev: MouseEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
-      const list = rowsRef.current;
-      const startIdx = list.findIndex((t) => t.id === drag.startId);
+      const list = itemsRef.current;
+      const startIdx = list.findIndex((it) => it.kind === "thread" && it.thread.id === drag.startId);
       if (startIdx < 0) return;
-      const cur = indexFromY(ev.clientY);
+      const cur = itemIndexFromY(ev.clientY);
       if (cur !== startIdx) drag.moved = true;
-      const ids = list.slice(Math.min(startIdx, cur), Math.max(startIdx, cur) + 1).map((t) => t.id);
+      const ids = list
+        .slice(Math.min(startIdx, cur), Math.max(startIdx, cur) + 1)
+        .flatMap((it) => (it.kind === "thread" ? [it.thread.id] : []));
       useUi.getState().setSelection([...drag.base, ...ids]);
     };
 
@@ -178,7 +229,7 @@ export function ThreadList({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
@@ -190,7 +241,9 @@ export function ThreadList({
     if (selectedThreadId == null) return;
     const el = scrollRef.current;
     if (!el) return;
-    const idx = rowsRef.current.findIndex((t) => t.id === selectedThreadId);
+    const idx = itemsRef.current.findIndex(
+      (it) => it.kind === "thread" && it.thread.id === selectedThreadId,
+    );
     if (idx < 0) return;
     const top = idx * ROW_HEIGHT;
     const bottom = top + ROW_HEIGHT;
@@ -200,13 +253,13 @@ export function ThreadList({
   }, [selectedThreadId, virtualizer]);
 
   // Infinite scroll.
-  const items = virtualizer.getVirtualItems();
-  const lastIndex = items[items.length - 1]?.index ?? 0;
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
   useEffect(() => {
-    if (onEndReached && lastIndex >= rows.length - 12) {
+    if (onEndReached && lastIndex >= items.length - 12) {
       onEndReached();
     }
-  }, [onEndReached, lastIndex, rows.length]);
+  }, [onEndReached, lastIndex, items.length]);
 
   return (
     <div className="relative flex min-h-0 flex-1">
@@ -216,27 +269,33 @@ export function ThreadList({
         style={{ background: "color-mix(in srgb, var(--bg0) 85%, transparent)" }}
       >
         <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
-          {items.map((vi) => {
-            const t = rows[vi.index];
-            if (!t) return null;
+          {virtualItems.map((vi) => {
+            const item = items[vi.index];
+            if (!item) return null;
+            const style = { top: vi.start, height: vi.size } as const;
+            if (item.kind === "header") {
+              return (
+                <div key={`h-${item.key}`} className="absolute inset-x-0" style={style}>
+                  <DateHeader label={item.label} />
+                </div>
+              );
+            }
+            const th = item.thread;
             return (
-              <div
-                key={t.id}
-                className="absolute inset-x-0"
-                style={{ top: vi.start, height: vi.size }}
-              >
+              <div key={th.id} className="absolute inset-x-0" style={style}>
                 <ThreadRow
-                  thread={t}
-                  selected={t.id === selectedThreadId && selection.length === 0}
-                  checked={selection.includes(t.id)}
+                  thread={th}
+                  selected={th.id === selectedThreadId && selection.length === 0}
+                  checked={selection.includes(th.id)}
                   selectionMode={selection.length > 0}
                   selfEmails={selfEmails}
                   labelMap={labelMap}
-                  leaving={leavingIds.has(t.id)}
+                  leaving={leavingIds.has(th.id)}
                   onRowClick={handleRowClick}
                   onToggleCheck={handleToggleCheck}
                   onGutterDown={onGutterDown}
                   onHover={handleHover}
+                  jumpHint={jumpNumbers?.get(th.id)}
                 />
               </div>
             );
@@ -256,6 +315,17 @@ export function ThreadList({
       />
 
       {selection.length > 0 && <BulkBar count={selection.length} onClear={() => ui({ selection: [] })} />}
+    </div>
+  );
+}
+
+/** Sticky-looking date separator between thread rows (Today / Yesterday / …). */
+function DateHeader({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-end px-4 pb-1.5">
+      <span className="text-[11px] font-semibold tracking-[0.06em] text-ink-faint uppercase">
+        {label}
+      </span>
     </div>
   );
 }

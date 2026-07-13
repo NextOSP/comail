@@ -1,4 +1,10 @@
 {
+  "dateGroup": {
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "thisWeek": "Cette semaine",
+    "thisMonth": "Ce mois-ci"
+  },
   "view": {
     "inbox": "Boîte de réception",
     "starred": "Suivis",
@@ -116,6 +122,7 @@
     "snippets": "Extraits",
     "splits": "Règles de boîte divisée",
     "labels": "Libellés",
+    "folders": "Dossiers",
     "manageLabels": "Gérer les libellés",
     "settings": "Paramètres",
     "accountSettings": "Paramètres du compte",
