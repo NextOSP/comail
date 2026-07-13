@@ -67,6 +67,15 @@ export function applyOptimistic(
     };
   });
 
+  // Search results are flat summary arrays; keep them in step so acting on a
+  // result (Done, read, star...) is visible without leaving the search screen.
+  queryClient.setQueriesData<ThreadSummary[]>({ queryKey: ["search"] }, (data) => {
+    if (!data) return data;
+    return removes
+      ? data.filter((t) => !ids.has(t.id))
+      : data.map((t) => (ids.has(t.id) ? patchSummary(t, kind, params) : t));
+  });
+
   for (const id of threadIds) {
     queryClient.setQueryData<ThreadDetail>(["thread", id], (d) => {
       if (!d) return d;
@@ -83,6 +92,7 @@ export function applyOptimistic(
 function refetchLists() {
   void queryClient.invalidateQueries({ queryKey: ["threads"] });
   void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+  void queryClient.invalidateQueries({ queryKey: ["search"] });
 }
 
 /**
@@ -97,8 +107,10 @@ export function performThreadAction(
   applyOptimistic(kind, threadIds, params);
   return call("perform_action", { args: { kind, threadIds, params } })
     .then(() => {
-      // reconcile in the background: labels/counts may have shifted
+      // reconcile in the background: labels/counts may have shifted, and
+      // operator filters (is:unread, in:...) must re-apply on the backend
       void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["search"] });
     })
     .catch((err: unknown) => {
       useUi.getState().pushToast({

@@ -212,26 +212,26 @@ function splitTabCommand(n: number): Command {
 
 // --------------------------------------------------------- Account filter
 
-/** Ctrl+1 = all accounts, Ctrl+2 = first account, Ctrl+3 = second, …
+/** Ctrl+0 = all accounts, Ctrl+1 = first account, Ctrl+2 = second, …
  *  (macOS uses Ctrl so Cmd+N stays free for split tabs; other platforms Alt). */
 function switchAccountCommand(n: number): Command {
-  const isAll = n === 1;
+  const isAll = n === 0;
   return {
     id: `account-filter-${n}`,
     titleKey: isAll ? "commands:title.switchAccountAll" : "commands:title.switchAccount",
-    titleParams: isAll ? undefined : { n: n - 1 },
-    aliases: isAll ? ["all accounts", "account filter"] : [`account ${n - 1}`, "account filter"],
+    titleParams: isAll ? undefined : { n },
+    aliases: isAll ? ["all accounts", "account filter"] : [`account ${n}`, "account filter"],
     keys: [IS_MAC ? `ctrl+${n}` : `alt+${n}`],
     section: "Go to",
     when: (ctx) => {
       if (ctx.composerOpen || ctx.panelOpen) return false;
       if (isAll) return true;
       const accounts = queryClient.getQueryData<Account[]>(["accounts"]) ?? [];
-      return accounts.length >= n - 1;
+      return accounts.length >= n;
     },
     run: () => {
       const accounts = queryClient.getQueryData<Account[]>(["accounts"]) ?? [];
-      const target = isAll ? null : accounts[n - 2]?.id;
+      const target = isAll ? null : accounts[n - 1]?.id;
       if (!isAll && target == null) return;
       useUi.getState().set({
         accountFilter: target ?? null,
@@ -933,8 +933,8 @@ export const ALL_COMMANDS: Command[] = [
   // ---------------------------------------------- Inbox split tabs (Cmd+N)
   ...Array.from({ length: 9 }, (_, i) => splitTabCommand(i + 1)),
 
-  // ------------------------------------------------- Account filter (Ctrl+N)
-  ...Array.from({ length: 9 }, (_, i) => switchAccountCommand(i + 1)),
+  // ------------------------------- Account filter (Ctrl+0 all, Ctrl+1..9)
+  ...Array.from({ length: 10 }, (_, i) => switchAccountCommand(i)),
 
   // ----------------------------------------------------------------- Meta
   {

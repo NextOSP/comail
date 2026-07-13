@@ -272,6 +272,7 @@ function SandboxedHtml({ html }: { html: string }) {
   }, [html, theme]);
   return (
     <iframe
+      data-app-iframe
       sandbox="allow-same-origin"
       srcDoc={srcDoc}
       className="h-full w-full rounded-md border-0 bg-bg1"

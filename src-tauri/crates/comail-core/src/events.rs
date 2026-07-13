@@ -59,6 +59,11 @@ pub enum CoreEvent {
         request_id: String,
         delta: String,
     },
+    /// One incremental chunk of the model's reasoning (shown clipped in the UI).
+    AskReasoning {
+        request_id: String,
+        delta: String,
+    },
     /// The streamed "ask" answer finished.
     AskDone {
         request_id: String,

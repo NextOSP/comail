@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { folderLeafName } from "../../lib/folders";
-import { MOD_LABEL } from "../../lib/format";
+import { accountColor, accountLabel, IS_MAC, MOD_LABEL } from "../../lib/format";
+import { displayShortcut } from "../../keyboard/registry";
 import { useAccounts, useFolders } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 
@@ -116,34 +117,45 @@ export function TopBar() {
 
       <div className="relative">
         <button
-          className="flex items-center gap-2 rounded-full border border-hairline bg-bg1 px-2.5 py-1 text-[12px] text-ink-muted hover:bg-bg2"
+          className="flex items-center gap-1.5 rounded-full border border-hairline bg-bg1 py-1 pr-2 pl-2.5 text-[12px] font-medium text-ink hover:bg-bg2"
+          title={active ? active.email : t("common:topbar.allAccounts")}
           onClick={() => setMenuOpen((v) => !v)}
         >
           <span
-            className="size-2 rounded-full"
-            style={{ background: active ? "var(--accent)" : "var(--info)" }}
+            className="size-2.5 shrink-0 rounded-full"
+            style={{ background: active ? accountColor(active.email) : "var(--info)" }}
           />
-          {active ? active.email : t("common:topbar.allAccounts")}
+          <span className="max-w-[150px] truncate">
+            {active ? accountLabel(active) : t("common:topbar.allAccounts")}
+          </span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-faint">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
             <div
-              className="co-pop-in absolute right-0 z-40 mt-1.5 min-w-56 rounded-lg border border-hairline bg-bg1 p-1"
+              className="co-pop-in absolute right-0 z-40 mt-1.5 min-w-64 rounded-lg border border-hairline bg-bg1 p-1"
               style={{ boxShadow: "var(--elev-2)" }}
             >
               <MenuItem
                 label={t("common:topbar.allAccounts")}
+                color="var(--info)"
+                hint={displayShortcut(IS_MAC ? "ctrl+0" : "alt+0")}
                 selected={accountFilter == null}
                 onClick={() => {
                   set({ accountFilter: null });
                   setMenuOpen(false);
                 }}
               />
-              {(accounts ?? []).map((a) => (
+              {(accounts ?? []).map((a, i) => (
                 <MenuItem
                   key={a.id}
-                  label={a.email}
+                  label={accountLabel(a)}
+                  detail={a.displayName?.trim() ? a.email : undefined}
+                  color={accountColor(a.email)}
+                  hint={i < 9 ? displayShortcut(IS_MAC ? `ctrl+${i + 1}` : `alt+${i + 1}`) : undefined}
                   sub={a.syncState !== "idle" ? t(`common:syncState.${a.syncState}`) : undefined}
                   selected={accountFilter === a.id}
                   onClick={() => {
@@ -162,26 +174,40 @@ export function TopBar() {
 
 function MenuItem({
   label,
+  detail,
   sub,
+  hint,
+  color,
   selected,
   onClick,
 }: {
   label: string;
+  /** secondary line (e.g. the email when the label is a display name) */
+  detail?: string;
+  /** right-aligned status text (e.g. "Syncing") */
   sub?: string;
+  /** keyboard hint chip, e.g. "⌃1" */
+  hint?: string;
+  color: string;
   selected: boolean;
   onClick: () => void;
 }) {
   return (
     <button
-      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] hover:bg-bg2"
+      className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] ${selected ? "bg-bg2" : "hover:bg-bg2"}`}
       onClick={onClick}
     >
-      <span
-        className="size-1.5 rounded-full"
-        style={{ background: selected ? "var(--accent)" : "transparent" }}
-      />
-      <span className="text-ink">{label}</span>
-      {sub && <span className="ml-auto text-[11.5px] text-ink-faint">{sub}</span>}
+      <span className="size-2 shrink-0 rounded-full" style={{ background: color }} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={`truncate ${selected ? "font-medium text-ink" : "text-ink"}`}>{label}</span>
+        {detail && <span className="truncate text-[11px] text-ink-faint">{detail}</span>}
+      </span>
+      {sub && <span className="shrink-0 text-[11px] text-ink-faint">{sub}</span>}
+      {hint && (
+        <kbd className="shrink-0 rounded border border-hairline bg-bg0 px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-ink-faint tabular-nums">
+          {hint}
+        </kbd>
+      )}
     </button>
   );
 }

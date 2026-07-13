@@ -263,15 +263,23 @@ export type AskStatus = "idle" | "pending" | "streaming" | "done" | "error";
  */
 export function useAsk() {
   const [answer, setAnswer] = useState("");
+  const [reasoning, setReasoning] = useState("");
   const [citations, setCitations] = useState<AskCitation[]>([]);
   const [status, setStatus] = useState<AskStatus>("idle");
+  const [error, setError] = useState("");
   const activeId = useRef<string>("");
+  // Tracks streamed answer text so a late failure (e.g. the endpoint dropping
+  // the connection after the answer completed) doesn't discard a good answer.
+  const streamed = useRef("");
 
   const run = useCallback((question: string) => {
     const requestId = crypto.randomUUID();
     activeId.current = requestId;
+    streamed.current = "";
     setAnswer("");
+    setReasoning("");
     setCitations([]);
+    setError("");
     setStatus("pending");
 
     const isCurrent = (id: string) => activeId.current === requestId && id === requestId;
@@ -281,8 +289,12 @@ export function useAsk() {
     });
     const offToken = onEvent("ai:ask:token", (p) => {
       if (!isCurrent(p.requestId)) return;
+      streamed.current += p.delta;
       setStatus("streaming");
       setAnswer((prev) => prev + p.delta);
+    });
+    const offReasoning = onEvent("ai:ask:reasoning", (p) => {
+      if (isCurrent(p.requestId)) setReasoning((prev) => prev + p.delta);
     });
 
     call("ai_ask", { question, requestId })
@@ -292,23 +304,34 @@ export function useAsk() {
         setCitations(res.citations);
         setStatus("done");
       })
-      .catch(() => {
-        if (activeId.current === requestId) setStatus("error");
+      .catch((e) => {
+        if (activeId.current !== requestId) return;
+        // If the answer already streamed in, keep it — a failure on the final
+        // response shouldn't erase a complete, visible answer.
+        if (streamed.current.trim() !== "") {
+          setStatus("done");
+          return;
+        }
+        setError(errorMessage(e));
+        setStatus("error");
       })
       .finally(() => {
         offCitations();
         offToken();
+        offReasoning();
       });
   }, []);
 
   const reset = useCallback(() => {
     activeId.current = "";
     setAnswer("");
+    setReasoning("");
     setCitations([]);
+    setError("");
     setStatus("idle");
   }, []);
 
-  return { run, reset, answer, citations, status };
+  return { run, reset, answer, reasoning, citations, status, error };
 }
 
 /** Learn the user's writing voice from sent mail; refreshes settings on success. */

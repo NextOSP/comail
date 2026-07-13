@@ -235,6 +235,16 @@
     "label": "Âm thanh",
     "hint": "Phát âm thanh khi có thư mới và khi gửi."
   },
+  "dockBadge": {
+    "label": "Huy hiệu trên Dock",
+    "hint": "Hiển thị số thư chưa đọc trên biểu tượng ứng dụng."
+  },
+  "dockBadgeSource": {
+    "label": "Số trên huy hiệu",
+    "hint": "Huy hiệu đếm những thư chưa đọc nào.",
+    "all": "Tất cả thư chưa đọc",
+    "important": "Chỉ thư quan trọng"
+  },
   "autoAdvance": {
     "label": "Tự động chuyển tiếp",
     "hint": "Sau khi Hoàn tất/Tạm ẩn một cuộc hội thoại, mở cuộc hội thoại tiếp theo thay vì quay về danh sách."
@@ -267,7 +277,10 @@
     "checking": "Đang kiểm tra…",
     "upToDate": "Bạn đang dùng phiên bản mới nhất.",
     "updateAvailable": "Đã có phiên bản {{version}}.",
-    "restartInstall": "Khởi động lại và cài đặt"
+    "restartInstall": "Khởi động lại và cài đặt",
+    "logs": "Nhật ký",
+    "logsHint": "Mở thư mục chứa các tệp nhật ký trên máy tính này.",
+    "openLogs": "Xem thư mục nhật ký"
   },
   "calendar": {
     "section": "Đồng bộ lịch",

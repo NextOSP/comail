@@ -62,6 +62,17 @@ fn append_operator_clauses(
     if q.has_attachment == Some(true) {
         where_clauses.push("m.has_attachments = 1".into());
     }
+    // `exclude:`/`-term`: drop messages whose FTS content matches any excluded
+    // term. Applied here (not in the FTS MATCH string) so it works uniformly
+    // whether the message reached us via the lexical bm25 branch or the vector
+    // branch, and even when there are no positive FTS terms to hang a `NOT` off.
+    if !q.fts_not.is_empty() {
+        bind.push(Box::new(q.fts_not.clone()));
+        where_clauses.push(format!(
+            "m.id NOT IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?{})",
+            bind.len()
+        ));
+    }
 }
 
 /// Lexical branch: thread ids ranked by bm25 + recency (or, when the query is
@@ -122,6 +133,94 @@ fn structured_thread_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Result
         .query_map(params_ref.as_slice(), |r| r.get::<_, i64>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(ids)
+}
+
+/// Lexical branch at message granularity: message ids ranked by bm25 + recency
+/// (or recency alone when operators-only), best first, capped. Mirrors
+/// `structured_thread_ids` but returns individual messages so RAG/agentic
+/// callers can retrieve and cite specific emails.
+fn structured_message_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Result<Vec<i64>> {
+    let mut where_clauses: Vec<String> = Vec::new();
+    let mut bind: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    let (cte, fts_join) = if q.fts.is_empty() {
+        ("", "")
+    } else {
+        bind.push(Box::new(q.fts.clone()));
+        (
+            "WITH f AS MATERIALIZED (
+                SELECT rowid AS mid, bm25(messages_fts, 4.0, 2.0, 2.0, 1.0) AS fts_rank
+                FROM messages_fts WHERE messages_fts MATCH ?1
+                ORDER BY fts_rank LIMIT 2000)",
+            "JOIN f ON f.mid = m.id",
+        )
+    };
+
+    append_operator_clauses(q, &mut where_clauses, &mut bind);
+
+    if where_clauses.is_empty() && q.fts.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rank_expr = if q.fts.is_empty() { "0.0" } else { "f.fts_rank" };
+    let where_sql = if where_clauses.is_empty() {
+        String::new()
+    } else {
+        format!("AND {}", where_clauses.join(" AND "))
+    };
+
+    let sql = format!(
+        "{cte}
+         SELECT m.id
+         FROM messages m {fts_join}
+         WHERE m.thread_id IS NOT NULL {where_sql}
+         ORDER BY {rank_expr} ASC, m.date DESC
+         LIMIT {cap}"
+    );
+
+    let mut stmt = conn.prepare_cached(&sql)?;
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> = bind.iter().map(|b| b.as_ref()).collect();
+    let ids = stmt
+        .query_map(params_ref.as_slice(), |r| r.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(ids)
+}
+
+/// The subset of `ids` (input order preserved) whose messages satisfy the
+/// query's operator filters. Used to constrain semantic vector hits by
+/// from:/to:/is:/etc. before fusing.
+fn allowed_message_ids(conn: &Connection, q: &ParsedQuery, ids: &[i64]) -> Result<Vec<i64>> {
+    let allowed = allowed_message_threads(conn, q, ids)?;
+    Ok(ids.iter().copied().filter(|id| allowed.contains_key(id)).collect())
+}
+
+/// Message-level hybrid retrieval for RAG / agentic tools: fuse operator-aware
+/// lexical (bm25) ids with the operator-filtered semantic hits via RRF, best
+/// first, capped at `limit`. `vec_hits` are (message_id, score) from the vector
+/// index; pass an empty slice for lexical-only.
+pub fn message_hits(
+    conn: &Connection,
+    q: &ParsedQuery,
+    vec_hits: &[(i64, f32)],
+    limit: i64,
+) -> Result<Vec<i64>> {
+    let lexical = structured_message_ids(conn, q, candidate_cap(limit) as i64)?;
+
+    let sem_ids: Vec<i64> = vec_hits.iter().map(|(id, _)| *id).collect();
+    let allowed: std::collections::HashSet<i64> =
+        allowed_message_ids(conn, q, &sem_ids)?.into_iter().collect();
+    let semantic: Vec<i64> = sem_ids.into_iter().filter(|id| allowed.contains(id)).collect();
+
+    let lists: Vec<Vec<i64>> = [lexical, semantic]
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect();
+    let fused = rrf(&lists);
+    Ok(fused
+        .into_iter()
+        .take(limit.max(1) as usize)
+        .map(|(id, _)| id)
+        .collect())
 }
 
 /// How many candidate thread ids each branch feeds into fusion for a given

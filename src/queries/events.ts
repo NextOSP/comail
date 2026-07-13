@@ -27,6 +27,16 @@ async function notificationsAllowed(): Promise<boolean> {
   return notifyPermission;
 }
 
+/** Bring the (possibly tray-hidden) window forward. Best-effort. */
+async function focusMainWindow() {
+  if (MOCK_MODE) return;
+  try {
+    await call("focus_main_window", {});
+  } catch {
+    // best-effort
+  }
+}
+
 /** Desktop notification for new mail, gated by the setting. */
 async function notifyNewMail(threadIds: number[]) {
   if (MOCK_MODE) return;
@@ -128,6 +138,30 @@ async function notifyNewEvents(events: NewEventInfo[]) {
 
 /** Wire backend push events into targeted query invalidations. Mount once. */
 export function useBackendEvents() {
+  // Clicking any desktop notification should bring the app forward — the window
+  // is hidden to the tray on close, so macOS activating the process alone shows
+  // nothing. Registered once, independent of the backend-event listeners below.
+  useEffect(() => {
+    if (MOCK_MODE) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { onAction } = await import("@tauri-apps/plugin-notification");
+        if (typeof onAction !== "function") return;
+        const listener = await onAction(() => void focusMainWindow());
+        if (cancelled) void listener.unregister();
+        else unlisten = () => void listener.unregister();
+      } catch {
+        // platform without notification actions
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   useEffect(() => {
     // Only arm the new-mail chime after a real sync has run and settled, so an
     // early/spurious "idle" at startup can't un-suppress the backlog.

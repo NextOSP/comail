@@ -4,12 +4,20 @@ import { useAccounts, useAsk, useContactSuggestions, useLabels, useSearch } from
 import { useModHeld } from "../../lib/useModHeld";
 import { useUi } from "../../stores/ui";
 import { ThreadList } from "../inbox/ThreadList";
+import { Markdown } from "../common/Markdown";
+import { SourcePreview } from "./SourcePreview";
 
 // Shown in the "Try" row when nothing is being completed.
 const OPERATORS = ["from:", "in:", "is:unread", "has:attachment"];
 
+// The most recent line of the model's reasoning, for the clipped one-line trace.
+function lastLine(text: string): string {
+  const lines = text.split("\n").filter((l) => l.trim() !== "");
+  return lines.length > 0 ? lines[lines.length - 1] : text;
+}
+
 // The full set the search parser understands, used for as-you-type completion.
-// `from:`/`to:` take a freeform address value, so they complete to the bare
+// `from:`/`to:`/`exclude:` take a freeform value, so they complete to the bare
 // prefix; the rest are self-contained.
 const OPERATOR_SUGGESTIONS = [
   "from:",
@@ -23,6 +31,7 @@ const OPERATOR_SUGGESTIONS = [
   "is:unread",
   "is:starred",
   "has:attachment",
+  "exclude:",
 ];
 
 export function SearchScreen() {
@@ -38,6 +47,8 @@ export function SearchScreen() {
   // arrow into the list. Arrowing moves the shared cursor (highlight and
   // scrolling live in ThreadList, same as the inbox).
   const [enterArmed, setEnterArmed] = useState(false);
+  // Source citation opened in a preview modal (keeps the Ask mounted).
+  const [previewThreadId, setPreviewThreadId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const ask = useAsk();
   // ⌘/Ctrl held: reveal each result's jump-to number (⌘/Ctrl+1..9 opens it).
@@ -136,6 +147,16 @@ export function SearchScreen() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
+                // Cmd/Ctrl+A selects the query text. Handled explicitly: the
+                // native menu equivalent doesn't reliably reach the field in
+                // the webview (notably with IME input), leaving the key to
+                // fall through as a plain "a".
+                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.select();
+                  return;
+                }
                 // Cmd/Ctrl+J flips between keyword Search and AI Ask without
                 // leaving the field. Stop it here so the global registry's
                 // composer-only mod+j binding never sees it.
@@ -258,26 +279,64 @@ export function SearchScreen() {
       </div>
 
       {mode === "ask" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[860px] px-6 py-6">
-            {ask.status === "idle" ? (
+        ask.status === "idle" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-[760px] px-6 py-6">
               <p className="text-[13px] text-ink-faint">
                 Ask a question like “what did Alice say about the Q3 budget?” and get an answer
                 grounded in your mail, with sources.
               </p>
-            ) : ask.status === "error" ? (
-              <p className="text-[13px] text-danger">
-                Ask failed. Make sure AI is configured in Settings.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-5">
-                {ask.answer ? (
-                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-ink">
-                    {ask.answer}
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            {/* Sources — left rail */}
+            <aside className="co-hairline-r flex w-[300px] shrink-0 flex-col gap-1 overflow-y-auto px-3 py-5">
+              <span className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                Sources
+              </span>
+              {ask.citations.length > 0 ? (
+                ask.citations.map((c, i) => (
+                  <button
+                    key={c.messageId}
+                    onClick={() => setPreviewThreadId(c.threadId)}
+                    className="flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left hover:bg-bg2"
+                  >
+                    <span className="text-[11px] text-ink-faint">[{i + 1}]</span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{c.subject}</span>
+                    <span className="shrink-0 text-[11px] text-ink-faint">{c.from}</span>
+                  </button>
+                ))
+              ) : (
+                <p className="px-2 text-[12px] text-ink-faint">Searching your mailbox…</p>
+              )}
+            </aside>
+
+            {/* Answer — main pane */}
+            <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
+              <div className="mx-auto max-w-[760px]">
+                {ask.reasoning && (
+                  <p
+                    title={ask.reasoning}
+                    className="mb-4 flex items-center gap-2 overflow-hidden text-[12px] text-ink-faint"
+                  >
+                    {ask.status === "streaming" && (
+                      <span className="inline-block size-3 shrink-0 animate-spin rounded-full border border-ink-faint border-t-transparent" />
+                    )}
+                    <span className="truncate">{lastLine(ask.reasoning)}</span>
+                  </p>
+                )}
+                {ask.status === "error" ? (
+                  <p className="text-[13px] text-danger">
+                    {ask.error || "Ask failed. Make sure AI is configured in Settings."}
+                  </p>
+                ) : ask.answer ? (
+                  <div className="text-[14px] leading-relaxed text-ink">
+                    <Markdown text={ask.answer} />
                     {ask.status === "streaming" && (
                       <span className="ml-0.5 inline-block animate-pulse text-ink-faint">▍</span>
                     )}
-                  </p>
+                  </div>
                 ) : (
                   <p className="text-[13px] text-ink-faint">
                     {ask.citations.length > 0
@@ -285,28 +344,10 @@ export function SearchScreen() {
                       : "Searching your mailbox…"}
                   </p>
                 )}
-                {ask.citations.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                      Sources
-                    </span>
-                    {ask.citations.map((c, i) => (
-                      <button
-                        key={c.messageId}
-                        onClick={() => openThread(c.threadId)}
-                        className="flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left hover:bg-bg2"
-                      >
-                        <span className="text-[11px] text-ink-faint">[{i + 1}]</span>
-                        <span className="flex-1 truncate text-[13px] text-ink">{c.subject}</span>
-                        <span className="shrink-0 text-[11.5px] text-ink-faint">{c.from}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           {(contactHits?.length ?? 0) > 0 && storedQuery.trim() !== "" && (
@@ -340,6 +381,18 @@ export function SearchScreen() {
             <ThreadList threads={rows} selfEmails={selfEmails} labelMap={labelMap} jumpHints={modHeld} />
           )}
         </div>
+      )}
+
+      {previewThreadId != null && (
+        <SourcePreview
+          threadId={previewThreadId}
+          onClose={() => setPreviewThreadId(null)}
+          onOpenFull={() => {
+            const id = previewThreadId;
+            setPreviewThreadId(null);
+            openThread(id);
+          }}
+        />
       )}
     </div>
   );

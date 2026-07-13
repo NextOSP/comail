@@ -1,6 +1,7 @@
 {
   "db": "Database error",
   "io": "File system error",
+  "network": "Couldn't reach the server. Check your connection or the endpoint in Settings.",
   "imap": "Mail server (IMAP) error",
   "smtp": "Could not send (SMTP error)",
   "tls": "Secure connection (TLS) error",

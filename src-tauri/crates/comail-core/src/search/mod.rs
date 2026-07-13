@@ -1,5 +1,7 @@
-//! Search query parser: extracts `from:` / `to:` / `in:` / `is:` / `has:`
-//! operators, everything else becomes an FTS5 prefix query.
+//! Search query parser: extracts `from:` / `to:` / `in:` / `is:` / `has:` /
+//! `exclude:` operators, everything else becomes an FTS5 prefix query.
+//! `exclude:term` (and the Gmail-style `-term`) drops any thread whose messages
+//! match `term` from the results.
 
 /// Lowercase and strip diacritics for accent-insensitive matching, so that
 /// unaccented input ("be don dep") matches accented text ("Bé Dọn Dẹp").
@@ -13,6 +15,10 @@ pub struct ParsedQuery {
     /// Same terms joined with OR - the relaxed fallback used when the
     /// all-terms-must-match query comes up empty.
     pub fts_or: String,
+    /// Excluded terms (`exclude:foo` / `-foo`) joined with OR, as an FTS5 match
+    /// string. A thread is dropped when any of its messages matches this. Empty
+    /// when the query has no exclusions.
+    pub fts_not: String,
     /// Free-text terms with operators stripped, joined by spaces and unquoted -
     /// used as the semantic-search embedding query.
     pub text: String,
@@ -75,6 +81,7 @@ pub fn parse(input: &str) -> ParsedQuery {
     let mut q = ParsedQuery::default();
     let mut fts_terms: Vec<String> = Vec::new();
     let mut text_terms: Vec<String> = Vec::new();
+    let mut not_terms: Vec<String> = Vec::new();
 
     for token in tokenize(input) {
         let token = match token {
@@ -95,6 +102,17 @@ pub fn parse(input: &str) -> ParsedQuery {
             }
             Token::Word(w) => w,
         };
+        // Gmail-style negation: a token starting with '-' excludes the rest of
+        // it (e.g. "-draft"). A bare "-" or "-:" cleans to nothing and is
+        // dropped. Handled before operator parsing so "-from" is a text
+        // exclusion, not a malformed operator.
+        if let Some(rest) = token.strip_prefix('-') {
+            let clean = clean_token(rest.trim_start_matches('-'));
+            if !clean.is_empty() {
+                not_terms.push(fts_term(&clean));
+            }
+            continue;
+        }
         // Operators are case-insensitive on both the key ("In:" == "in:") and
         // the value ("in:Sent" == "in:sent"); users type them however they like.
         let (key, value) = match token.split_once(':') {
@@ -138,6 +156,14 @@ pub fn parse(input: &str) -> ParsedQuery {
                     q.has_attachment = Some(true);
                 }
             }
+            // Exclude a term from results: "exclude:draft" drops any thread
+            // whose messages match "draft". A bare "exclude:" is a no-op.
+            "exclude" => {
+                let clean = clean_token(value);
+                if !clean.is_empty() {
+                    not_terms.push(fts_term(&clean));
+                }
+            }
             // Not an operator (includes non-operator tokens with ':' like "12:30").
             _ => {
                 let clean = clean_token(&token);
@@ -154,6 +180,7 @@ pub fn parse(input: &str) -> ParsedQuery {
     // parenthesized groups fts_term() can produce.
     q.fts = fts_terms.join(" AND ");
     q.fts_or = fts_terms.join(" OR ");
+    q.fts_not = not_terms.join(" OR ");
     q.text = text_terms.join(" ");
     q
 }
@@ -249,5 +276,46 @@ mod tests {
     fn terms_are_folded_for_sender_matching() {
         let q = parse("Bé software");
         assert_eq!(q.terms, vec!["be", "software"]);
+    }
+
+    #[test]
+    fn exclude_operator_collects_negated_terms() {
+        // "draft" is d-initial, so it also gets the đ variant; "report" doesn't.
+        let q = parse("report exclude:draft");
+        assert_eq!(q.fts, "\"report\"*");
+        assert_eq!(q.fts_not, "(\"draft\"* OR \"đraft\"*)");
+        // Excluded terms must not leak into positive FTS, embedding text, or
+        // the sender-boost terms.
+        assert!(!q.text.contains("draft"));
+        assert!(!q.terms.iter().any(|t| t.contains("draft")));
+    }
+
+    #[test]
+    fn dash_prefix_is_exclusion() {
+        let q = parse("report -draft -old");
+        assert_eq!(q.fts, "\"report\"*");
+        assert_eq!(q.fts_not, "(\"draft\"* OR \"đraft\"*) OR \"old\"*");
+    }
+
+    #[test]
+    fn exclude_only_query_has_no_positive_fts() {
+        let q = parse("-spam");
+        assert!(q.fts.is_empty());
+        assert_eq!(q.fts_not, "\"spam\"*");
+    }
+
+    #[test]
+    fn bare_exclude_and_dash_are_noops() {
+        let q = parse("hello exclude: -");
+        assert_eq!(q.fts, "\"hello\"*");
+        assert!(q.fts_not.is_empty());
+    }
+
+    #[test]
+    fn exclude_preserves_value_case_like_positive_terms() {
+        // The operator key is case-insensitive; the value keeps its case (FTS5
+        // matches case-insensitively anyway). "Draft" is D-initial → đ variant.
+        let q = parse("EXCLUDE:Draft");
+        assert_eq!(q.fts_not, "(\"Draft\"* OR \"đraft\"*)");
     }
 }
