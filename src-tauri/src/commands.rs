@@ -421,7 +421,10 @@ pub async fn ai_command(state: State<'_, AppState>, query: String) -> CmdResult<
 }
 
 #[tauri::command]
-pub async fn ai_summarize(state: State<'_, AppState>, thread_id: i64) -> CmdResult<AiThreadSummary> {
+pub async fn ai_summarize(
+    state: State<'_, AppState>,
+    thread_id: i64,
+) -> CmdResult<AiThreadSummary> {
     state.core.ai_summarize(thread_id).await.map_err(err)
 }
 

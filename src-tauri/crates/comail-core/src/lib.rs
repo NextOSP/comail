@@ -177,8 +177,7 @@ impl Core {
                     core.spawn_actor(cfg).await;
                 }
                 // Calendar sync tasks for accounts with a connected CalDAV server.
-                if let Ok(cal_accounts) =
-                    core.db.read(|conn| repo::caldav::all_configs(conn)).await
+                if let Ok(cal_accounts) = core.db.read(|conn| repo::caldav::all_configs(conn)).await
                 {
                     for cfg in cal_accounts {
                         core.spawn_cal_task(cfg.account_id).await;

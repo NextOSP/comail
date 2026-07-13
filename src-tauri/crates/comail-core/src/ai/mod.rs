@@ -897,10 +897,22 @@ pub async fn summarize_thread(
         .timeline
         .retain(|e| !e.event.trim().is_empty() || !e.actor.trim().is_empty());
     summary.key_points.retain(|p| !p.trim().is_empty());
-    if summary.next_action.as_deref().map(str::trim).unwrap_or("").is_empty() {
+    if summary
+        .next_action
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
         summary.next_action = None;
     }
-    if summary.proposed_reply.as_deref().map(str::trim).unwrap_or("").is_empty() {
+    if summary
+        .proposed_reply
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
         summary.proposed_reply = None;
     }
     Ok(summary)
