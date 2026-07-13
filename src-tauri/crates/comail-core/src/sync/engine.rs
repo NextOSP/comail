@@ -708,11 +708,20 @@ async fn sync_folder(
                     since_uid = last_seen,
                     "receive: new mail on server",
                 );
-                let thread_ids = store_headers(ctx, config, &fresh_folder, new, true).await?;
-                if fresh_folder.role.as_deref() == Some(roles::INBOX) && !thread_ids.is_empty() {
+                let (thread_ids, fresh) = store_headers(ctx, config, &fresh_folder, new, true).await?;
+                if !thread_ids.is_empty() {
+                    ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
+                }
+                // MailNew drives the chime + desktop notification, so it only
+                // fires for genuinely fresh arrivals: unread, incoming, recent.
+                // New-to-the-folder UIDs that are our own sends, already read
+                // on another device, or moved back into the inbox (unarchive /
+                // unsnooze) refresh the list via MailUpdated above but stay
+                // silent.
+                if fresh_folder.role.as_deref() == Some(roles::INBOX) && !fresh.is_empty() {
                     ctx.bus.emit(CoreEvent::MailNew {
                         account_id,
-                        thread_ids,
+                        thread_ids: fresh,
                     });
                 }
             }
@@ -881,7 +890,7 @@ async fn initial_backfill(
         }
         let headers = imap::fetch_headers(session, &set).await?;
         done += headers.len() as u64;
-        let thread_ids = store_headers(ctx, config, folder, headers, false).await?;
+        let (thread_ids, _) = store_headers(ctx, config, folder, headers, false).await?;
         if !thread_ids.is_empty() {
             // Let the UI fill in live while the backfill runs.
             ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
@@ -940,7 +949,7 @@ async fn extend_history(
     let lo = hi.saturating_sub(HISTORY_CHUNK - 1).max(1);
     let set = format!("{lo}:{hi}");
     let headers = imap::fetch_headers(session, &set).await?;
-    let thread_ids = store_headers(ctx, config, folder, headers, false).await?;
+    let (thread_ids, _) = store_headers(ctx, config, folder, headers, false).await?;
     if !thread_ids.is_empty() {
         ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
     }
@@ -961,16 +970,23 @@ async fn extend_history(
     Ok(())
 }
 
-/// Insert fetched headers. Returns affected thread ids (new messages only).
+/// A message older than this never triggers the new-mail chime/notification,
+/// even if it lands unread — catches UIDVALIDITY resets and server-side moves
+/// replaying old mail as new-to-the-folder UIDs.
+const CHIME_RECENT_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Insert fetched headers. Returns `(all, fresh)` thread ids for the newly
+/// inserted messages: `all` for list refreshes, `fresh` only for threads that
+/// gained an unread, incoming, recent message (chime/notification-worthy).
 async fn store_headers(
     ctx: &SyncCtx,
     config: &AccountConfig,
     folder: &Folder,
     headers: Vec<FetchedHeader>,
     _notify: bool,
-) -> Result<Vec<i64>> {
+) -> Result<(Vec<i64>, Vec<i64>)> {
     if headers.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let account_id = config.id;
     let account_email = config.email.to_lowercase();
@@ -982,6 +998,7 @@ async fn store_headers(
             let tx = conn.transaction()?;
             let auto_labels = repo::settings::get(&tx)?.auto_labels_enabled;
             let mut thread_ids: Vec<i64> = Vec::new();
+            let mut fresh_ids: Vec<i64> = Vec::new();
             let mut max_uid: i64 = 0;
             let mut inserted = 0u32;
 
@@ -1085,6 +1102,15 @@ async fn store_headers(
                 if !thread_ids.contains(&thread_id) {
                     thread_ids.push(thread_id);
                 }
+                // Chime-worthy: unread + incoming (is_read folds in both) and
+                // actually recent, so replayed old mail (UIDVALIDITY resets,
+                // server-side moves) stays silent.
+                if !nm.is_read
+                    && now_ms() - date_ms < CHIME_RECENT_MS
+                    && !fresh_ids.contains(&thread_id)
+                {
+                    fresh_ids.push(thread_id);
+                }
             }
 
             if max_uid > 0 {
@@ -1101,7 +1127,7 @@ async fn store_headers(
                     "receive: stored new message headers",
                 );
             }
-            Ok(thread_ids)
+            Ok((thread_ids, fresh_ids))
         })
         .await
 }
