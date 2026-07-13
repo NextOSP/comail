@@ -61,6 +61,25 @@ export function AttachmentPreviewModal() {
 
   const name = attachment.filename ?? t("thread:attachment.fallbackName");
 
+  const download = async () => {
+    if (MOCK_MODE) {
+      pushToast({ kind: "info", message: t("thread:attachment.savedMock", { name }) });
+      return;
+    }
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const dest = await save({ defaultPath: name });
+      if (!dest) return; // user cancelled
+      await call("save_attachment", { attachmentId: attachment.id, dest });
+      pushToast({ kind: "info", message: t("thread:attachment.preview.downloaded", { name }) });
+    } catch (e) {
+      pushToast({
+        kind: "error",
+        message: t("thread:attachment.openFailed", { detail: errorMessage(e) }),
+      });
+    }
+  };
+
   return (
     <div
       className="co-overlay flex items-center justify-center p-[4vh]"
@@ -89,6 +108,19 @@ export function AttachmentPreviewModal() {
               {[attachment.mimeType, formatSize(attachment.size)].filter(Boolean).join(" · ")}
             </div>
           </div>
+          <button
+            type="button"
+            className="co-chip flex items-center gap-1.5 cursor-pointer hover:!border-accent/50"
+            onClick={() => void download()}
+            title={t("thread:attachment.preview.download")}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <path d="M7 10l5 5 5-5" />
+              <path d="M12 15V3" />
+            </svg>
+            {t("thread:attachment.preview.download")}
+          </button>
           <button
             type="button"
             className="co-chip cursor-pointer hover:!border-accent/50"

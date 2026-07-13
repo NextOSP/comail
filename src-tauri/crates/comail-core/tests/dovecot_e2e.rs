@@ -171,7 +171,7 @@ async fn full_sync_triage_and_search() {
     // 2. Backfill: 7 threads appear in the inbox (8 messages, one reply chain).
     let page = wait_for("7 inbox threads", Duration::from_secs(90), || async {
         let p = core
-            .list_threads(View::Inbox, None, None, None, None, 50)
+            .list_threads(View::Inbox, None, None, None, None, None, 50)
             .await
             .unwrap();
         eprintln!(
@@ -193,11 +193,11 @@ async fn full_sync_triage_and_search() {
 
     // 4. Split inbox: Important (-1) = 3 human threads, Other (-2) = 2 automated.
     let important = core
-        .list_threads(View::Inbox, Some(-1), None, None, None, 50)
+        .list_threads(View::Inbox, Some(-1), None, None, None, None, 50)
         .await
         .unwrap();
     let other = core
-        .list_threads(View::Inbox, Some(-2), None, None, None, 50)
+        .list_threads(View::Inbox, Some(-2), None, None, None, None, 50)
         .await
         .unwrap();
     assert_eq!(important.threads.len(), 5, "Important split");
@@ -248,13 +248,13 @@ async fn full_sync_triage_and_search() {
 
     // Optimistic: gone from inbox immediately.
     let inbox = core
-        .list_threads(View::Inbox, None, None, None, None, 50)
+        .list_threads(View::Inbox, None, None, None, None, None, 50)
         .await
         .unwrap();
     assert_eq!(inbox.threads.len(), 6, "optimistic archive");
     // And present in Done.
     let done = core
-        .list_threads(View::Done, None, None, None, None, 50)
+        .list_threads(View::Done, None, None, None, None, None, 50)
         .await
         .unwrap();
     assert!(done.threads.iter().any(|t| t.id == bob.id));
@@ -262,7 +262,7 @@ async fn full_sync_triage_and_search() {
     // 7. Undo brings it back locally.
     assert!(core.undo_last().await.unwrap());
     let inbox = core
-        .list_threads(View::Inbox, None, None, None, None, 50)
+        .list_threads(View::Inbox, None, None, None, None, None, 50)
         .await
         .unwrap();
     assert_eq!(inbox.threads.len(), 7, "undo restored inbox");
@@ -280,12 +280,12 @@ async fn full_sync_triage_and_search() {
     .await
     .unwrap();
     let inbox = core
-        .list_threads(View::Inbox, None, None, None, None, 50)
+        .list_threads(View::Inbox, None, None, None, None, None, 50)
         .await
         .unwrap();
     assert_eq!(inbox.threads.len(), 6, "snoozed thread hidden");
     let snoozed = core
-        .list_threads(View::Snoozed, None, None, None, None, 50)
+        .list_threads(View::Snoozed, None, None, None, None, None, 50)
         .await
         .unwrap();
     assert!(snoozed.threads.iter().any(|t| t.id == alice_id));
@@ -377,5 +377,68 @@ async fn full_sync_triage_and_search() {
     })
     .await;
 
-    eprintln!("e2e OK: sync, threading, splits, bodies, FTS, archive+undo, snooze, contacts, remote replay");
+    // 11. IMAP IDLE push: with the actor waiting in IDLE, a message appended to
+    // INBOX should surface in seconds — far faster than the 60s poll cycle.
+    // Wait until the actor is quiescent (state "idle" => in the IDLE wait), then
+    // append; the server's push must wake it.
+    wait_for("account idle", Duration::from_secs(90), || async {
+        let st = core.get_sync_status().await.unwrap();
+        st.iter()
+            .find(|s| s.account_id == account.id)
+            .filter(|s| s.state == "idle")
+            .map(|_| ())
+    })
+    .await;
+    // Small buffer so the actor has entered idle_wait (SELECT + IDLE init).
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let mut ev_rx = core.bus.subscribe();
+    {
+        let creds = comail_core::imap::ImapCredentials::Password {
+            user: "testuser".into(),
+            password: "pass".into(),
+        };
+        let mut s = comail_core::imap::connect("127.0.0.1", 10993, creds)
+            .await
+            .expect("idle-push connect");
+        let raw = format!(
+            "Message-ID: <idle-push@example.com>\r\nFrom: Grace <grace@example.com>\r\n\
+             To: Test User <testuser@example.com>\r\nSubject: Pushed via IDLE\r\nDate: {}\r\n\
+             Content-Type: text/plain; charset=utf-8\r\n\r\nArrived in real time.\r\n",
+            chrono::Utc::now().to_rfc2822()
+        );
+        comail_core::imap::append(&mut s, "INBOX", raw.as_bytes(), false)
+            .await
+            .expect("idle-push append");
+        comail_core::imap::logout(s).await;
+    }
+
+    // 15s << the 60s poll cadence, so a MailNew arriving in time proves the
+    // IDLE push path (not a poll) woke the actor.
+    let pushed = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match ev_rx.recv().await {
+                Ok(comail_core::events::CoreEvent::MailNew { .. }) => break true,
+                Ok(_) => continue,
+                Err(_) => break false,
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+    assert!(
+        pushed,
+        "IDLE should deliver new mail within 15s (poll cadence is 60s)"
+    );
+
+    let inbox = core
+        .list_threads(View::Inbox, None, None, None, None, None, 50)
+        .await
+        .unwrap();
+    assert!(
+        inbox.threads.iter().any(|t| t.subject == "Pushed via IDLE"),
+        "IDLE-pushed message should appear in the inbox"
+    );
+
+    eprintln!("e2e OK: sync, threading, splits, bodies, FTS, archive+undo, snooze, contacts, remote replay, IDLE push");
 }

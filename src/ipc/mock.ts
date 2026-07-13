@@ -59,6 +59,7 @@ interface MockMessage {
   htmlBody: string | null;
   attachments: AttachmentMeta[];
   listUnsubscribe: string | null;
+  via: string | null;
 }
 
 interface MockThread {
@@ -159,6 +160,7 @@ interface MsgSpec {
   outgoing?: boolean;
   attachments?: Array<{ name: string; mime: string; size: number }>;
   listUnsubscribe?: string;
+  via?: string;
 }
 
 function addThread(
@@ -201,6 +203,7 @@ function addThread(
         isInline: false,
       })),
       listUnsubscribe: m.listUnsubscribe ?? null,
+      via: m.via ?? null,
     });
   }
   t.messages.sort((a, b) => a.date - b.date);
@@ -209,6 +212,29 @@ function addThread(
 }
 
 // --- Account 1: work (bd@northbeam.com) -------------------------------------
+
+addThread(1, "[Pulsewatch] CPUUtilization alarm", [
+  {
+    from: { name: "Pulsewatch", email: "alerts@pulsewatch.io" },
+    ago: 0.1 * H,
+    unread: true,
+    body: "Pulsewatch Monitor Notify Message. CPUUtilization average >= 90% 3 times.",
+    html:
+      "<div>Pulsewatch Monitor Notify Message</div>" +
+      "<table width='640' cellpadding='0' cellspacing='0' style='border-collapse:collapse'>" +
+      "<tr><td style='background:#2b3038;color:#fff;padding:10px 16px'>Pulsewatch &nbsp;&nbsp; Home | Products | Partners | Console | Support | Help</td></tr>" +
+      "<tr><td style='padding:20px'>" +
+      "<h3>[Pulsewatch] Dear User bd@northbeam.com - 5861674761141768 ,</h3>" +
+      "<table cellpadding='4'><tr><td><b>MetricName</b></td><td>CPUUtilization</td></tr>" +
+      "<tr><td><b>Alarm rules</b></td><td><a href='#'>SystemDefault_CPUUtilization</a></td></tr></table>" +
+      "<table border='1' cellpadding='6' style='border-collapse:collapse'><tr><th>Alerting resources</th><th>Value</th><th>Duration</th></tr>" +
+      "<tr><td>instanceId=321406b8b17746849270535fbbc32536,regionId=eu-west-1/321406b8b17746849270535fbbc32536</td><td>94.05%</td><td>2 minutes</td></tr></table>" +
+      "</td></tr>" +
+      "<tr><td style='padding:16px'>Follow us: <a href='#'>FB</a> <a href='#'>TW</a> <a href='#'>LI</a> " +
+      "<span style='float:right'>Copyright © Pulsewatch 2009-2017 All Right Reserved</span></td></tr>" +
+      "</table>",
+  },
+]);
 
 addThread(1, "Q3 roadmap review - final deck", [
   {
@@ -498,6 +524,7 @@ addThread(1, "Money Stuff: The Index Fund Owns You Now", [
     from: moneyStuff,
     ago: 7 * H,
     unread: true,
+    via: "bounce@sailthru.com",
     listUnsubscribe: "<mailto:unsubscribe@news.bloomberg.com?subject=unsubscribe-moneystuff>",
     body: "Money Stuff\nBy Matt Levine\n\nThe Index Fund Owns You Now\n\nOne thing that I say a lot around here is that the essential trade of modern finance is that you give your money to someone else and they do something with it...\n\nAlso: crypto custody, again; an ETF for everything; people are worried about bond market liquidity.",
   },
@@ -856,25 +883,32 @@ function applyAutoLabels() {
 applyAutoLabels();
 
 const folders: FolderInfo[] = [
-  { id: 1, accountId: 1, imapName: "INBOX", role: "inbox" },
-  { id: 2, accountId: 1, imapName: "Archive", role: "archive" },
-  { id: 3, accountId: 1, imapName: "Sent", role: "sent" },
-  { id: 4, accountId: 1, imapName: "Drafts", role: "drafts" },
-  { id: 5, accountId: 1, imapName: "Trash", role: "trash" },
-  { id: 6, accountId: 1, imapName: "Spam", role: "spam" },
-  { id: 7, accountId: 2, imapName: "INBOX", role: "inbox" },
-  { id: 8, accountId: 2, imapName: "[Gmail]/All Mail", role: "archive" },
-  { id: 9, accountId: 2, imapName: "[Gmail]/Sent Mail", role: "sent" },
-  { id: 10, accountId: 2, imapName: "[Gmail]/Drafts", role: "drafts" },
-  { id: 11, accountId: 2, imapName: "[Gmail]/Trash", role: "trash" },
-  { id: 12, accountId: 2, imapName: "[Gmail]/Spam", role: "spam" },
+  { id: 1, accountId: 1, imapName: "INBOX", delimiter: "/", role: "inbox" },
+  { id: 2, accountId: 1, imapName: "Archive", delimiter: "/", role: "archive" },
+  { id: 3, accountId: 1, imapName: "Sent", delimiter: "/", role: "sent" },
+  { id: 4, accountId: 1, imapName: "Drafts", delimiter: "/", role: "drafts" },
+  { id: 5, accountId: 1, imapName: "Trash", delimiter: "/", role: "trash" },
+  { id: 6, accountId: 1, imapName: "Spam", delimiter: "/", role: "spam" },
+  { id: 7, accountId: 2, imapName: "INBOX", delimiter: "/", role: "inbox" },
+  { id: 8, accountId: 2, imapName: "[Gmail]/All Mail", delimiter: "/", role: "archive" },
+  { id: 9, accountId: 2, imapName: "[Gmail]/Sent Mail", delimiter: "/", role: "sent" },
+  { id: 10, accountId: 2, imapName: "[Gmail]/Drafts", delimiter: "/", role: "drafts" },
+  { id: 11, accountId: 2, imapName: "[Gmail]/Trash", delimiter: "/", role: "trash" },
+  { id: 12, accountId: 2, imapName: "[Gmail]/Spam", delimiter: "/", role: "spam" },
+  // User-created folders, incl. a nested tree (no role -> shown in the sidebar).
+  { id: 13, accountId: 1, imapName: "Filter out", delimiter: "/", role: null },
+  { id: 14, accountId: 1, imapName: "Filter out/AIRBNB", delimiter: "/", role: null },
+  { id: 15, accountId: 1, imapName: "Filter out/TopCV", delimiter: "/", role: null },
+  { id: 16, accountId: 1, imapName: "Filter out/Workflow", delimiter: "/", role: null },
+  { id: 17, accountId: 1, imapName: "Later", delimiter: "/", role: null },
+  { id: 18, accountId: 2, imapName: "Receipts", delimiter: "/", role: null },
 ];
 
 const DEFAULT_MOCK_SETTINGS: Settings = {
   theme: "system",
   language: "system",
   undoSendSeconds: 10,
-  loadRemoteImages: false,
+  loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",
   aiModel: "mock/gpt",
   aiModelInstant: "",
@@ -895,8 +929,10 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   voiceLearnedAt: 0,
   meetingNotifyLeadMinutes: 10,
   notificationsEnabled: true,
+  soundEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
+  groupByDate: true,
   signatures: {},
   signatureList: [],
   signatureDefaults: {},
@@ -1124,6 +1160,7 @@ function toDetail(m: MockMessage): MessageDetail {
     htmlBody: m.htmlBody,
     attachments: m.attachments,
     listUnsubscribe: m.listUnsubscribe,
+    via: m.via,
   };
 }
 
@@ -1348,6 +1385,7 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
       htmlBody: args.bodyHtml ?? null,
       attachments: [],
       listUnsubscribe: null,
+      via: null,
     };
     thread.messages.push(msg);
     loc = { threadId: thread.id, messageId: msg.id };
@@ -1581,13 +1619,22 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       const splitId = a.splitId as number | null | undefined;
       const accountId = a.accountId as number | null | undefined;
       const labelId = a.labelId as number | null | undefined;
+      const folderId = a.folderId as number | null | undefined;
       const cursor = (a.cursor as number | null | undefined) ?? 0;
       const limit = (a.limit as number | undefined) ?? 30;
+      const folder = folderId == null ? null : folders.find((f) => f.id === folderId);
       const matched = threads
         .filter((t) => inView(t, view))
         .filter((t) => (view === "inbox" ? inSplit(t, splitId) : true))
         .filter((t) => (accountId == null ? true : t.accountId === accountId))
         .filter((t) => (labelId == null ? true : t.labels.includes(labelId)))
+        // Mock has no per-user-folder membership; show a deterministic sample so
+        // the folder view demonstrates real content instead of being empty.
+        .filter((t) =>
+          folder == null || folder.role != null
+            ? true
+            : t.accountId === folder.accountId && t.id % 5 === folder.id % 5,
+        )
         .map(summarize)
         .sort((x, y) => (view === "snoozed" ? (x.snoozedUntil ?? 0) - (y.snoozedUntil ?? 0) : y.lastMessageAt - x.lastMessageAt));
       const page = matched.slice(cursor, cursor + limit);
@@ -1614,6 +1661,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "get_attachment":
       return delay(`/tmp/comail-mock/attachment-${a.attachmentId}`);
+
+    case "save_attachment":
+      return delay(undefined);
 
     case "preview_attachment":
       return delay(mockPreview(a.attachmentId as number));

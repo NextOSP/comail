@@ -5,6 +5,7 @@
   "noSubject": "(sans objet)",
   "messages_one": "{{count}} message",
   "messages_other": "{{count}} messages",
+  "jumpToLatest": "Aller au dernier message",
   "snoozedBadge": "En attente",
   "positionOf": "{{pos}} sur {{total}}",
   "footer": {
@@ -14,7 +15,8 @@
     "done": "terminé",
     "snooze": "reporter",
     "summarize": "résumer",
-    "nextPrev": "suivant / précédent"
+    "message": "message",
+    "nextPrev": "fil suiv. / préc."
   },
   "aiSummary": {
     "title": "Résumé IA",
@@ -25,16 +27,33 @@
   "sendingBadge": "Envoi…",
   "msgTo": "à",
   "msgCc": "cc",
+  "details": {
+    "toggle": "Afficher les détails",
+    "from": "de",
+    "to": "à",
+    "cc": "cc",
+    "via": "via",
+    "date": "date",
+    "subject": "objet"
+  },
   "loadingMessage": "Chargement du message…",
   "messageBodyTitle": "Corps du message",
+  "remoteImages": {
+    "hidden": "Les images de ce message ne sont pas affichées.",
+    "load": "Charger les images"
+  },
   "attachment": {
     "fallbackName": "pièce jointe",
     "savedMock": "{{name}} enregistré (simulation)",
+    "view": "Voir le fichier",
+    "openExternalHint": "Alt+clic pour ouvrir dans l’app par défaut",
     "openFailed": "Impossible d’ouvrir la pièce jointe : {{detail}}",
     "preview": {
       "loading": "Chargement de l’aperçu…",
       "failed": "Impossible d’afficher l’aperçu : {{detail}}",
       "openExternally": "Ouvrir dans l’app",
+      "download": "Télécharger",
+      "downloaded": "{{name}} enregistré",
       "unsupported": "Pas d’aperçu pour ce type de fichier — ouvrez-le en externe.",
       "tooLarge": "Ce fichier est trop volumineux pour l’aperçu — ouvrez-le en externe.",
       "truncated": "Aperçu tronqué",

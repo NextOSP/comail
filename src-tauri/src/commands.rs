@@ -71,6 +71,7 @@ pub async fn list_threads(
     split_id: Option<i64>,
     account_id: Option<i64>,
     label_id: Option<i64>,
+    folder_id: Option<i64>,
     cursor: Option<i64>,
     limit: Option<i64>,
 ) -> CmdResult<ThreadPage> {
@@ -81,6 +82,7 @@ pub async fn list_threads(
             split_id,
             account_id,
             label_id,
+            folder_id,
             cursor,
             limit.unwrap_or(50),
         )
@@ -131,6 +133,15 @@ pub async fn cancel_send(
     Ok(serde_json::json!({ "cancelled": cancelled }))
 }
 
+#[tauri::command]
+pub async fn send_now(
+    state: State<'_, AppState>,
+    action_id: i64,
+) -> CmdResult<serde_json::Value> {
+    let sent = state.core.send_now(action_id).await.map_err(err)?;
+    Ok(serde_json::json!({ "sent": sent }))
+}
+
 // ---------- compose ----------
 
 #[tauri::command]
@@ -160,6 +171,20 @@ pub async fn queue_send(
 #[tauri::command]
 pub async fn get_attachment(state: State<'_, AppState>, attachment_id: i64) -> CmdResult<String> {
     state.core.get_attachment(attachment_id).await.map_err(err)
+}
+
+/// Save (download) an attachment to a caller-chosen destination path.
+#[tauri::command]
+pub async fn save_attachment(
+    state: State<'_, AppState>,
+    attachment_id: i64,
+    dest: String,
+) -> CmdResult<()> {
+    state
+        .core
+        .save_attachment(attachment_id, dest)
+        .await
+        .map_err(err)
 }
 
 /// Converts the attachment to a safe in-app preview payload (sanitized

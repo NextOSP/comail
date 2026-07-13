@@ -126,23 +126,63 @@ pub async fn post_form(url: &str, form: &[(String, String)]) -> Result<String> {
         .collect::<Vec<_>>()
         .join("&");
 
-    let tcp = tokio::net::TcpStream::connect((host.as_str(), port)).await?;
+    tracing::debug!(%host, port, %path, body_len = body.len(), "oauth: token POST: connecting");
+    let tcp = tokio::net::TcpStream::connect((host.as_str(), port))
+        .await
+        .inspect_err(|e| {
+            tracing::warn!(%host, port, error = %e, kind = ?e.kind(), "oauth: token POST: TCP connect failed")
+        })?;
+    tracing::debug!(%host, "oauth: token POST: TCP connected, starting TLS handshake");
+
     let connector = crate::imap::tls_connector();
     let server_name = rustls::pki_types::ServerName::try_from(host.clone())
         .map_err(|e| CoreError::Tls(e.to_string()))?;
     let mut stream = connector
         .connect(server_name, tcp)
         .await
-        .map_err(|e| CoreError::Tls(e.to_string()))?;
+        .map_err(|e| {
+            tracing::warn!(%host, error = %e, kind = ?e.kind(), "oauth: token POST: TLS handshake failed");
+            CoreError::Tls(e.to_string())
+        })?;
+    tracing::debug!(%host, "oauth: token POST: TLS established, sending request");
 
     let req = format!(
         "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    stream.write_all(req.as_bytes()).await?;
+    stream.write_all(req.as_bytes()).await.inspect_err(|e| {
+        tracing::warn!(%host, error = %e, kind = ?e.kind(), "oauth: token POST: request write failed")
+    })?;
+
+    // Token endpoints send `Connection: close` and often drop the socket WITHOUT
+    // a TLS close_notify alert. rustls surfaces that abrupt close as an
+    // `UnexpectedEof` io error even though the full HTTP response already
+    // arrived - so treat UnexpectedEof as a clean end-of-stream once we have
+    // bytes instead of failing the exchange. (Previously this bubbled up as
+    // `CoreError::Io` -> the misleading "File system error" toast.)
     let mut resp = Vec::new();
-    stream.read_to_end(&mut resp).await?;
+    let mut buf = [0u8; 8192];
+    loop {
+        match stream.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => resp.extend_from_slice(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !resp.is_empty() => {
+                tracing::debug!(
+                    %host,
+                    bytes = resp.len(),
+                    "oauth: token POST: server closed without close_notify; response already complete"
+                );
+                break;
+            }
+            Err(e) => {
+                tracing::warn!(%host, error = %e, kind = ?e.kind(), bytes = resp.len(), "oauth: token POST: read failed");
+                return Err(e.into());
+            }
+        }
+    }
     let resp = String::from_utf8_lossy(&resp);
+    let status_line = resp.lines().next().unwrap_or("");
+    tracing::debug!(%host, status = %status_line, total_bytes = resp.len(), "oauth: token POST: response received");
     // Split headers/body; handle chunked transfer crudely by taking the largest
     // {...} JSON span (token endpoints return small JSON bodies).
     let body_part = resp.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or(&resp);

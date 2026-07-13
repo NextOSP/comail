@@ -76,6 +76,17 @@ pub async fn send_raw(
         Envelope::new(Some(from_addr), tos).map_err(|e| CoreError::Smtp(e.to_string()))?;
 
     let transport = build_transport(cfg, auth)?;
+    tracing::debug!(
+        host = %cfg.smtp_host,
+        port = cfg.smtp_port,
+        auth = match auth {
+            SmtpAuth::Password(_) => "password",
+            SmtpAuth::XOAuth2(_) => "xoauth2",
+        },
+        bytes = raw.len(),
+        recipients = recipients.len(),
+        "smtp send_raw: connecting to relay",
+    );
     transport.send_raw(&envelope, raw).await.map_err(|e| {
         let msg = e.to_string();
         if msg.contains("535") || msg.to_lowercase().contains("auth") {

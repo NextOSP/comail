@@ -83,6 +83,7 @@ pub fn list_info(conn: &Connection, account_id: Option<i64>) -> Result<Vec<Folde
             id: f.id,
             account_id: f.account_id,
             imap_name: f.imap_name,
+            delimiter: f.delimiter,
             role: f.role,
         })
         .collect())

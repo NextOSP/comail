@@ -94,5 +94,7 @@
   },
   "screenHint": "Esc 或 1 返回 · 点击空档创建日程",
   "reminderBody": "{{time}} 开始",
+  "newEventBody": "新事件 · {{when}}",
+  "newEvents": "日历中有 {{count}} 个新事件",
   "syncConflict": "“{{summary}}”在服务器上已更改 — 你的编辑已保留为副本"
 }

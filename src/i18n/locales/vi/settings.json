@@ -231,9 +231,17 @@
     "label": "Thông báo trên máy tính",
     "hint": "Thông báo khi có thư mới đến trong khi cửa sổ không được lấy nét."
   },
+  "sound": {
+    "label": "Âm thanh",
+    "hint": "Phát âm thanh khi có thư mới và khi gửi."
+  },
   "autoAdvance": {
     "label": "Tự động chuyển tiếp",
     "hint": "Sau khi Hoàn tất/Tạm ẩn một cuộc hội thoại, mở cuộc hội thoại tiếp theo thay vì quay về danh sách."
+  },
+  "groupByDate": {
+    "label": "Nhóm theo ngày",
+    "hint": "Hiển thị tiêu đề Hôm nay / Hôm qua / … giữa các cuộc hội thoại trong danh sách."
   },
   "signature": {
     "section": "Chữ ký",

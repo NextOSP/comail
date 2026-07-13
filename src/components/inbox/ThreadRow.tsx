@@ -15,6 +15,7 @@ function ThreadRowImpl({
   onGutterDown,
   onHover,
   leaving,
+  jumpHint,
 }: {
   thread: ThreadSummary;
   selected: boolean;
@@ -28,6 +29,8 @@ function ThreadRowImpl({
   onGutterDown?: (id: number, e: MouseEvent) => void;
   onHover?: (id: number) => void;
   leaving?: boolean;
+  /** jump-to number shown (in place of the timestamp) while ⌘/Ctrl is held */
+  jumpHint?: string;
 }) {
   const { t } = useTranslation();
   const unread = thread.unreadCount > 0;
@@ -130,11 +133,11 @@ function ThreadRowImpl({
       )}
 
       <span
-        className={`w-14 shrink-0 text-right text-[11.5px] tabular-nums ${
+        className={`flex w-14 shrink-0 justify-end text-right text-[11.5px] tabular-nums ${
           unread ? "font-semibold text-info" : "text-ink-faint"
         }`}
       >
-        {relativeTime(thread.lastMessageAt)}
+        {jumpHint ? <kbd className="co-kbd">{jumpHint}</kbd> : relativeTime(thread.lastMessageAt)}
       </span>
     </div>
   );

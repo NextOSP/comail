@@ -19,6 +19,12 @@ pub struct ParsedHeaders {
     pub is_automated: bool,
     /// Raw List-Unsubscribe header value, e.g. "<https://…>, <mailto:…>".
     pub list_unsubscribe: Option<String>,
+    /// The party that actually transmitted the message, when its domain does
+    /// NOT align with From: (mailing lists, ESPs, send-on-behalf — and mail
+    /// whose From: is spoofed). First misaligned identity out of the RFC 5322
+    /// Sender:, the receiver-stamped Return-Path, and the DKIM d= domain;
+    /// None when everything aligns with From:.
+    pub via: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +109,146 @@ pub fn make_snippet(text: &str) -> String {
     s.chars().take(140).collect()
 }
 
+/// `src="cid:<id>"` / `src='cid:<id>'` in a body (id in group 2 or 3).
+static CID_SRC: Lazy<regex::Regex> =
+    Lazy::new(|| regex::Regex::new(r#"(?i)src\s*=\s*(?:"cid:([^"]+)"|'cid:([^']+)')"#).unwrap());
+
+/// Normalize a Content-ID / `cid:` reference for matching (drop `<>` + spaces).
+pub fn normalize_cid(id: &str) -> String {
+    id.trim().trim_matches(|c| c == '<' || c == '>').to_string()
+}
+
+/// Rewrite inline `src="cid:<id>"` references to `data:` URIs using `map`
+/// (keyed by [`normalize_cid`]). Unknown cids are left untouched — the browser
+/// still can't fetch them, but nothing else is changed.
+pub fn rewrite_cid_src(html: &str, map: &std::collections::HashMap<String, String>) -> String {
+    CID_SRC
+        .replace_all(html, |caps: &regex::Captures| {
+            let cid = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("");
+            match map.get(&normalize_cid(cid)) {
+                Some(data_uri) => format!("src=\"{data_uri}\""),
+                None => caps.get(0).unwrap().as_str().to_string(),
+            }
+        })
+        .into_owned()
+}
+
+#[cfg(test)]
+mod cid_tests {
+    use super::{normalize_cid, rewrite_cid_src};
+    use std::collections::HashMap;
+
+    #[test]
+    fn rewrites_known_cid_and_leaves_unknown() {
+        let mut map = HashMap::new();
+        map.insert("logo@x".to_string(), "data:image/png;base64,AAAA".to_string());
+        let html = r#"<img src="cid:logo@x"><img src='cid:missing@y'>"#;
+        let out = rewrite_cid_src(html, &map);
+        assert!(out.contains(r#"src="data:image/png;base64,AAAA""#));
+        assert!(out.contains("cid:missing@y"), "unknown cid untouched: {out}");
+    }
+
+    #[test]
+    fn matches_angle_bracketed_content_id() {
+        let mut map = HashMap::new();
+        map.insert(normalize_cid("<abc@host>"), "data:image/gif;base64,BBBB".to_string());
+        let out = rewrite_cid_src(r#"<img src="cid:abc@host">"#, &map);
+        assert!(out.contains("data:image/gif;base64,BBBB"));
+    }
+}
+
+/// `d=` tag of a DKIM-Signature header (the signing domain).
+static DKIM_DOMAIN: Lazy<regex::Regex> =
+    Lazy::new(|| regex::Regex::new(r"(?i)\bd\s*=\s*([A-Za-z0-9._-]+)").unwrap());
+
+/// Domain part of an email, or the input itself when it's already a bare domain.
+fn domain_of(addr_or_domain: &str) -> &str {
+    addr_or_domain.rsplit('@').next().unwrap_or(addr_or_domain)
+}
+
+/// Relaxed alignment (as in DMARC): equal, or one is a subdomain of the other
+/// (`mailer.substack.com` aligns with `substack.com`). Case-insensitive.
+fn domains_aligned(a: &str, b: &str) -> bool {
+    let a = a.trim().trim_end_matches('.').to_ascii_lowercase();
+    let b = b.trim().trim_end_matches('.').to_ascii_lowercase();
+    a == b || a.ends_with(&format!(".{b}")) || b.ends_with(&format!(".{a}"))
+}
+
+/// The transmitting party to show as "via", when it doesn't align with From:.
+/// Order: Sender: (self-declared), Return-Path (envelope sender, stamped by
+/// the receiving server — a forged From: can't easily hide it), DKIM d=.
+fn resolve_via(msg: &mail_parser::Message, from: Option<&Address>) -> Option<String> {
+    let from_domain = from.map(|a| domain_of(&a.email).to_string());
+
+    let sender_email = msg
+        .sender()
+        .and_then(|s| s.first())
+        .and_then(addr_from)
+        .map(|a| a.email);
+    let return_path = match msg.return_path() {
+        mail_parser::HeaderValue::Text(t) => Some(t.trim_matches(['<', '>', ' ']).to_string()),
+        mail_parser::HeaderValue::TextList(l) => {
+            l.last().map(|t| t.trim_matches(['<', '>', ' ']).to_string())
+        }
+        _ => None,
+    }
+    .filter(|s| !s.is_empty());
+    let dkim_domain = msg
+        .header("DKIM-Signature")
+        .and_then(|h| h.as_text())
+        .and_then(|s| DKIM_DOMAIN.captures(s))
+        .map(|c| c[1].to_string());
+
+    [sender_email, return_path, dkim_domain]
+        .into_iter()
+        .flatten()
+        .find(|cand| match &from_domain {
+            Some(fd) => !domains_aligned(domain_of(cand), fd),
+            None => true,
+        })
+}
+
+#[cfg(test)]
+mod via_tests {
+    use super::parse_message;
+
+    fn via_of(raw: &str) -> Option<String> {
+        parse_message(raw.as_bytes()).unwrap().headers.via
+    }
+
+    #[test]
+    fn spoofed_from_surfaces_return_path() {
+        // Claims to be next.com but was accepted from evil.example: the
+        // receiver-stamped Return-Path exposes the real transmitting party.
+        let raw = "Return-Path: <bounce@evil.example>\r\nFrom: Next <next@next.com>\r\nTo: a@b.com\r\nSubject: hi\r\n\r\nbody";
+        assert_eq!(via_of(raw).as_deref(), Some("bounce@evil.example"));
+    }
+
+    #[test]
+    fn aligned_subdomain_return_path_is_quiet() {
+        let raw = "Return-Path: <bounces@mailer.next.com>\r\nFrom: next@next.com\r\nSubject: hi\r\n\r\nbody";
+        assert_eq!(via_of(raw), None);
+    }
+
+    #[test]
+    fn no_transmit_headers_is_quiet() {
+        let raw = "From: next@next.com\r\nSubject: hi\r\n\r\nbody";
+        assert_eq!(via_of(raw), None);
+    }
+
+    #[test]
+    fn misaligned_dkim_domain_shows() {
+        let raw = "DKIM-Signature: v=1; a=rsa-sha256; d=esp.example; s=sel; bh=xx\r\nFrom: news@next.com\r\nSubject: hi\r\n\r\nbody";
+        assert_eq!(via_of(raw).as_deref(), Some("esp.example"));
+    }
+
+    #[test]
+    fn sender_header_wins_over_return_path() {
+        let raw = "Sender: list@groups.example\r\nReturn-Path: <b+tok@groups.example>\r\nFrom: alice@corp.com\r\nSubject: hi\r\n\r\nbody";
+        assert_eq!(via_of(raw).as_deref(), Some("list@groups.example"));
+    }
+}
+
 fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
     let mut refs: Vec<String> = Vec::new();
     if let Some(irt) = msg.in_reply_to().as_text_list() {
@@ -130,10 +276,13 @@ fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
         || msg.header("Auto-Submitted").is_some()
         || msg.header("X-Autoreply").is_some();
 
+    let from = msg.from().and_then(|f| f.first()).and_then(addr_from);
+    let via = resolve_via(msg, from.as_ref());
+
     ParsedHeaders {
         message_id: msg.message_id().map(|s| s.to_string()),
         subject: msg.subject().unwrap_or_default().to_string(),
-        from: msg.from().and_then(|f| f.first()).and_then(addr_from),
+        from,
         to: collect_addrs(msg.to()),
         cc: collect_addrs(msg.cc()),
         bcc: collect_addrs(msg.bcc()),
@@ -144,6 +293,7 @@ fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
             .header("List-Unsubscribe")
             .and_then(|h| h.as_text())
             .map(|s| s.to_string()),
+        via,
     }
 }
 

@@ -134,9 +134,14 @@ fn init_logging() {
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::Layer;
 
+    // `html5ever`/`markup5ever` (pulled in via `ammonia` to sanitize HTML email
+    // bodies) log a WARN for every message that contains malformed HTML
+    // ("foster parenting not implemented" and friends). That's routine for real
+    // email and nothing we can act on, so quiet those targets by default.
     let filter = || {
-        tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "info,comail_core=debug".into())
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            "info,comail_core=debug,html5ever=off,markup5ever=off".into()
+        })
     };
 
     let file = (|| {
@@ -284,11 +289,13 @@ pub fn run() {
             commands::get_thread,
             commands::get_body,
             commands::get_attachment,
+            commands::save_attachment,
             commands::preview_attachment,
             commands::list_folders,
             commands::perform_action,
             commands::undo_last,
             commands::cancel_send,
+            commands::send_now,
             commands::save_draft,
             commands::delete_draft,
             commands::queue_send,

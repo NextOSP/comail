@@ -16,7 +16,10 @@ chrono.workspace = true
 # email protocols
 async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls-tls", "builder", "pool", "hostname"] }
-mail-parser = "0.11"
+# full_encoding pulls in encoding_rs so non-UTF-8 header/body charsets
+# (GB2312/GBK/Big5, Shift-JIS, EUC-KR, ...) decode correctly instead of
+# turning into U+FFFD replacement chars. Default features are empty in 0.11.
+mail-parser = { version = "0.11", features = ["full_encoding"] }
 mail-builder = "0.4"
 
 # TLS

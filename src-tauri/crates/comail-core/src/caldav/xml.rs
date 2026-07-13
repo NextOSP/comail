@@ -259,15 +259,17 @@ pub fn report_sync_collection(token: &str) -> String {
     )
 }
 
-/// yyyymmddThhmmssZ bounds.
-pub fn report_calendar_query(start_utc: &str, end_utc: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
+/// Lists every VEVENT resource in a collection (etags only). Deliberately
+/// unbounded: a time-range filter would leave events outside the window
+/// unsynced forever, since the incremental sync-collection pass that follows
+/// only ever reports *changes* to what the initial pull already saw.
+pub fn report_calendar_query() -> String {
+    r#"<?xml version="1.0" encoding="utf-8"?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
 <d:prop><d:getetag/></d:prop>
-<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="{start_utc}" end="{end_utc}"/></c:comp-filter></c:comp-filter></c:filter>
+<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"/></c:comp-filter></c:filter>
 </c:calendar-query>"#
-    )
+        .into()
 }
 
 pub fn report_multiget(hrefs: &[String]) -> String {
@@ -451,7 +453,7 @@ END:VCALENDAR</c:calendar-data>
             propfind_collections(),
             propfind_ctag(),
             report_sync_collection("tok&<>"),
-            report_calendar_query("20260101T000000Z", "20270101T000000Z"),
+            report_calendar_query(),
             report_multiget(&["/a b.ics".into(), "/c&d.ics".into()]),
         ] {
             let mut reader = Reader::from_str(&body);

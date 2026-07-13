@@ -71,8 +71,10 @@ const DEFAULT_SETTINGS: Settings = {
   voiceLearnedAt: 0,
   meetingNotifyLeadMinutes: 10,
   notificationsEnabled: true,
+  soundEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
+  groupByDate: true,
   signatures: {},
   signatureList: [],
   signatureDefaults: {},
@@ -146,6 +148,7 @@ export function SettingsPanel() {
     { tab: "general", label: t("settings:loadRemoteImages.label"), keywords: "images privacy tracking pixels remote" },
     { tab: "general", label: t("settings:notifications.label"), keywords: "notify alerts desktop" },
     { tab: "general", label: t("settings:autoAdvance.label"), keywords: "auto advance next thread cursor" },
+    { tab: "general", label: t("settings:groupByDate.label"), keywords: "group date today yesterday timeline headers sections" },
     { tab: "splits", label: t("settings:autoLabels.label"), keywords: "auto labels categorize" },
     { tab: "splits", label: t("settings:section.splitInbox"), keywords: "split inbox tabs rules important other sender subject" },
     { tab: "snippets", label: t("settings:snippets.title"), keywords: "snippets templates canned responses shortcuts" },
@@ -279,6 +282,13 @@ export function SettingsPanel() {
                 onChange={(notificationsEnabled) => void updateSettings({ notificationsEnabled })}
               />
             </SettingRow>
+            <SettingRow label={t("settings:sound.label")} hint={t("settings:sound.hint")}>
+              <Toggle
+                label={t("settings:sound.label")}
+                checked={s.soundEnabled}
+                onChange={(soundEnabled) => void updateSettings({ soundEnabled })}
+              />
+            </SettingRow>
             <SettingRow
               label={t("settings:autoAdvance.label")}
               hint={t("settings:autoAdvance.hint")}
@@ -287,6 +297,16 @@ export function SettingsPanel() {
                 label={t("settings:autoAdvance.label")}
                 checked={s.autoAdvance}
                 onChange={(autoAdvance) => void updateSettings({ autoAdvance })}
+              />
+            </SettingRow>
+            <SettingRow
+              label={t("settings:groupByDate.label")}
+              hint={t("settings:groupByDate.hint")}
+            >
+              <Toggle
+                label={t("settings:groupByDate.label")}
+                checked={s.groupByDate}
+                onChange={(groupByDate) => void updateSettings({ groupByDate })}
               />
             </SettingRow>
             <SettingRow

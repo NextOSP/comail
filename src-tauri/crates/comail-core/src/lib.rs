@@ -110,6 +110,14 @@ impl Core {
         let settings = core.db.read(|conn| repo::settings::get(conn)).await?;
         apply_oauth_settings(&settings);
 
+        // Recover any actions orphaned mid-flight by a previous crash/kill, so a
+        // send that was executing when the app died retries instead of sticking
+        // on "Sending…" forever.
+        match core.db.write(|conn| repo::actions::recover_inflight(conn)).await {
+            Ok(n) if n > 0 => tracing::info!("recovered {n} orphaned in-flight action(s)"),
+            _ => {}
+        }
+
         // Spawn actors for existing accounts.
         let configs = core
             .db
@@ -423,6 +431,7 @@ impl Core {
         split_id: Option<i64>,
         account_id: Option<i64>,
         label_id: Option<i64>,
+        folder_id: Option<i64>,
         cursor: Option<i64>,
         limit: i64,
     ) -> Result<ThreadPage> {
@@ -453,6 +462,7 @@ impl Core {
                         split,
                         account_id,
                         label_id,
+                        folder_id,
                         cursor,
                         limit: limit.clamp(1, 200),
                     },
@@ -462,7 +472,7 @@ impl Core {
     }
 
     pub async fn get_thread(&self, thread_id: i64) -> Result<ThreadDetail> {
-        let detail = self
+        let mut detail = self
             .db
             .read(move |conn| {
                 let thread = repo::threads::get_summary(conn, thread_id)?
@@ -471,10 +481,19 @@ impl Core {
                 Ok(ThreadDetail { thread, messages })
             })
             .await?;
+        // Resolve embedded cid: images to data: URIs so they render in the
+        // sandboxed iframe (which can't fetch cid: URLs).
+        for m in &mut detail.messages {
+            if let Some(html) = m.html_body.take() {
+                m.html_body = Some(self.inline_cid_images(m.id, html).await);
+            }
+        }
         // Kick off priority fetches for any unfetched bodies. "fetching" is
         // re-nudged too: a fetch command can be dropped (offline, reconnect),
-        // and the fetch itself is idempotent once the body is cached.
-        for m in &detail.messages {
+        // and the fetch itself is idempotent once the body is cached. Request
+        // newest-first: the last message is the one expanded on open, so it
+        // leads the batch and its body fills in first.
+        for m in detail.messages.iter().rev() {
             if m.body_state == "none" || m.body_state == "fetching" {
                 self.request_body(m.account_id, m.id).await;
             }
@@ -492,14 +511,84 @@ impl Core {
     }
 
     pub async fn get_body(&self, message_id: i64) -> Result<MessageDetail> {
-        let detail = self
+        let mut detail = self
             .db
             .read(move |conn| repo::messages::detail(conn, message_id))
             .await?;
         if detail.body_state == "none" || detail.body_state == "fetching" {
             self.request_body(detail.account_id, message_id).await;
         }
+        if let Some(html) = detail.html_body.take() {
+            detail.html_body = Some(self.inline_cid_images(message_id, html).await);
+        }
         Ok(detail)
+    }
+
+    /// Rewrite `src="cid:…"` references in a message body to `data:` URIs built
+    /// from its inline attachments, so embedded images render in the sandboxed
+    /// iframe. No-op when the body has no cid: references. On any failure the
+    /// original HTML is returned unchanged.
+    async fn inline_cid_images(&self, message_id: i64, html: String) -> String {
+        if !html.contains("cid:") {
+            return html;
+        }
+        let atts = self
+            .db
+            .read(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT content_id, part_id, mime_type FROM attachments
+                     WHERE message_id = ?1 AND content_id IS NOT NULL AND part_id IS NOT NULL",
+                )?;
+                let rows = stmt
+                    .query_map(rusqlite::params![message_id], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, Option<String>>(2)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(rows)
+            })
+            .await;
+        let atts = match atts {
+            Ok(a) if !a.is_empty() => a,
+            _ => return html,
+        };
+        let raw_path = match self
+            .db
+            .read(move |conn| repo::messages::get_row(conn, message_id))
+            .await
+        {
+            Ok(Some(row)) => row.raw_path,
+            _ => None,
+        };
+        let Some(raw_path) = raw_path else {
+            return html;
+        };
+        let raw = match tokio::fs::read(&raw_path).await {
+            Ok(r) => r,
+            Err(_) => return html,
+        };
+        // Extraction + base64 of (possibly large) image parts is CPU-bound.
+        let fallback = html.clone();
+        tokio::task::spawn_blocking(move || {
+            use base64::Engine;
+            let mut map = std::collections::HashMap::new();
+            for (content_id, part_id, mime) in atts {
+                if let Ok((bytes, _)) = crate::mime::extract_attachment(&raw, &part_id) {
+                    let mime = mime.unwrap_or_else(|| "application/octet-stream".to_string());
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                    map.insert(
+                        crate::mime::normalize_cid(&content_id),
+                        format!("data:{mime};base64,{b64}"),
+                    );
+                }
+            }
+            crate::mime::rewrite_cid_src(&html, &map)
+        })
+        .await
+        .unwrap_or(fallback)
     }
 
     pub async fn list_folders(&self, account_id: Option<i64>) -> Result<Vec<FolderInfo>> {
@@ -587,6 +676,23 @@ impl Core {
         self.db
             .write(move |conn| repo::actions::try_cancel(conn, action_id))
             .await
+    }
+
+    /// "Send now": make a queued send due immediately (skip the remaining undo
+    /// window) and nudge its actor. Returns false if it was already sent or
+    /// cancelled.
+    pub async fn send_now(&self, action_id: i64) -> Result<bool> {
+        let account_id = self
+            .db
+            .write(move |conn| repo::actions::expedite(conn, action_id))
+            .await?;
+        match account_id {
+            Some(account_id) => {
+                self.nudge(Some(account_id), || SyncCmd::RunActions).await;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 
     // ---------- compose ----------
@@ -680,6 +786,7 @@ impl Core {
                             snippet: crate::mime::make_snippet(&args.body_text),
                             references: Vec::new(),
                             list_unsubscribe: None,
+                            sender_addr: None,
                         };
                         let id = repo::messages::insert(&tx, &nm, tid)?;
                         tx.execute(
@@ -765,9 +872,20 @@ impl Core {
             })
             .await?;
 
-        // If sending now (after undo window), the scheduler nudges the actor
-        // when due; nudge immediately anyway to keep latency minimal offline->online.
-        let _ = account_id;
+        // Fire exactly when the send comes due instead of waiting for the
+        // scheduler's next tick (up to TICK_SECS of extra slop, which made even
+        // an immediate send feel sluggish). The scheduler still covers restarts
+        // and any timer this task misses. Only armed for near-term sends; far
+        // future "send later" relies on the scheduler so we don't hold a task
+        // sleeping for hours.
+        let delay_ms = (dispatch_at - now_ms()).max(0);
+        if delay_ms <= 15 * 60 * 1000 {
+            let core = self.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms as u64)).await;
+                core.nudge(Some(account_id), || SyncCmd::RunActions).await;
+            });
+        }
         Ok(QueueSendResult {
             action_id,
             dispatch_at,
@@ -833,6 +951,15 @@ impl Core {
             })
             .await?;
         Ok(path_str)
+    }
+
+    /// Extract an attachment and write it to a caller-chosen destination (the
+    /// "download" / save-as path). Reuses `get_attachment` so extraction and
+    /// filename handling stay in one place.
+    pub async fn save_attachment(&self, attachment_id: i64, dest: String) -> Result<()> {
+        let src = self.get_attachment(attachment_id).await?;
+        tokio::fs::copy(&src, &dest).await?;
+        Ok(())
     }
 
     /// Extract an attachment in memory and convert it to a safe, inert

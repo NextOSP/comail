@@ -94,5 +94,7 @@
   },
   "screenHint": "Esc o 1 para volver · haz clic en un hueco para crear",
   "reminderBody": "Empieza a las {{time}}",
+  "newEventBody": "Nuevo evento · {{when}}",
+  "newEvents": "{{count}} eventos nuevos en tu calendario",
   "syncConflict": "«{{summary}}» cambió en el servidor — tu edición se guardó como copia"
 }

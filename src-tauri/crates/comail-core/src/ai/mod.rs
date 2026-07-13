@@ -892,6 +892,7 @@ mod tests {
             html_body: None,
             attachments: vec![],
             list_unsubscribe: None,
+            via: None,
         }
     }
 

@@ -14,12 +14,50 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   const focusedMessageId = useUi((s) => s.focusedMessageId);
   const visibleThreadIds = useUi((s) => s.visibleThreadIds);
   const openThread = useUi((s) => s.openThread);
+  const set = useUi((s) => s.set);
+  // Pointer selection (hover / click) makes a message the reply target without
+  // scrolling the view — only keyboard nav (N/P) scrolls the cursor into view.
+  const selectMessage = (id: number) => {
+    if (useUi.getState().focusedMessageId !== id)
+      set({ focusedMessageId: id, messageCursorSource: "pointer" });
+  };
   const composer = useUi((s) => s.composer);
   const inlineComposer = composer != null && composer.replyTo?.threadId === threadId;
 
   // Explicit expand/collapse overrides (id -> expanded)
   const [overrides, setOverrides] = useState<Record<number, boolean>>({});
   useEffect(() => setOverrides({}), [threadId]);
+
+  // Keyboard message nav (N/P) expands the message it lands on and keeps it
+  // open. Pointer selection (hover/click) never triggers this, so moving the
+  // mouse to pick a reply target doesn't expand or collapse anything.
+  useEffect(() => {
+    if (focusedMessageId != null && useUi.getState().messageCursorSource === "keyboard") {
+      setOverrides((o) => ({ ...o, [focusedMessageId]: true }));
+    }
+  }, [focusedMessageId]);
+
+  // Ref on the newest (last) message so the count header can jump to it on long
+  // threads. We walk up from it to find the actual scroll container (the
+  // overflow-y-auto wrapper isn't reliably the scroller at runtime) and scroll
+  // that fully to the bottom — guaranteed to land on the latest message.
+  const lastMsgRef = useRef<HTMLDivElement>(null);
+  const scrollToLatest = () => {
+    const target = lastMsgRef.current;
+    if (!target) return;
+    // Belt-and-suspenders, because the real scroll container differs between
+    // the Tauri webview and the browser, and native `behavior:"smooth"` is
+    // unreliable there:
+    //   1. scrollIntoView lets the engine find and scroll the right container.
+    //   2. Then force every overflowing ancestor + the document to the bottom
+    //      (instant assignment; harmless no-op on non-scrollers).
+    target.scrollIntoView({ block: "end" });
+    for (let el: HTMLElement | null = target.parentElement; el; el = el.parentElement) {
+      if (el.scrollHeight > el.clientHeight + 1) el.scrollTop = el.scrollHeight;
+    }
+    const doc = document.scrollingElement as HTMLElement | null;
+    if (doc) doc.scrollTop = doc.scrollHeight;
+  };
 
   // Hide the draft that's open in the inline composer so it isn't double-rendered.
   const editingDraftId = useUi((s) => s.editingDraftId);
@@ -55,9 +93,22 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   }
 
   const lastId = messages[messages.length - 1]?.id;
+  // The message a reply will target, mirrored as a highlight so it's always
+  // clear which one is selected. Defaults (nothing hovered/navigated yet) to
+  // the latest incoming message — matching the keyboard `compose` fallback — so
+  // the highlight and the reply target never disagree.
+  const nonDraft = messages.filter((m) => !m.isDraft);
+  const defaultTargetId =
+    [...nonDraft].reverse().find((m) => !m.isOutgoing)?.id ??
+    nonDraft[nonDraft.length - 1]?.id ??
+    null;
+  const selectedId = focusedMessageId ?? defaultTargetId;
+  // Expansion follows explicit toggles, the last message, and unread state —
+  // NOT the selection, so hovering to pick a reply target never expands or
+  // collapses a message. Keyboard nav (N/P) expands its target via the effect
+  // below ("expand next/previous").
   const isExpanded = (id: number, isRead: boolean) => {
     if (overrides[id] !== undefined) return overrides[id];
-    if (focusedMessageId === id) return true;
     if (id === lastId) return true;
     return !isRead;
   };
@@ -74,13 +125,20 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
               ← {t("thread:back")}
               <kbd className="co-kbd !text-[10px]">Esc</kbd>
             </button>
-            <h1 className="text-[19px] leading-snug font-semibold tracking-tight text-ink">
+            <h1 className="text-[23px] leading-tight font-semibold tracking-tight text-ink">
               {data.thread.subject || t("thread:noSubject")}
-              {data.thread.isStarred && <span className="ml-2 align-middle text-[14px] text-star">★</span>}
+              {data.thread.isStarred && <span className="ml-2 align-middle text-[16px] text-star">★</span>}
             </h1>
             <p className="mt-1 text-[12px] text-ink-faint">
-              {t("thread:messages", { count: messages.length })} ·{" "}
-              {data.thread.accountEmail} · {relativeTime(data.thread.lastMessageAt)}
+              <button
+                type="button"
+                className="rounded-sm hover:text-ink-muted hover:underline"
+                title={t("thread:jumpToLatest")}
+                onClick={scrollToLatest}
+              >
+                {t("thread:messages", { count: messages.length })}
+              </button>{" "}
+              · {data.thread.accountEmail} · {relativeTime(data.thread.lastMessageAt)}
               {data.thread.snoozedUntil && data.thread.snoozedUntil > Date.now() && (
                 <span className="ml-2 text-accent">{t("thread:snoozedBadge")}</span>
               )}
@@ -95,17 +153,23 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
 
         <AiSummaryBanner threadId={threadId} />
 
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-1.5">
           {messages.map((m) => (
-            <MessageCard
+            <div
               key={m.id}
-              message={m}
-              focused={focusedMessageId === m.id}
-              expanded={isExpanded(m.id, m.isRead)}
-              onToggle={() =>
-                setOverrides((o) => ({ ...o, [m.id]: !isExpanded(m.id, m.isRead) }))
-              }
-            />
+              ref={m.id === lastId ? lastMsgRef : undefined}
+              onMouseEnter={() => selectMessage(m.id)}
+            >
+              <MessageCard
+                message={m}
+                focused={selectedId === m.id}
+                expanded={isExpanded(m.id, m.isRead)}
+                onToggle={() => {
+                  selectMessage(m.id);
+                  setOverrides((o) => ({ ...o, [m.id]: !isExpanded(m.id, m.isRead) }));
+                }}
+              />
+            </div>
           ))}
         </div>
 
@@ -123,7 +187,8 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
           <kbd className="co-kbd">↵</kbd> {t("thread:footer.replyAll")} · <kbd className="co-kbd">R</kbd> {t("thread:footer.reply")} ·{" "}
           <kbd className="co-kbd">F</kbd> {t("thread:footer.forward")} · <kbd className="co-kbd">E</kbd> {t("thread:footer.done")} ·{" "}
           <kbd className="co-kbd">H</kbd> {t("thread:footer.snooze")} · <kbd className="co-kbd">⇧J</kbd> {t("thread:footer.summarize")} ·{" "}
-          <kbd className="co-kbd">J</kbd>
+          <kbd className="co-kbd">↑</kbd>
+          <kbd className="co-kbd">↓</kbd> {t("thread:footer.message")} · <kbd className="co-kbd">J</kbd>
           <kbd className="co-kbd">K</kbd> {t("thread:footer.nextPrev")}
         </footer>
       </div>
@@ -156,8 +221,8 @@ function AiSummaryBanner({ threadId }: { threadId: number }) {
   return (
     <div
       data-testid="ai-summary"
-      className="co-fade-in flex items-start gap-3 rounded-lg border border-hairline bg-bg1 py-3 pr-3 pl-4"
-      style={{ borderLeft: "3px solid var(--accent)", boxShadow: "var(--elev-1)" }}
+      className="co-fade-in flex items-start gap-3 border border-hairline bg-bg1 py-3 pr-3 pl-4"
+      style={{ borderLeft: "3px solid var(--accent)", boxShadow: "var(--elev-card)" }}
     >
       <div className="min-w-0 flex-1">
         <div className="mb-1 text-[10.5px] font-semibold tracking-[0.12em] text-accent uppercase">

@@ -1,4 +1,10 @@
 {
+  "dateGroup": {
+    "today": "Hôm nay",
+    "yesterday": "Hôm qua",
+    "thisWeek": "Tuần này",
+    "thisMonth": "Tháng này"
+  },
   "view": {
     "inbox": "Hộp thư đến",
     "starred": "Gắn sao",
@@ -116,6 +122,7 @@
     "snippets": "Mẫu văn bản",
     "splits": "Quy tắc hộp thư chia cột",
     "labels": "Nhãn",
+    "folders": "Thư mục",
     "manageLabels": "Quản lý nhãn",
     "settings": "Cài đặt",
     "accountSettings": "Cài đặt tài khoản",

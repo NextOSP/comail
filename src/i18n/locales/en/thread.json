@@ -5,6 +5,7 @@
   "noSubject": "(no subject)",
   "messages_one": "{{count}} message",
   "messages_other": "{{count}} messages",
+  "jumpToLatest": "Jump to latest message",
   "snoozedBadge": "Snoozed",
   "positionOf": "{{pos}} of {{total}}",
   "footer": {
@@ -14,7 +15,8 @@
     "done": "done",
     "snooze": "snooze",
     "summarize": "summarize",
-    "nextPrev": "next / prev"
+    "message": "message",
+    "nextPrev": "next / prev thread"
   },
   "aiSummary": {
     "title": "AI summary",
@@ -25,16 +27,33 @@
   "sendingBadge": "Sending…",
   "msgTo": "to",
   "msgCc": "cc",
+  "details": {
+    "toggle": "Show details",
+    "from": "from",
+    "to": "to",
+    "cc": "cc",
+    "via": "via",
+    "date": "date",
+    "subject": "subject"
+  },
   "loadingMessage": "Loading message…",
   "messageBodyTitle": "Message body",
+  "remoteImages": {
+    "hidden": "Images in this message aren't shown.",
+    "load": "Load images"
+  },
   "attachment": {
     "fallbackName": "attachment",
     "savedMock": "Saved {{name}} (mock)",
+    "view": "View file",
+    "openExternalHint": "Alt-click to open in the default app",
     "openFailed": "Couldn't open attachment: {{detail}}",
     "preview": {
       "loading": "Loading preview…",
       "failed": "Couldn't preview attachment: {{detail}}",
       "openExternally": "Open in app",
+      "download": "Download",
+      "downloaded": "Saved {{name}}",
       "unsupported": "No preview for this file type — open it externally.",
       "tooLarge": "This file is too large to preview — open it externally.",
       "truncated": "Preview truncated",

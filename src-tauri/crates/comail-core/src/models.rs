@@ -172,6 +172,10 @@ pub struct MessageDetail {
     pub html_body: Option<String>,
     pub attachments: Vec<AttachmentMeta>,
     pub list_unsubscribe: Option<String>,
+    /// Transmitting party (Sender:, Return-Path or DKIM d=) when its domain
+    /// doesn't align with `from` — mailing lists, ESPs, spoofed From:.
+    /// Email address or bare domain; the UI shows it as "via <domain>".
+    pub via: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -370,6 +374,8 @@ pub struct FolderInfo {
     pub id: i64,
     pub account_id: i64,
     pub imap_name: String,
+    /// IMAP hierarchy delimiter (e.g. "/" or "."), for nesting user folders.
+    pub delimiter: Option<String>,
     pub role: Option<String>,
 }
 
@@ -478,12 +484,18 @@ pub struct Settings {
     /// Desktop notification on new mail.
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
+    /// Play a sound on new mail and when sending.
+    #[serde(default = "default_true")]
+    pub sound_enabled: bool,
     /// After archiving from a conversation, open the next thread (vs. back to list).
     #[serde(default = "default_true")]
     pub auto_advance: bool,
     /// Automatic Marketing/News/Social/Pitch categorization at sync time.
     #[serde(default = "default_true")]
     pub auto_labels_enabled: bool,
+    /// Group the thread list under date headers (Today / Yesterday / …).
+    #[serde(default = "default_true")]
+    pub group_by_date: bool,
     /// Legacy plain-text signature map, keyed by stringified account id.
     /// Superseded by `signature_list`/`signature_defaults`; retained only so old
     /// blobs deserialize and are folded in by `migrate_signatures`.
@@ -609,7 +621,7 @@ impl Default for Settings {
             theme: "system".into(),
             language: "system".into(),
             undo_send_seconds: 10,
-            load_remote_images: false,
+            load_remote_images: true,
             ai_base_url: default_ai_base_url(),
             ai_model: default_ai_model(),
             ai_model_instant: String::new(),
@@ -630,8 +642,10 @@ impl Default for Settings {
             voice_learned_at: 0,
             meeting_notify_lead_minutes: 10,
             notifications_enabled: true,
+            sound_enabled: true,
             auto_advance: true,
             auto_labels_enabled: true,
+            group_by_date: true,
             signatures: std::collections::HashMap::new(),
             signature_list: Vec::new(),
             signature_defaults: std::collections::HashMap::new(),

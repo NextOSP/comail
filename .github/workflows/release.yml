@@ -77,10 +77,28 @@ jobs:
           # Set these two repo secrets from the generated key (see README).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # --- Apple code signing + notarization (macOS only) ---------------
+          # Until these secrets exist the macOS .app is ad-hoc signed, which
+          # makes the login keychain re-prompt users for stored secrets after
+          # every app update (new signature each release) and trips Gatekeeper.
+          # Adding a stable Developer ID identity fixes both. Leaving the
+          # secrets unset is a no-op: Tauri falls back to ad-hoc as before.
+          # See src-tauri/CODESIGNING.md for how to obtain the cert + secrets.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Comail ${{ github.ref_name }}"
           releaseBody: "See the assets below to download and install this version of Comail."
-          releaseDraft: true
+          # Publish immediately instead of leaving an unpublished draft that a
+          # human must click "Publish" on. The human-review checkpoint for the
+          # signing key is the `environment: release` gate above (required
+          # reviewers approve the run before it builds/signs), so keeping the
+          # release as a draft only hid the finished binaries from users.
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

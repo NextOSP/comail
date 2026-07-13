@@ -26,6 +26,28 @@ export function relativeTime(ms: number, now = Date.now()): string {
   return d.toLocaleDateString(i18n.language, { month: "short", day: "numeric", year: "2-digit" });
 }
 
+/** Date-header bucket for a thread-list row: a stable `key` (so consecutive
+ *  rows collapse under one header) and a display `label`. Buckets: Today,
+ *  Yesterday, This Week, This Month, then one per older month ("June 2026"). */
+export function dateGroup(ms: number, now = Date.now()): { key: string; label: string } {
+  const d = new Date(ms);
+  const nowD = new Date(now);
+  const startOfToday = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()).getTime();
+  const DAY = 86_400_000;
+  if (ms >= startOfToday) return { key: "today", label: i18n.t("common:dateGroup.today") };
+  if (ms >= startOfToday - DAY) return { key: "yesterday", label: i18n.t("common:dateGroup.yesterday") };
+  if (ms >= startOfToday - 6 * DAY) return { key: "thisWeek", label: i18n.t("common:dateGroup.thisWeek") };
+  if (d.getFullYear() === nowD.getFullYear() && d.getMonth() === nowD.getMonth()) {
+    return { key: "thisMonth", label: i18n.t("common:dateGroup.thisMonth") };
+  }
+  const key = `${d.getFullYear()}-${d.getMonth()}`;
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === nowD.getFullYear()
+      ? { month: "long" }
+      : { month: "long", year: "numeric" };
+  return { key, label: d.toLocaleDateString(i18n.language, opts) };
+}
+
 /** Long-form timestamp for message headers. */
 export function longTime(ms: number): string {
   return new Date(ms).toLocaleString(i18n.language, {

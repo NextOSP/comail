@@ -94,5 +94,7 @@
   },
   "screenHint": "Esc hoặc 1 để quay lại · nhấp vào ô trống để tạo",
   "reminderBody": "Bắt đầu lúc {{time}}",
+  "newEventBody": "Sự kiện mới · {{when}}",
+  "newEvents": "{{count}} sự kiện mới trên lịch của bạn",
   "syncConflict": "\"{{summary}}\" đã thay đổi trên máy chủ — chỉnh sửa của bạn được giữ lại thành bản sao"
 }
