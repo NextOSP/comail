@@ -5,7 +5,7 @@ import { onEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
 import type { CalendarEvent, NewEventInfo, Settings } from "../ipc/types";
 import { parseMailto } from "../lib/mailto";
-import { markSoundsReady, playSound } from "../lib/sound";
+import { extendStartupQuiet, markSoundsReady, playSound } from "../lib/sound";
 import { useUi } from "../stores/ui";
 import { queryClient } from "./client";
 
@@ -180,8 +180,14 @@ export function useBackendEvents() {
         useUi.getState().set({ syncing: phase !== "idle", syncDone: done, syncTotal: total });
         // Once a real catch-up sync settles, allow the new-mail chime for
         // genuinely live arrivals (the backlog already synced silently).
-        if (phase !== "idle") sawSyncing = true;
-        else if (sawSyncing) markSoundsReady();
+        // While that first sync is still running, keep extending the quiet
+        // window — a big backlog outlasts the fixed startup grace period.
+        if (phase !== "idle") {
+          sawSyncing = true;
+          extendStartupQuiet();
+        } else if (sawSyncing) {
+          markSoundsReady();
+        }
       }),
       onEvent("account:state", () => {
         void queryClient.invalidateQueries({ queryKey: ["accounts"] });

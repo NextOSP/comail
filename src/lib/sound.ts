@@ -95,6 +95,20 @@ export function markSoundsReady(): void {
   chimeReadyAt = Math.min(chimeReadyAt, Date.now());
 }
 
+/**
+ * Keep the chime quiet while the initial catch-up sync is still running — a
+ * big backlog easily outlasts the fixed startup grace window, and arming on
+ * that timer mid-sync replays chimes for mail that arrived while the app was
+ * closed. Each call pushes the ready time to "grace window from now"; the
+ * settle signal (markSoundsReady) then arms it the moment the sync finishes.
+ * No-op once the chime is live, so routine later syncs can't mute real mail.
+ */
+export function extendStartupQuiet(): void {
+  const now = Date.now();
+  if (now >= chimeReadyAt) return; // already live
+  chimeReadyAt = Math.max(chimeReadyAt, now + STARTUP_GRACE_MS);
+}
+
 /** Play a bundled UI sound. Best-effort: never throws, no-op in mock mode. */
 export function playSound(name: SoundName): void {
   if (MOCK_MODE) return;
