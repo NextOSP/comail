@@ -44,6 +44,7 @@
     "compose": "Compose new message",
     "reply": "Reply",
     "replyAll": "Reply all",
+    "quoteSelection": "Reply with quoted selection",
     "forward": "Forward",
     "send": "Send",
     "sendDone": "Send & mark done",

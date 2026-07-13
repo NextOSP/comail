@@ -323,6 +323,34 @@ pub async fn connect_calendar(
     }
 }
 
+/// Join URL of a freshly created Teams meeting, returned to the composer.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamsMeeting {
+    pub join_url: String,
+}
+
+#[tauri::command]
+pub async fn create_teams_meeting(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    account_id: i64,
+    subject: String,
+    start_ms: i64,
+    end_ms: i64,
+) -> CmdResult<TeamsMeeting> {
+    let meeting = state
+        .core
+        .create_teams_meeting(account_id, &subject, start_ms, end_ms, move |url| {
+            let _ = app.opener().open_url(url, None::<String>);
+        })
+        .await
+        .map_err(err)?;
+    Ok(TeamsMeeting {
+        join_url: meeting.join_url,
+    })
+}
+
 #[tauri::command]
 pub async fn disconnect_calendar(state: State<'_, AppState>, account_id: i64) -> CmdResult<()> {
     state
@@ -362,6 +390,14 @@ pub async fn calendar_sync_now(
     Ok(())
 }
 
+/// The frontend reports its startup show (first-run intro) is done - or that
+/// there is none - releasing the deferred account sync (and with it the first
+/// OS keyring access) in comail-core.
+#[tauri::command]
+pub fn ui_ready(state: State<'_, AppState>) {
+    state.core.notify_ui_ready();
+}
+
 // ---------- AI ----------
 
 #[tauri::command]
@@ -385,7 +421,7 @@ pub async fn ai_command(state: State<'_, AppState>, query: String) -> CmdResult<
 }
 
 #[tauri::command]
-pub async fn ai_summarize(state: State<'_, AppState>, thread_id: i64) -> CmdResult<String> {
+pub async fn ai_summarize(state: State<'_, AppState>, thread_id: i64) -> CmdResult<AiThreadSummary> {
     state.core.ai_summarize(thread_id).await.map_err(err)
 }
 
@@ -566,8 +602,7 @@ pub async fn delete_label(state: State<'_, AppState>, label_id: i64) -> CmdResul
 
 #[tauri::command]
 pub async fn sync_now(state: State<'_, AppState>, account_id: Option<i64>) -> CmdResult<()> {
-    state.core.sync_now(account_id).await;
-    Ok(())
+    state.core.sync_now(account_id).await.map_err(err)
 }
 
 #[tauri::command]

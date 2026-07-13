@@ -64,12 +64,27 @@ pub fn due(conn: &Connection, account_id: i64, now: i64, limit: i64) -> Result<V
         "SELECT * FROM pending_actions
          WHERE account_id = ?1 AND state = 'pending' AND (not_before IS NULL OR not_before <= ?2)
            AND kind NOT LIKE 'cal!_%' ESCAPE '!'
-         ORDER BY created_at ASC LIMIT ?3",
+         ORDER BY created_at ASC, id ASC LIMIT ?3",
     )?;
     let rows = stmt
         .query_map(params![account_id, now, limit], from_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Whether one account has more IMAP/SMTP actions ready to execute now.
+/// CalDAV actions are owned by the calendar task and intentionally excluded.
+pub fn has_due(conn: &Connection, account_id: i64, now: i64) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM pending_actions
+             WHERE account_id = ?1 AND state = 'pending'
+               AND (not_before IS NULL OR not_before <= ?2)
+               AND kind NOT LIKE 'cal!_%' ESCAPE '!'
+         )",
+        params![account_id, now],
+        |row| row.get(0),
+    )?)
 }
 
 /// Earliest future not_before across pending actions (for the scheduler).
@@ -213,4 +228,73 @@ pub fn gc(conn: &Connection, older_than_ms: i64) -> Result<()> {
         params![older_than_ms],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::testutil;
+
+    #[test]
+    fn due_is_stable_and_has_due_ignores_future_and_calendar_actions() {
+        let conn = testutil::conn();
+        testutil::seed_account(&conn);
+
+        let later = enqueue(&conn, 1, "star", None, None, &serde_json::json!({}), None).unwrap();
+        let first = enqueue(
+            &conn,
+            1,
+            "archive",
+            None,
+            None,
+            &serde_json::json!({}),
+            None,
+        )
+        .unwrap();
+        let future = enqueue(
+            &conn,
+            1,
+            "trash",
+            None,
+            None,
+            &serde_json::json!({}),
+            Some(20_000),
+        )
+        .unwrap();
+        let calendar = enqueue(
+            &conn,
+            1,
+            "cal_create",
+            None,
+            None,
+            &serde_json::json!({}),
+            None,
+        )
+        .unwrap();
+
+        // Force the same timestamp to exercise the id tie-breaker.
+        conn.execute(
+            "UPDATE pending_actions SET created_at = 1 WHERE id IN (?1, ?2)",
+            params![later, first],
+        )
+        .unwrap();
+
+        let ids: Vec<i64> = due(&conn, 1, 10_000, 20)
+            .unwrap()
+            .into_iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(ids, vec![later, first]);
+        assert!(has_due(&conn, 1, 10_000).unwrap());
+
+        set_state(&conn, later, "done", None).unwrap();
+        set_state(&conn, first, "done", None).unwrap();
+        assert!(!has_due(&conn, 1, 10_000).unwrap());
+        assert!(has_due(&conn, 1, 20_000).unwrap());
+
+        let calendar_due = due_calendar(&conn, 1, 10_000, 20).unwrap();
+        assert_eq!(calendar_due.len(), 1);
+        assert_eq!(calendar_due[0].id, calendar);
+        assert_eq!(future, due(&conn, 1, 20_000, 20).unwrap()[0].id);
+    }
 }

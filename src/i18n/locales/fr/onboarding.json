@@ -2,10 +2,12 @@
   "intro": {
     "skipHint": "Appuyez sur une touche pour passer",
     "lines": [
-      "Bienvenue.",
-      "L'e-mail, à la vitesse de la pensée.",
-      "Commençons la configuration."
-    ]
+      "L'e-mail n'a pas changé depuis vingt ans.",
+      "Aujourd'hui, tout change.",
+      "Rapide. Serein. Simplement beau."
+    ],
+    "title": "Comail",
+    "continue": "Commencer"
   },
   "provider": {
     "fastmail": "Fastmail",

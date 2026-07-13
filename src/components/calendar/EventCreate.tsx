@@ -65,6 +65,7 @@ export function EventCreate() {
   const [description, setDescription] = useState("");
   const [quick, setQuick] = useState("");
   const [quickAiPending, setQuickAiPending] = useState(false);
+  const [teamsPending, setTeamsPending] = useState(false);
 
   // Seed from prefill (create-from-email) each time the modal opens.
   useEffect(() => {
@@ -136,6 +137,36 @@ export function EventCreate() {
       setDurationMin(Math.round((quickPreview.endsAt - quickPreview.startsAt) / 60_000));
     }
     setQuick("");
+  };
+
+  const isMicrosoftAccount =
+    accounts?.find((a) => a.id === accountId)?.provider === "microsoft";
+
+  // Mint a real Teams meeting via Graph and drop its join URL into the field,
+  // using this event's own date/time/duration. Microsoft accounts only; first
+  // use may open the browser once for consent.
+  const createTeamsMeeting = async () => {
+    if (accountId == null || teamsPending) return;
+    setTeamsPending(true);
+    try {
+      const startsAt = allDay ? fromInputs(date, "00:00") : fromInputs(date, time);
+      const endsAt = allDay ? startsAt + 24 * H_MS : startsAt + durationMin * 60_000;
+      const { joinUrl: url } = await call("create_teams_meeting", {
+        accountId,
+        subject: summary.trim() || t("calendar:create.teamsMeeting"),
+        startMs: startsAt,
+        endMs: endsAt,
+      });
+      setJoinUrl(url);
+      pushToast({ kind: "info", message: t("calendar:create.teamsAdded"), durationMs: 2500 });
+    } catch (e) {
+      pushToast({
+        kind: "error",
+        message: t("calendar:create.teamsError", { error: errorMessage(e) }),
+      });
+    } finally {
+      setTeamsPending(false);
+    }
   };
 
   const close = () => set({ eventCreate: null });
@@ -325,7 +356,23 @@ export function EventCreate() {
               />
             </div>
             <div className="flex-1">
-              <label className={labelCls}>{t("calendar:create.joinUrl")}</label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className={`${labelCls} mb-0`}>{t("calendar:create.joinUrl")}</label>
+                {isMicrosoftAccount && (
+                  <button
+                    type="button"
+                    disabled={teamsPending}
+                    onClick={() => void createTeamsMeeting()}
+                    title={t("calendar:create.teamsTip")}
+                    className="flex items-center gap-1 text-[11px] font-medium text-accent hover:underline disabled:opacity-50"
+                  >
+                    {teamsPending && (
+                      <span className="co-spinner size-2.5 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+                    )}
+                    {t("calendar:create.teamsMeeting")}
+                  </button>
+                )}
+              </div>
               <input
                 className={inputCls}
                 placeholder="https://meet…"

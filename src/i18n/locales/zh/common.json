@@ -46,6 +46,17 @@
     "search": "搜索",
     "offline": "离线",
     "syncing": "同步中",
+    "checkingMail": "正在检查邮件…",
+    "inboxUpToDate": "收件箱已是最新",
+    "backgroundTitle": "已完成 {{done}}/{{total}} · {{failed}} 个失败",
+    "backgroundFailed": "{{count}} 个失败",
+    "background": {
+      "headers": "正在同步历史邮件",
+      "content": "正在缓存邮件",
+      "indexing": "正在索引邮件",
+      "retrying": "正在重试同步",
+      "mixed": "正在完成后台同步"
+    },
     "waitingForChord": "等待组合键",
     "settings": "设置",
     "settingsWithShortcut": "设置（{{shortcut}}）",

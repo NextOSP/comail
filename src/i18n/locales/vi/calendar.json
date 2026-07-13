@@ -19,6 +19,16 @@
   "going": "Bạn có tham dự?",
   "viewDay": "Xem ngày",
   "conflict": "Trùng với một sự kiện khác",
+  "showDetails": "Xem chi tiết",
+  "hideDetails": "Ẩn chi tiết",
+  "descriptionLabel": "Mô tả",
+  "recurrence": {
+    "daily": "Lặp lại hằng ngày",
+    "weekly": "Lặp lại hằng tuần",
+    "monthly": "Lặp lại hằng tháng",
+    "yearly": "Lặp lại hằng năm",
+    "generic": "Sự kiện lặp lại"
+  },
   "week": "Tuần",
   "month": "Tháng",
   "moreEvents_one": "+{{count}} sự kiện nữa",

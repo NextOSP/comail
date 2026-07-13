@@ -1857,7 +1857,14 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(undefined, 300);
 
     case "get_sync_status":
-      return delay<SyncStatus[]>(accounts.map((x) => ({ accountId: x.id, state: x.syncState, progress: x.syncState === "syncing" ? 0.4 : null })));
+      return delay<SyncStatus[]>(accounts.map((x) => ({
+        accountId: x.id,
+        state: x.syncState,
+        foregroundPhase: x.syncState === "syncing" ? "inbox" : "idle",
+        background: x.id === 1
+          ? { phase: "content", done: 12_637, total: 16_280, failed: 0 }
+          : null,
+      })));
 
     case "get_settings":
       return delay({ ...settings });
@@ -1985,6 +1992,14 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(undefined, 100);
     }
 
+    case "create_teams_meeting": {
+      const id = Math.random().toString(36).slice(2, 14);
+      return delay(
+        { joinUrl: `https://teams.microsoft.com/l/meetup-join/mock/${id}` },
+        400,
+      );
+    }
+
     case "list_calendars": {
       const accountId = a.accountId as number | null | undefined;
       const hits = accountId == null
@@ -2001,6 +2016,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "calendar_sync_now":
       return delay(undefined, 150);
+
+    case "ui_ready":
+      return delay(undefined, 10);
 
     case "ai_status":
       return delay<AiStatus>(
@@ -2053,11 +2071,30 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "ai_summarize": {
       const t = threads.find((x) => x.id === a.threadId);
       if (!t) throw new Error(`Thread ${a.threadId} not found`);
-      const who = threadSender(t);
-      return delay(
-        `${who.name ?? who.email} and ${t.messages.length > 1 ? "others discuss" : "you received"} "${t.subject}" - the key point is agreement on next steps with one open question remaining. You are expected to reply with a decision; nothing else in the thread needs action.`,
-        800,
-      );
+      const msgs = t.messages.filter((m) => !m.isDraft);
+      const firstLine = (s: string) =>
+        (s.split("\n").find((l) => l.trim()) ?? "").trim().replace(/\s+/g, " ").slice(0, 90);
+      const timeline = msgs.slice(0, 6).map((m) => ({
+        actor: m.isOutgoing ? "You" : (m.from.name ?? m.from.email),
+        event: firstLine(m.textBody) || "(no text)",
+      }));
+      const other = threadSender(t);
+      const lastIncoming = [...msgs].reverse().find((m) => !m.isOutgoing);
+      const summary = {
+        timeline,
+        keyPoints: [
+          `${msgs.length} message${msgs.length === 1 ? "" : "s"} on "${t.subject}".`,
+          `Main correspondent: ${other.name ?? other.email}.`,
+          "The thread converges on next steps, with one open question left for you.",
+        ],
+        nextAction: lastIncoming
+          ? `Reply to ${lastIncoming.from.name ?? lastIncoming.from.email} with a decision on the open question.`
+          : null,
+        proposedReply: lastIncoming
+          ? `Thanks for the detail — this looks good to me. Let's go ahead with the plan as outlined; I'll follow up if anything changes on my end.`
+          : null,
+      };
+      return delay(summary, 900);
     }
 
     case "ai_draft": {

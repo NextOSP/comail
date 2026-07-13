@@ -5,6 +5,7 @@ use crate::error::{CoreError, Result};
 use crate::models::Address;
 use mail_parser::MimeHeaders;
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default)]
 pub struct ParsedHeaders {
@@ -35,6 +36,445 @@ pub struct ParsedAttachment {
     pub size: i64,
     pub content_id: Option<String>,
     pub is_inline: bool,
+}
+
+/// Schema version written into `messages.mime_plan_json`.
+pub const MIME_PLAN_VERSION: u8 = 1;
+
+/// A compact, serializable description of the IMAP sections needed to make a
+/// message readable without downloading unrelated attachment bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MimePlan {
+    pub version: u8,
+    #[serde(default)]
+    pub text_sections: Vec<PlannedTextSection>,
+    #[serde(default)]
+    pub attachments: Vec<PlannedAttachment>,
+}
+
+impl Default for MimePlan {
+    fn default() -> Self {
+        Self {
+            version: MIME_PLAN_VERSION,
+            text_sections: Vec::new(),
+            attachments: Vec::new(),
+        }
+    }
+}
+
+impl MimePlan {
+    /// IMAP section identifiers safe to pass to [`crate::imap::fetch_content_sections`].
+    pub fn text_section_ids(&self) -> Vec<String> {
+        self.text_sections
+            .iter()
+            .map(|part| part.section.clone())
+            .collect()
+    }
+
+    /// The paperclip signal deliberately excludes embedded CID images.
+    pub fn has_file_attachments(&self) -> bool {
+        self.attachments.iter().any(|part| !part.is_inline)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextSectionKind {
+    Plain,
+    Html,
+    Calendar,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedTextSection {
+    /// Numeric IMAP BODY section, for example `1` or `2.1`.
+    pub section: String,
+    pub kind: TextSectionKind,
+    pub mime_type: String,
+    pub charset: Option<String>,
+    pub transfer_encoding: String,
+    /// Encoded octet count reported by BODYSTRUCTURE.
+    pub size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedAttachment {
+    /// Numeric IMAP BODY section, for example `2` or `3.1`.
+    pub section: String,
+    pub filename: Option<String>,
+    pub mime_type: String,
+    pub size: u32,
+    pub content_id: Option<String>,
+    pub is_inline: bool,
+    pub transfer_encoding: String,
+}
+
+/// Build the selective-fetch plan directly from an IMAP BODYSTRUCTURE tree.
+/// Only readable body parts (plain text, HTML, and calendars) enter
+/// `text_sections`; PDFs, images, and other files are descriptors only.
+pub fn plan_bodystructure(bs: &async_imap::imap_proto::BodyStructure<'_>) -> MimePlan {
+    use async_imap::imap_proto::{BodyContentCommon, BodyContentSinglePart, BodyStructure};
+
+    fn param(params: &async_imap::imap_proto::BodyParams<'_>, key: &str) -> Option<String> {
+        params.as_ref().and_then(|items| {
+            items
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(key))
+                .map(|(_, value)| value.to_string())
+        })
+    }
+
+    fn encoding(value: &async_imap::imap_proto::ContentEncoding<'_>) -> String {
+        use async_imap::imap_proto::ContentEncoding;
+        match value {
+            ContentEncoding::SevenBit => "7bit".into(),
+            ContentEncoding::EightBit => "8bit".into(),
+            ContentEncoding::Binary => "binary".into(),
+            ContentEncoding::Base64 => "base64".into(),
+            ContentEncoding::QuotedPrintable => "quoted-printable".into(),
+            ContentEncoding::Other(value) => value.to_ascii_lowercase(),
+        }
+    }
+
+    fn section(path: &[u32]) -> String {
+        if path.is_empty() {
+            "1".into()
+        } else {
+            path.iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(".")
+        }
+    }
+
+    fn add_single(
+        common: &BodyContentCommon<'_>,
+        other: &BodyContentSinglePart<'_>,
+        path: &[u32],
+        plan: &mut MimePlan,
+    ) {
+        let section = section(path);
+        let mime_type = format!("{}/{}", common.ty.ty, common.ty.subtype).to_ascii_lowercase();
+        let filename = common
+            .disposition
+            .as_ref()
+            .and_then(|value| param(&value.params, "filename"))
+            .or_else(|| param(&common.ty.params, "name"));
+        let disposition = common.disposition.as_ref().map(|value| value.ty.as_ref());
+        let explicit_attachment = disposition
+            .is_some_and(|value| value.eq_ignore_ascii_case("attachment"))
+            || filename.is_some();
+        let content_id = other.id.as_ref().map(|value| normalize_cid(value));
+        let is_inline = disposition.is_some_and(|value| value.eq_ignore_ascii_case("inline"))
+            || content_id.is_some();
+
+        let kind = if mime_type == "text/plain" {
+            Some(TextSectionKind::Plain)
+        } else if mime_type == "text/html" {
+            Some(TextSectionKind::Html)
+        } else if mime_type == "text/calendar" {
+            Some(TextSectionKind::Calendar)
+        } else {
+            None
+        };
+
+        // A named text file is an attachment, not the message body. Calendar
+        // files are the exception: they are fetched for event extraction and
+        // also remain visible as an attachment.
+        if let Some(kind) =
+            kind.filter(|kind| !explicit_attachment || matches!(kind, TextSectionKind::Calendar))
+        {
+            plan.text_sections.push(PlannedTextSection {
+                section: section.clone(),
+                kind,
+                mime_type: mime_type.clone(),
+                charset: param(&common.ty.params, "charset"),
+                transfer_encoding: encoding(&other.transfer_encoding),
+                size: other.octets,
+            });
+        }
+
+        let is_non_body_part = !mime_type.starts_with("text/") || explicit_attachment;
+        if is_non_body_part || (mime_type == "text/calendar" && explicit_attachment) {
+            plan.attachments.push(PlannedAttachment {
+                section,
+                filename,
+                mime_type,
+                size: other.octets,
+                content_id,
+                is_inline,
+                transfer_encoding: encoding(&other.transfer_encoding),
+            });
+        }
+    }
+
+    fn walk(bs: &BodyStructure<'_>, path: &mut Vec<u32>, plan: &mut MimePlan) {
+        match bs {
+            BodyStructure::Multipart { bodies, .. } => {
+                for (index, body) in bodies.iter().enumerate() {
+                    path.push((index + 1) as u32);
+                    walk(body, path, plan);
+                    path.pop();
+                }
+            }
+            BodyStructure::Basic { common, other, .. }
+            | BodyStructure::Text { common, other, .. } => {
+                add_single(common, other, path, plan);
+            }
+            BodyStructure::Message { common, other, .. } => {
+                // message/rfc822 is normally a forwarded-message attachment.
+                // Treat it atomically; recursing would require the special
+                // RFC 3501 MESSAGE section-numbering rules and would bulk-fetch
+                // content the user did not ask to open.
+                add_single(common, other, path, plan);
+            }
+        }
+    }
+
+    let mut plan = MimePlan::default();
+    walk(bs, &mut Vec::new(), &mut plan);
+    plan
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedTextSection {
+    pub kind: TextSectionKind,
+    /// Plain/calendar text, or sanitized HTML for `Html`.
+    pub content: String,
+}
+
+fn section_entity(mime_header: &[u8], encoded_body: &[u8]) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(mime_header.len() + encoded_body.len() + 4);
+    raw.extend_from_slice(mime_header);
+    if !(mime_header.ends_with(b"\r\n\r\n") || mime_header.ends_with(b"\n\n")) {
+        if mime_header.ends_with(b"\r\n") {
+            raw.extend_from_slice(b"\r\n");
+        } else if mime_header.ends_with(b"\n") {
+            raw.extend_from_slice(b"\n");
+        } else {
+            raw.extend_from_slice(b"\r\n\r\n");
+        }
+    }
+    raw.extend_from_slice(encoded_body);
+    raw
+}
+
+/// Decode transfer encoding and charset for one fetched text MIME entity.
+/// HTML is sanitized through the same allow-list as full-message parsing.
+pub fn decode_text_section(
+    kind: TextSectionKind,
+    mime_header: &[u8],
+    encoded_body: &[u8],
+) -> Result<DecodedTextSection> {
+    let raw = section_entity(mime_header, encoded_body);
+    let msg = mail_parser::MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| CoreError::Mime("unparseable MIME section".into()))?;
+    let content = msg
+        .root_part()
+        .text_contents()
+        .map(str::to_owned)
+        .unwrap_or_else(|| String::from_utf8_lossy(msg.root_part().contents()).into_owned());
+    Ok(DecodedTextSection {
+        kind,
+        content: if kind == TextSectionKind::Html {
+            sanitize_html(&content)
+        } else {
+            content
+        },
+    })
+}
+
+/// Decode one on-demand attachment MIME entity without parsing or retaining a
+/// complete RFC 5322 message.
+pub fn decode_attachment_section(mime_header: &[u8], encoded_body: &[u8]) -> Result<Vec<u8>> {
+    let raw = section_entity(mime_header, encoded_body);
+    let msg = mail_parser::MessageParser::default()
+        .parse(&raw)
+        .ok_or_else(|| CoreError::Mime("unparseable attachment MIME section".into()))?;
+    Ok(msg.root_part().contents().to_vec())
+}
+
+#[cfg(test)]
+mod selective_section_tests {
+    use super::*;
+    use async_imap::imap_proto::{
+        BodyContentCommon, BodyContentSinglePart, BodyStructure, ContentDisposition,
+        ContentEncoding, ContentType,
+    };
+    use std::borrow::Cow;
+
+    fn common(
+        ty: &'static str,
+        subtype: &'static str,
+        params: &[(&'static str, &'static str)],
+        disposition: Option<(&'static str, &'static str)>,
+    ) -> BodyContentCommon<'static> {
+        BodyContentCommon {
+            ty: ContentType {
+                ty: Cow::Borrowed(ty),
+                subtype: Cow::Borrowed(subtype),
+                params: (!params.is_empty()).then(|| {
+                    params
+                        .iter()
+                        .map(|(key, value)| (Cow::Borrowed(*key), Cow::Borrowed(*value)))
+                        .collect()
+                }),
+            },
+            disposition: disposition.map(|(ty, filename)| ContentDisposition {
+                ty: Cow::Borrowed(ty),
+                params: Some(vec![(Cow::Borrowed("filename"), Cow::Borrowed(filename))]),
+            }),
+            language: None,
+            location: None,
+        }
+    }
+
+    fn other(
+        id: Option<&'static str>,
+        transfer_encoding: ContentEncoding<'static>,
+        octets: u32,
+    ) -> BodyContentSinglePart<'static> {
+        BodyContentSinglePart {
+            id: id.map(Cow::Borrowed),
+            md5: None,
+            description: None,
+            transfer_encoding,
+            octets,
+        }
+    }
+
+    fn text(
+        subtype: &'static str,
+        params: &[(&'static str, &'static str)],
+        disposition: Option<(&'static str, &'static str)>,
+        encoding: ContentEncoding<'static>,
+        octets: u32,
+    ) -> BodyStructure<'static> {
+        BodyStructure::Text {
+            common: common("text", subtype, params, disposition),
+            other: other(None, encoding, octets),
+            lines: 1,
+            extension: None,
+        }
+    }
+
+    fn basic(
+        ty: &'static str,
+        subtype: &'static str,
+        disposition: Option<(&'static str, &'static str)>,
+        id: Option<&'static str>,
+        octets: u32,
+    ) -> BodyStructure<'static> {
+        BodyStructure::Basic {
+            common: common(ty, subtype, &[], disposition),
+            other: other(id, ContentEncoding::Base64, octets),
+            extension: None,
+        }
+    }
+
+    #[test]
+    fn bodystructure_plan_fetches_only_readable_sections() {
+        let structure = BodyStructure::Multipart {
+            common: common("multipart", "mixed", &[], None),
+            bodies: vec![
+                BodyStructure::Multipart {
+                    common: common("multipart", "alternative", &[], None),
+                    bodies: vec![
+                        text(
+                            "plain",
+                            &[("charset", "iso-8859-1")],
+                            None,
+                            ContentEncoding::QuotedPrintable,
+                            20,
+                        ),
+                        text("html", &[], None, ContentEncoding::Base64, 40),
+                    ],
+                    extension: None,
+                },
+                text(
+                    "calendar",
+                    &[("charset", "utf-8")],
+                    Some(("attachment", "invite.ics")),
+                    ContentEncoding::EightBit,
+                    80,
+                ),
+                basic(
+                    "image",
+                    "png",
+                    Some(("inline", "logo.png")),
+                    Some("<logo@cid>"),
+                    100,
+                ),
+                basic(
+                    "application",
+                    "pdf",
+                    Some(("attachment", "report.pdf")),
+                    None,
+                    5_000,
+                ),
+            ],
+            extension: None,
+        };
+
+        let plan = plan_bodystructure(&structure);
+        assert_eq!(plan.version, MIME_PLAN_VERSION);
+        assert_eq!(plan.text_section_ids(), vec!["1.1", "1.2", "2"]);
+        assert_eq!(
+            plan.text_sections
+                .iter()
+                .map(|part| part.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                TextSectionKind::Plain,
+                TextSectionKind::Html,
+                TextSectionKind::Calendar
+            ]
+        );
+        assert_eq!(
+            plan.attachments
+                .iter()
+                .map(|part| (part.section.as_str(), part.is_inline))
+                .collect::<Vec<_>>(),
+            vec![("2", false), ("3", true), ("4", false)]
+        );
+        assert_eq!(plan.attachments[1].content_id.as_deref(), Some("logo@cid"));
+        assert!(plan.has_file_attachments());
+
+        let json = serde_json::to_string(&plan).unwrap();
+        assert_eq!(serde_json::from_str::<MimePlan>(&json).unwrap(), plan);
+    }
+
+    #[test]
+    fn decodes_charset_and_sanitizes_html_sections() {
+        let plain = decode_text_section(
+            TextSectionKind::Plain,
+            b"Content-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n",
+            b"Ol=E1 mundo",
+        )
+        .unwrap();
+        assert_eq!(plain.content, "Ol\u{e1} mundo");
+
+        let html = decode_text_section(
+            TextSectionKind::Html,
+            b"Content-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n",
+            b"<p onclick=\"steal()\">Hello</p><script>steal()</script>",
+        )
+        .unwrap();
+        assert!(html.content.contains("<p>Hello</p>"));
+        assert!(!html.content.contains("onclick"));
+        assert!(!html.content.contains("<script"));
+    }
+
+    #[test]
+    fn decodes_one_attachment_entity() {
+        let bytes = decode_attachment_section(
+            b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n",
+            b"AAEC/w==",
+        )
+        .unwrap();
+        assert_eq!(bytes, vec![0, 1, 2, 255]);
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -262,6 +702,95 @@ mod via_tests {
     }
 }
 
+#[cfg(test)]
+mod automated_tests {
+    use super::{parse_message, robot_sender};
+
+    fn automated(raw: &str) -> bool {
+        parse_message(raw.as_bytes()).unwrap().headers.is_automated
+    }
+
+    #[test]
+    fn robot_local_part_is_automated_without_bulk_headers() {
+        assert!(automated(
+            "From: noreply@binh.ong\r\nSubject: New booking\r\n\r\nbody"
+        ));
+        assert!(automated(
+            "From: notifications@example.com\r\nSubject: You've joined the group\r\n\r\nbody"
+        ));
+    }
+
+    #[test]
+    fn exchange_ndr_is_automated() {
+        // Exchange NDR sender local-part, no bulk headers.
+        assert!(automated(
+            "From: MicrosoftExchange329e71ec88ae4615bbc36ab6ce41109e@corp.com\r\nSubject: Undeliverable: hi\r\n\r\nbody"
+        ));
+        // DSN envelope content type.
+        assert!(automated(
+            "From: odd-sender@corp.com\r\nContent-Type: multipart/report; report-type=delivery-status; boundary=b\r\nSubject: Undeliverable: hi\r\n\r\nbody"
+        ));
+    }
+
+    #[test]
+    fn plain_human_mail_is_not_automated() {
+        assert!(!automated(
+            "From: alice@example.com\r\nSubject: Lunch tomorrow?\r\n\r\nbody"
+        ));
+        // RFC 3834 defines the literal value "no" as explicitly not
+        // automatically submitted. Some human-mail clients include it, so
+        // treating mere header presence as automated would suppress a real
+        // new-mail notification.
+        assert!(!automated(
+            "From: alice@example.com\r\nAuto-Submitted: no\r\nSubject: Still human\r\n\r\nbody"
+        ));
+    }
+
+    #[test]
+    fn generated_auto_submitted_mail_is_automated() {
+        assert!(automated(
+            "From: service@example.com\r\nAuto-Submitted: auto-generated\r\nSubject: Report\r\n\r\nbody"
+        ));
+    }
+
+    #[test]
+    fn robot_prefix_before_plus_only() {
+        assert!(robot_sender("alerts+prod@x.com"));
+        assert!(!robot_sender("alice+noreply@x.com"));
+    }
+}
+
+/// Robot senders whose mail is automated even when it carries none of the
+/// bulk-mail headers `is_automated` checks (cloud monitoring alarms, CI
+/// notifications, and Exchange NDRs are often plain SMTP with a noreply-style
+/// local-part).
+pub fn robot_sender(email: &str) -> bool {
+    let local = email
+        .split('@')
+        .next()
+        .unwrap_or("")
+        .split('+')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    const PREFIXES: &[&str] = &[
+        "noreply",
+        "no-reply",
+        "no_reply",
+        "donotreply",
+        "do-not-reply",
+        "notification",
+        "notify",
+        "alert",
+        "alarm",
+        "mailer-daemon",
+        "postmaster",
+        "bounce",
+        "microsoftexchange",
+    ];
+    PREFIXES.iter().any(|p| local.starts_with(p))
+}
+
 fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
     let mut refs: Vec<String> = Vec::new();
     if let Some(irt) = msg.in_reply_to().as_text_list() {
@@ -276,6 +805,20 @@ fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
         }
     }
 
+    let from = msg.from().and_then(|f| f.first()).and_then(addr_from);
+    let via = resolve_via(msg, from.as_ref());
+
+    // multipart/report is the DSN/MDN envelope: bounces and read receipts.
+    let is_report = msg
+        .content_type()
+        .map(|ct| {
+            ct.ctype().eq_ignore_ascii_case("multipart")
+                && ct
+                    .subtype()
+                    .is_some_and(|s| s.eq_ignore_ascii_case("report"))
+        })
+        .unwrap_or(false);
+
     let is_automated = msg.header("List-Id").is_some()
         || msg.header("List-Unsubscribe").is_some()
         || msg
@@ -286,11 +829,14 @@ fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
                 v == "bulk" || v == "list" || v == "junk"
             })
             .unwrap_or(false)
-        || msg.header("Auto-Submitted").is_some()
-        || msg.header("X-Autoreply").is_some();
-
-    let from = msg.from().and_then(|f| f.first()).and_then(addr_from);
-    let via = resolve_via(msg, from.as_ref());
+        || msg
+            .header("Auto-Submitted")
+            .and_then(|header| header.as_text())
+            .is_some_and(|value| !value.trim().eq_ignore_ascii_case("no"))
+        || msg.header("X-Autoreply").is_some()
+        || msg.header("X-Failed-Recipients").is_some()
+        || is_report
+        || from.as_ref().is_some_and(|a| robot_sender(&a.email));
 
     ParsedHeaders {
         message_id: msg.message_id().map(|s| s.to_string()),

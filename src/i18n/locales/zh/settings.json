@@ -7,7 +7,8 @@
     "accounts": "账户",
     "splitInbox": "分栏收件箱",
     "snippets": "片段",
-    "labels": "标签"
+    "labels": "标签",
+    "sync": "同步"
   },
   "search": {
     "placeholder": "搜索设置…",
@@ -36,6 +37,28 @@
   },
   "toast": {
     "settingsSaveFailed": "无法保存设置：{{detail}}"
+  },
+  "sync": {
+    "intro": "应用会优先检查收件箱；历史邮件头、离线内容和搜索索引会继续在后台处理。",
+    "foreground": "收件箱",
+    "background": "后台任务",
+    "checking": "正在检查邮件…",
+    "upToDate": "已是最新",
+    "complete": "已完成",
+    "phase": {
+      "headers": "正在同步历史邮件",
+      "content": "正在缓存邮件",
+      "indexing": "正在索引邮件",
+      "retrying": "正在重试失败任务"
+    },
+    "progress": "{{done}} / {{total}}",
+    "failed": "{{count}} 个失败",
+    "syncNow": "立即同步",
+    "syncingNow": "正在检查…",
+    "syncNowAccount": "立即同步 {{email}}",
+    "syncComplete": "已检查 {{email}} 的收件箱。",
+    "syncFailed": "无法同步 {{email}}：{{detail}}",
+    "noAccounts": "尚未连接账户。"
   },
   "ai": {
     "statusLabel": "状态",

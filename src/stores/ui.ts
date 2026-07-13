@@ -1,19 +1,31 @@
 import { create } from "zustand";
 import type {
   Address,
+  AiThreadSummary,
   AttachmentMeta,
   CalendarEvent,
   ComposeMode,
   DraftAttachment,
   MessageDetail,
   Settings,
+  SyncStatus,
   View,
 } from "../ipc/types";
+import { syncStatusMap } from "../lib/syncStatus";
 
 export type Screen = "onboarding" | "inbox" | "conversation" | "search" | "compose" | "calendar";
 
 /** Management panels opened from the command palette. */
 export type PanelKind = "settings" | "snippets" | "splits" | "labels";
+
+export type SettingsTab =
+  | "general"
+  | "splits"
+  | "snippets"
+  | "labels"
+  | "ai"
+  | "accounts"
+  | "sync";
 
 export interface ToastItem {
   id: number;
@@ -39,6 +51,9 @@ export interface ComposerState {
   accountId?: number;
   /** message being replied to / forwarded */
   replyTo?: MessageDetail;
+  /** Plain text (usually a passage selected from the thread) to seed the body
+   *  as a leading blockquote. Ignored when `initial` is present (reopened draft). */
+  prefillQuote?: string;
   initial?: {
     to?: Address[];
     cc?: Address[];
@@ -97,7 +112,7 @@ interface UiState {
   /** which management panel is open (settings / snippets / splits) */
   panel: PanelKind | null;
   /** which Settings tab to open with (consumed once by SettingsPanel) */
-  settingsTab: "general" | "splits" | "snippets" | "labels" | "ai" | "accounts" | null;
+  settingsTab: SettingsTab | null;
   /** thread id the quick-split popover targets; null = closed */
   splitTarget: number | null;
   /** show the add-account (onboarding) form as a modal on demand */
@@ -147,7 +162,7 @@ interface UiState {
   /** attachment being previewed in the safe in-app viewer; null = closed */
   attachmentPreview: AttachmentMeta | null;
   /** AI thread summaries cached per thread id (kept until dismissed) */
-  aiSummaries: Record<number, { pending: boolean; text?: string }>;
+  aiSummaries: Record<number, { pending: boolean; summary?: AiThreadSummary }>;
 
   searchOpen: boolean;
   /** open the search screen in this mode once (consumed by SearchScreen) */
@@ -158,14 +173,14 @@ interface UiState {
   keySequence: string;
   toasts: ToastItem[];
   offline: boolean;
-  syncing: boolean;
-  /** live body-backfill progress for the "Sync x/total" indicator */
-  syncDone: number;
-  syncTotal: number;
+  /** Authoritative synchronization state, keyed by account id. */
+  syncStatuses: Record<number, SyncStatus>;
   lastUndo: Undoable | null;
 
   // actions
   set: (partial: Partial<UiState>) => void;
+  replaceSyncStatuses: (statuses: SyncStatus[]) => void;
+  upsertSyncStatus: (status: SyncStatus) => void;
   setView: (view: View, splitId?: number | null) => void;
   /** Filter the list by a label (null clears back to the current view). */
   selectLabel: (labelId: number | null) => void;
@@ -234,12 +249,13 @@ export const useUi = create<UiState>((set, get) => ({
   keySequence: "",
   toasts: [],
   offline: false,
-  syncing: false,
-  syncDone: 0,
-  syncTotal: 0,
+  syncStatuses: {},
   lastUndo: null,
 
   set: (partial) => set(partial),
+  replaceSyncStatuses: (statuses) => set({ syncStatuses: syncStatusMap(statuses) }),
+  upsertSyncStatus: (status) =>
+    set((state) => ({ syncStatuses: { ...state.syncStatuses, [status.accountId]: status } })),
 
   setView: (view, splitId) =>
     set({

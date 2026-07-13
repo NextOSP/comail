@@ -17,7 +17,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Messages embedded per batch before yielding.
-const BATCH: i64 = 16;
+const BATCH: i64 = 4;
+/// Cooperative yield between CPU-heavy batches while history is being built.
+const WORK_YIELD: Duration = Duration::from_millis(500);
 /// Poll interval when there is nothing to embed.
 const IDLE: Duration = Duration::from_secs(3);
 /// Backoff after a load/inference error.
@@ -34,8 +36,7 @@ async fn run(db: Db, state: Arc<EmbedState>, paths: Arc<Paths>) {
     loop {
         match tick(&db, &state, &paths).await {
             Ok(true) => {
-                // Did work; loop again promptly to drain the queue.
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                tokio::time::sleep(WORK_YIELD).await;
             }
             Ok(false) => tokio::time::sleep(IDLE).await,
             Err(e) => {
@@ -57,6 +58,45 @@ async fn tick(db: &Db, state: &Arc<EmbedState>, paths: &Arc<Paths>) -> Result<bo
             *state.index.write().await = VectorIndex::new(0, "");
             state.clear_query_cache().await;
         }
+        return Ok(false);
+    }
+
+    // Live mail, user actions, and an opened message always outrank semantic
+    // indexing. Candle can otherwise consume several CPU cores while the IMAP
+    // actor is trying to make the Inbox usable.
+    let foreground_busy = db
+        .read(|conn| {
+            Ok(conn.query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM accounts WHERE sync_state = 'syncing'
+                    UNION ALL
+                    SELECT 1 FROM pending_actions
+                     WHERE state IN ('pending','inflight')
+                       AND kind NOT LIKE 'cal!_%' ESCAPE '!'
+                    UNION ALL
+                    SELECT 1
+                      FROM messages m
+                      JOIN accounts a ON a.id = m.account_id
+                      JOIN folders f ON f.id = m.folder_id
+                     WHERE m.uid IS NOT NULL
+                       AND (a.provider = 'gmail' OR COALESCE(f.role, '') <> 'all')
+                       AND (
+                         m.body_state = 'fetching'
+                         OR (
+                           m.body_state = 'none'
+                           AND NOT EXISTS (
+                             SELECT 1 FROM sync_failures sf
+                              WHERE sf.stage = 'content' AND sf.message_id = m.id
+                           )
+                         )
+                       )
+                 )",
+                [],
+                |row| row.get::<_, i64>(0),
+            )? != 0)
+        })
+        .await?;
+    if foreground_busy {
         return Ok(false);
     }
 

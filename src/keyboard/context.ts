@@ -46,7 +46,9 @@ export interface CommandCtx {
   cycleSplit: (delta: number) => void;
   /** Jump straight to the inbox split tab at `index` (0 = Important, …). */
   gotoSplitTab: (index: number) => void;
-  compose: (mode: ComposeMode) => void;
+  /** Open a composer. `prefillQuote` seeds a reply body with a leading
+   *  blockquote (a passage selected from the thread). */
+  compose: (mode: ComposeMode, prefillQuote?: string) => void;
   openSnooze: () => void;
   openMove: () => void;
   openLabel: () => void;
@@ -298,7 +300,7 @@ export function buildCommandContext(): CommandCtx {
     });
   };
 
-  const compose = (mode: ComposeMode) => {
+  const compose = (mode: ComposeMode, prefillQuote?: string) => {
     const state = useUi.getState();
     if (mode === "new") {
       state.openComposer({ mode: "new" });
@@ -327,7 +329,7 @@ export function buildCommandContext(): CommandCtx {
         focused ?? [...msgs].reverse().find((m) => !m.isOutgoing) ?? msgs[msgs.length - 1];
       if (!replyTo) return;
       const ui = useUi.getState();
-      ui.openComposer({ mode, replyTo, accountId: replyTo.accountId });
+      ui.openComposer({ mode, replyTo, accountId: replyTo.accountId, prefillQuote });
       // Replies live at the bottom of the thread, so make sure it's open.
       if (ui.openThreadId !== threadId) ui.openThread(threadId);
     })();

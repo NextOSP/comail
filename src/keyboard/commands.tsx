@@ -9,6 +9,7 @@ import { MOCK_MODE } from "../ipc/mock";
 import type { Account, Address, MessageDetail, ThreadDetail } from "../ipc/types";
 import { addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
+import { normalizeSyncStatus } from "../lib/syncStatus";
 import { findCachedSummary } from "../queries/actions";
 import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
@@ -25,16 +26,54 @@ export type ComposerAction =
   | "attach"
   | "share_availability"
   | "ai"
-  | "proofread";
+  | "proofread"
+  | "quote_selection";
 
-export function fireComposerAction(action: ComposerAction) {
-  window.dispatchEvent(new CustomEvent<ComposerAction>("comail:composer-action", { detail: action }));
+/** Optional payload some actions carry (e.g. the text to quote). */
+type ComposerActionDetail = { action: ComposerAction; text?: string };
+
+export function fireComposerAction(action: ComposerAction, text?: string) {
+  window.dispatchEvent(
+    new CustomEvent<ComposerActionDetail>("comail:composer-action", { detail: { action, text } }),
+  );
 }
 
-export function onComposerAction(handler: (a: ComposerAction) => void): () => void {
-  const fn = (e: Event) => handler((e as CustomEvent<ComposerAction>).detail);
+export function onComposerAction(handler: (a: ComposerAction, text?: string) => void): () => void {
+  const fn = (e: Event) => {
+    const d = (e as CustomEvent<ComposerActionDetail>).detail;
+    handler(d.action, d.text);
+  };
   window.addEventListener("comail:composer-action", fn);
   return () => window.removeEventListener("comail:composer-action", fn);
+}
+
+/** Text selected in the thread (top document or an email-body iframe) but NOT
+ *  inside an editable field like the composer. Read at keypress time — opening
+ *  a composer moves focus and clears the selection. */
+export function threadSelectionText(): string | null {
+  const sel = document.getSelection();
+  if (sel && !sel.isCollapsed) {
+    const node = sel.anchorNode;
+    const host = node instanceof Element ? node : node?.parentElement ?? null;
+    const inEditable = host?.closest("[contenteditable='true'], input, textarea");
+    if (!inEditable) {
+      const text = sel.toString().trim();
+      if (text) return text;
+    }
+  }
+  // HTML email bodies render inside same-origin sandboxed iframes.
+  for (const frame of document.querySelectorAll<HTMLIFrameElement>("iframe[data-app-iframe]")) {
+    try {
+      const s = frame.contentWindow?.getSelection();
+      if (s && !s.isCollapsed) {
+        const text = s.toString().trim();
+        if (text) return text;
+      }
+    } catch {
+      // cross-origin frame: not ours, skip
+    }
+  }
+  return null;
 }
 
 const noOverlay = (ctx: CommandCtx) => !ctx.composerOpen && !ctx.paletteOpen && !ctx.panelOpen;
@@ -250,9 +289,9 @@ async function summarizeThread(threadId: number) {
   if (ui.aiSummaries[threadId]?.pending) return;
   ui.set({ aiSummaries: { ...ui.aiSummaries, [threadId]: { pending: true } } });
   try {
-    const text = await call("ai_summarize", { threadId });
+    const summary = await call("ai_summarize", { threadId });
     const cur = useUi.getState().aiSummaries;
-    useUi.getState().set({ aiSummaries: { ...cur, [threadId]: { pending: false, text } } });
+    useUi.getState().set({ aiSummaries: { ...cur, [threadId]: { pending: false, summary } } });
   } catch (err) {
     const cur = { ...useUi.getState().aiSummaries };
     delete cur[threadId];
@@ -693,6 +732,26 @@ export const ALL_COMMANDS: Command[] = [
     run: (ctx) => ctx.compose("reply"),
   },
   {
+    // Enter with text selected in the thread: quote that passage instead of a
+    // plain reply-all. Listed before reply-all so it wins when a selection
+    // exists; falls through to reply-all otherwise. Works whether or not a
+    // composer is already open (insert into it, else open a reply).
+    id: "quote-selection",
+    titleKey: "commands:title.quoteSelection",
+    aliases: ["quote selection", "reply with quote"],
+    keys: ["enter"],
+    section: "Compose",
+    when: (ctx) =>
+      ctx.inConversation && !ctx.paletteOpen && !ctx.panelOpen && threadSelectionText() != null,
+    run: (ctx) => {
+      const text = threadSelectionText();
+      if (!text) return;
+      if (ctx.composerOpen) fireComposerAction("quote_selection", text);
+      else ctx.compose("reply_all", text);
+    },
+    hiddenInPalette: true,
+  },
+  {
     id: "reply-all",
     titleKey: "commands:title.replyAll",
     aliases: ["respond all"],
@@ -1001,9 +1060,25 @@ export const ALL_COMMANDS: Command[] = [
     keys: [],
     section: "Meta",
     run: () => {
-      void call("sync_now", {}).then(() => {
-        void queryClient.invalidateQueries({ queryKey: ["threads"] });
-      });
+      const accountId = useUi.getState().accountFilter;
+      void (async () => {
+        try {
+          // The backend resolves only after the requested foreground Inbox pass
+          // settles, so these invalidations cannot race ahead of new headers.
+          await call("sync_now", { accountId });
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["threads"] }),
+            queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
+            queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+          ]);
+          const statuses = (await call("get_sync_status", {}))
+            .map(normalizeSyncStatus)
+            .filter((status): status is NonNullable<typeof status> => status != null);
+          useUi.getState().replaceSyncStatuses(statuses);
+        } catch (error) {
+          useUi.getState().pushToast({ kind: "error", message: errorMessage(error) });
+        }
+      })();
       useUi.getState().pushToast({ kind: "info", message: i18n.t("commands:toast.syncing"), durationMs: 1800 });
     },
   },

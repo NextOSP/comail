@@ -3,6 +3,8 @@
 use serde::Serialize;
 use tokio::sync::broadcast;
 
+use crate::models::SyncStatus;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncProgress {
@@ -26,6 +28,7 @@ pub struct NewEventInfo {
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
     SyncProgress(SyncProgress),
+    SyncStatus(SyncStatus),
     MailNew {
         account_id: i64,
         thread_ids: Vec<i64>,

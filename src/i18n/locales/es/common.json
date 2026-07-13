@@ -46,6 +46,17 @@
     "search": "Buscar",
     "offline": "Sin conexión",
     "syncing": "Sincronizando",
+    "checkingMail": "Comprobando correo…",
+    "inboxUpToDate": "Bandeja actualizada",
+    "backgroundTitle": "{{done}} de {{total}} completados · {{failed}} fallidos",
+    "backgroundFailed": "{{count}} fallidos",
+    "background": {
+      "headers": "Sincronizando historial",
+      "content": "Guardando correo",
+      "indexing": "Indexando correo",
+      "retrying": "Reintentando sincronización",
+      "mixed": "Finalizando sincronización"
+    },
     "waitingForChord": "Esperando combinación",
     "settings": "Ajustes",
     "settingsWithShortcut": "Ajustes ({{shortcut}})",

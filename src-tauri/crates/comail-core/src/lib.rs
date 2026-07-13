@@ -11,6 +11,7 @@ pub mod db;
 pub mod embed;
 pub mod error;
 pub mod events;
+pub mod graph;
 pub mod imap;
 pub mod mime;
 pub mod models;
@@ -35,6 +36,8 @@ use crate::sync::engine::{spawn_account, AccountHandle, SyncCmd, SyncCtx};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+pub use crate::db::repo::notifications::NotificationOutboxItem;
 
 /// An AI feature, each routed to a configurable model tier.
 #[derive(Clone, Copy)]
@@ -83,10 +86,19 @@ pub struct Core {
     tokens: TokenProvider,
     handles: Arc<RwLock<HashMap<i64, AccountHandle>>>,
     cal_handles: Arc<RwLock<HashMap<i64, caldav::task::CalTaskHandle>>>,
+    /// Per-attachment single-flight locks. Concurrent preview/open/save calls
+    /// share one remote fetch and cannot race the same `.download.part` file.
+    attachment_locks:
+        Arc<tokio::sync::Mutex<HashMap<i64, std::sync::Weak<tokio::sync::Mutex<()>>>>>,
     embed: Arc<embed::EmbedState>,
     /// Fired by `cancel_oauth` to abort a pending browser sign-in (the
     /// loopback wait otherwise blocks the UI until its 5-minute timeout).
     oauth_cancel: Arc<tokio::sync::Notify>,
+    /// Fired by `notify_ui_ready` once the frontend has finished its startup
+    /// show (the first-run intro). Account actors wait for this before
+    /// touching OAuth tokens, so the OS keyring prompt never lands on top of
+    /// the intro. A timeout fallback keeps tray-only/headless syncing alive.
+    ui_ready: Arc<tokio::sync::Notify>,
 }
 
 impl Core {
@@ -101,8 +113,10 @@ impl Core {
             tokens: TokenProvider::new(),
             handles: Arc::new(RwLock::new(HashMap::new())),
             cal_handles: Arc::new(RwLock::new(HashMap::new())),
+            attachment_locks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             embed: Arc::new(embed::EmbedState::new()),
             oauth_cancel: Arc::new(tokio::sync::Notify::new()),
+            ui_ready: Arc::new(tokio::sync::Notify::new()),
         };
 
         // Make saved OAuth app registrations available before any actor
@@ -121,20 +135,56 @@ impl Core {
             Ok(n) if n > 0 => tracing::info!("recovered {n} orphaned in-flight action(s)"),
             _ => {}
         }
-
-        // Spawn actors for existing accounts.
-        let configs = core
+        match core
             .db
-            .read(|conn| repo::accounts::list_configs(conn))
-            .await?;
-        for cfg in configs {
-            core.spawn_actor(cfg).await;
+            .write(|conn| {
+                Ok(conn.execute(
+                    "UPDATE messages SET body_state = 'none' WHERE body_state = 'fetching'",
+                    [],
+                )?)
+            })
+            .await
+        {
+            Ok(n) if n > 0 => tracing::info!("recovered {n} orphaned content fetch(es)"),
+            _ => {}
         }
 
-        // Calendar sync tasks for accounts with a connected CalDAV server.
-        let cal_accounts = core.db.read(|conn| repo::caldav::all_configs(conn)).await?;
-        for cfg in cal_accounts {
-            core.spawn_cal_task(cfg.account_id).await;
+        // Spawn actors for existing accounts - but only after the frontend
+        // reports ready (notify_ui_ready). Actors immediately load OAuth
+        // tokens from the OS keyring, and on a launch that plays the intro
+        // that prompt must land after the show, not on top of it. The timeout
+        // fallback keeps sync alive if no frontend ever reports in (tray-only
+        // or a hung webview).
+        {
+            let core = core.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = core.ui_ready.notified() => {}
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+                }
+                let configs = match core
+                    .db
+                    .read(|conn| repo::accounts::list_configs(conn))
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::error!("listing accounts for startup sync: {e}");
+                        return;
+                    }
+                };
+                for cfg in configs {
+                    core.spawn_actor(cfg).await;
+                }
+                // Calendar sync tasks for accounts with a connected CalDAV server.
+                if let Ok(cal_accounts) =
+                    core.db.read(|conn| repo::caldav::all_configs(conn)).await
+                {
+                    for cfg in cal_accounts {
+                        core.spawn_cal_task(cfg.account_id).await;
+                    }
+                }
+            });
         }
 
         scheduler::spawn(
@@ -338,13 +388,31 @@ impl Core {
         self.oauth_cancel.notify_waiters();
     }
 
+    /// The frontend calls this once its startup show (the first-run intro) is
+    /// out of the way - or immediately when there is no show. Releases the
+    /// deferred account-actor spawn in [`Core::start`], which is what first
+    /// touches the OS keyring. `notify_one` stores a permit, so the order of
+    /// caller vs. waiter never matters.
+    pub fn notify_ui_ready(&self) {
+        self.ui_ready.notify_one();
+    }
+
     pub async fn start_oauth(
         &self,
         provider: Provider,
         open_url: impl FnOnce(String) + Send,
     ) -> Result<Account> {
+        // Microsoft: fold the Teams (Graph) scope into the sign-in consent so
+        // no second browser prompt is needed the first time a user creates a
+        // meeting. The code is still redeemed for the mail resource only (see
+        // `flow::authorize_with`); the multi-resource refresh token covers
+        // Graph, redeemed on demand by `access_token_for_scope`.
+        let consent_extra: &[&str] = match provider {
+            Provider::Microsoft => &[oauth::providers::MS_ONLINE_MEETINGS_SCOPE],
+            _ => &[],
+        };
         let outcome = tokio::select! {
-            r = oauth::flow::authorize(provider, open_url) => r?,
+            r = oauth::flow::authorize_with(provider, consent_extra, None, open_url) => r?,
             _ = self.oauth_cancel.notified() => {
                 return Err(CoreError::Auth("sign-in cancelled".into()));
             }
@@ -408,23 +476,38 @@ impl Core {
             .write(move |conn| repo::accounts::delete(conn, account_id))
             .await?;
         let _ = tokio::fs::remove_dir_all(self.paths.mail_dir(account_id)).await;
+        let _ = tokio::fs::remove_dir_all(self.paths.attachments_dir(account_id)).await;
         Ok(())
     }
 
-    pub async fn sync_now(&self, account_id: Option<i64>) {
-        self.nudge(account_id, || SyncCmd::SyncNow).await;
+    pub async fn sync_now(&self, account_id: Option<i64>) -> Result<()> {
+        let receivers = {
+            let handles = self.handles.read().await;
+            match account_id {
+                Some(id) => handles
+                    .get(&id)
+                    .map(|handle| vec![handle.sync_now()])
+                    .ok_or_else(|| CoreError::NotFound(format!("account {id}")))?,
+                None => handles.values().map(AccountHandle::sync_now).collect(),
+            }
+        };
+        for receiver in receivers {
+            let result = tokio::time::timeout(std::time::Duration::from_secs(45), receiver)
+                .await
+                .map_err(|_| CoreError::Other("Inbox sync timed out".into()))?
+                .map_err(|_| CoreError::Other("sync actor stopped".into()))?;
+            result.map_err(CoreError::Other)?;
+        }
+        Ok(())
     }
 
     pub async fn get_sync_status(&self) -> Result<Vec<SyncStatus>> {
         let accounts = self.db.read(|conn| repo::accounts::list(conn)).await?;
-        Ok(accounts
-            .into_iter()
-            .map(|a| SyncStatus {
-                account_id: a.id,
-                state: a.sync_state,
-                progress: None,
-            })
-            .collect())
+        let mut statuses = Vec::with_capacity(accounts.len());
+        for account in accounts {
+            statuses.push(sync::engine::status_for_account(&self.db, account.id).await?);
+        }
+        Ok(statuses)
     }
 
     // ---------- reading ----------
@@ -540,13 +623,14 @@ impl Core {
             .db
             .read(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT content_id, part_id, mime_type FROM attachments
-                     WHERE message_id = ?1 AND content_id IS NOT NULL AND part_id IS NOT NULL",
+                    "SELECT id, content_id, mime_type FROM attachments
+                     WHERE message_id = ?1 AND content_id IS NOT NULL
+                       AND (part_id IS NOT NULL OR imap_section IS NOT NULL)",
                 )?;
                 let rows = stmt
                     .query_map(rusqlite::params![message_id], |r| {
                         Ok((
-                            r.get::<_, String>(0)?,
+                            r.get::<_, i64>(0)?,
                             r.get::<_, String>(1)?,
                             r.get::<_, Option<String>>(2)?,
                         ))
@@ -559,35 +643,29 @@ impl Core {
             Ok(a) if !a.is_empty() => a,
             _ => return html,
         };
-        let raw_path = match self
-            .db
-            .read(move |conn| repo::messages::get_row(conn, message_id))
-            .await
-        {
-            Ok(Some(row)) => row.raw_path,
-            _ => None,
-        };
-        let Some(raw_path) = raw_path else {
+        let mut fetched = Vec::new();
+        for (attachment_id, content_id, mime) in atts {
+            if let Ok(path) = self.get_attachment(attachment_id).await {
+                if let Ok(bytes) = tokio::fs::read(path).await {
+                    fetched.push((content_id, mime, bytes));
+                }
+            }
+        }
+        if fetched.is_empty() {
             return html;
-        };
-        let raw = match tokio::fs::read(&raw_path).await {
-            Ok(r) => r,
-            Err(_) => return html,
-        };
+        }
         // Extraction + base64 of (possibly large) image parts is CPU-bound.
         let fallback = html.clone();
         tokio::task::spawn_blocking(move || {
             use base64::Engine;
             let mut map = std::collections::HashMap::new();
-            for (content_id, part_id, mime) in atts {
-                if let Ok((bytes, _)) = crate::mime::extract_attachment(&raw, &part_id) {
-                    let mime = mime.unwrap_or_else(|| "application/octet-stream".to_string());
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                    map.insert(
-                        crate::mime::normalize_cid(&content_id),
-                        format!("data:{mime};base64,{b64}"),
-                    );
-                }
+            for (content_id, mime, bytes) in fetched {
+                let mime = mime.unwrap_or_else(|| "application/octet-stream".to_string());
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                map.insert(
+                    crate::mime::normalize_cid(&content_id),
+                    format!("data:{mime};base64,{b64}"),
+                );
             }
             crate::mime::rewrite_cid_src(&html, &map)
         })
@@ -896,20 +974,40 @@ impl Core {
         })
     }
 
-    /// Extract an attachment from its message's raw MIME to a stable path on
-    /// disk (idempotent) and return that path.
+    /// Return a stable cached attachment path. Legacy messages extract from
+    /// their raw MIME; selectively-cached messages download only the requested
+    /// IMAP section through the priority reader.
     pub async fn get_attachment(&self, attachment_id: i64) -> Result<String> {
-        let (message_id, part_id, filename) = self
+        let fetch_lock = {
+            let mut locks = self.attachment_locks.lock().await;
+            match locks.get(&attachment_id).and_then(std::sync::Weak::upgrade) {
+                Some(lock) => lock,
+                None => {
+                    let lock = Arc::new(tokio::sync::Mutex::new(()));
+                    locks.insert(attachment_id, Arc::downgrade(&lock));
+                    lock
+                }
+            }
+        };
+        let _fetch_guard = fetch_lock.lock().await;
+
+        // This check deliberately happens after acquiring the single-flight
+        // lock: a concurrent caller may just have populated `file_path`.
+        let (message_id, part_id, imap_section, filename, mime_type, file_path) = self
             .db
             .read(move |conn| {
                 conn.query_row(
-                    "SELECT message_id, part_id, filename FROM attachments WHERE id = ?1",
+                    "SELECT message_id, part_id, imap_section, filename, mime_type, file_path
+                     FROM attachments WHERE id = ?1",
                     rusqlite::params![attachment_id],
                     |r| {
                         Ok((
                             r.get::<_, i64>(0)?,
                             r.get::<_, Option<String>>(1)?,
                             r.get::<_, Option<String>>(2)?,
+                            r.get::<_, Option<String>>(3)?,
+                            r.get::<_, Option<String>>(4)?,
+                            r.get::<_, Option<String>>(5)?,
                         ))
                     },
                 )
@@ -917,31 +1015,74 @@ impl Core {
             })
             .await?;
 
+        if let Some(path) = file_path {
+            if tokio::fs::metadata(&path).await.is_ok() {
+                return Ok(path);
+            }
+        }
+
         let row = self
             .db
             .read(move |conn| repo::messages::get_row(conn, message_id))
             .await?
             .ok_or_else(|| CoreError::NotFound("message".into()))?;
-        let raw_path = row
-            .raw_path
-            .ok_or_else(|| CoreError::NotFound("raw message not synced yet".into()))?;
-        let part_id = part_id.ok_or_else(|| CoreError::NotFound("attachment part".into()))?;
 
-        let raw = tokio::fs::read(&raw_path).await?;
-        let (bytes, parsed_name) = crate::mime::extract_attachment(&raw, &part_id)?;
+        // Prefer the legacy raw cache when it is healthy. If its file was
+        // removed/corrupted but this row also has an IMAP section, safely fall
+        // through to the remote section instead of making the attachment
+        // permanently inaccessible because of a stale `raw_path`.
+        let legacy = match (row.raw_path.as_ref(), part_id.as_deref()) {
+            (Some(raw_path), Some(part_id)) => match tokio::fs::read(raw_path).await {
+                Ok(raw) => match crate::mime::extract_attachment(&raw, part_id) {
+                    Ok(value) => Some(value),
+                    Err(error) if imap_section.is_none() => return Err(error),
+                    Err(_) => None,
+                },
+                Err(error) if imap_section.is_none() => return Err(error.into()),
+                Err(_) => None,
+            },
+            (Some(_), None) if imap_section.is_none() => {
+                return Err(CoreError::NotFound("attachment part".into()));
+            }
+            _ => None,
+        };
+        let (bytes, parsed_name) = if let Some(value) = legacy {
+            value
+        } else {
+            let handle = self
+                .handles
+                .read()
+                .await
+                .get(&row.account_id)
+                .cloned()
+                .ok_or_else(|| CoreError::NotFound(format!("account {}", row.account_id)))?;
+            (handle.fetch_attachment(attachment_id).await?, None)
+        };
 
-        let safe_name = safe_filename(
+        let mut safe_name = safe_filename(
             &filename
                 .or(parsed_name)
                 .unwrap_or_else(|| format!("attachment-{attachment_id}")),
         );
+        // Invites and other body parts often carry no filename; give the temp
+        // file an extension from its MIME type so opening it hands off to the
+        // right app (a `text/calendar` part becomes `*.ics`, not a bare name
+        // the OS opens in a text editor or refuses to open at all).
+        if std::path::Path::new(&safe_name).extension().is_none() {
+            if let Some(ext) = mime_type.as_deref().and_then(ext_for_mime) {
+                safe_name.push('.');
+                safe_name.push_str(ext);
+            }
+        }
         let dir = self
             .paths
             .attachments_dir(row.account_id)
             .join(attachment_id.to_string());
         tokio::fs::create_dir_all(&dir).await?;
         let path = dir.join(&safe_name);
-        tokio::fs::write(&path, &bytes).await?;
+        let partial = dir.join(".download.part");
+        tokio::fs::write(&partial, &bytes).await?;
+        tokio::fs::rename(&partial, &path).await?;
 
         let path_str = path.to_string_lossy().to_string();
         let p = path_str.clone();
@@ -972,49 +1113,38 @@ impl Core {
         &self,
         attachment_id: i64,
     ) -> Result<preview::AttachmentPreview> {
-        let (message_id, part_id, filename, mime_type) = self
+        let (filename, mime_type, size) = self
             .db
             .read(move |conn| {
                 conn.query_row(
-                    "SELECT message_id, part_id, filename, mime_type FROM attachments WHERE id = ?1",
+                    "SELECT filename, mime_type, size FROM attachments WHERE id = ?1",
                     rusqlite::params![attachment_id],
                     |r| {
                         Ok((
-                            r.get::<_, i64>(0)?,
+                            r.get::<_, Option<String>>(0)?,
                             r.get::<_, Option<String>>(1)?,
-                            r.get::<_, Option<String>>(2)?,
-                            r.get::<_, Option<String>>(3)?,
+                            r.get::<_, Option<i64>>(2)?,
                         ))
                     },
                 )
                 .map_err(Into::into)
             })
             .await?;
-
-        let row = self
-            .db
-            .read(move |conn| repo::messages::get_row(conn, message_id))
-            .await?
-            .ok_or_else(|| CoreError::NotFound("message".into()))?;
-        let raw_path = row
-            .raw_path
-            .ok_or_else(|| CoreError::NotFound("raw message not synced yet".into()))?;
-        let part_id = part_id.ok_or_else(|| CoreError::NotFound("attachment part".into()))?;
-
-        let raw = tokio::fs::read(&raw_path).await?;
+        if size.is_some_and(|value| value > preview::MAX_PREVIEW_BYTES as i64) {
+            return Ok(preview::AttachmentPreview::Unsupported {
+                reason: "too_large".into(),
+            });
+        }
+        let path = self.get_attachment(attachment_id).await?;
+        let bytes = tokio::fs::read(path).await?;
         // Parsing untrusted office/spreadsheet formats is CPU-bound; keep it
         // off the async runtime threads.
-        tokio::task::spawn_blocking(move || {
-            let (bytes, parsed_name) = crate::mime::extract_attachment(&raw, &part_id)?;
-            let name = filename.or(parsed_name);
-            Ok(preview::build_preview(
-                &bytes,
-                name.as_deref(),
-                mime_type.as_deref(),
-            ))
+        let preview = tokio::task::spawn_blocking(move || {
+            preview::build_preview(&bytes, filename.as_deref(), mime_type.as_deref())
         })
         .await
-        .map_err(|e| CoreError::Other(e.to_string()))?
+        .map_err(|e| CoreError::Other(e.to_string()))?;
+        Ok(preview)
     }
 
     pub async fn list_contacts(&self, prefix: String, limit: i64) -> Result<Vec<Address>> {
@@ -1601,6 +1731,78 @@ impl Core {
         .await
     }
 
+    /// Create a Microsoft Teams online meeting for a Microsoft account and
+    /// return its join URL (for insertion into a compose draft).
+    ///
+    /// Needs a Graph-scoped token. The `OnlineMeetings.ReadWrite` scope is not
+    /// part of the default mail consent, so the first attempt may trigger an
+    /// incremental re-consent in the browser (like `connect_google_calendar`),
+    /// after which the meeting is created. `open_url` opens the consent page.
+    pub async fn create_teams_meeting(
+        &self,
+        account_id: i64,
+        subject: &str,
+        start_ms: i64,
+        end_ms: i64,
+        open_url: impl FnOnce(String) + Send,
+    ) -> Result<graph::OnlineMeeting> {
+        let account = self
+            .db
+            .read(move |conn| repo::accounts::get(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("account".into()))?;
+        if account.provider != Provider::Microsoft {
+            return Err(CoreError::Auth(
+                "Teams meetings require a Microsoft account".into(),
+            ));
+        }
+
+        let scope = oauth::providers::MS_ONLINE_MEETINGS_SCOPE;
+        let extra_scopes = [scope];
+        let token = match self
+            .tokens
+            .access_token_for_scope(account_id, Provider::Microsoft, scope)
+            .await
+        {
+            Ok(t) => t,
+            // Scope not yet consented (or refresh token stale): widen consent
+            // in the browser, then mint the Graph token again.
+            Err(CoreError::NeedsReauth) => {
+                let outcome = tokio::select! {
+                    r = oauth::flow::authorize_with(
+                        Provider::Microsoft,
+                        &extra_scopes,
+                        Some(&account.email),
+                        open_url,
+                    ) => r?,
+                    _ = self.oauth_cancel.notified() => {
+                        return Err(CoreError::Auth("sign-in cancelled".into()));
+                    }
+                };
+                if !outcome.email.eq_ignore_ascii_case(&account.email) {
+                    return Err(CoreError::Auth(format!(
+                        "consent was granted for {} - expected {}",
+                        outcome.email, account.email
+                    )));
+                }
+                self.tokens
+                    .store_initial(
+                        account_id,
+                        outcome.access_token,
+                        outcome.expires_in,
+                        outcome.refresh_token,
+                    )
+                    .await?;
+                self.tokens
+                    .access_token_for_scope(account_id, Provider::Microsoft, scope)
+                    .await?
+            }
+            Err(e) => return Err(e),
+        };
+
+        graph::create_online_meeting(&token, subject, start_ms, end_ms).await
+    }
+
     /// Disconnect the calendar server: events stay locally, sync bookkeeping
     /// is cleared, credentials removed.
     pub async fn disconnect_calendar(&self, account_id: i64) -> Result<()> {
@@ -1773,11 +1975,11 @@ impl Core {
         ai::intent(&cfg, &query).await
     }
 
-    pub async fn ai_summarize(&self, thread_id: i64) -> Result<String> {
+    pub async fn ai_summarize(&self, thread_id: i64) -> Result<crate::models::AiThreadSummary> {
         let cfg = self.ai_config(Scenario::Summarize).await?;
         let detail = self.get_thread(thread_id).await?;
         let context = ai::thread_context(&detail.messages, 24_000);
-        ai::chat(&cfg, ai::summarize_prompt(&detail.thread.subject, &context)).await
+        ai::summarize_thread(&cfg, &detail.thread.subject, &context).await
     }
 
     /// Draft or rewrite email body text. With a thread, the reply is grounded
@@ -2394,6 +2596,72 @@ impl Core {
             .write(move |conn| repo::settings::set(conn, &settings))
             .await
     }
+
+    /// Return notifications that are ready for the native host to dispatch.
+    /// Eligibility is decided by sync before enqueueing; this API only exposes
+    /// durable delivery state to the host process.
+    pub async fn due_notifications(&self, limit: i64) -> Result<Vec<NotificationOutboxItem>> {
+        let now = now_ms();
+        let limit = limit.clamp(1, 100);
+        self.db
+            .read(move |conn| repo::notifications::list_due(conn, now, limit))
+            .await
+    }
+
+    /// Atomically claim one due notification. A false result means another
+    /// dispatcher or a state transition won the race.
+    pub async fn claim_notification_delivery(&self, id: i64) -> Result<bool> {
+        let now = now_ms();
+        self.db
+            .write(move |conn| repo::notifications::try_claim(conn, id, now))
+            .await
+    }
+
+    pub async fn mark_notification_delivered(&self, id: i64) -> Result<bool> {
+        let now = now_ms();
+        self.db
+            .write(move |conn| repo::notifications::mark_delivered(conn, id, now))
+            .await
+    }
+
+    pub async fn suppress_notification_delivery(
+        &self,
+        id: i64,
+        reason: impl Into<String>,
+    ) -> Result<bool> {
+        let now = now_ms();
+        let reason = reason.into();
+        self.db
+            .write(move |conn| repo::notifications::mark_suppressed(conn, id, now, &reason))
+            .await
+    }
+
+    /// Return a claimed notification to the pending queue after a bounded
+    /// delay. The cap prevents a bad caller from making a row disappear for an
+    /// unreasonable amount of time.
+    pub async fn retry_notification_delivery(
+        &self,
+        id: i64,
+        delay_ms: i64,
+        error: impl Into<String>,
+    ) -> Result<bool> {
+        const MAX_DELAY_MS: i64 = 24 * 60 * 60 * 1_000;
+        let retry_at = now_ms().saturating_add(delay_ms.clamp(0, MAX_DELAY_MS));
+        let error = error.into();
+        self.db
+            .write(move |conn| repo::notifications::retry(conn, id, retry_at, &error))
+            .await
+    }
+
+    /// Recover rows left in `delivering` by a process crash. Native delivery is
+    /// necessarily at-least-once because the OS send and SQLite commit cannot
+    /// share a transaction.
+    pub async fn recover_notification_deliveries(&self) -> Result<usize> {
+        let now = now_ms();
+        self.db
+            .write(move |conn| repo::notifications::recover_delivering(conn, now))
+            .await
+    }
 }
 
 /// Build a (incoming → the user's reply) example from one of their sent
@@ -2445,6 +2713,38 @@ async fn copy_model_files(src: &std::path::Path, dst: &std::path::Path) -> std::
 
 /// Reduce an untrusted filename to a single, benign path component: strip
 /// separators/NUL/control chars, leading dots and spaces, and cap the length.
+/// A file extension for a MIME type, used to name an on-disk attachment when
+/// the message gave it no filename. Without a recognizable extension the OS
+/// can't route "Open in app" to the right handler (e.g. a `text/calendar`
+/// invite written as a bare `attachment-3` never reaches the calendar app).
+fn ext_for_mime(mime: &str) -> Option<&'static str> {
+    Some(
+        match mime
+            .split(';')
+            .next()
+            .unwrap_or(mime)
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "text/calendar" => "ics",
+            "application/pdf" => "pdf",
+            "text/plain" => "txt",
+            "text/html" => "html",
+            "text/csv" => "csv",
+            "application/json" => "json",
+            "application/zip" => "zip",
+            "image/png" => "png",
+            "image/jpeg" => "jpg",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/svg+xml" => "svg",
+            "message/rfc822" => "eml",
+            _ => return None,
+        },
+    )
+}
+
 fn safe_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -2971,5 +3271,23 @@ mod ai_model_routing_tests {
         s.ai_model_instant = "fast".into();
         s.ai_tier_ask = "instant".into(); // route Ask to the instant tier
         assert_eq!(resolve_ai_model(&s, Scenario::Ask), "fast");
+    }
+}
+
+#[cfg(test)]
+mod attachment_ext_tests {
+    use super::*;
+
+    #[test]
+    fn calendar_mime_maps_to_ics() {
+        assert_eq!(ext_for_mime("text/calendar"), Some("ics"));
+        // MIME parameters (e.g. method=REQUEST) and casing are tolerated.
+        assert_eq!(ext_for_mime("text/calendar; method=REQUEST"), Some("ics"));
+        assert_eq!(ext_for_mime("TEXT/CALENDAR"), Some("ics"));
+    }
+
+    #[test]
+    fn unknown_mime_has_no_extension() {
+        assert_eq!(ext_for_mime("application/x-unknown"), None);
     }
 }

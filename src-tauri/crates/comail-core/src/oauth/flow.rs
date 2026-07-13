@@ -130,6 +130,17 @@ pub async fn authorize_with(
     if let Some(cs) = client_secret {
         form.push(("client_secret".to_string(), cs));
     }
+    // Microsoft issues single-resource access tokens. When the consent spans
+    // more than one resource (e.g. the Graph Teams scope added at sign-in
+    // alongside the outlook.office.com mail scopes), redeem the code
+    // explicitly for the MAIL resource so the returned token's audience is
+    // unambiguous. The refresh token stays multi-resource, so the extra
+    // consented scopes are redeemed on demand later (see
+    // `TokenProvider::access_token_for_scope`). Google has no such constraint
+    // and is left to return a token covering every granted scope.
+    if provider == Provider::Microsoft && !extra_scopes.is_empty() {
+        form.push(("scope".to_string(), cfg.scopes.join(" ")));
+    }
 
     let body = post_form(cfg.token_url, &form).await.inspect_err(
         |e| tracing::warn!(?provider, error = %e, "oauth: token endpoint unreachable"),

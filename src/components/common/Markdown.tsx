@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 // A deliberately tiny, dependency-free Markdown renderer for AI answers. It
 // builds React elements (never dangerouslySetInnerHTML) so untrusted model
@@ -7,12 +8,30 @@ import { Fragment, type ReactNode } from "react";
 // and #-headings (rendered as emphasized lines). Anything unrecognized falls
 // through as plain text.
 
-/** Render inline spans: bold, italic, inline code, and links. */
+/** An anchor that opens in the OS default browser, never the in-app webview. */
+function ExternalLink({ href, text, k }: { href: string; text: string; k: string }) {
+  return (
+    <a
+      key={k}
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        void openUrl(href).catch(() => window.open(href, "_blank"));
+      }}
+      className="text-accent underline"
+    >
+      {text}
+    </a>
+  );
+}
+
+/** Render inline spans: bold, italic, inline code, [text](url) links, and bare URLs. */
 function renderInline(text: string, keyBase: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  // Ordered by how we want to match; each capture group is the payload.
+  // Ordered by precedence; group 8 is a bare autolinked URL (matched last so a
+  // markdown [text](url) still wins).
   const pattern =
-    /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3|`([^`]+?)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3|`([^`]+?)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>()]+)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -30,17 +49,13 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
         </code>,
       );
     } else if (m[6] !== undefined && m[7] !== undefined) {
-      nodes.push(
-        <a
-          key={key}
-          href={m[7]}
-          target="_blank"
-          rel="noreferrer"
-          className="text-accent underline"
-        >
-          {m[6]}
-        </a>,
-      );
+      nodes.push(<ExternalLink k={key} href={m[7]} text={m[6]} />);
+    } else if (m[8] !== undefined) {
+      // Bare URL: peel trailing sentence punctuation off the link itself.
+      const trail = m[8].match(/[.,;:!?]+$/)?.[0] ?? "";
+      const href = trail ? m[8].slice(0, -trail.length) : m[8];
+      nodes.push(<ExternalLink k={key} href={href} text={href} />);
+      if (trail) nodes.push(trail);
     }
     last = pattern.lastIndex;
   }

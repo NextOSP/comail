@@ -50,6 +50,9 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
         CoreEvent::SyncProgress(p) => {
             let _ = app.emit("sync:progress", &p);
         }
+        CoreEvent::SyncStatus(status) => {
+            let _ = app.emit("sync:status", &status);
+        }
         CoreEvent::MailNew {
             account_id,
             thread_ids,

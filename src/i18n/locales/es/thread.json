@@ -21,7 +21,13 @@
   "aiSummary": {
     "title": "Resumen de IA",
     "pending": "Resumiendo…",
-    "dismiss": "Descartar resumen"
+    "dismiss": "Descartar resumen",
+    "empty": "Aún no hay resumen.",
+    "timeline": "Cronología",
+    "keyPoints": "Puntos clave",
+    "nextAction": "Próxima acción",
+    "proposedReply": "Respuesta sugerida",
+    "useReply": "Usar como respuesta"
   },
   "draftBadge": "Borrador",
   "sendingBadge": "Enviando…",

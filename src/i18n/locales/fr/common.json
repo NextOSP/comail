@@ -46,6 +46,17 @@
     "search": "Rechercher",
     "offline": "Hors ligne",
     "syncing": "Synchronisation",
+    "checkingMail": "Vérification du courrier…",
+    "inboxUpToDate": "Boîte de réception à jour",
+    "backgroundTitle": "{{done}} sur {{total}} terminés · {{failed}} en échec",
+    "backgroundFailed": "{{count}} en échec",
+    "background": {
+      "headers": "Synchronisation de l’historique",
+      "content": "Mise en cache du courrier",
+      "indexing": "Indexation du courrier",
+      "retrying": "Nouvelle tentative",
+      "mixed": "Finalisation de la synchronisation"
+    },
     "waitingForChord": "En attente d’un raccourci",
     "settings": "Paramètres",
     "settingsWithShortcut": "Paramètres ({{shortcut}})",

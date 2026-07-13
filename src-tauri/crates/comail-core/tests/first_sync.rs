@@ -12,7 +12,9 @@ use comail_core::models::*;
 use comail_core::Core;
 use std::time::{Duration, Instant};
 
-const MSGS: usize = 120;
+// Three maximum-size selective UID batches. This catches regressions back to
+// one network round trip or one SQLite commit per message.
+const MSGS: usize = 600;
 
 async fn seed() {
     let creds = imap::ImapCredentials::Password {
@@ -82,8 +84,9 @@ async fn first_sync_drains_bodies_fast_and_updates_live() {
     .await
     .expect("add account");
 
-    // Every body must be cached well before the old one-budget-per-60s pace
-    // (120 bodies used to take ~3 minutes; drain cycles do it in seconds).
+    // Every body must be cached well before the old one-budget-per-60s pace.
+    // The fixture spans three 200-UID batches so it also exercises queue
+    // handoff between high-throughput selective fetches.
     let db = Db::open(&Paths::for_tests(tmp.path()).db_file()).unwrap();
     let deadline = Duration::from_secs(45);
     loop {

@@ -46,6 +46,17 @@
     "search": "Search",
     "offline": "Offline",
     "syncing": "Syncing",
+    "checkingMail": "Checking mail…",
+    "inboxUpToDate": "Inbox up to date",
+    "backgroundTitle": "{{done}} of {{total}} complete · {{failed}} failed",
+    "backgroundFailed": "{{count}} failed",
+    "background": {
+      "headers": "Syncing history",
+      "content": "Caching mail",
+      "indexing": "Indexing mail",
+      "retrying": "Retrying sync",
+      "mixed": "Finishing background sync"
+    },
     "waitingForChord": "Waiting for chord",
     "settings": "Settings",
     "settingsWithShortcut": "Settings ({{shortcut}})",

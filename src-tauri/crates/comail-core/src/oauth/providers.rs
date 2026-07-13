@@ -4,6 +4,14 @@ use crate::models::Provider;
 /// Incremental-consent scope for Google Calendar (CalDAV access). Not in
 /// the default GOOGLE scopes: mail-only accounts should not be asked for it.
 pub const GOOGLE_CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar";
+
+/// Incremental-consent scope (Microsoft Graph) for creating Teams meetings.
+/// Kept out of the default MICROSOFT scopes: those all target
+/// `outlook.office.com`, and Microsoft issues a single-resource access token,
+/// so mixing a `graph.microsoft.com` scope into the mail token would break the
+/// IMAP/SMTP audience. It is consented separately and redeemed for its own
+/// Graph-audience token (see `TokenProvider::access_token_for_scope`).
+pub const MS_ONLINE_MEETINGS_SCOPE: &str = "https://graph.microsoft.com/OnlineMeetings.ReadWrite";
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 

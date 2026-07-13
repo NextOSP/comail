@@ -53,6 +53,8 @@ just need an app password — no setup at all.
 - **Ask AI about your inbox.** Optional: connect an AI and ask questions across
   your mail, with cited sources you can click straight into.
 
+![Comail search](docs/search.png)
+
 ## All your accounts, one calm app
 
 - **Every account in one place**, each with its own color so a multi-account
@@ -84,6 +86,8 @@ just need an app password — no setup at all.
 - **Syncs both ways** with Google Calendar, Fastmail, iCloud, or any CalDAV
   server. Edits made offline push when you reconnect.
 
+![Comail calendar](docs/calendar.png)
+
 ## AI on your terms
 
 All AI features are optional and work with any OpenAI-compatible provider —
@@ -94,6 +98,8 @@ handles which job, or use none of it.
 - **Reply drafting in your voice**, learned from your own sent mail.
 - **Proofreading** before you send.
 - **Plain-language commands** and inbox Q&A with cited sources.
+
+![Comail asking a question across the inbox, with cited sources](docs/ask-ai.png)
 
 ## Private by design
 

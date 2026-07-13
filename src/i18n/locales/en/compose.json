@@ -75,5 +75,11 @@
     "table": "Insert table"
   },
   "proofread": "Proofread",
-  "proofreadClean": "Looks good - nothing to fix."
+  "proofreadClean": "Looks good - nothing to fix.",
+  "teamsMeeting": "Teams meeting",
+  "teamsMeetingTip": "Create a Microsoft Teams meeting and add the join link",
+  "teamsMeetingTitle": "Microsoft Teams meeting",
+  "teamsMeetingJoin": "Join the meeting now",
+  "teamsMeetingAdded": "Teams meeting link added",
+  "teamsMeetingError": "Couldn't create Teams meeting: {{error}}"
 }

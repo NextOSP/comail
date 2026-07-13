@@ -2,10 +2,12 @@
   "intro": {
     "skipHint": "按任意键跳过",
     "lines": [
-      "欢迎。",
-      "邮件，快如所想。",
-      "开始设置吧。"
-    ]
+      "电子邮件，二十年未曾改变。",
+      "今天，它变了。",
+      "快速。安静。简约之美。"
+    ],
+    "title": "Comail",
+    "continue": "开始"
   },
   "provider": {
     "fastmail": "Fastmail",
