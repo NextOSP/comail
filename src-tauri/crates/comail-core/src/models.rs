@@ -496,6 +496,12 @@ pub struct Settings {
     /// Group the thread list under date headers (Today / Yesterday / …).
     #[serde(default = "default_true")]
     pub group_by_date: bool,
+    /// Show the unread count on the app icon (macOS Dock badge).
+    #[serde(default = "default_true")]
+    pub dock_badge_enabled: bool,
+    /// Which count the badge shows: "inbox" (all unread) | "important".
+    #[serde(default = "default_badge_source")]
+    pub dock_badge_source: String,
     /// Legacy plain-text signature map, keyed by stringified account id.
     /// Superseded by `signature_list`/`signature_defaults`; retained only so old
     /// blobs deserialize and are folded in by `migrate_signatures`.
@@ -614,6 +620,9 @@ fn default_tier_instant() -> String {
 fn default_tier_cheap() -> String {
     "cheap".into()
 }
+fn default_badge_source() -> String {
+    "inbox".into()
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -646,6 +655,8 @@ impl Default for Settings {
             auto_advance: true,
             auto_labels_enabled: true,
             group_by_date: true,
+            dock_badge_enabled: true,
+            dock_badge_source: default_badge_source(),
             signatures: std::collections::HashMap::new(),
             signature_list: Vec::new(),
             signature_defaults: std::collections::HashMap::new(),

@@ -27,10 +27,16 @@ import { Toasts } from "./components/common/Toasts";
 import { TopBar } from "./components/common/TopBar";
 import { setLanguage } from "./i18n";
 import { ALL_COMMANDS } from "./keyboard/commands";
-import { installKeyboard, installMouseNav, registerCommands } from "./keyboard/registry";
+import {
+  installIframeFocusGuard,
+  installKeyboard,
+  installMouseNav,
+  registerCommands,
+} from "./keyboard/registry";
 import { checkForUpdate, installUpdate } from "./ipc/updater";
 import { hasSeenIntro, markIntroSeen } from "./lib/intro";
 import { initSounds } from "./lib/sound";
+import { useDockBadge } from "./queries/dockBadge";
 import { useBackendEvents } from "./queries/events";
 import { flattenThreads, useAccounts, useSearch, useSettings, useThreads } from "./queries/hooks";
 import { useUi, type Screen } from "./stores/ui";
@@ -53,11 +59,13 @@ const PREVIEW_INTRO =
 
 export default function App() {
   useBackendEvents();
+  useDockBadge();
   useThemeSync();
   useStartupUpdateCheck();
 
   useEffect(() => installKeyboard(), []);
   useEffect(() => installMouseNav(), []);
+  useEffect(() => installIframeFocusGuard(), []);
   useEffect(() => initSounds(), []);
 
   const { data: accounts, isLoading: accountsLoading } = useAccounts();

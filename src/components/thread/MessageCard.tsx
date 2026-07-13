@@ -640,6 +640,7 @@ function HtmlBody({ html: fullHtml }: { html: string }) {
       {!measured && <BodySkeleton />}
       <iframe
         ref={iframeRef}
+        data-app-iframe
         sandbox="allow-same-origin"
         srcDoc={srcDoc}
         onLoad={onLoad}

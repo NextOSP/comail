@@ -13,8 +13,8 @@ import { IntroMark } from "./IntroMark";
  *                   its gradient backdrop (mounted underneath at reveal). Space is
  *                   only the intro; the add-account screen keeps the app gradient.
  *
- * Full-screen; on desktop it also takes the window into OS fullscreen for the
- * flythrough. Plays through uninterrupted (not skippable); reduced-motion aware.
+ * Fills the viewport; on desktop it also maximizes the window (not OS fullscreen)
+ * for the flythrough. Plays through uninterrupted (not skippable); reduced-motion aware.
  *
  * Deliberately GPU-cheap for WebKitGTK's software compositing (see themes/app.css):
  * only canvas fills + strokes - never a per-frame `filter: blur` or animated
@@ -65,14 +65,15 @@ const FALLBACK_LINES = [
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-/** Take the desktop window in/out of OS fullscreen. No-op (and safe) on web. */
-async function setAppFullscreen(on: boolean) {
+/** Maximize the desktop window for the intro (not OS fullscreen). It stays
+ *  maximized afterwards. No-op (and safe) on web. */
+async function maximizeAppWindow() {
   if (!isTauri) return;
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().setFullscreen(on);
+    await getCurrentWindow().maximize();
   } catch {
-    /* fullscreen is a nicety, never fatal */
+    /* maximizing is a nicety, never fatal */
   }
 }
 
@@ -158,7 +159,7 @@ export function SpaceIntro({
     const N = linesRef.current.length;
     const settleAt = LINES_START + N * LINE_MS; // last line done -> exit warp
 
-    void setAppFullscreen(true);
+    void maximizeAppWindow();
 
     let finishTimer = 0;
     let done = false;
@@ -167,7 +168,6 @@ export function SpaceIntro({
       done = true;
       setFading(true); // fade the whole scene out to the gradient onboarding
       onReveal(); // mount the card + gradient backdrop underneath
-      void setAppFullscreen(false);
       finishTimer = window.setTimeout(onFinished, FADE_DELAY + FADE_DUR);
     };
 
@@ -225,7 +225,6 @@ export function SpaceIntro({
         window.clearTimeout(timer);
         window.clearTimeout(finishTimer);
         window.removeEventListener("resize", resize);
-        void setAppFullscreen(false);
       };
     }
 
@@ -296,7 +295,6 @@ export function SpaceIntro({
       cancelAnimationFrame(raf);
       window.clearTimeout(finishTimer);
       window.removeEventListener("resize", resize);
-      void setAppFullscreen(false);
     };
     // Run once for the lifetime of the intro.
     // eslint-disable-next-line react-hooks/exhaustive-deps

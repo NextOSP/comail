@@ -38,11 +38,22 @@ Comail at one. The default is local.
 - **Every account in one place.** Generic IMAP/SMTP with a password or app
   password, Gmail (OAuth2), and Microsoft 365 / Outlook (OAuth2).
 - **Keyboard first.** `J`/`K` to move, `E` to mark done, `H` to snooze, `C` to
-  compose, `Cmd/Ctrl+K` for the command palette, `?` for every shortcut.
+  compose, `Cmd/Ctrl+K` for the command palette, `Ctrl+0`–`Ctrl+9` to jump
+  straight to an account (0 is all of them), `?` for every shortcut.
 - **Search that finds it.** Instant keyword search with `from:`, `in:`, `is:`,
-  and `has:` operators, plus the local semantic search above.
+  and `has:` operators — sender searches rank by who you actually correspond
+  with, not just string matches — plus the local semantic search above.
 - **A calmer inbox.** Split inbox (Important, Other, and your own rules), snooze,
-  send later, and undo send with a delayed dispatch you can actually cancel.
+  send later, and undo send with a delayed dispatch you can actually cancel. The
+  thread list groups itself by day — Today, Yesterday, This Week, This Month —
+  and the grouping is one toggle away in Settings if you'd rather a flat list.
+- **Tell your accounts apart.** Every mailbox gets a stable color that follows it
+  onto the account switcher and the sidebar, so a multi-account setup never
+  blurs into one anonymous pile.
+- **See who really sent it.** Any message expands to the full headers — the real
+  From and Reply-To, and a `via` line when a service or a person sent it on
+  someone else's behalf — so on-behalf-of sends and spoofing are obvious instead
+  of hidden.
 - **Write faster.** Snippets, one-key unsubscribe (`Cmd+U`), and optional AI over
   any OpenAI-compatible endpoint for thread summaries, reply drafting,
   proofreading, and drafting in your own voice learned from your sent mail,
@@ -65,12 +76,19 @@ Comail at one. The default is local.
 - **A mail handler, properly.** Comail registers for `mailto:` links, so
   "email us" links anywhere on your system open a Comail composer.
 - **Always running, out of the way.** Lives in the tray and keeps syncing after
-  you close the window.
+  you close the window, with optional short sounds on new mail and on send that
+  you can silence in Settings.
 - **Looks right anywhere.** Snow and Carbon light and dark themes, a UI in
   English, Spanish, French, Chinese, and Vietnamese, and a Linux build that
   detects your GPU and picks the correct renderer on its own.
 - **Updates itself.** Comail checks GitHub Releases on launch and installs new
   signed builds in place. See [Updates](#updates).
+
+A conversation reads as a stack of collapsed rows with the open message on a
+clean card, and replying happens right underneath — inline, with snippets,
+quick replies, and one-key send:
+
+![Comail conversation and inline reply](docs/thread.png)
 
 ## Development setup (Linux)
 
@@ -93,8 +111,8 @@ pnpm dev              # front end only, in the browser with mock data
 ```
 
 The mock mode is worth knowing about: `pnpm dev` runs the real UI against
-in-memory fixture data, no account or backend required. The screenshot above was
-taken from it.
+in-memory fixture data, no account or backend required. The screenshots above
+were taken from it.
 
 Rust tests: `cargo test` inside `src-tauri/`. The end-to-end suite runs the full
 sync engine against a throwaway Dovecot and is gated behind an env var:

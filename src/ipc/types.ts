@@ -312,6 +312,10 @@ export interface Settings {
   autoLabelsEnabled: boolean;
   /** Group the thread list under date headers (Today / Yesterday / …). */
   groupByDate: boolean;
+  /** Show the unread count on the app icon (macOS Dock badge). */
+  dockBadgeEnabled: boolean;
+  /** Which count the badge shows: "inbox" (all unread) | "important". */
+  dockBadgeSource: "inbox" | "important";
   /** Legacy plain-text signature map; superseded by signatureList/Defaults and
    *  folded in by the backend on read. Kept for type/serde compatibility. */
   signatures: Record<string, string>;
@@ -503,6 +507,11 @@ export interface AskTokenEvent {
   delta: string;
 }
 
+export interface AskReasoningEvent {
+  requestId: string;
+  delta: string;
+}
+
 export interface AskDoneEvent {
   requestId: string;
 }
@@ -546,6 +555,7 @@ export interface EventMap {
   "account:state": AccountStateEvent;
   "ai:ask:citations": AskCitationsEvent;
   "ai:ask:token": AskTokenEvent;
+  "ai:ask:reasoning": AskReasoningEvent;
   "ai:ask:done": AskDoneEvent;
   "calendar:updated": CalendarUpdatedEvent;
   "calendar:new": CalendarNewEvent;
@@ -580,6 +590,10 @@ export interface Commands {
   get_attachment(args: { attachmentId: number }): Promise<string>;
   /** Saves (downloads) the attachment to a chosen destination path. */
   save_attachment(args: { attachmentId: number; dest: string }): Promise<void>;
+  /** Reveals the app's logs folder in the OS file manager. */
+  open_logs_dir(args: Record<string, never>): Promise<void>;
+  /** Brings the (possibly tray-hidden) main window forward and focuses it. */
+  focus_main_window(args: Record<string, never>): Promise<void>;
   /** Converts the attachment to a safe in-app preview payload. */
   preview_attachment(args: { attachmentId: number }): Promise<AttachmentPreview>;
   list_folders(args: { accountId?: number | null }): Promise<FolderInfo[]>;

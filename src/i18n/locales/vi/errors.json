@@ -1,6 +1,7 @@
 {
   "db": "Lỗi cơ sở dữ liệu",
   "io": "Lỗi hệ thống tệp",
+  "network": "Không kết nối được máy chủ. Kiểm tra mạng hoặc địa chỉ trong Cài đặt.",
   "imap": "Lỗi máy chủ thư (IMAP)",
   "smtp": "Không thể gửi (lỗi SMTP)",
   "tls": "Lỗi kết nối bảo mật (TLS)",

@@ -290,6 +290,10 @@ textarea {
   border-bottom: 1px solid var(--hairline);
 }
 
+.co-hairline-r {
+  border-right: 1px solid var(--hairline);
+}
+
 /* Composer: typing fields must not glow (the big ring reads as clutter);
    buttons and links keep the global keyboard focus ring. */
 .co-composer :is(textarea, input, [contenteditable]):focus-visible {

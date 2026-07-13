@@ -6,6 +6,8 @@ pub enum CoreError {
     Db(#[from] rusqlite::Error),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("network error: {0}")]
+    Network(String),
     #[error("imap error: {0}")]
     Imap(String),
     #[error("smtp error: {0}")]
@@ -40,6 +42,7 @@ impl CoreError {
         match self {
             CoreError::Db(_) => "db",
             CoreError::Io(_) => "io",
+            CoreError::Network(_) => "network",
             CoreError::Imap(_) => "imap",
             CoreError::Smtp(_) => "smtp",
             CoreError::Tls(_) => "tls",

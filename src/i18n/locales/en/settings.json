@@ -235,6 +235,16 @@
     "label": "Sound",
     "hint": "Play a sound on new mail and when sending."
   },
+  "dockBadge": {
+    "label": "Dock badge",
+    "hint": "Show the unread count on the app icon."
+  },
+  "dockBadgeSource": {
+    "label": "Badge count",
+    "hint": "Which unread mail the badge counts.",
+    "all": "All unread",
+    "important": "Important only"
+  },
   "autoAdvance": {
     "label": "Auto-advance",
     "hint": "After Done/Snooze in a conversation, open the next thread instead of returning to the list."
@@ -267,7 +277,10 @@
     "checking": "Checking…",
     "upToDate": "You're on the latest version.",
     "updateAvailable": "Version {{version}} is available.",
-    "restartInstall": "Restart & install"
+    "restartInstall": "Restart & install",
+    "logs": "Logs",
+    "logsHint": "Open the folder where log files are stored on this computer.",
+    "openLogs": "View logs folder"
   },
   "calendar": {
     "section": "Calendar sync",

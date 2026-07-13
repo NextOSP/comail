@@ -173,6 +173,25 @@ pub async fn get_attachment(state: State<'_, AppState>, attachment_id: i64) -> C
     state.core.get_attachment(attachment_id).await.map_err(err)
 }
 
+/// Reveal the folder holding `comail.log` (see `init_logging`) in the OS file
+/// manager. Creates it first so the command works even before anything has been
+/// logged.
+#[tauri::command]
+pub fn open_logs_dir(app: tauri::AppHandle) -> CmdResult<()> {
+    let dir = comail_core::config::Paths::default_dirs().data_dir.join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| err(e.into()))?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<String>)
+        .map_err(|e| err(comail_core::error::CoreError::Other(e.to_string())))
+}
+
+/// Bring the main window forward, re-showing it if it was hidden to the tray.
+/// Called when the user clicks a desktop notification so the app actually opens.
+#[tauri::command]
+pub fn focus_main_window(app: tauri::AppHandle) {
+    crate::show_main(&app);
+}
+
 /// Save (download) an attachment to a caller-chosen destination path.
 #[tauri::command]
 pub async fn save_attachment(

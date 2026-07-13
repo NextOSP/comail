@@ -7,7 +7,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
-fn show_main(app: &tauri::AppHandle) {
+pub(crate) fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
@@ -290,6 +290,8 @@ pub fn run() {
             commands::get_body,
             commands::get_attachment,
             commands::save_attachment,
+            commands::open_logs_dir,
+            commands::focus_main_window,
             commands::preview_attachment,
             commands::list_folders,
             commands::perform_action,
@@ -341,6 +343,15 @@ pub fn run() {
             commands::embedding_status,
             commands::semantic_reindex,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            // macOS reactivation (Dock-icon click, and clicking a notification
+            // that activates the app) fires Reopen with the window hidden to the
+            // tray — re-show it so the app actually appears.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                show_main(_app);
+            }
+        });
 }

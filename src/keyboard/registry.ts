@@ -178,6 +178,57 @@ export function installKeyboard() {
 }
 
 // ---------------------------------------------------------------------------
+// Iframe focus guard
+// ---------------------------------------------------------------------------
+//
+// Email bodies (and attachment previews) render in sandboxed iframes marked
+// `data-app-iframe`. Clicking one moves keyboard focus into it. In WebKit —
+// which is what the app actually ships on (Tauri = WKWebView, also Safari) —
+// keydowns fired inside a scriptless sandboxed iframe reach *no* listener at
+// all: not the iframe's own document, not the parent window. So every app
+// shortcut (Esc to go back, ⌘K palette, J/K, R…) silently dies the moment you
+// click inside a message. (Chrome/Blink does deliver them to a listener on the
+// iframe document, which is why it only reproduces in WebKit.)
+//
+// Fix: never let focus rest in one of these iframes. When it grabs focus the
+// parent window fires `blur`; on the next tick we yank focus back to an
+// offscreen sink so keydowns land on the parent document where the handler
+// above lives. Verified in WebKit: it does not disturb an in-progress text
+// selection (mouse selection completes and survives) and `preventScroll` keeps
+// the viewport put.
+
+let focusGuardInstalled = false;
+
+export function installIframeFocusGuard() {
+  if (focusGuardInstalled || typeof document === "undefined") return () => {};
+  focusGuardInstalled = true;
+
+  const sink = document.createElement("div");
+  sink.tabIndex = -1;
+  sink.setAttribute("aria-hidden", "true");
+  sink.style.cssText =
+    "position:fixed;top:0;left:0;width:0;height:0;opacity:0;outline:none;pointer-events:none";
+  document.body.appendChild(sink);
+
+  const bounce = () => {
+    // Defer: the iframe becomes `activeElement` only after this blur settles.
+    window.setTimeout(() => {
+      const active = document.activeElement;
+      if (active instanceof HTMLIFrameElement && active.matches("iframe[data-app-iframe]")) {
+        sink.focus({ preventScroll: true });
+      }
+    }, 0);
+  };
+  window.addEventListener("blur", bounce);
+
+  return () => {
+    focusGuardInstalled = false;
+    window.removeEventListener("blur", bounce);
+    sink.remove();
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Mouse back/forward (buttons 3 and 4)
 // ---------------------------------------------------------------------------
 

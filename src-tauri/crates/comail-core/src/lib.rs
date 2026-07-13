@@ -2018,8 +2018,8 @@ impl Core {
         const MAX_ROUNDS: usize = 4;
         let cfg = self.ai_config(Scenario::Ask).await?;
 
-        // RAG seed: the model always starts from the best semantic matches.
-        let mut sources = self.retrieve_details(&question, 8).await?;
+        // RAG seed: the model always starts from the best hybrid matches.
+        let mut sources = self.retrieve_search(&question, 8).await?;
         if sources.is_empty() {
             return Ok(AskResult {
                 answer: "I couldn't find anything relevant in your mailbox. \
@@ -2047,7 +2047,6 @@ impl Core {
         // Agentic loop: let the model call search_inbox until it answers or we
         // hit the round cap. `answer = Some` means the model produced text.
         let mut answer: Option<String> = None;
-        let mut used_tools = false;
         for round in 0..MAX_ROUNDS {
             match ai::chat_tools(&cfg, messages.clone(), tools.clone()).await {
                 Ok(ai::ChatStep::Content(text)) => {
@@ -2055,7 +2054,6 @@ impl Core {
                     break;
                 }
                 Ok(ai::ChatStep::Tools { assistant, calls }) => {
-                    used_tools = true;
                     messages.push(assistant);
                     for call in calls {
                         let (result, added) = if call.name == "search_inbox" {
@@ -2074,46 +2072,66 @@ impl Core {
                     }
                 }
                 Err(e) => {
-                    // A first-round failure means the model/endpoint has no tool
-                    // support - degrade to a plain streamed RAG answer. A failure
-                    // mid-conversation is a real error.
-                    if round == 0 && !used_tools {
-                        break;
-                    }
-                    return Err(e);
+                    // Any tool-round failure (no tool support, a provider hiccup,
+                    // a malformed tool reply) shouldn't sink the whole Ask - we
+                    // already have grounded sources, so fall through to a plain
+                    // streamed answer over them instead of erroring out.
+                    tracing::warn!("ai_ask tool round {round} failed, using plain fallback: {e}");
+                    break;
                 }
             }
         }
 
         let answer = match answer {
-            Some(text) => {
-                if !text.is_empty() {
-                    self.bus.emit(CoreEvent::AskDelta {
-                        request_id: request_id.clone(),
-                        delta: text.clone(),
-                    });
-                }
+            // The agentic path answered directly (chat_tools is non-streaming, so
+            // emit its text as one delta). Empty answers fall through to the
+            // streamed fallback below rather than settling on a blank result.
+            Some(text) if !text.trim().is_empty() => {
+                self.bus.emit(CoreEvent::AskDelta {
+                    request_id: request_id.clone(),
+                    delta: text.clone(),
+                });
                 text
             }
-            None => {
-                // Cap reached while still searching, or tool-less fallback: force
-                // a final streamed answer over everything gathered, tools off.
+            _ => {
+                // Cap reached while still searching, a tool-less model, or a
+                // mid-loop failure: force a final streamed answer over everything
+                // gathered, tools off. Reasoning is streamed on its own channel.
                 messages.push(serde_json::json!({
                     "role": "system",
                     "content": "Now answer the user's question using ONLY the numbered excerpts \
                                 above. Cite them like [1]. If the answer isn't there, say you \
-                                couldn't find it. Concise plain text, no preamble.",
+                                couldn't find it. Answer in the user's language, concisely; light \
+                                Markdown is fine, no preamble.",
                 }));
-                let bus = self.bus.clone();
-                let rid = request_id.clone();
-                ai::chat_stream_json(&cfg, messages, move |delta| {
-                    bus.emit(CoreEvent::AskDelta {
-                        request_id: rid.clone(),
-                        delta: delta.to_string(),
-                    });
-                })
-                .await?
+                let (bus_a, rid_a) = (self.bus.clone(), request_id.clone());
+                let (bus_r, rid_r) = (self.bus.clone(), request_id.clone());
+                let (answer, _reasoning) = ai::chat_stream_json_split(
+                    &cfg,
+                    messages,
+                    move |delta| {
+                        bus_a.emit(CoreEvent::AskDelta {
+                            request_id: rid_a.clone(),
+                            delta: delta.to_string(),
+                        });
+                    },
+                    move |delta| {
+                        bus_r.emit(CoreEvent::AskReasoning {
+                            request_id: rid_r.clone(),
+                            delta: delta.to_string(),
+                        });
+                    },
+                )
+                .await?;
+                answer
             }
+        };
+        // Never settle on a blank answer - the model thought but produced no
+        // user-facing text.
+        let answer = if answer.trim().is_empty() {
+            "I couldn't find an answer to that in your mailbox.".to_string()
+        } else {
+            answer
         };
         self.bus.emit(CoreEvent::AskDone { request_id });
 
@@ -2123,12 +2141,22 @@ impl Core {
         })
     }
 
-    /// Semantic-search `query` and hydrate the top-`k` hits into message details.
-    async fn retrieve_details(&self, query: &str, k: usize) -> Result<Vec<MessageDetail>> {
-        let hits = self.vector_hits(query, k).await?;
-        let ids: Vec<i64> = hits.iter().map(|(id, _)| *id).collect();
+    /// Operator-aware hybrid retrieval (semantic RAG fused with `from:`/`to:`/
+    /// `subject:`/`is:`/`has:` keyword filters) hydrated to message details for
+    /// citation. Powers both the Ask RAG seed and the agentic `search_inbox`
+    /// tool, so the model can search by meaning, sender, recipient, and more.
+    async fn retrieve_search(&self, query: &str, k: usize) -> Result<Vec<MessageDetail>> {
+        let parsed = crate::search::parse(query);
+        // Semantic branch only carries meaning for queries of a few chars+.
+        let vec_hits = if parsed.text.chars().count() >= 3 {
+            self.vector_hits(&parsed.text, 200).await.unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let k = k as i64;
         self.db
             .read(move |conn| {
+                let ids = repo::search::message_hits(conn, &parsed, &vec_hits, k)?;
                 let mut out = Vec::new();
                 for id in ids {
                     if let Ok(d) = repo::messages::detail(conn, id) {
@@ -2161,10 +2189,7 @@ impl Core {
             );
         }
         let limit = args["limit"].as_u64().unwrap_or(6).clamp(1, 8) as usize;
-        let details = self
-            .retrieve_details(&query, limit)
-            .await
-            .unwrap_or_default();
+        let details = self.retrieve_search(&query, limit).await.unwrap_or_default();
 
         let mut block = String::new();
         let mut added = 0;

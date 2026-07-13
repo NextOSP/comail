@@ -335,8 +335,12 @@ export function buildCommandContext(): CommandCtx {
 
   const escape = () => {
     const state = useUi.getState();
-    // esc-stack: palette > event-detail > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection > folder
+    // esc-stack: palette > attachment-preview > event-detail > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection > folder
     if (state.paletteOpen) return state.set({ paletteOpen: false });
+    // Focus lives inside the preview's sandboxed iframe (bounced to the app by
+    // the iframe focus guard), so the modal's own onKeyDown can't see Esc —
+    // close it from the global stack instead.
+    if (state.attachmentPreview) return state.set({ attachmentPreview: null });
     if (state.eventDetail) return state.set({ eventDetail: null });
     if (state.snoozeTarget) return state.set({ snoozeTarget: null });
     if (state.moveTarget) return state.set({ moveTarget: null });
@@ -393,6 +397,8 @@ export function buildCommandContext(): CommandCtx {
         autoAdvance: true,
         autoLabelsEnabled: true,
         groupByDate: true,
+        dockBadgeEnabled: true,
+        dockBadgeSource: "inbox",
         signatures: {},
         signatureList: [],
         signatureDefaults: {},

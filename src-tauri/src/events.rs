@@ -102,6 +102,12 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
                 json!({ "requestId": request_id, "delta": delta }),
             );
         }
+        CoreEvent::AskReasoning { request_id, delta } => {
+            let _ = app.emit(
+                "ai:ask:reasoning",
+                json!({ "requestId": request_id, "delta": delta }),
+            );
+        }
         CoreEvent::AskDone { request_id } => {
             let _ = app.emit("ai:ask:done", json!({ "requestId": request_id }));
         }

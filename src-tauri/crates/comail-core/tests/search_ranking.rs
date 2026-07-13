@@ -167,6 +167,45 @@ fn sender_name_match_outranks_body_only_match() {
 }
 
 #[test]
+fn exclude_operator_drops_matching_threads() {
+    let conn = db();
+    let be = addr("BE GROUP", "hi@begroup.vn");
+    insert_message(&conn, 100, 10, "Quarterly report final", &be, 2_000);
+    insert_message(&conn, 101, 20, "Quarterly report draft", &be, 1_000);
+
+    // Plain query returns both threads.
+    let q = search::parse("quarterly report");
+    let hits = repo::search::hybrid(&conn, &q, &[], 10).unwrap();
+    assert_eq!(hits.len(), 2);
+
+    // "exclude:draft" drops the thread whose subject matches "draft".
+    let q = search::parse("quarterly report exclude:draft");
+    let hits = repo::search::hybrid(&conn, &q, &[], 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, 10);
+
+    // The Gmail-style "-draft" is equivalent.
+    let q = search::parse("quarterly report -draft");
+    let hits = repo::search::hybrid(&conn, &q, &[], 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, 10);
+}
+
+#[test]
+fn exclude_only_query_lists_all_non_matching_mail() {
+    let conn = db();
+    let be = addr("BE GROUP", "hi@begroup.vn");
+    insert_message(&conn, 100, 10, "House cleaning offer", &be, 2_000);
+    insert_message(&conn, 101, 20, "Draft agreement", &be, 1_000);
+
+    // No positive terms, only an exclusion: everything except the "draft" thread.
+    let q = search::parse("-draft");
+    let hits = repo::search::hybrid(&conn, &q, &[], 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, 10);
+}
+
+#[test]
 fn from_operator_survives_trailing_comma() {
     let conn = db();
     let be = addr("BE GROUP", "hi@begroup.vn");

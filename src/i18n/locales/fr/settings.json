@@ -235,6 +235,16 @@
     "label": "Son",
     "hint": "Jouer un son à la réception d’un nouvel e-mail et à l’envoi."
   },
+  "dockBadge": {
+    "label": "Badge du Dock",
+    "hint": "Afficher le nombre de messages non lus sur l’icône de l’app."
+  },
+  "dockBadgeSource": {
+    "label": "Compteur du badge",
+    "hint": "Quels messages non lus le badge compte.",
+    "all": "Tous les non lus",
+    "important": "Importants uniquement"
+  },
   "autoAdvance": {
     "label": "Avance automatique",
     "hint": "Après Terminé/Reporter dans une conversation, ouvrir la conversation suivante au lieu de revenir à la liste."

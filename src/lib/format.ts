@@ -129,3 +129,13 @@ export function hueOf(s: string): number {
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
   return h;
 }
+
+/** Stable per-account dot color, so each mailbox reads as its own hue. */
+export function accountColor(seed: string): string {
+  return `hsl(${hueOf(seed)} 58% 52%)`;
+}
+
+/** Short, human label for an account chip: display name, else the local part. */
+export function accountLabel(a: { displayName: string | null; email: string }): string {
+  return a.displayName?.trim() || a.email.split("@")[0] || a.email;
+}

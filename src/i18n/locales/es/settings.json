@@ -235,6 +235,16 @@
     "label": "Sonido",
     "hint": "Reproducir un sonido al recibir correo nuevo y al enviar."
   },
+  "dockBadge": {
+    "label": "Insignia del Dock",
+    "hint": "Mostrar el número de correos no leídos en el icono de la app."
+  },
+  "dockBadgeSource": {
+    "label": "Contador de la insignia",
+    "hint": "Qué correos no leídos cuenta la insignia.",
+    "all": "Todos los no leídos",
+    "important": "Solo importantes"
+  },
   "autoAdvance": {
     "label": "Avance automático",
     "hint": "Tras Hecho/Posponer en una conversación, abre la siguiente conversación en lugar de volver a la lista."

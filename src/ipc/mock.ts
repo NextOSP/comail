@@ -933,6 +933,8 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   autoAdvance: true,
   autoLabelsEnabled: true,
   groupByDate: true,
+  dockBadgeEnabled: true,
+  dockBadgeSource: "inbox",
   signatures: {},
   signatureList: [],
   signatureDefaults: {},
@@ -1844,6 +1846,12 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       for (const t of threads) t.labels = t.labels.filter((x) => x !== a.labelId);
       return delay(undefined);
     }
+
+    case "open_logs_dir":
+      return delay(undefined);
+
+    case "focus_main_window":
+      return delay(undefined);
 
     case "sync_now":
       return delay(undefined, 300);

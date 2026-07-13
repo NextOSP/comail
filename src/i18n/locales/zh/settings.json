@@ -235,6 +235,16 @@
     "label": "声音",
     "hint": "收到新邮件和发送时播放声音。"
   },
+  "dockBadge": {
+    "label": "程序坞角标",
+    "hint": "在应用图标上显示未读邮件数。"
+  },
+  "dockBadgeSource": {
+    "label": "角标计数",
+    "hint": "角标统计哪些未读邮件。",
+    "all": "全部未读",
+    "important": "仅重要邮件"
+  },
   "autoAdvance": {
     "label": "自动前进",
     "hint": "在会话中完成/暂停后，打开下一个会话，而不是返回列表。"

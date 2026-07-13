@@ -76,6 +76,8 @@ const DEFAULT_SETTINGS: Settings = {
   autoAdvance: true,
   autoLabelsEnabled: true,
   groupByDate: true,
+  dockBadgeEnabled: true,
+  dockBadgeSource: "inbox",
   signatures: {},
   signatureList: [],
   signatureDefaults: {},
@@ -148,6 +150,7 @@ export function SettingsPanel() {
     { tab: "general", label: t("settings:undoSend.label"), keywords: "undo send delay cancel" },
     { tab: "general", label: t("settings:loadRemoteImages.label"), keywords: "images privacy tracking pixels remote" },
     { tab: "general", label: t("settings:notifications.label"), keywords: "notify alerts desktop" },
+    { tab: "general", label: t("settings:dockBadge.label"), keywords: "dock badge unread count icon red important" },
     { tab: "general", label: t("settings:autoAdvance.label"), keywords: "auto advance next thread cursor" },
     { tab: "general", label: t("settings:groupByDate.label"), keywords: "group date today yesterday timeline headers sections" },
     { tab: "splits", label: t("settings:autoLabels.label"), keywords: "auto labels categorize" },
@@ -290,6 +293,31 @@ export function SettingsPanel() {
                 onChange={(soundEnabled) => void updateSettings({ soundEnabled })}
               />
             </SettingRow>
+            <SettingRow label={t("settings:dockBadge.label")} hint={t("settings:dockBadge.hint")}>
+              <Toggle
+                label={t("settings:dockBadge.label")}
+                checked={s.dockBadgeEnabled}
+                onChange={(dockBadgeEnabled) => void updateSettings({ dockBadgeEnabled })}
+              />
+            </SettingRow>
+            {s.dockBadgeEnabled && (
+              <SettingRow
+                label={t("settings:dockBadgeSource.label")}
+                hint={t("settings:dockBadgeSource.hint")}
+              >
+                <Segmented
+                  value={s.dockBadgeSource}
+                  options={[
+                    { value: "inbox" as const, label: t("settings:dockBadgeSource.all") },
+                    {
+                      value: "important" as const,
+                      label: t("settings:dockBadgeSource.important"),
+                    },
+                  ]}
+                  onChange={(dockBadgeSource) => void updateSettings({ dockBadgeSource })}
+                />
+              </SettingRow>
+            )}
             <SettingRow
               label={t("settings:autoAdvance.label")}
               hint={t("settings:autoAdvance.hint")}
@@ -419,6 +447,14 @@ function AboutSection() {
     }
   }
 
+  async function onOpenLogs() {
+    try {
+      await call("open_logs_dir", {});
+    } catch (err) {
+      pushToast({ kind: "error", message: errorMessage(err) });
+    }
+  }
+
   return (
     <section className="mt-3 flex flex-col gap-4 border-t border-hairline pt-5">
       <SectionLabel>{t("settings:about.section")}</SectionLabel>
@@ -429,6 +465,11 @@ function AboutSection() {
             {checking ? t("settings:about.checking") : t("settings:about.checkUpdates")}
           </button>
         </div>
+      </SettingRow>
+      <SettingRow label={t("settings:about.logs")} hint={t("settings:about.logsHint")}>
+        <button className={ghostBtnCls} onClick={() => void onOpenLogs()}>
+          {t("settings:about.openLogs")}
+        </button>
       </SettingRow>
     </section>
   );
