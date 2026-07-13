@@ -995,6 +995,35 @@ async fn extend_history(
 /// replaying old mail as new-to-the-folder UIDs.
 const CHIME_RECENT_MS: i64 = 24 * 60 * 60 * 1000;
 
+/// Robot senders that never chime, even when the message carries none of the
+/// bulk-mail headers `is_automated` checks (cloud monitoring alarms and CI
+/// notifications are often plain SMTP with a noreply-style local-part).
+fn robot_sender(email: &str) -> bool {
+    let local = email
+        .split('@')
+        .next()
+        .unwrap_or("")
+        .split('+')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    const PREFIXES: &[&str] = &[
+        "noreply",
+        "no-reply",
+        "no_reply",
+        "donotreply",
+        "do-not-reply",
+        "notification",
+        "notify",
+        "alert",
+        "alarm",
+        "mailer-daemon",
+        "postmaster",
+        "bounce",
+    ];
+    PREFIXES.iter().any(|p| local.starts_with(p))
+}
+
 /// Insert fetched headers. Returns `(all, fresh)` thread ids for the newly
 /// inserted messages: `all` for list refreshes, `fresh` only for threads that
 /// gained an unread, incoming, recent message (chime/notification-worthy).
@@ -1125,13 +1154,20 @@ async fn store_headers(
                 // Chime-worthy: unread + incoming (is_read folds in both),
                 // actually recent (so replayed old mail from UIDVALIDITY
                 // resets / server-side moves stays silent), and not automated
-                // bulk mail - a monitoring/newsletter flood shouldn't ring
-                // the bell every minute.
+                // bulk/robot mail - a monitoring/newsletter flood shouldn't
+                // ring the bell every minute.
                 if !nm.is_read
                     && !nm.is_automated
+                    && !robot_sender(&from_email)
                     && now_ms() - date_ms < CHIME_RECENT_MS
                     && !fresh_ids.contains(&thread_id)
                 {
+                    tracing::info!(
+                        account_id,
+                        thread_id,
+                        from = %from_email,
+                        "receive: chime-worthy new mail",
+                    );
                     fresh_ids.push(thread_id);
                 }
             }
