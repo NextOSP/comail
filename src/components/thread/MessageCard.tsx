@@ -17,6 +17,7 @@ import {
   trimTrailingEmptyHtml,
 } from "../../lib/quotes";
 import { InviteCard } from "../calendar/InviteCard";
+import { dispatchKeyboardEvent } from "../../keyboard/registry";
 
 /** Maps a file to a short badge label + accent color by extension/mime. */
 function fileKind(filename: string | null, mimeType: string | null): { label: string; color: string } {
@@ -550,6 +551,13 @@ function HtmlBody({ html: fullHtml }: { html: string }) {
     observerRef.current = new ResizeObserver(measure);
     observerRef.current.observe(doc.body);
     doc.addEventListener("load", measure, true);
+    // Clicking inside the email moves keyboard focus into this sandboxed
+    // iframe, so keydowns fire on its document — never the parent window that
+    // the keyboard registry listens on, so app shortcuts (Esc to go back, Cmd+K
+    // palette, J/K, R…) stop working. Route the iframe's keydowns through the
+    // registry directly. It applies its own guards (typing in a field or
+    // activating a focused link is left native), so we forward every key.
+    doc.addEventListener("keydown", (e) => dispatchKeyboardEvent(e));
   };
 
   useEffect(() => () => observerRef.current?.disconnect(), []);

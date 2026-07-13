@@ -78,18 +78,25 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # --- Apple code signing + notarization (macOS only) ---------------
-          # Until these secrets exist the macOS .app is ad-hoc signed, which
-          # makes the login keychain re-prompt users for stored secrets after
-          # every app update (new signature each release) and trips Gatekeeper.
-          # Adding a stable Developer ID identity fixes both. Leaving the
-          # secrets unset is a no-op: Tauri falls back to ad-hoc as before.
-          # See src-tauri/CODESIGNING.md for how to obtain the cert + secrets.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # OFF by default: the macOS .app is ad-hoc signed, which builds fine
+          # (this is how releases have shipped). It does make the login keychain
+          # re-prompt for stored secrets after each update and trips Gatekeeper;
+          # a stable Developer ID identity fixes both.
+          #
+          # To enable real signing: obtain the cert + secrets (see
+          # src-tauri/CODESIGNING.md), add them as repo secrets, then set the
+          # repository VARIABLE `ENABLE_APPLE_SIGNING` to `true`
+          # (Settings -> Secrets and variables -> Actions -> Variables).
+          #
+          # The gate matters: passing a missing/invalid APPLE_CERTIFICATE makes
+          # `security import` fail the whole build ("failed to import keychain
+          # certificate"), so we only pass these when explicitly enabled.
+          APPLE_CERTIFICATE: ${{ vars.ENABLE_APPLE_SIGNING == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ vars.ENABLE_APPLE_SIGNING == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.ENABLE_APPLE_SIGNING == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ vars.ENABLE_APPLE_SIGNING == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ vars.ENABLE_APPLE_SIGNING == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ vars.ENABLE_APPLE_SIGNING == 'true' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Comail ${{ github.ref_name }}"

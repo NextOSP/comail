@@ -26,6 +26,8 @@ pub enum CoreError {
     NotFound(String),
     #[error("offline")]
     Offline,
+    #[error("AI is not configured")]
+    AiNotConfigured,
     #[error("{0}")]
     Other(String),
 }
@@ -48,6 +50,7 @@ impl CoreError {
             CoreError::CalDav(_) => "caldav",
             CoreError::NotFound(_) => "not_found",
             CoreError::Offline => "offline",
+            CoreError::AiNotConfigured => "ai_not_configured",
             CoreError::Other(_) => "other",
         }
     }

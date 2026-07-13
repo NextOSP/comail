@@ -148,3 +148,32 @@ fn frequent_sender_outranks_equal_match_from_stranger() {
     assert_eq!(hits.len(), 2);
     assert_eq!(hits[0].id, 20, "high-affinity sender ranks first");
 }
+
+#[test]
+fn sender_name_match_outranks_body_only_match() {
+    let conn = db();
+    let be = addr("Bé Dọn Dẹp", "hello@begroup.vn");
+    let other = addr("Random Shop", "noreply@shop.com");
+    // Same date; "be" appears in the stranger's subject but IS the friend's name.
+    insert_message(&conn, 100, 10, "Best deals to be had this week", &other, 5_000);
+    insert_message(&conn, 101, 20, "Lịch dọn nhà tuần này", &be, 5_000);
+
+    let q = search::parse("be");
+    let hits = repo::search::hybrid(&conn, &q, &[], 10).unwrap();
+    assert_eq!(
+        hits[0].id, 20,
+        "query matching the sender's name ranks that sender first"
+    );
+}
+
+#[test]
+fn from_operator_survives_trailing_comma() {
+    let conn = db();
+    let be = addr("BE GROUP", "hi@begroup.vn");
+    insert_message(&conn, 100, 10, "Software proposal", &be, 1_000);
+
+    let q = search::parse("from:hi@begroup.vn, software");
+    let hits = repo::search::hybrid(&conn, &q, &[], 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, 10);
+}

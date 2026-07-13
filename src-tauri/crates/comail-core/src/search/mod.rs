@@ -16,6 +16,9 @@ pub struct ParsedQuery {
     /// Free-text terms with operators stripped, joined by spaces and unquoted -
     /// used as the semantic-search embedding query.
     pub text: String,
+    /// Folded (lowercase, diacritic-stripped) free-text terms - used to boost
+    /// results whose sender name/address matches the query.
+    pub terms: Vec<String>,
     pub from: Option<String>,
     pub to: Option<String>,
     pub in_folder: Option<String>,
@@ -24,18 +27,83 @@ pub struct ParsedQuery {
     pub has_attachment: Option<bool>,
 }
 
+/// A raw query token: a bare word or a `"quoted phrase"`.
+enum Token {
+    Word(String),
+    Phrase(String),
+}
+
+/// Split on whitespace, keeping double-quoted spans together as phrases.
+/// An unterminated quote still yields a phrase from what follows it.
+fn tokenize(input: &str) -> Vec<Token> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_quote = false;
+    for c in input.chars() {
+        match c {
+            '"' => {
+                if !cur.is_empty() {
+                    out.push(if in_quote {
+                        Token::Phrase(std::mem::take(&mut cur))
+                    } else {
+                        Token::Word(std::mem::take(&mut cur))
+                    });
+                } else {
+                    cur.clear();
+                }
+                in_quote = !in_quote;
+            }
+            c if c.is_whitespace() && !in_quote => {
+                if !cur.is_empty() {
+                    out.push(Token::Word(std::mem::take(&mut cur)));
+                }
+            }
+            c => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        out.push(if in_quote {
+            Token::Phrase(cur)
+        } else {
+            Token::Word(cur)
+        });
+    }
+    out
+}
+
 pub fn parse(input: &str) -> ParsedQuery {
     let mut q = ParsedQuery::default();
     let mut fts_terms: Vec<String> = Vec::new();
     let mut text_terms: Vec<String> = Vec::new();
 
-    for token in input.split_whitespace() {
+    for token in tokenize(input) {
+        let token = match token {
+            // Quoted phrase: exact (non-prefix) FTS phrase match.
+            Token::Phrase(p) => {
+                let words: Vec<String> = p
+                    .split_whitespace()
+                    .map(clean_token)
+                    .filter(|w| !w.is_empty())
+                    .collect();
+                if !words.is_empty() {
+                    let phrase = words.join(" ");
+                    fts_terms.push(format!("\"{phrase}\""));
+                    q.terms.push(fold(&phrase));
+                    text_terms.push(phrase);
+                }
+                continue;
+            }
+            Token::Word(w) => w,
+        };
         // Operators are case-insensitive on both the key ("In:" == "in:") and
         // the value ("in:Sent" == "in:sent"); users type them however they like.
         let (key, value) = match token.split_once(':') {
             Some((k, v)) => (k.to_ascii_lowercase(), v),
             None => (String::new(), ""),
         };
+        // Tolerate list punctuation around operator values:
+        // `from:a@b.com, report` must not poison the address filter.
+        let value = value.trim_matches([',', ';']);
         match key.as_str() {
             // Address operators keep the value's original case (matched
             // case-insensitively downstream); a bare "from:" is a no-op.
@@ -72,15 +140,10 @@ pub fn parse(input: &str) -> ParsedQuery {
             }
             // Not an operator (includes non-operator tokens with ':' like "12:30").
             _ => {
-                // Escape FTS special syntax by quoting; add * for prefix matching.
-                let clean: String = token
-                    .chars()
-                    .filter(|c| {
-                        c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_'
-                    })
-                    .collect();
+                let clean = clean_token(&token);
                 if !clean.is_empty() {
                     fts_terms.push(fts_term(&clean));
+                    q.terms.push(fold(&clean));
                     text_terms.push(clean);
                 }
             }
@@ -93,6 +156,14 @@ pub fn parse(input: &str) -> ParsedQuery {
     q.fts_or = fts_terms.join(" OR ");
     q.text = text_terms.join(" ");
     q
+}
+
+/// Escape FTS special syntax by dropping everything but word-ish characters.
+fn clean_token(token: &str) -> String {
+    token
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '@' || *c == '.' || *c == '-' || *c == '_')
+        .collect()
 }
 
 /// One FTS5 prefix term for a cleaned token. The index tokenizer
@@ -151,5 +222,32 @@ mod tests {
     #[test]
     fn fold_removes_accents() {
         assert_eq!(fold("Bé Dọn Dẹp"), "be don dep");
+    }
+
+    #[test]
+    fn operator_value_tolerates_trailing_comma() {
+        let q = parse("from:hoang.ngyen@nextwaves.com, software");
+        assert_eq!(q.from.as_deref(), Some("hoang.ngyen@nextwaves.com"));
+        assert_eq!(q.fts, "\"software\"*");
+    }
+
+    #[test]
+    fn quoted_phrase_is_exact_match() {
+        let q = parse("\"quarterly report\" budget");
+        assert_eq!(q.fts, "\"quarterly report\" AND \"budget\"*");
+        assert_eq!(q.text, "quarterly report budget");
+        assert_eq!(q.terms, vec!["quarterly report", "budget"]);
+    }
+
+    #[test]
+    fn unterminated_quote_is_still_a_phrase() {
+        let q = parse("\"hello world");
+        assert_eq!(q.fts, "\"hello world\"");
+    }
+
+    #[test]
+    fn terms_are_folded_for_sender_matching() {
+        let q = parse("Bé software");
+        assert_eq!(q.terms, vec!["be", "software"]);
     }
 }

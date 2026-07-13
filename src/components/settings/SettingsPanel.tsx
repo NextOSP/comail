@@ -31,6 +31,7 @@ import {
   primaryBtnCls,
   SectionLabel,
   Segmented,
+  Select,
   SettingRow,
   Toggle,
 } from "./panelKit";
@@ -236,13 +237,13 @@ export function SettingsPanel() {
               />
             </SettingRow>
             <SettingRow label={t("settings:language.label")} hint={t("settings:language.hint")}>
-              <select
+              <Select
                 value={s.language}
                 onChange={(e) => {
                   setLanguage(e.target.value);
                   void updateSettings({ language: e.target.value });
                 }}
-                className={`${inputCls} !w-[200px]`}
+                className="!w-[200px]"
               >
                 <option value={SYSTEM_LANGUAGE}>{t("settings:language.system")}</option>
                 {SUPPORTED_LANGUAGES.map((code) => (
@@ -250,7 +251,7 @@ export function SettingsPanel() {
                     {LANGUAGE_NAMES[code] ?? code}
                   </option>
                 ))}
-              </select>
+              </Select>
             </SettingRow>
             <SettingRow label={t("settings:undoSend.label")} hint={t("settings:undoSend.hint")}>
               <Segmented
@@ -313,8 +314,8 @@ export function SettingsPanel() {
               label={t("settings:meetingReminder.label")}
               hint={t("settings:meetingReminder.hint")}
             >
-              <select
-                className="rounded-md border border-hairline bg-bg0 px-2 py-1 text-[12.5px] text-ink"
+              <Select
+                className="!w-[180px]"
                 value={s.meetingNotifyLeadMinutes}
                 onChange={(e) =>
                   void updateSettings({ meetingNotifyLeadMinutes: Number(e.target.value) })
@@ -326,7 +327,7 @@ export function SettingsPanel() {
                     {t("settings:meetingReminder.minutes", { count: m })}
                   </option>
                 ))}
-              </select>
+              </Select>
             </SettingRow>
             <AboutSection />
           </section>
@@ -486,17 +487,17 @@ function ScenarioRouteRow({
 }) {
   return (
     <SettingRow label={label} hint={hint}>
-      <select
+      <Select
         value={value}
         onChange={(e) => onChange(e.target.value as AiTier)}
-        className={`${inputCls} !w-[180px]`}
+        className="!w-[180px]"
       >
         {AI_TIERS.map((tier) => (
           <option key={tier} value={tier}>
             {tierLabel(tier)}
           </option>
         ))}
-      </select>
+      </Select>
     </SettingRow>
   );
 }
@@ -582,7 +583,7 @@ function AiSection({ settings }: { settings: Settings }) {
         </div>
       </SettingRow>
       <SettingRow label={t("settings:ai.providerLabel")} hint={t("settings:ai.providerHint")}>
-        <select
+        <Select
           value={
             forceCustom
               ? "custom"
@@ -604,7 +605,7 @@ function AiSection({ settings }: { settings: Settings }) {
               ...(preset.defaultModel ? { aiModel: preset.defaultModel } : {}),
             });
           }}
-          className={`${inputCls} !w-[280px]`}
+          className="!w-[280px]"
         >
           {AI_PROVIDER_PRESETS.map((p) => (
             <option key={p.id} value={p.id}>
@@ -612,7 +613,7 @@ function AiSection({ settings }: { settings: Settings }) {
             </option>
           ))}
           <option value="custom">{t("settings:ai.customProvider")}</option>
-        </select>
+        </Select>
       </SettingRow>
       <SettingRow label={t("settings:ai.baseUrlLabel")} hint={t("settings:ai.baseUrlHint")}>
         <input
@@ -768,17 +769,17 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
       {on && (
         <>
           <SettingRow label="Model" hint="Larger models are more accurate but slower to index.">
-            <select
+            <Select
               value={settings.embeddingModel}
               onChange={(e) => void updateSettings({ embeddingModel: e.target.value })}
-              className={`${inputCls} !w-[280px]`}
+              className="!w-[280px]"
             >
               {EMBEDDING_MODELS.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </SettingRow>
           <SettingRow
             label="Index"
@@ -1133,10 +1134,10 @@ function DefaultSelect({
   const { t } = useTranslation();
   return (
     <SettingRow label={label}>
-      <select
+      <Select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`${inputCls} !w-[240px]`}
+        className="!w-[240px]"
       >
         <option value="">{t("settings:signature.none")}</option>
         {sigs.map((s) => (
@@ -1144,7 +1145,7 @@ function DefaultSelect({
             {s.name}
           </option>
         ))}
-      </select>
+      </Select>
     </SettingRow>
   );
 }

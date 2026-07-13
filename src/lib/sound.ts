@@ -21,6 +21,20 @@ const FILES: Record<SoundName, string> = {
 const cache = new Map<SoundName, HTMLAudioElement>();
 let unlocked = false;
 
+// The new-mail chime is suppressed until this time, to cover the initial
+// catch-up sync after launch: reopening the app shouldn't replay a chime for
+// mail that arrived (or was sent) while it was closed. 0 = not yet armed.
+let chimeReadyAt = Number.POSITIVE_INFINITY;
+// Fallback window if the initial sync never reports "settled".
+const STARTUP_GRACE_MS = 20_000;
+
+// Rate limiting so a burst of arrivals doesn't machine-gun the speakers.
+const COOLDOWN_MS = 1_500; // ignore repeats of the same sound within this window
+const CHIME_WINDOW_MS = 10_000; // rolling window for the chime cap
+const MAX_CHIMES = 5; // most new-mail chimes allowed per window
+const lastPlayedAt = new Map<SoundName, number>();
+const chimeTimes: number[] = [];
+
 function get(name: SoundName): HTMLAudioElement {
   let audio = cache.get(name);
   if (!audio) {
@@ -43,7 +57,12 @@ function soundsEnabled(): boolean {
  * autoplay policy. Mount once at app startup; safe to call more than once.
  */
 export function initSounds(): void {
-  if (MOCK_MODE || unlocked) return;
+  if (MOCK_MODE) return;
+  // Arm the new-mail chime after a startup grace window (a floor, in case the
+  // initial sync's "settled" signal never arrives). markSoundsReady() can arm
+  // it sooner once the first sync completes.
+  chimeReadyAt = Date.now() + STARTUP_GRACE_MS;
+  if (unlocked) return;
   const unlock = () => {
     if (unlocked) return;
     unlocked = true;
@@ -68,11 +87,35 @@ export function initSounds(): void {
   window.addEventListener("keydown", unlock);
 }
 
+/**
+ * Arm the new-mail chime immediately (call when the initial catch-up sync has
+ * settled). Only ever brings the ready time forward, never pushes it back.
+ */
+export function markSoundsReady(): void {
+  chimeReadyAt = Math.min(chimeReadyAt, Date.now());
+}
+
 /** Play a bundled UI sound. Best-effort: never throws, no-op in mock mode. */
 export function playSound(name: SoundName): void {
   if (MOCK_MODE) return;
   try {
     if (!soundsEnabled()) return;
+    // Skip the new-mail chime for the post-launch catch-up sync (backlog), so
+    // reopening the app doesn't chime for old mail. The user-initiated send
+    // whoosh is never suppressed.
+    if (name === "new-email" && Date.now() < chimeReadyAt) return;
+
+    const now = Date.now();
+    // Coalesce a rapid burst of the same sound into a single play.
+    if (now - (lastPlayedAt.get(name) ?? 0) < COOLDOWN_MS) return;
+    if (name === "new-email") {
+      // Hard-cap the chime so a large batch of new mail can't play endlessly.
+      while (chimeTimes.length && now - chimeTimes[0] > CHIME_WINDOW_MS) chimeTimes.shift();
+      if (chimeTimes.length >= MAX_CHIMES) return;
+      chimeTimes.push(now);
+    }
+    lastPlayedAt.set(name, now);
+
     const audio = get(name);
     audio.currentTime = 0;
     void audio.play().catch(() => {

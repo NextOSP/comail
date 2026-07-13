@@ -229,12 +229,46 @@ fn rrf(lists: &[Vec<i64>]) -> Vec<(i64, f32)> {
     fused
 }
 
-/// Add per-thread sender-affinity and recency bonuses to fused RRF scores, so
-/// mail from people the user actually corresponds with (and fresher threads)
-/// outranks equally-matching noise. Bonus weights live on the RRF scale -
-/// a single-list top rank scores 1/61 ≈ 0.016 - sized so a strong personal
-/// signal can lift a mid-list hit to the top without burying exact matches.
-fn apply_personal_boosts(conn: &Connection, scored: &mut [(i64, f32)], now_ms: i64) -> Result<()> {
+/// How strongly a sender matches the query's free-text terms, in [0, 1].
+/// A term that starts a name word or the address local-part counts fully
+/// ("be" → "Bé Dọn Dẹp", "be@group.vn"); a mere substring counts weakly
+/// ("be" somewhere inside "noreply@bendover.com"). Averaged over all terms so
+/// partial-query matches don't outrank full-query ones.
+fn sender_match(terms: &[String], name: &str, addr: &str) -> f32 {
+    if terms.is_empty() {
+        return 0.0;
+    }
+    let name_f = crate::search::fold(name);
+    let addr_f = crate::search::fold(addr);
+    let local = addr_f.split('@').next().unwrap_or("");
+    let mut total = 0.0f32;
+    for t in terms {
+        let t = t.as_str();
+        total += if name_f.split_whitespace().any(|w| w.starts_with(t))
+            || local.split(['.', '-', '_']).any(|w| w.starts_with(t))
+        {
+            1.0
+        } else if name_f.contains(t) || addr_f.contains(t) {
+            0.4
+        } else {
+            0.0
+        };
+    }
+    total / terms.len() as f32
+}
+
+/// Add per-thread sender-match, sender-affinity and recency bonuses to fused
+/// RRF scores, so mail *from* someone matching the query, from people the user
+/// actually corresponds with, and fresher threads outrank equally-matching
+/// noise. Bonus weights live on the RRF scale - a single-list top rank scores
+/// 1/61 ≈ 0.016 - with sender-match the strongest: a full name/address match
+/// (query "be" → sender "Bé Dọn Dẹp") beats a top-ranked body-only hit.
+fn apply_personal_boosts(
+    conn: &Connection,
+    q: &ParsedQuery,
+    scored: &mut [(i64, f32)],
+    now_ms: i64,
+) -> Result<()> {
     if scored.is_empty() {
         return Ok(());
     }
@@ -244,32 +278,42 @@ fn apply_personal_boosts(conn: &Connection, scored: &mut [(i64, f32)], now_ms: i
         .collect::<Vec<_>>()
         .join(",");
     let sql = format!(
-        "SELECT m.thread_id, MAX(m.date), MAX(c.send_count * 3 + c.recv_count)
+        "SELECT m.thread_id, m.date,
+                COALESCE(m.from_name, ''), COALESCE(m.from_addr, ''),
+                COALESCE(c.send_count * 3 + c.recv_count, 0)
          FROM messages m
          LEFT JOIN contacts c ON c.email = LOWER(COALESCE(m.from_addr, ''))
-         WHERE m.thread_id IN ({id_list})
-         GROUP BY m.thread_id"
+         WHERE m.thread_id IN ({id_list})"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let mut info: HashMap<i64, (i64, i64)> = HashMap::new();
+    // Per thread: max date, max affinity, best sender match over its messages.
+    let mut info: HashMap<i64, (i64, i64, f32)> = HashMap::new();
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, i64>(1)?,
-            r.get::<_, Option<i64>>(2)?.unwrap_or(0),
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, i64>(4)?,
         ))
     })?;
     for row in rows {
-        let (tid, date_ms, affinity) = row?;
-        info.insert(tid, (date_ms, affinity));
+        let (tid, date_ms, from_name, from_addr, affinity) = row?;
+        let m = sender_match(&q.terms, &from_name, &from_addr);
+        let e = info.entry(tid).or_insert((i64::MIN, 0, 0.0));
+        e.0 = e.0.max(date_ms);
+        e.1 = e.1.max(affinity);
+        e.2 = e.2.max(m);
     }
     for (tid, score) in scored.iter_mut() {
-        let Some(&(date_ms, affinity)) = info.get(tid) else {
+        let Some(&(date_ms, affinity, sender)) = info.get(tid) else {
             continue;
         };
         let affinity = affinity as f32;
         let age_days = ((now_ms - date_ms).max(0) as f32) / 86_400_000.0;
-        *score += 0.008 * (affinity / (affinity + 25.0)) + 0.004 / (1.0 + age_days / 30.0);
+        *score += 0.020 * sender
+            + 0.008 * (affinity / (affinity + 25.0))
+            + 0.004 / (1.0 + age_days / 30.0);
     }
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     Ok(())
@@ -314,7 +358,7 @@ pub fn fuse(
         .filter(|l| !l.is_empty())
         .collect();
     let mut fused = rrf(&lists);
-    apply_personal_boosts(conn, &mut fused, chrono::Utc::now().timestamp_millis())?;
+    apply_personal_boosts(conn, q, &mut fused, chrono::Utc::now().timestamp_millis())?;
 
     let top: Vec<i64> = fused
         .into_iter()
