@@ -13,7 +13,6 @@ function ThreadRowImpl({
   onRowClick,
   onToggleCheck,
   onGutterDown,
-  onHover,
   leaving,
   jumpHint,
 }: {
@@ -27,7 +26,6 @@ function ThreadRowImpl({
   onToggleCheck: (id: number) => void;
   /** When provided, press-and-drag in the gutter starts a range sweep. */
   onGutterDown?: (id: number, e: MouseEvent) => void;
-  onHover?: (id: number) => void;
   leaving?: boolean;
   /** jump-to number shown (in place of the timestamp) while ⌘/Ctrl is held */
   jumpHint?: string;
@@ -41,7 +39,6 @@ function ThreadRowImpl({
       data-selected={selected}
       data-checked={checked}
       onClick={(e) => onRowClick(thread.id, e)}
-      onMouseEnter={onHover ? () => onHover(thread.id) : undefined}
     >
       {/* gutter: checkbox (selection) / unread dot / star */}
       <button

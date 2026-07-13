@@ -615,7 +615,12 @@ async fn run_cycle(
         // Non-inbox folders get new-mail checks every cycle but heavy
         // reconciliation (flags/expunge) only every 5th cycle.
         let heavy = folder.role.as_deref() == Some(roles::INBOX) || cycle % 5 == 0;
-        if let Err(e) = sync_folder(ctx, config, session, folder, heavy, hist_tx).await {
+        // The first cycle after launch is the catch-up over everything that
+        // happened while the app was closed: absorb it silently ("open app =
+        // empty queue"). Only mail that arrives on later cycles - i.e. while
+        // the app is actually open - chimes and notifies.
+        let notify = cycle > 0;
+        if let Err(e) = sync_folder(ctx, config, session, folder, heavy, notify, hist_tx).await {
             tracing::warn!(folder = %folder.imap_name, "folder sync failed: {e}");
             return Err(e); // connection likely broken; reconnect
         }
@@ -664,6 +669,9 @@ async fn sync_folder(
     session: &mut Session,
     folder: &Folder,
     heavy: bool,
+    // false during the launch catch-up cycle: new mail is stored and the UI
+    // refreshed, but MailNew (chime/notification) is never emitted.
+    notify: bool,
     hist_tx: &mpsc::UnboundedSender<()>,
 ) -> Result<()> {
     let account_id = config.id;
@@ -723,12 +731,14 @@ async fn sync_folder(
                     ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
                 }
                 // MailNew drives the chime + desktop notification, so it only
-                // fires for genuinely fresh arrivals: unread, incoming, recent.
+                // fires for genuinely fresh arrivals: unread, incoming, recent,
+                // and never during the launch catch-up cycle (notify=false).
                 // New-to-the-folder UIDs that are our own sends, already read
                 // on another device, or moved back into the inbox (unarchive /
                 // unsnooze) refresh the list via MailUpdated above but stay
                 // silent.
-                if fresh_folder.role.as_deref() == Some(roles::INBOX) && !fresh.is_empty() {
+                if notify && fresh_folder.role.as_deref() == Some(roles::INBOX) && !fresh.is_empty()
+                {
                     ctx.bus.emit(CoreEvent::MailNew {
                         account_id,
                         thread_ids: fresh,

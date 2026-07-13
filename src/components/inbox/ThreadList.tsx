@@ -128,16 +128,6 @@ export function ThreadList({
 
   // Stable per-row handlers so memoized ThreadRows don't re-render on hover.
   const handleToggleCheck = useCallback((id: number) => toggleSelect(id), [toggleSelect]);
-  const handleHover = useCallback(
-    (id: number) => {
-      // Don't fight the sweep with hover-cursor moves while dragging.
-      if (dragRef.current) return;
-      if (id === useUi.getState().selectedThreadId) return;
-      const idx = rowsRef.current.findIndex((t) => t.id === id);
-      selectThread(idx >= 0 ? idx : 0, id);
-    },
-    [selectThread],
-  );
 
   // Row click: Shift = range, Cmd/Ctrl = toggle one, plain = open.
   const handleRowClick = useCallback(
@@ -294,7 +284,6 @@ export function ThreadList({
                   onRowClick={handleRowClick}
                   onToggleCheck={handleToggleCheck}
                   onGutterDown={onGutterDown}
-                  onHover={handleHover}
                   jumpHint={jumpNumbers?.get(th.id)}
                 />
               </div>
