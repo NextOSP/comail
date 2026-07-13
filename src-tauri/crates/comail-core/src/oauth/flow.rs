@@ -71,17 +71,13 @@ pub async fn authorize_with(
     let state = random_string(32);
 
     let server = LoopbackServer::bind().await?;
-    // Microsoft only ignores the (random) port for the literal hostname
-    // `localhost`; a 127.0.0.1 redirect must match the registered URI exactly,
-    // port included, so it always fails with AADSTS50011. Google is the
-    // opposite: its docs prescribe the loopback IP. The server accepts any
-    // path, so the Microsoft form drops /callback to exactly match a
-    // registered `http://localhost`.
-    let redirect_uri = if provider == Provider::Microsoft {
-        format!("http://localhost:{}/", server.port)
-    } else {
-        server.redirect_uri()
-    };
+    // All providers use the same `http://localhost:{port}/` redirect. Using the
+    // `localhost` hostname (not the 127.0.0.1 literal) matches the redirect URI
+    // registered for desktop OAuth clients and lets Microsoft ignore the random
+    // port (a 127.0.0.1 redirect must match the registered URI exactly, port
+    // included, so it fails with AADSTS50011). The loopback server listens on
+    // both IPv4 and IPv6 loopback so `localhost` reaches it either way.
+    let redirect_uri = server.redirect_uri();
 
     let mut scopes = cfg.scopes.join(" ");
     for extra in extra_scopes {

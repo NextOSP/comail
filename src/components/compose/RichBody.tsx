@@ -56,7 +56,7 @@ type Cmd =
 
 /** Rich-text editing surface for the composer and the signature editor: a
  *  contenteditable div with a formatting toolbar (bold/italic/underline/strike,
- *  lists, quote, inline images, links, tables). The parent owns the HTML string;
+ *  lists, quote, inline images, links). The parent owns the HTML string;
  *  external changes (AI draft, quick replies, signature) are synced in without
  *  disturbing typing. */
 export const RichBody = forwardRef<
@@ -86,8 +86,6 @@ export const RichBody = forwardRef<
   const [active, setActive] = useState<Record<string, boolean>>({});
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
-  const [tableOpen, setTableOpen] = useState(false);
-  const [tableHover, setTableHover] = useState({ r: 0, c: 0 });
 
   const refreshEmpty = useCallback((el: HTMLDivElement) => {
     setEmpty(el.textContent?.trim() === "" && !el.querySelector("img"));
@@ -344,7 +342,6 @@ export const RichBody = forwardRef<
   const openLink = () => {
     saveSelection();
     setLinkUrl(currentLinkHref());
-    setTableOpen(false);
     setLinkOpen(true);
   };
 
@@ -364,26 +361,6 @@ export const RichBody = forwardRef<
       document.execCommand("unlink", false);
     }
     setLinkOpen(false);
-    emit();
-  };
-
-  const openTable = () => {
-    saveSelection();
-    setLinkOpen(false);
-    setTableHover({ r: 0, c: 0 });
-    setTableOpen(true);
-  };
-
-  const insertTable = (rows: number, cols: number) => {
-    const cell =
-      '<td style="border:1px solid #d0d0d0;padding:6px 8px;min-width:48px">&nbsp;</td>';
-    const row = `<tr>${cell.repeat(cols)}</tr>`;
-    const html =
-      `<table style="border-collapse:collapse;border:1px solid #d0d0d0">` +
-      `<tbody>${row.repeat(rows)}</tbody></table><br>`;
-    restoreSelection();
-    document.execCommand("insertHTML", false, html);
-    setTableOpen(false);
     emit();
   };
 
@@ -469,28 +446,6 @@ export const RichBody = forwardRef<
           </svg>
         </button>
 
-        {/* table */}
-        <button
-          type="button"
-          tabIndex={-1}
-          title={t("compose:fmt.table")}
-          aria-label={t("compose:fmt.table")}
-          data-testid="fmt-table"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            openTable();
-          }}
-          className={`flex size-6.5 items-center justify-center rounded-md transition-colors ${
-            tableOpen ? "bg-accent/15 text-accent" : "text-ink-faint hover:bg-bg2 hover:text-ink"
-          }`}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="1" />
-            <line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" />
-            <line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" />
-          </svg>
-        </button>
-
         {linkOpen && (
           <div
             className="absolute top-9 left-0 z-20 flex items-center gap-1.5 rounded-lg border border-hairline bg-bg0 p-1.5 shadow-lg"
@@ -518,37 +473,6 @@ export const RichBody = forwardRef<
           </div>
         )}
 
-        {tableOpen && (
-          <div
-            className="absolute top-9 left-0 z-20 rounded-lg border border-hairline bg-bg0 p-2 shadow-lg"
-            data-testid="table-popover"
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseLeave={() => setTableHover({ r: 0, c: 0 })}
-          >
-            <div className="flex flex-col gap-0.5">
-              {Array.from({ length: 6 }, (_, r) => (
-                <div key={r} className="flex gap-0.5">
-                  {Array.from({ length: 6 }, (_, c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onMouseEnter={() => setTableHover({ r: r + 1, c: c + 1 })}
-                      onMouseDown={(e) => { e.preventDefault(); insertTable(r + 1, c + 1); }}
-                      className={`size-4 rounded-[3px] border ${
-                        r < tableHover.r && c < tableHover.c
-                          ? "border-accent bg-accent/30"
-                          : "border-hairline bg-bg1"
-                      }`}
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-            <div className="pt-1.5 text-center text-[11px] text-ink-faint">
-              {tableHover.r > 0 ? `${tableHover.r} × ${tableHover.c}` : t("compose:fmt.table")}
-            </div>
-          </div>
-        )}
       </div>
 
       <div
@@ -564,7 +488,6 @@ export const RichBody = forwardRef<
         data-placeholder={placeholder}
         onMouseDown={() => {
           if (linkOpen) setLinkOpen(false);
-          if (tableOpen) setTableOpen(false);
         }}
         onInput={() => {
           maybeExpandSnippet();

@@ -29,3 +29,9 @@ src-tauri/.tauri/
 # Local packaging / staging output (installers are built by CI)
 build/
 *.AppImage
+
+# Local per-developer macOS dev code-signing (see src-tauri/scripts/macos-dev-cert.sh)
+src-tauri/.cargo/config.toml
+
+# Embedding model weights (~130MB): downloaded on demand at runtime, never committed
+src-tauri/resources/models/

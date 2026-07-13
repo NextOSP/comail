@@ -1,10 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAccounts, useAsk, useContactSuggestions, useLabels, useSearch } from "../../queries/hooks";
+import { useModHeld } from "../../lib/useModHeld";
 import { useUi } from "../../stores/ui";
 import { ThreadList } from "../inbox/ThreadList";
 
+// Shown in the "Try" row when nothing is being completed.
 const OPERATORS = ["from:", "in:", "is:unread", "has:attachment"];
+
+// The full set the search parser understands, used for as-you-type completion.
+// `from:`/`to:` take a freeform address value, so they complete to the bare
+// prefix; the rest are self-contained.
+const OPERATOR_SUGGESTIONS = [
+  "from:",
+  "to:",
+  "in:inbox",
+  "in:sent",
+  "in:drafts",
+  "in:archive",
+  "in:trash",
+  "in:spam",
+  "is:unread",
+  "is:starred",
+  "has:attachment",
+];
 
 export function SearchScreen() {
   const { t } = useTranslation();
@@ -21,6 +40,8 @@ export function SearchScreen() {
   const [enterArmed, setEnterArmed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const ask = useAsk();
+  // ⌘/Ctrl held: reveal each result's jump-to number (⌘/Ctrl+1..9 opens it).
+  const modHeld = useModHeld();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -40,6 +61,13 @@ export function SearchScreen() {
     const t = setTimeout(() => set({ searchQuery: input }), 150);
     return () => clearTimeout(t);
   }, [input, set]);
+
+  // Adopt a query pushed from outside while already open (palette "View all
+  // from this sender"). During typing storedQuery only ever catches up to
+  // input via the debounce above, so this is a no-op then.
+  useEffect(() => {
+    setInput((cur) => (cur === storedQuery ? cur : storedQuery));
+  }, [storedQuery]);
 
   const { data: results, isFetching } = useSearch(storedQuery);
 
@@ -75,6 +103,25 @@ export function SearchScreen() {
     selectThread(idx, rows[idx].id);
   };
 
+  // As-you-type operator completion: match the token being typed (the text
+  // after the last space) against the known operators. The first match is the
+  // "active" suggestion — Tab or Enter completes to it.
+  const tokenStart = input.lastIndexOf(" ") + 1;
+  const currentToken = input.slice(tokenStart);
+  const opSuggestions = useMemo(() => {
+    const tok = currentToken.toLowerCase();
+    if (!tok) return [];
+    return OPERATOR_SUGGESTIONS.filter(
+      (s) => s.toLowerCase().startsWith(tok) && s.toLowerCase() !== tok,
+    );
+  }, [currentToken]);
+  const activeSuggestion = mode === "search" && !enterArmed ? (opSuggestions[0] ?? null) : null;
+
+  const applyCompletion = (op: string) => {
+    setInput(input.slice(0, tokenStart) + op);
+    inputRef.current?.focus();
+  };
+
   return (
     <div className="co-fade-in flex min-h-0 flex-1 flex-col">
       <div className="co-hairline-b shrink-0 px-6 pt-4 pb-3">
@@ -96,6 +143,22 @@ export function SearchScreen() {
                   e.preventDefault();
                   e.stopPropagation();
                   setMode((m) => (m === "search" ? "ask" : "search"));
+                  return;
+                }
+                // ⌘/Ctrl+1..9 jumps straight to the Nth result. Stop it here so
+                // the global registry's mod+N (inbox split tabs) never fires
+                // behind the search screen.
+                if ((e.metaKey || e.ctrlKey) && mode === "search" && /^[1-9]$/.test(e.key)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const row = rows[Number(e.key) - 1];
+                  if (row) openThread(row.id);
+                  return;
+                }
+                // Accept the highlighted operator suggestion with Tab or Enter.
+                if (activeSuggestion && (e.key === "Tab" || e.key === "Enter")) {
+                  e.preventDefault();
+                  applyCompletion(activeSuggestion);
                   return;
                 }
                 if (mode === "search" && rows.length > 0) {
@@ -157,18 +220,38 @@ export function SearchScreen() {
           {mode === "search" && (
             <div className="mt-2.5 flex items-center gap-1.5">
               <span className="text-[11px] text-ink-faint">{t("common:search.try")}</span>
-              {OPERATORS.map((op) => (
-                <button
-                  key={op}
-                  className="co-chip !py-0.5 !text-[11.5px] text-ink-muted hover:bg-bg2"
-                  onClick={() => {
-                    setInput((v) => (v.trim() ? `${v.trim()} ${op}` : op));
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {op}
-                </button>
-              ))}
+              {opSuggestions.length > 0
+                ? // Completing the current token: show matches, first is active.
+                  opSuggestions.slice(0, 6).map((op) => {
+                    const active = op === activeSuggestion;
+                    return (
+                      <button
+                        key={op}
+                        className={`co-chip !py-0.5 !text-[11.5px] hover:bg-bg2 ${
+                          active
+                            ? "!border-accent/60 bg-accent/10 text-ink"
+                            : "text-ink-muted"
+                        }`}
+                        onClick={() => applyCompletion(op)}
+                      >
+                        {op}
+                        {active && <kbd className="co-kbd ml-1.5 !text-[9px]">⇥</kbd>}
+                      </button>
+                    );
+                  })
+                : // Nothing to complete: the default starter operators.
+                  OPERATORS.map((op) => (
+                    <button
+                      key={op}
+                      className="co-chip !py-0.5 !text-[11.5px] text-ink-muted hover:bg-bg2"
+                      onClick={() => {
+                        setInput((v) => (v.trim() ? `${v.trim()} ${op}` : op));
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      {op}
+                    </button>
+                  ))}
             </div>
           )}
         </div>
@@ -254,7 +337,7 @@ export function SearchScreen() {
               {t("common:search.noResults", { query: storedQuery })}
             </p>
           ) : (
-            <ThreadList threads={rows} selfEmails={selfEmails} labelMap={labelMap} />
+            <ThreadList threads={rows} selfEmails={selfEmails} labelMap={labelMap} jumpHints={modHeld} />
           )}
         </div>
       )}

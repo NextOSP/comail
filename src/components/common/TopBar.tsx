@@ -1,23 +1,34 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { folderLeafName } from "../../lib/folders";
 import { MOD_LABEL } from "../../lib/format";
-import { useAccounts } from "../../queries/hooks";
+import { useAccounts, useFolders } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 
 export function TopBar() {
   const { t } = useTranslation();
   const view = useUi((s) => s.view);
+  const folderFilter = useUi((s) => s.folderFilter);
   const calendarScreen = useUi((s) => s.calendarScreen);
   const searchOpen = useUi((s) => s.searchOpen);
   const offline = useUi((s) => s.offline);
   const syncing = useUi((s) => s.syncing);
+  const syncDone = useUi((s) => s.syncDone);
+  const syncTotal = useUi((s) => s.syncTotal);
   const keySequence = useUi((s) => s.keySequence);
   const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
   const { data: accounts } = useAccounts();
+  const { data: folders } = useFolders(accountFilter);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const active = accounts?.find((a) => a.id === accountFilter);
+  const activeFolder = folders?.find((f) => f.id === folderFilter);
+  const title = searchOpen
+    ? t("common:topbar.search")
+    : activeFolder
+      ? folderLeafName(activeFolder)
+      : t(`common:view.${view}`);
 
   return (
     <header
@@ -37,9 +48,7 @@ export function TopBar() {
       <span className="text-[12px] font-semibold tracking-[0.14em] text-ink-faint uppercase">
         Comail
       </span>
-      <span className="text-[13px] font-medium text-ink-muted">
-        {searchOpen ? t("common:topbar.search") : t(`common:view.${view}`)}
-      </span>
+      <span className="text-[13px] font-medium text-ink-muted">{title}</span>
 
       {keySequence && (
         <span className="co-fade-in co-kbd" title={t("common:topbar.waitingForChord")}>
@@ -50,10 +59,14 @@ export function TopBar() {
       <div className="grow" />
 
       {syncing && (
-        <span
-          className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent"
-          title={t("common:topbar.syncing")}
-        />
+        <span className="flex items-center gap-1.5 text-[11.5px] text-ink-muted" title={t("common:topbar.syncing")}>
+          <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+          {syncTotal > 0 && (
+            <span className="tabular-nums">
+              {t("common:topbar.syncing")} {syncDone.toLocaleString()}/{syncTotal.toLocaleString()}
+            </span>
+          )}
+        </span>
       )}
       {offline && (
         <span className="co-chip !border-transparent !bg-bg2 !text-ink-muted text-[11.5px]">

@@ -1,4 +1,6 @@
 {
+  "draftLabel": "Brouillon",
+  "draftTo": "à {{names}}",
   "modeTitles": {
     "new": "Nouveau message",
     "reply": "Répondre",
@@ -45,6 +47,7 @@
   "scheduled": "Programmé. Envoi {{date}}",
   "sendingIn": "Envoi dans {s}s · Z pour annuler",
   "undo": "Annuler",
+  "sendNow": "Envoyer maintenant",
   "couldntSend": "Impossible d’envoyer : {{error}}",
   "couldntPickFiles": "Impossible de sélectionner les fichiers : {{error}}",
   "showQuoted": "Afficher le texte cité",

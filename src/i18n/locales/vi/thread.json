@@ -5,6 +5,7 @@
   "noSubject": "(không có chủ đề)",
   "messages_one": "{{count}} thư",
   "messages_other": "{{count}} thư",
+  "jumpToLatest": "Đến thư mới nhất",
   "snoozedBadge": "Đã tạm ẩn",
   "positionOf": "{{pos}} trên {{total}}",
   "footer": {
@@ -14,7 +15,8 @@
     "done": "hoàn tất",
     "snooze": "tạm ẩn",
     "summarize": "tóm tắt",
-    "nextPrev": "tiếp / trước"
+    "message": "email",
+    "nextPrev": "chuỗi tiếp / trước"
   },
   "aiSummary": {
     "title": "Tóm tắt AI",
@@ -25,16 +27,33 @@
   "sendingBadge": "Đang gửi…",
   "msgTo": "đến",
   "msgCc": "cc",
+  "details": {
+    "toggle": "Xem chi tiết",
+    "from": "từ",
+    "to": "đến",
+    "cc": "cc",
+    "via": "qua",
+    "date": "ngày",
+    "subject": "chủ đề"
+  },
   "loadingMessage": "Đang tải thư…",
   "messageBodyTitle": "Nội dung thư",
+  "remoteImages": {
+    "hidden": "Hình ảnh trong thư này không được hiển thị.",
+    "load": "Tải hình ảnh"
+  },
   "attachment": {
     "fallbackName": "tệp đính kèm",
     "savedMock": "Đã lưu {{name}} (mock)",
+    "view": "Xem tệp",
+    "openExternalHint": "Alt-click để mở bằng ứng dụng mặc định",
     "openFailed": "Không thể mở tệp đính kèm: {{detail}}",
     "preview": {
       "loading": "Đang tải bản xem trước…",
       "failed": "Không thể xem trước tệp đính kèm: {{detail}}",
       "openExternally": "Mở bằng ứng dụng",
+      "download": "Tải xuống",
+      "downloaded": "Đã lưu {{name}}",
       "unsupported": "Không có bản xem trước cho loại tệp này — hãy mở bằng ứng dụng ngoài.",
       "tooLarge": "Tệp quá lớn để xem trước — hãy mở bằng ứng dụng ngoài.",
       "truncated": "Bản xem trước đã bị cắt bớt",

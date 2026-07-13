@@ -231,9 +231,17 @@
     "label": "Notifications de bureau",
     "hint": "Notifier à l’arrivée d’un nouveau message quand la fenêtre n’est pas au premier plan."
   },
+  "sound": {
+    "label": "Son",
+    "hint": "Jouer un son à la réception d’un nouvel e-mail et à l’envoi."
+  },
   "autoAdvance": {
     "label": "Avance automatique",
     "hint": "Après Terminé/Reporter dans une conversation, ouvrir la conversation suivante au lieu de revenir à la liste."
+  },
+  "groupByDate": {
+    "label": "Grouper par date",
+    "hint": "Afficher des en-têtes Aujourd'hui / Hier / … entre les conversations dans la liste."
   },
   "signature": {
     "section": "Signatures",

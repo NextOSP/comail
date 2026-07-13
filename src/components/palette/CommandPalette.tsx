@@ -48,7 +48,11 @@ export function CommandPalette() {
 
   const results = useMemo(() => {
     if (!open) return [];
-    const ctx = buildCommandContext();
+    // Build the context as if the palette weren't open: commands run against a
+    // fresh context after it closes, so their availability (`when`) must ignore
+    // the palette itself. Otherwise every command gated on `!paletteOpen`
+    // (reply, forward, trash, mark done, …) would be filtered out here.
+    const ctx = { ...buildCommandContext(), paletteOpen: false };
     const usage = loadUsage();
     const available = getCommands().filter(
       (c) => !c.hiddenInPalette && (!c.when || c.when(ctx)),

@@ -8,10 +8,48 @@ import { MOCK_MODE } from "../../ipc/mock";
 import { useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import type { AttachmentMeta, MessageDetail } from "../../ipc/types";
-import { addressName, formatSize, hueOf, initials, longTime, relativeTime } from "../../lib/format";
-import { adaptDocumentForDarkMode } from "../../lib/emailDark";
-import { splitQuotedTail, stripQuoteMarkers } from "../../lib/quotes";
+import { addressName, formatSize, longTime, relativeTime } from "../../lib/format";
+import { adaptDocumentForDarkMode, fixInvisibleText } from "../../lib/emailDark";
+import {
+  splitQuotedHtml,
+  splitQuotedTail,
+  stripQuoteMarkers,
+  trimTrailingEmptyHtml,
+} from "../../lib/quotes";
 import { InviteCard } from "../calendar/InviteCard";
+
+/** Maps a file to a short badge label + accent color by extension/mime. */
+function fileKind(filename: string | null, mimeType: string | null): { label: string; color: string } {
+  const ext = (filename?.split(".").pop() ?? "").toLowerCase();
+  const mime = mimeType?.toLowerCase() ?? "";
+  const pick = (label: string, color: string) => ({ label, color });
+  if (ext === "pdf" || mime.includes("pdf")) return pick("PDF", "#e5484d");
+  if (["doc", "docx", "rtf", "odt"].includes(ext) || mime.includes("word")) return pick("DOC", "#2f6fed");
+  if (["xls", "xlsx", "csv", "ods"].includes(ext) || mime.includes("sheet") || mime.includes("excel"))
+    return pick(ext === "csv" ? "CSV" : "XLS", "#1a9e5b");
+  if (["ppt", "pptx", "odp"].includes(ext) || mime.includes("presentation") || mime.includes("powerpoint"))
+    return pick("PPT", "#e8590c");
+  if (["zip", "rar", "7z", "tar", "gz"].includes(ext) || mime.includes("zip") || mime.includes("compressed"))
+    return pick("ZIP", "#a16207");
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic"].includes(ext) || mime.startsWith("image/"))
+    return pick("IMG", "#8b5cf6");
+  if (["mp4", "mov", "avi", "mkv", "webm"].includes(ext) || mime.startsWith("video/")) return pick("VID", "#db2777");
+  if (["mp3", "wav", "flac", "aac", "ogg", "m4a"].includes(ext) || mime.startsWith("audio/")) return pick("AUD", "#0891b2");
+  if (["txt", "md", "log"].includes(ext) || mime.startsWith("text/")) return pick("TXT", "#64748b");
+  return pick(ext ? ext.slice(0, 4).toUpperCase() : "FILE", "#64748b");
+}
+
+/** Clean, vertically-centered three-dot glyph for the "show trimmed content"
+ *  toggle (the raw "⋯" character renders as a cramped, off-center box). */
+function DotsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="19" cy="12" r="1.7" />
+    </svg>
+  );
+}
 
 async function openAttachment(a: AttachmentMeta) {
   const { pushToast } = useUi.getState();
@@ -45,6 +83,7 @@ export function MessageCard({
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const lastUndo = useUi((s) => s.lastUndo);
   // Draft queued in the undo-send window reads "Sending…", not "Draft".
   const isSendPending =
@@ -52,31 +91,38 @@ export function MessageCard({
   const draftBadge = isSendPending ? t("thread:sendingBadge") : t("thread:draftBadge");
 
   useEffect(() => {
-    if (focused) {
+    // Only follow the keyboard cursor into view; pointer selection (hover/click)
+    // must not scroll, or the view would jump as the mouse crosses messages.
+    if (focused && useUi.getState().messageCursorSource === "keyboard") {
       ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }, [focused]);
 
-  const hue = hueOf(message.from.email);
+  const hasFile = message.attachments.some((a) => !a.isInline);
+  const recipients = message.to.map(addressName).join(", ") || "-";
+  // The backend sets `via` only when the transmitting party (Sender:,
+  // Return-Path or DKIM d=) does NOT align with the From: domain — mailing
+  // lists, ESPs, send-on-behalf, and mail whose From: is spoofed.
+  const viaDomain = message.via ? (message.via.split("@")[1] ?? message.via) : null;
 
   if (!expanded) {
     return (
       <div
         ref={ref}
-        className={`co-row flex cursor-default items-center gap-3 rounded-lg border border-hairline bg-bg1 px-4 py-2.5 ${
-          focused ? "!border-accent/50" : ""
+        className={`co-row flex cursor-pointer items-baseline gap-4 rounded-lg px-3 py-2.5 transition-colors hover:bg-bg1 ${
+          focused ? "bg-bg1 ring-1 ring-inset ring-accent/60" : ""
         }`}
         onClick={onToggle}
       >
-        <Avatar hue={hue} text={initials(message.from)} />
-        <span className="w-44 shrink-0 truncate text-[13px] font-medium text-ink-muted">
+        <span className="w-32 shrink-0 truncate text-[13.5px] font-medium text-ink">
           {addressName(message.from)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-faint">
+        <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-faint">
           {message.isDraft ? `${draftBadge} · ` : ""}
           {message.snippet}
         </span>
-        <span className="shrink-0 text-[11.5px] text-ink-faint">{relativeTime(message.date)}</span>
+        {hasFile && <PaperclipIcon className="self-center" />}
+        <span className="shrink-0 text-[11.5px] text-ink-faint tabular-nums">{relativeTime(message.date)}</span>
       </div>
     );
   }
@@ -84,22 +130,53 @@ export function MessageCard({
   return (
     <article
       ref={ref}
-      className={`co-fade-in rounded-lg border bg-bg1 ${
-        focused ? "border-accent/50" : "border-hairline"
-      }`}
-      style={{ boxShadow: "var(--elev-1)" }}
+      className="co-fade-in overflow-hidden bg-bg1"
+      style={{
+        // Square, uniform hairline — no left accent bar. The selected message
+        // (reply target) reads clearly via a solid accent border plus a soft
+        // accent ring, so it's obvious which message a reply will go to.
+        boxShadow: focused
+          ? "var(--elev-card), 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent)"
+          : "var(--elev-card)",
+        border: `1px solid ${focused ? "var(--accent)" : "var(--hairline)"}`,
+      }}
     >
       <header
-        className="co-hairline-b flex cursor-default items-start gap-3 px-4 py-3"
+        className="flex cursor-default items-start justify-between gap-3 px-5 pt-4 pb-3"
         onClick={onToggle}
       >
-        <Avatar hue={hue} text={initials(message.from)} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate text-[13.5px] font-semibold text-ink">
-              {addressName(message.from)}
-            </span>
-            <span className="truncate text-[12px] text-ink-faint">{message.from.email}</span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+            <span className="text-[14px] font-semibold text-ink">{addressName(message.from)}</span>
+            <button
+              type="button"
+              className="flex min-w-0 cursor-pointer items-baseline gap-1 text-[13px] text-ink-faint transition-colors hover:text-ink"
+              title={t("thread:details.toggle")}
+              aria-expanded={detailsOpen}
+              onClick={(e) => {
+                e.stopPropagation();
+                setDetailsOpen((v) => !v);
+              }}
+            >
+              <span className="truncate">
+                {t("thread:msgTo")} {recipients}
+                {message.cc.length > 0 && <> · {t("thread:msgCc")} {message.cc.map(addressName).join(", ")}</>}
+              </span>
+              <svg
+                className={`shrink-0 self-center transition-transform ${detailsOpen ? "rotate-180" : ""}`}
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
             {message.isDraft && (
               <span
                 className={`rounded bg-bg2 px-1.5 text-[10.5px] font-semibold tracking-wide uppercase ${
@@ -110,66 +187,138 @@ export function MessageCard({
               </span>
             )}
           </div>
-          <div className="truncate text-[12px] text-ink-faint">
-            {t("thread:msgTo")} {message.to.map(addressName).join(", ") || "-"}
-            {message.cc.length > 0 && <> · {t("thread:msgCc")} {message.cc.map(addressName).join(", ")}</>}
+          <div className="mt-0.5 truncate text-[11.5px] text-ink-faint" title={message.from.email}>
+            {message.from.email}
+            {viaDomain && <> · {t("thread:details.via")} {viaDomain}</>}
           </div>
         </div>
-        <time className="shrink-0 pt-0.5 text-[11.5px] text-ink-faint">{longTime(message.date)}</time>
+        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {hasFile && <PaperclipIcon />}
+          <time className="text-[11.5px] whitespace-nowrap text-ink-faint">{longTime(message.date)}</time>
+        </div>
       </header>
 
-      <div className="px-4 py-4 select-text">
+      {detailsOpen && <MessageDetails message={message} viaDomain={viaDomain} />}
+
+      <div className="px-5 pb-4 select-text">
         <InviteCard messageId={message.id} />
         <MessageBody message={message} />
       </div>
 
       {message.attachments.filter((a) => !a.isInline).length > 0 && (
-        <footer className="flex flex-wrap gap-2 px-4 pb-4">
+        <footer className="flex flex-wrap gap-2 px-5 pb-4">
           {message.attachments
             .filter((a) => !a.isInline)
-            .map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                className="co-chip cursor-pointer hover:!border-accent/50"
-                title={a.mimeType ?? undefined}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // Plain click = safe in-app preview; Alt/middle-click keeps
-                  // the old "open in the OS app" behavior.
-                  if (e.altKey) void openAttachment(a);
-                  else useUi.getState().set({ attachmentPreview: a });
-                }}
-                onAuxClick={(e) => {
-                  if (e.button === 1) {
+            .map((a) => {
+              const kind = fileKind(a.filename, a.mimeType);
+              const size = formatSize(a.size);
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  className="group flex max-w-[16rem] cursor-pointer items-center gap-2.5 rounded-xl border border-hairline bg-bg1 py-1.5 pl-1.5 pr-2.5 text-left transition-colors hover:border-accent/40 hover:bg-bg2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  title={`${t("thread:attachment.view")}${a.mimeType ? ` · ${a.mimeType}` : ""} · ${t("thread:attachment.openExternalHint")}`}
+                  aria-label={`${t("thread:attachment.view")}: ${a.filename ?? t("thread:attachment.fallbackName")}`}
+                  onClick={(e) => {
                     e.stopPropagation();
-                    void openAttachment(a);
-                  }
-                }}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-                </svg>
-                {a.filename ?? t("thread:attachment.fallbackName")}
-                <span className="text-ink-faint">{formatSize(a.size)}</span>
-              </button>
-            ))}
+                    // Plain click = safe in-app preview; Alt/middle-click keeps
+                    // the old "open in the OS app" behavior.
+                    if (e.altKey) void openAttachment(a);
+                    else useUi.getState().set({ attachmentPreview: a });
+                  }}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) {
+                      e.stopPropagation();
+                      void openAttachment(a);
+                    }
+                  }}
+                >
+                  {/* Colored file-type badge. */}
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[9px] font-bold uppercase tracking-tight text-white"
+                    style={{ backgroundColor: kind.color }}
+                  >
+                    {kind.label}
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-[13px] font-medium leading-tight text-ink">
+                      {a.filename ?? t("thread:attachment.fallbackName")}
+                    </span>
+                    <span className="mt-0.5 truncate text-[11px] leading-tight text-ink-faint">
+                      {[kind.label, size].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
+                  {/* Explicit "view" affordance so the card reads as openable. */}
+                  <svg
+                    className="ml-auto shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent"
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              );
+            })}
         </footer>
       )}
     </article>
   );
 }
 
-function Avatar({ hue, text }: { hue: number; text: string }) {
+/** `Name <email>` when a display name exists, bare email otherwise. */
+function addressLine(a: { name: string | null; email: string }): string {
+  return a.name && a.name.trim() ? `${a.name.trim()} <${a.email}>` : a.email;
+}
+
+/** Expanded header details (Gmail-style "show details"): full from/to/cc
+ *  addresses, via, date and subject. Toggled from the recipient summary line. */
+function MessageDetails({ message, viaDomain }: { message: MessageDetail; viaDomain: string | null }) {
+  const { t } = useTranslation();
+  const rows: Array<[string, string]> = [
+    [t("thread:details.from"), addressLine(message.from)],
+    [t("thread:details.to"), message.to.map(addressLine).join(", ") || "-"],
+  ];
+  if (message.cc.length > 0) rows.push([t("thread:details.cc"), message.cc.map(addressLine).join(", ")]);
+  if (viaDomain) {
+    // Full via identity when we have one (an email); just the domain otherwise.
+    rows.push([
+      t("thread:details.via"),
+      message.via && message.via !== viaDomain ? `${viaDomain} (${message.via})` : viaDomain,
+    ]);
+  }
+  rows.push([t("thread:details.date"), longTime(message.date)]);
+  rows.push([t("thread:details.subject"), message.subject || t("thread:noSubject")]);
+  return (
+    <div className="co-fade-in mx-5 mb-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded-lg border border-hairline bg-bg2/50 px-3.5 py-2.5 text-[12px] select-text">
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <span className="text-right text-ink-faint">{label}</span>
+          <span className="min-w-0 break-words text-ink">{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Small paperclip marking a message that carries a real (non-inline) file. */
+function PaperclipIcon({ className = "" }: { className?: string }) {
+  const { t } = useTranslation();
   return (
     <span
-      className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10.5px] font-semibold"
-      style={{
-        background: `color-mix(in srgb, hsl(${hue} 45% 55%) 22%, var(--bg2))`,
-        color: `hsl(${hue} 32% 42%)`,
-      }}
+      className={`shrink-0 text-ink-faint ${className}`}
+      title={t("common:threadRow.hasAttachments")}
+      aria-label={t("common:threadRow.attachment")}
     >
-      {text}
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+      </svg>
     </span>
   );
 }
@@ -187,6 +336,7 @@ function MessageBody({ message }: { message: MessageDetail }) {
   if (message.htmlBody) {
     return <HtmlBody html={message.htmlBody} />;
   }
+  // (plaintext path below)
   return (
     <div>
       {visible && (
@@ -198,12 +348,12 @@ function MessageBody({ message }: { message: MessageDetail }) {
         <div className={visible ? "mt-3" : ""}>
           {!showQuoted ? (
             <button
-              className="rounded-md border border-hairline bg-bg2 px-2.5 pb-1 text-[14px] leading-[10px] tracking-widest text-ink-faint hover:text-ink"
+              className="inline-flex h-5 items-center rounded-md border border-hairline bg-bg2 px-2 text-ink-faint transition-colors hover:border-accent/40 hover:text-ink"
               title={t("compose:showQuoted")}
               aria-label={t("compose:showQuoted")}
               onClick={() => setShowQuoted(true)}
             >
-              ⋯
+              <DotsIcon />
             </button>
           ) : (
             <div className="co-fade-in border-l-2 border-hairline-strong pl-3">
@@ -242,15 +392,34 @@ function BodySkeleton({ snippet }: { snippet?: string | null }) {
   );
 }
 
-/** Sanitized HTML rendered inside a sandboxed iframe with theme-matched CSS. */
-function HtmlBody({ html }: { html: string }) {
+/** Sanitized HTML rendered inside a sandboxed iframe with theme-matched CSS.
+ *  The trailing quoted/forwarded reply is collapsed behind a "⋯" toggle so a
+ *  message shows just its new content, matching the plaintext path. */
+function HtmlBody({ html: fullHtml }: { html: string }) {
   const { t } = useTranslation();
+  const [showQuoted, setShowQuoted] = useState(false);
+  const [visibleHtml, quotedHtml] = useMemo(() => splitQuotedHtml(fullHtml), [fullHtml]);
+  const html = showQuoted || !quotedHtml ? fullHtml : visibleHtml;
   // null = not measured yet; the skeleton keeps the space until then.
   const [height, setHeight] = useState<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
+  // Current zoom applied to fit wide content; kept in a ref so measure() can
+  // recover the natural width and converge without oscillating.
+  const zoomRef = useRef(1);
   const { data: settings } = useSettings();
-  const loadRemoteImages = settings?.loadRemoteImages === true;
+  const settingLoadImages = settings?.loadRemoteImages === true;
+  // Per-message override for the "Load images" bar (independent of the setting).
+  const [loadImagesOverride, setLoadImagesOverride] = useState(false);
+  const loadRemoteImages = settingLoadImages || loadImagesOverride;
+  // Emails whose layout leans on remote images collapse when those are blocked,
+  // so offer to load them (only when the body actually references http(s) media).
+  const hasRemoteImages = useMemo(
+    () =>
+      /<img\b[^>]*\bsrc\s*=\s*["']?\s*https?:/i.test(fullHtml) ||
+      /background(?:-image)?\s*[:=][^;"']*url\(\s*["']?\s*https?:/i.test(fullHtml),
+    [fullHtml],
+  );
 
   const theme = useUi((s) => s.theme);
   const srcDoc = useMemo(() => {
@@ -261,7 +430,9 @@ function HtmlBody({ html }: { html: string }) {
     const scheme = root.getPropertyValue("--iframe-scheme").trim() || "light";
     // On dark themes the email is blended in after load (adaptDocumentForDarkMode
     // in onLoad), once getComputedStyle can resolve its <style>/class colors.
-    const body = html;
+    // Trailing blank spacers are dropped so a short reply isn't rendered into a
+    // tall iframe of empty space.
+    const body = trimTrailingEmptyHtml(html);
     // CSP inside the sandboxed iframe: remote http(s) images only when the
     // "load remote images" setting is on; inline/data images always allowed.
     const imgSrc = loadRemoteImages ? "data: cid: http: https:" : "data: cid:";
@@ -270,35 +441,111 @@ function HtmlBody({ html }: { html: string }) {
 <base target="_blank">
 <style>
   :root { color-scheme: ${scheme}; }
-  html, body { margin: 0; padding: 0; background: transparent; }
+  /* height:auto defeats emails whose layout is sized to height:100% — against
+     the iframe's short default height those collapse and scrollHeight can't
+     measure the real content, leaving the body clipped with an inner scrollbar. */
+  html, body { margin: 0; padding: 0; background: transparent; height: auto !important; min-height: 0 !important; }
   body {
     font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: ${text}; overflow-wrap: break-word;
+    /* Contain child margins in a block-formatting context. Otherwise a leading/
+       trailing <p> margin collapses through the margin-less body and escapes
+       body.scrollHeight, so the frame is measured a margin short and clips the
+       content behind an inner scrollbar. flow-root folds those margins back in. */
+    display: flow-root;
   }
-  a { color: ${accent}; }
+  /* Theme-consistent defaults for otherwise-unstyled emails. All accents are
+     derived from the app's own text/accent via color-mix so they track both
+     light and dark; every rule is low-specificity so an email's own CSS wins. */
+  a { color: ${accent}; text-underline-offset: 2px;
+    text-decoration-color: color-mix(in srgb, ${accent} 40%, transparent); }
+  a:hover { text-decoration-line: underline; }
+  ::selection { background: color-mix(in srgb, ${accent} 24%, transparent); }
+  h1, h2, h3, h4, h5, h6 { color: ${text}; line-height: 1.3; }
   img { max-width: 100%; height: auto; }
-  pre { white-space: pre-wrap; }
-  blockquote { border-left: 2px solid ${muted}; margin-left: 0; padding-left: 12px; color: ${muted}; }
+  hr { border: 0; height: 1px; background: color-mix(in srgb, ${text} 14%, transparent); margin: 1.25em 0; }
+  code, kbd, samp { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em; background: color-mix(in srgb, ${text} 6%, transparent);
+    padding: 0.12em 0.35em; border-radius: 5px; }
+  pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: color-mix(in srgb, ${text} 4%, transparent); padding: 12px 14px;
+    border-radius: 8px; overflow-x: auto; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  blockquote { border-left: 3px solid color-mix(in srgb, ${accent} 45%, transparent);
+    margin: 0.8em 0; padding: 2px 0 2px 14px; color: ${muted}; }
   table { max-width: 100%; }
 </style></head><body>${body}</body></html>`;
   }, [html, loadRemoteImages, theme]);
 
+  // Wide emails (fixed-width layout tables, long unbreakable tokens) overflow
+  // the card and would otherwise show a horizontal scrollbar. Zoom the whole
+  // document down so it fits the available width instead — unlike a CSS
+  // transform, `zoom` reflows the layout, so the content actually shrinks and
+  // no scrollbar appears.
+  //
+  // Computed ONCE per load from the *unzoomed* natural width, deliberately NOT
+  // from the ResizeObserver: applying zoom rewraps text (e.g. a long instanceId
+  // token), which changes the natural width, which changes the zoom — a loop
+  // that never converges and spins the CPU until the tab hangs. Measuring the
+  // true width once (zoom cleared first) also avoids the stale `scrollWidth/cur`
+  // estimate that could over-shrink an email that already fit.
+  const fitWidth = () => {
+    const iframe = iframeRef.current;
+    const body = iframe?.contentDocument?.body;
+    if (!iframe || !body) return;
+    body.style.removeProperty("zoom");
+    const avail = iframe.clientWidth;
+    const natural = body.scrollWidth;
+    // Fit wide content, but never below 55%: past that a single wide element
+    // (e.g. an injected "external sender" banner) would shrink the whole email
+    // into an unreadable strip. Beyond the floor we let it scroll instead.
+    // Require a real overflow margin so tiny differences don't zoom.
+    const zoom = avail > 200 && natural > avail + 4 ? Math.max(0.55, avail / natural) : 1;
+    if (zoom < 1) body.style.setProperty("zoom", String(zoom));
+    zoomRef.current = zoom;
+  };
+
+  // Height only — safe to run repeatedly from the ResizeObserver because it
+  // never touches zoom or width, so it can't feed back into a reflow loop.
+  // Measure from `body` only. documentElement.scrollHeight can never report
+  // less than the iframe's own viewport height, so folding it into the max
+  // ratchets the frame up: once it's tall (a quote was expanded, or the
+  // skeleton's height on first load) it keeps re-measuring tall even after the
+  // real content shrinks, leaving a dead gap below short emails. The forced
+  // `html,body { height:auto !important }` above makes body.scrollHeight the
+  // true content height in every case (verified against expanded quotes), so
+  // body alone both grows and shrinks correctly (reading it forces reflow, so
+  // it already reflects any applied zoom).
   const measure = () => {
-    const doc = iframeRef.current?.contentDocument;
-    if (doc?.body) setHeight(Math.min(4000, doc.body.scrollHeight + 8));
+    const body = iframeRef.current?.contentDocument?.body;
+    if (!body) return;
+    const contentHeight = Math.max(body.scrollHeight, body.offsetHeight);
+    setHeight(Math.min(4000, contentHeight + 8));
   };
 
   const onLoad = () => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc?.body) return;
-    // Blend the email into the dark theme now that its CSS has resolved.
-    const scheme = getComputedStyle(document.documentElement)
-      .getPropertyValue("--iframe-scheme")
-      .trim();
-    if (scheme === "dark") adaptDocumentForDarkMode(doc.body);
+    // Fresh document (srcDoc/theme change) starts unzoomed.
+    zoomRef.current = 1;
+    // Blend the email into the dark theme now that its CSS has resolved. On the
+    // light theme instead, rescue near-white text whose dark background was lost
+    // when the sanitizer stripped its <style>/class rule (it would render
+    // invisibly on our light card).
+    const rootStyle = getComputedStyle(document.documentElement);
+    const scheme = rootStyle.getPropertyValue("--iframe-scheme").trim();
+    if (scheme === "dark") {
+      adaptDocumentForDarkMode(doc.body);
+    } else {
+      fixInvisibleText(doc.body, rootStyle.getPropertyValue("--text").trim() || "#222");
+    }
+    // Fit width once (may apply a zoom), then measure the resulting height.
+    fitWidth();
     measure();
     // Keep the height in sync as images/fonts finish loading inside the
     // sandboxed doc (no scripts allowed there, so observe from out here).
+    // The observer runs `measure` (height only) — never `fitWidth` — so a late
+    // reflow can't restart the zoom feedback loop.
     observerRef.current?.disconnect();
     observerRef.current = new ResizeObserver(measure);
     observerRef.current.observe(doc.body);
@@ -307,9 +554,81 @@ function HtmlBody({ html }: { html: string }) {
 
   useEffect(() => () => observerRef.current?.disconnect(), []);
 
+  // macOS WKWebView discards the sandboxed iframe's rasterized backing store
+  // while the app is hidden (Cmd+H) or fully occluded; on reactivation the
+  // frame stays blank until something invalidates it (selecting text repaints
+  // only the region it touches — hence the blank band above a selection). Force
+  // the whole subframe to re-rasterize when the window becomes visible/focused:
+  // compositing its <body> as a translucent layer for one frame (opacity != 1)
+  // repaints the entire document, then we restore it. The change must span
+  // frames — a same-frame round-trip (e.g. display none→block) is coalesced by
+  // WebKit to the same computed value and never repaints the stale surface.
+  useEffect(() => {
+    let raf1 = 0;
+    let raf2 = 0;
+    const repaint = () => {
+      if (document.visibilityState === "hidden") return;
+      const body = iframeRef.current?.contentDocument?.body;
+      if (!body) return;
+      body.style.opacity = "0.9999";
+      // Two frames guarantee the translucent state is actually painted before
+      // we revert, so the full re-raster can't be optimized away.
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          const b = iframeRef.current?.contentDocument?.body;
+          if (b) b.style.opacity = "";
+          measure();
+        });
+      });
+    };
+    document.addEventListener("visibilitychange", repaint);
+    window.addEventListener("focus", repaint);
+    // The DOM focus/visibility events don't always fire in a Tauri webview on
+    // macOS app hide/unhide, so also listen to the native window focus event.
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      import("@tauri-apps/api/window")
+        .then(({ getCurrentWindow }) =>
+          getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+            if (focused) repaint();
+          }),
+        )
+        .then((un) => {
+          if (disposed) un();
+          else unlisten = un;
+        })
+        .catch(() => {
+          /* native focus tracking is a nicety, never fatal */
+        });
+    }
+    return () => {
+      disposed = true;
+      unlisten?.();
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      document.removeEventListener("visibilitychange", repaint);
+      window.removeEventListener("focus", repaint);
+    };
+  }, []);
+
   const measured = height !== null;
   return (
     <div className="relative">
+      {hasRemoteImages && !loadRemoteImages && (
+        <div className="mb-2 flex items-center gap-3 rounded-md border border-hairline bg-bg2 px-3 py-1.5 text-[12px] text-ink-muted">
+          <span className="min-w-0 flex-1 truncate">{t("thread:remoteImages.hidden")}</span>
+          <button
+            type="button"
+            className="shrink-0 rounded border border-hairline px-2 py-0.5 font-medium text-accent hover:!border-accent/50"
+            onClick={() => setLoadImagesOverride(true)}
+          >
+            {t("thread:remoteImages.load")}
+          </button>
+        </div>
+      )}
       {!measured && <BodySkeleton />}
       <iframe
         ref={iframeRef}
@@ -320,6 +639,24 @@ function HtmlBody({ html }: { html: string }) {
         style={{ height: height ?? "100%", transition: "height 140ms ease-out" }}
         title={t("thread:messageBodyTitle")}
       />
+      {quotedHtml &&
+        (!showQuoted ? (
+          <button
+            className="mt-1 inline-flex h-5 items-center rounded-md border border-hairline bg-bg2 px-2 text-ink-faint transition-colors hover:border-accent/40 hover:text-ink"
+            title={t("compose:showQuoted")}
+            aria-label={t("compose:showQuoted")}
+            onClick={() => setShowQuoted(true)}
+          >
+            <DotsIcon />
+          </button>
+        ) : (
+          <button
+            className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+            onClick={() => setShowQuoted(false)}
+          >
+            {t("compose:hideQuoted")}
+          </button>
+        ))}
     </div>
   );
 }

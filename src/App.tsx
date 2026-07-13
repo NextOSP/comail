@@ -27,9 +27,10 @@ import { Toasts } from "./components/common/Toasts";
 import { TopBar } from "./components/common/TopBar";
 import { setLanguage } from "./i18n";
 import { ALL_COMMANDS } from "./keyboard/commands";
-import { installKeyboard, registerCommands } from "./keyboard/registry";
+import { installKeyboard, installMouseNav, registerCommands } from "./keyboard/registry";
 import { checkForUpdate, installUpdate } from "./ipc/updater";
 import { hasSeenIntro, markIntroSeen } from "./lib/intro";
+import { initSounds } from "./lib/sound";
 import { useBackendEvents } from "./queries/events";
 import { flattenThreads, useAccounts, useSearch, useSettings, useThreads } from "./queries/hooks";
 import { useUi, type Screen } from "./stores/ui";
@@ -56,12 +57,15 @@ export default function App() {
   useStartupUpdateCheck();
 
   useEffect(() => installKeyboard(), []);
+  useEffect(() => installMouseNav(), []);
+  useEffect(() => initSounds(), []);
 
   const { data: accounts, isLoading: accountsLoading } = useAccounts();
   const openThreadId = useUi((s) => s.openThreadId);
   const searchOpen = useUi((s) => s.searchOpen);
   const composer = useUi((s) => s.composer);
   const calendarScreen = useUi((s) => s.calendarScreen);
+  const inboxEmpty = useInboxEmpty();
 
   // First-run "into space" intro. Space is only the intro: it plays, then an exit
   // warp fades the scene out to reveal the onboarding on its gradient backdrop.
@@ -87,7 +91,7 @@ export default function App() {
   return (
     <div className="relative isolate flex h-full flex-col bg-bg0 text-ink">
       <ThreadOrderSync />
-      {(screen === "inbox" || screen === "onboarding") && <AppBackdrop />}
+      {(screen === "onboarding" || (screen === "inbox" && inboxEmpty)) && <AppBackdrop />}
       {screen !== "onboarding" && <TopBar />}
 
       {accountsLoading && !PREVIEW_INTRO ? (
@@ -176,11 +180,34 @@ function useStartupUpdateCheck() {
 }
 
 /**
+ * Whether the currently visible inbox list is empty (inbox-zero). Mirrors the
+ * `empty` computation in InboxScreen; the query is shared via react-query so
+ * this costs no extra fetch.
+ */
+function useInboxEmpty(): boolean {
+  const view = useUi((s) => s.view);
+  const splitId = useUi((s) => s.splitId);
+  const labelFilter = useUi((s) => s.labelFilter);
+  const folderFilter = useUi((s) => s.folderFilter);
+  const accountFilter = useUi((s) => s.accountFilter);
+  const query = useThreads(
+    view,
+    view === "inbox" ? splitId : null,
+    accountFilter,
+    labelFilter,
+    folderFilter,
+  );
+  return !query.isLoading && flattenThreads(query.data).length === 0;
+}
+
+/**
  * Ambient animated backdrop behind the inbox. Three slow-drifting colour blobs
  * (theme accent/info/star) whose softness is baked into their radial-gradient
  * alpha — motion is pure GPU transform, so unlike a blurred layer it doesn't
  * pin WebKitGTK's compositor. Sits at z-0 under the z-10 content and shows
- * through the translucent glass chrome and inbox-zero screen.
+ * through the translucent glass chrome and inbox-zero screen. Only mounted on
+ * inbox-zero (and onboarding) — with mail still in the list the chrome sits on
+ * plain opaque bg0.
  */
 function AppBackdrop() {
   return (
@@ -213,6 +240,7 @@ function ThreadOrderSync() {
   const view = useUi((s) => s.view);
   const splitId = useUi((s) => s.splitId);
   const labelFilter = useUi((s) => s.labelFilter);
+  const folderFilter = useUi((s) => s.folderFilter);
   const accountFilter = useUi((s) => s.accountFilter);
   const searchOpen = useUi((s) => s.searchOpen);
   const searchQuery = useUi((s) => s.searchQuery);
@@ -223,6 +251,7 @@ function ThreadOrderSync() {
     view === "inbox" ? splitId : null,
     accountFilter,
     labelFilter,
+    folderFilter,
   );
   const searchResults = useSearch(searchOpen ? searchQuery : "");
 

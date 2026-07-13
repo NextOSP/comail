@@ -181,6 +181,8 @@ pub struct ListArgs {
     pub split: Option<SplitRuleQuery>,
     pub account_id: Option<i64>,
     pub label_id: Option<i64>,
+    /// Restrict to threads with a message in this folder (user-folder view).
+    pub folder_id: Option<i64>,
     pub cursor: Option<i64>,
     pub limit: i64,
 }
@@ -239,6 +241,13 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         where_clauses.push(format!(
             "EXISTS (SELECT 1 FROM message_labels ml JOIN messages m ON m.id = ml.message_id
                      WHERE m.thread_id = t.id AND ml.label_id = ?{})",
+            bind.len()
+        ));
+    }
+    if let Some(folder_id) = args.folder_id {
+        bind.push(Box::new(folder_id));
+        where_clauses.push(format!(
+            "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.folder_id = ?{})",
             bind.len()
         ));
     }

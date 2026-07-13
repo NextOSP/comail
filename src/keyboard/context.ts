@@ -44,6 +44,8 @@ export interface CommandCtx {
   openSelected: () => void;
   nextMessage: (delta: number) => void;
   cycleSplit: (delta: number) => void;
+  /** Jump straight to the inbox split tab at `index` (0 = Important, …). */
+  gotoSplitTab: (index: number) => void;
   compose: (mode: ComposeMode) => void;
   openSnooze: () => void;
   openMove: () => void;
@@ -97,6 +99,33 @@ export function advanceAfter(removed: number[]) {
   } else {
     ui.set({ selectedThreadId: next, selectedIndex: nextIdx });
   }
+}
+
+/** The inbox split tabs in display order: Important, Other, custom splits, then
+ *  auto-label tabs (when enabled). Shared by tab cycling, direct jumps (Cmd+N),
+ *  and the command palette. */
+export function inboxTabs(): { splitId: number | null; labelId: number | null; name: string }[] {
+  const splits =
+    queryClient.getQueryData<Array<{ id: number; name: string; position: number }>>(["splits"]) ??
+    [];
+  const labels =
+    queryClient.getQueryData<Array<{ id: number; name: string; position: number; isAuto?: boolean }>>(
+      ["labels"],
+    ) ?? [];
+  const autoOn = queryClient.getQueryData<Settings>(["settings"])?.autoLabelsEnabled !== false;
+  return [
+    { splitId: SPLIT_IMPORTANT, labelId: null, name: i18n.t("inbox:split.important") },
+    { splitId: SPLIT_OTHER, labelId: null, name: i18n.t("inbox:split.other") },
+    ...[...splits]
+      .sort((a, b) => a.position - b.position)
+      .map((s) => ({ splitId: s.id, labelId: null, name: s.name })),
+    ...(autoOn
+      ? [...labels]
+          .filter((l) => l.isAuto)
+          .sort((a, b) => a.position - b.position)
+          .map((l) => ({ splitId: null, labelId: l.id, name: l.name }))
+      : []),
+  ];
 }
 
 export function buildCommandContext(): CommandCtx {
@@ -229,32 +258,13 @@ export function buildCommandContext(): CommandCtx {
     const ids = detail.messages.map((m) => m.id);
     const cur = state.focusedMessageId != null ? ids.indexOf(state.focusedMessageId) : ids.length - 1;
     const next = Math.min(ids.length - 1, Math.max(0, cur + delta));
-    state.set({ focusedMessageId: ids[next] });
+    state.set({ focusedMessageId: ids[next], messageCursorSource: "keyboard" });
   };
 
   const cycleSplit = (delta: number) => {
     const state = useUi.getState();
     if (state.view !== "inbox") return;
-    const splits = queryClient.getQueryData<Array<{ id: number; position: number }>>(["splits"]) ?? [];
-    const labels =
-      queryClient.getQueryData<Array<{ id: number; position: number; isAuto?: boolean }>>([
-        "labels",
-      ]) ?? [];
-    const autoOn = queryClient.getQueryData<Settings>(["settings"])?.autoLabelsEnabled !== false;
-    // Combined tab list: Important, Other, custom splits, auto-label tabs.
-    const tabs: { splitId: number | null; labelId: number | null }[] = [
-      { splitId: SPLIT_IMPORTANT, labelId: null },
-      { splitId: SPLIT_OTHER, labelId: null },
-      ...[...splits]
-        .sort((a, b) => a.position - b.position)
-        .map((s) => ({ splitId: s.id, labelId: null })),
-      ...(autoOn
-        ? labels
-            .filter((l) => l.isAuto)
-            .sort((a, b) => a.position - b.position)
-            .map((l) => ({ splitId: null, labelId: l.id }))
-        : []),
-    ];
+    const tabs = inboxTabs();
     const cur = tabs.findIndex((tab) =>
       state.labelFilter != null
         ? tab.labelId === state.labelFilter
@@ -264,6 +274,24 @@ export function buildCommandContext(): CommandCtx {
     state.set({
       splitId: next.splitId,
       labelFilter: next.labelId,
+      folderFilter: null,
+      selectedIndex: 0,
+      selectedThreadId: null,
+      selection: [],
+    });
+  };
+
+  const gotoSplitTab = (index: number) => {
+    const tab = inboxTabs()[index];
+    if (!tab) return;
+    useUi.getState().set({
+      view: "inbox",
+      splitId: tab.splitId,
+      labelFilter: tab.labelId,
+      folderFilter: null,
+      searchOpen: false,
+      openThreadId: null,
+      focusedMessageId: null,
       selectedIndex: 0,
       selectedThreadId: null,
       selection: [],
@@ -287,8 +315,16 @@ export function buildCommandContext(): CommandCtx {
         staleTime: 15_000,
       });
       const msgs = detail?.messages.filter((m) => !m.isDraft) ?? [];
+      // Reply to the message the user has selected/focused (what the highlight
+      // in the thread points at). Only when nothing is explicitly selected do
+      // we fall back to the latest incoming message (or the last message if the
+      // whole thread is ours).
+      const focused =
+        state.focusedMessageId != null
+          ? msgs.find((m) => m.id === state.focusedMessageId)
+          : undefined;
       const replyTo: MessageDetail | undefined =
-        [...msgs].reverse().find((m) => !m.isOutgoing) ?? msgs[msgs.length - 1];
+        focused ?? [...msgs].reverse().find((m) => !m.isOutgoing) ?? msgs[msgs.length - 1];
       if (!replyTo) return;
       const ui = useUi.getState();
       ui.openComposer({ mode, replyTo, accountId: replyTo.accountId });
@@ -299,7 +335,7 @@ export function buildCommandContext(): CommandCtx {
 
   const escape = () => {
     const state = useUi.getState();
-    // esc-stack: palette > event-detail > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection
+    // esc-stack: palette > event-detail > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection > folder
     if (state.paletteOpen) return state.set({ paletteOpen: false });
     if (state.eventDetail) return state.set({ eventDetail: null });
     if (state.snoozeTarget) return state.set({ snoozeTarget: null });
@@ -320,6 +356,9 @@ export function buildCommandContext(): CommandCtx {
     if (state.openThreadId != null) return state.openThread(null);
     if (state.searchOpen) return state.set({ searchOpen: false, searchQuery: "" });
     if (state.selection.length > 0) return state.clearSelection();
+    // A user folder is a detour off the inbox; once nothing else is open, Esc
+    // returns home to the default inbox rather than sitting on the folder.
+    if (state.folderFilter != null) return state.setView("inbox");
   };
 
   const setTheme = (theme: "snow" | "carbon" | "system") => {
@@ -350,8 +389,10 @@ export function buildCommandContext(): CommandCtx {
         voiceLearnedAt: 0,
         meetingNotifyLeadMinutes: 10,
         notificationsEnabled: true,
+        soundEnabled: true,
         autoAdvance: true,
         autoLabelsEnabled: true,
+        groupByDate: true,
         signatures: {},
         signatureList: [],
         signatureDefaults: {},
@@ -382,6 +423,7 @@ export function buildCommandContext(): CommandCtx {
     openSelected,
     nextMessage,
     cycleSplit,
+    gotoSplitTab,
     compose,
     openSnooze: () => {
       if (targets.length > 0) useUi.getState().set({ snoozeTarget: targets });

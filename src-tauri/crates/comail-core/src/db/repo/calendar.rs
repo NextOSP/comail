@@ -141,6 +141,9 @@ pub fn upsert(conn: &Connection, account_id: i64, message_id: i64, ev: &IcsEvent
 /// href) with a UID fallback (adopts rows that arrived first as mail
 /// invites). Rows with local unsynced edits (dirty/deleted) are never
 /// clobbered - the push path resolves them via If-Match.
+///
+/// Returns `true` when a brand-new row was inserted (not an update of an
+/// existing event), so the pull can surface genuinely-new events to the user.
 #[allow(clippy::too_many_arguments)]
 pub fn upsert_remote(
     conn: &Connection,
@@ -150,7 +153,7 @@ pub fn upsert_remote(
     etag: &str,
     ical_raw: &str,
     ev: &IcsEvent,
-) -> Result<()> {
+) -> Result<bool> {
     let existing: Option<(i64, i64, i64)> = conn
         .query_row(
             "SELECT id, dirty, deleted FROM calendar_events
@@ -163,7 +166,7 @@ pub fn upsert_remote(
         .optional()?;
 
     match existing {
-        Some((_, dirty, deleted)) if dirty != 0 || deleted != 0 => Ok(()),
+        Some((_, dirty, deleted)) if dirty != 0 || deleted != 0 => Ok(false),
         Some((id, _, _)) => {
             conn.execute(
                 "UPDATE calendar_events SET
@@ -194,7 +197,7 @@ pub fn upsert_remote(
                     ev.status,
                 ],
             )?;
-            Ok(())
+            Ok(false)
         }
         None => {
             conn.execute(
@@ -225,7 +228,7 @@ pub fn upsert_remote(
                     ev.status,
                 ],
             )?;
-            Ok(())
+            Ok(true)
         }
     }
 }

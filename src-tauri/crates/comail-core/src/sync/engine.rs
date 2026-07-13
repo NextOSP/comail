@@ -1,10 +1,15 @@
 //! Per-account sync actor. One IMAP connection per account runs a cycle loop:
 //! drain commands -> execute due pending actions -> sync folders (new mail,
-//! flags, expunges) -> fetch missing bodies -> extend historical backfill.
+//! flags, expunges) -> extend historical backfill. Bulk message bodies are NOT
+//! downloaded on this connection: a separate backfill pool (`run_backfill_pool`)
+//! drains them with up to BODY_POOL_CONNS concurrent IMAP connections, so body
+//! downloads run in parallel with header sync and never block the cycle.
 //!
-//! v1 uses short poll cycles (60s) instead of IMAP IDLE: correctness never
-//! depends on push, and commands (body fetches, action nudges) interrupt the
-//! wait immediately because the loop selects on the command channel.
+//! On servers that support it the actor waits in IMAP IDLE between cycles, so
+//! new inbox mail wakes it within seconds; the full 60s cycle still runs as a
+//! correctness backstop. Servers without IDLE fall back to a short poll. Either
+//! way commands (body fetches, action nudges) interrupt the wait immediately
+//! because it selects on the command channel.
 
 use crate::accounts::credentials::{self, Slot};
 use crate::config::Paths;
@@ -21,9 +26,19 @@ use tokio::sync::mpsc;
 
 const BACKFILL_DAYS: i64 = 90;
 const HEADER_CHUNK: usize = 200;
-const BODIES_PER_CYCLE: i64 = 30;
+/// Messages whose full bodies are pulled in a single FETCH command.
+const BODY_FETCH_CHUNK: usize = 25;
+/// Concurrent IMAP connections dedicated to bulk body backfill. Together with
+/// the sync actor and the on-demand reader that's BODY_POOL_CONNS + 2
+/// connections per account, well under common server caps (Gmail allows 15).
+const BODY_POOL_CONNS: usize = 4;
 const HISTORY_CHUNK: u32 = 500;
 const CYCLE_SECS: u64 = 60;
+/// Poll cadence when the server does not support IDLE (near-real-time push).
+const IDLE_FALLBACK_SECS: u64 = 20;
+/// Re-issue IDLE at least this often (RFC 2177 recommends < 29 min) to keep the
+/// connection alive through NAT/firewall idle timeouts.
+const IDLE_MAX_SECS: u64 = 300;
 const FLAG_WINDOW: i64 = 1000; // most recent N UIDs get flag reconciliation
 
 #[derive(Debug)]
@@ -38,11 +53,23 @@ pub enum SyncCmd {
 pub struct AccountHandle {
     pub account_id: i64,
     tx: mpsc::UnboundedSender<SyncCmd>,
+    /// Separate channel + connection for on-demand body reads so opening a
+    /// message never waits behind a long bulk-sync cycle on the main actor.
+    body_tx: mpsc::UnboundedSender<i64>,
 }
 
 impl AccountHandle {
     pub fn send(&self, cmd: SyncCmd) {
-        let _ = self.tx.send(cmd);
+        // Route priority body fetches to the dedicated reader connection;
+        // everything else drives the bulk sync actor.
+        match cmd {
+            SyncCmd::FetchBody { message_id } => {
+                let _ = self.body_tx.send(message_id);
+            }
+            other => {
+                let _ = self.tx.send(other);
+            }
+        }
     }
 }
 
@@ -56,12 +83,156 @@ pub struct SyncCtx {
 
 pub fn spawn_account(ctx: SyncCtx, config: AccountConfig) -> AccountHandle {
     let (tx, rx) = mpsc::unbounded_channel();
+    let (body_tx, body_rx) = mpsc::unbounded_channel();
+    let (pool_tx, pool_rx) = mpsc::unbounded_channel();
     let handle = AccountHandle {
         account_id: config.id,
         tx,
+        body_tx,
     };
-    tokio::spawn(run_actor(ctx, config, rx));
+    tokio::spawn(run_actor(ctx.clone(), config.clone(), rx, pool_tx));
+    tokio::spawn(run_body_fetcher(ctx.clone(), config.clone(), body_rx));
+    tokio::spawn(run_backfill_pool(ctx, config, pool_rx));
     handle
+}
+
+/// Dedicated reader connection. Owns its own IMAP session and services only
+/// on-demand single-message body fetches (user opened a thread). Kept separate
+/// from `run_actor` so reading an email is instant even while the main actor is
+/// busy with a long initial backfill. Connects lazily and reconnects on error.
+async fn run_body_fetcher(
+    ctx: SyncCtx,
+    config: AccountConfig,
+    mut rx: mpsc::UnboundedReceiver<i64>,
+) {
+    let account_id = config.id;
+    let mut session: Option<Session> = None;
+    while let Some(first) = rx.recv().await {
+        // Coalesce every request already queued (plus a brief window for the
+        // rest of a thread's messages to land) into ONE batch, so opening a
+        // thread pulls all its bodies in a single FETCH round-trip instead of
+        // one per message. Opening a single message just fetches that one.
+        let mut ids = vec![first];
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        while let Ok(id) = rx.try_recv() {
+            ids.push(id);
+            if ids.len() >= BODY_FETCH_CHUNK {
+                break;
+            }
+        }
+        ids.sort_unstable();
+        ids.dedup();
+
+        // Try the reused session first; if it's gone stale (servers close idle
+        // connections), the fetch fails, so drop it and retry once on a fresh
+        // connection. Without the retry the skeleton would hang forever: the
+        // requests were already consumed from the channel, and nothing
+        // re-nudges them until the user reopens the thread.
+        let mut fetched = false;
+        for attempt in 0..2 {
+            if session.is_none() {
+                match connect(&ctx, &config).await {
+                    Ok(s) => session = Some(s),
+                    Err(e) => {
+                        tracing::warn!(account_id, error = %e, "body fetcher: connect failed");
+                        break;
+                    }
+                }
+            }
+            let Some(s) = session.as_mut() else { break };
+            match fetch_bodies_batch(&ctx, &config, s, &ids).await {
+                Ok(()) => {
+                    fetched = true;
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        account_id, attempt, error = %e,
+                        "body fetcher: batch fetch failed; dropping session",
+                    );
+                    // The session may be broken; drop it so the retry (and any
+                    // later request) reconnects.
+                    if let Some(s) = session.take() {
+                        imap::logout(s).await;
+                    }
+                }
+            }
+        }
+        if !fetched {
+            // Fetch didn't land. Roll body_state back to "none" for all so both
+            // paths recover: a reopen re-nudges, and the bulk backfill (which
+            // only scans body_state = 'none') can pick them up. Left at
+            // "fetching" they would be stuck and the UI would show an endless
+            // skeleton. No event is emitted here on purpose — invalidating the
+            // open thread would make get_thread re-nudge immediately and, while
+            // offline, spin a tight fail/retry loop.
+            for message_id in ids {
+                let _ = ctx
+                    .db
+                    .write(move |conn| repo::messages::set_body_state(conn, message_id, "none"))
+                    .await;
+            }
+        }
+    }
+}
+
+/// Fetch bodies for a set of messages, grouping by folder so each folder's UIDs
+/// go out in a single batched FETCH. Idempotent: already-cached messages are
+/// skipped, so a retry after a partial failure only refetches what's missing.
+async fn fetch_bodies_batch(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    ids: &[i64],
+) -> Result<()> {
+    use std::collections::HashMap;
+    // folder_id -> [(uid, message_id)]
+    let mut by_folder: HashMap<i64, Vec<(u32, i64)>> = HashMap::new();
+    for &message_id in ids {
+        let row = ctx
+            .db
+            .read(move |conn| repo::messages::get_row(conn, message_id))
+            .await?;
+        let Some(row) = row else { continue };
+        if row.body_state == "cached" {
+            continue;
+        }
+        let (Some(folder_id), Some(uid)) = (row.folder_id, row.uid) else {
+            continue;
+        };
+        by_folder
+            .entry(folder_id)
+            .or_default()
+            .push((uid as u32, message_id));
+    }
+
+    for (folder_id, mut items) in by_folder {
+        let folder = ctx
+            .db
+            .read(move |conn| repo::folders::get(conn, folder_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("folder".into()))?;
+        imap::select(session, &folder.imap_name).await?;
+        items.sort_unstable_by_key(|(uid, _)| *uid);
+        let uids: Vec<u32> = items.iter().map(|(u, _)| *u).collect();
+        let set = imap::uid_set(&uids);
+        let fetched: HashMap<u32, Vec<u8>> =
+            imap::fetch_full_batch(session, &set).await?.into_iter().collect();
+        for (uid, message_id) in items {
+            match fetched.get(&uid) {
+                Some(raw) => persist_body(ctx, config, message_id, raw).await?,
+                None => {
+                    // Message vanished from the server; roll back so a reopen or
+                    // the backfill retries and expunge reconciliation cleans up.
+                    let _ = ctx
+                        .db
+                        .write(move |conn| repo::messages::set_body_state(conn, message_id, "none"))
+                        .await;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn imap_credentials(ctx: &SyncCtx, config: &AccountConfig) -> Result<ImapCredentials> {
@@ -83,27 +254,44 @@ async fn imap_credentials(ctx: &SyncCtx, config: &AccountConfig) -> Result<ImapC
     }
 }
 
-async fn run_actor(ctx: SyncCtx, config: AccountConfig, mut rx: mpsc::UnboundedReceiver<SyncCmd>) {
+async fn run_actor(
+    ctx: SyncCtx,
+    config: AccountConfig,
+    mut rx: mpsc::UnboundedReceiver<SyncCmd>,
+    pool_tx: mpsc::UnboundedSender<()>,
+) {
     let account_id = config.id;
     tracing::debug!(account_id, "sync actor started");
     let mut session: Option<Session> = None;
+    // Whether the current connection supports IMAP IDLE (push). Re-probed on
+    // every reconnect; `None` until the first successful connect.
+    let mut supports_idle: Option<bool> = None;
     let mut backoff_secs: u64 = 1;
     let mut cycle: u64 = 0;
-    // Next full cycle (folders + actions); between full cycles the actor may
-    // run cheap bodies-only cycles to drain the backfill quickly.
-    let mut full_due = tokio::time::Instant::now();
+    // When the next cycle is due; only read by the waits below (any wake-up
+    // from a wait runs a cycle immediately).
+    let mut cycle_due;
 
     loop {
         // 1. Ensure a connection.
         if session.is_none() {
             match connect(&ctx, &config).await {
-                Ok(s) => {
+                Ok(mut s) => {
+                    // Probe IDLE support once per connection; on error assume
+                    // no push and fall back to polling.
+                    supports_idle = Some(imap::supports_idle(&mut s).await.unwrap_or(false));
                     session = Some(s);
                     backoff_secs = 1;
                     ctx.bus.emit(CoreEvent::NetworkState { online: true });
                     set_state(&ctx, account_id, "syncing").await;
                 }
-                Err(CoreError::NeedsReauth) | Err(CoreError::Auth(_)) => {
+                Err(e @ (CoreError::NeedsReauth | CoreError::Auth(_))) => {
+                    tracing::warn!(
+                        account_id,
+                        imap_host = %config.imap_host,
+                        error = %e,
+                        "imap connect rejected at auth; marking needs_reauth"
+                    );
                     set_state(&ctx, account_id, "needs_reauth").await;
                     // Wait for an external nudge before retrying auth.
                     match rx.recv().await {
@@ -128,78 +316,185 @@ async fn run_actor(ctx: SyncCtx, config: AccountConfig, mut rx: mpsc::UnboundedR
         let mut s = session.take().unwrap();
 
         // 2. Run one cycle; on IMAP errors drop the session and reconnect.
-        // Full cycles (folders + actions) run every CYCLE_SECS; while message
-        // bodies are still missing, cheap bodies-only cycles run in between so
-        // a fresh account becomes readable in minutes, not hours.
-        let full = tokio::time::Instant::now() >= full_due;
-        tracing::debug!(account_id, cycle, full, "sync cycle start");
-        let cycle_result = run_cycle(&ctx, &config, &mut s, cycle, full).await;
+        // Bulk body downloads run on the backfill pool's own connections, so a
+        // cycle is only folder/header/flag/action work and stays short.
+        tracing::debug!(account_id, cycle, "sync cycle start");
+        let cycle_result = run_cycle(&ctx, &config, &mut s, cycle, &pool_tx).await;
         tracing::debug!(
             account_id,
             cycle,
             ok = cycle_result.is_ok(),
             "sync cycle end"
         );
-        let draining = match cycle_result {
-            Ok(more_bodies) => {
+        // Pacing for the next cycle; also applies after errors so a flaky
+        // server isn't hammered.
+        cycle_due = tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
+        match cycle_result {
+            Ok(()) => {
                 session = Some(s);
-                if full {
-                    full_due =
-                        tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
-                    cycle += 1;
+                cycle += 1;
+                // Kick the backfill pool for any bodies the cycle uncovered and
+                // reflect its remaining work in the account state.
+                let (done, total) = ctx
+                    .db
+                    .read(move |conn| repo::messages::body_progress(conn, account_id))
+                    .await
+                    .unwrap_or((0, 0));
+                if done < total {
+                    let _ = pool_tx.send(());
                 }
                 set_state(
                     &ctx,
                     account_id,
-                    if more_bodies { "syncing" } else { "idle" },
+                    if done < total { "syncing" } else { "idle" },
                 )
                 .await;
-                more_bodies
             }
             Err(CoreError::NeedsReauth) | Err(CoreError::Auth(_)) => {
                 imap::logout(s).await;
-                full_due = tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
                 set_state(&ctx, account_id, "needs_reauth").await;
-                false
             }
             Err(e) => {
                 tracing::warn!(account_id, "sync cycle error: {e}");
                 imap::logout(s).await;
-                // Keep the pre-existing pacing: don't hammer a flaky server.
-                full_due = tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
                 ctx.bus.emit(CoreEvent::NetworkState { online: false });
-                false
             }
-        };
+        }
 
-        // 3. Wait for the next cycle or an immediate command.
-        let mut deadline = if draining {
-            tokio::time::Instant::now() + std::time::Duration::from_millis(750)
-        } else {
-            full_due
-        };
-        loop {
-            match tokio::time::timeout_at(deadline, rx.recv()).await {
-                Err(_) => break, // cycle timer fired
-                Ok(None) | Ok(Some(SyncCmd::Shutdown)) => {
-                    if let Some(s) = session.take() {
-                        imap::logout(s).await;
-                    }
-                    return;
-                }
-                Ok(Some(SyncCmd::SyncNow)) | Ok(Some(SyncCmd::RunActions)) => {
-                    // Commands need a full cycle (folder sync / action replay).
-                    full_due = tokio::time::Instant::now();
-                    break;
-                }
-                Ok(Some(SyncCmd::FetchBody { message_id })) => {
-                    if let Some(ref mut s) = session {
-                        if let Err(e) = fetch_one_body(&ctx, &config, s, message_id).await {
-                            tracing::warn!("priority body fetch failed: {e}");
-                            deadline = tokio::time::Instant::now();
+        // 3. Wait for new mail (IDLE), the next cycle, or an immediate command.
+        // The backfill pool drains bodies on its own connections, so the actor
+        // is free to IDLE even while thousands of bodies are still downloading.
+        let use_idle = supports_idle == Some(true) && session.is_some();
+
+        if use_idle {
+            // After a cycle the selected mailbox may be sent/drafts/etc, and
+            // IDLE needs a selected mailbox, so re-SELECT the inbox first. v1
+            // pushes on the inbox only; other folders arrive via the full cycle.
+            let inbox = ctx
+                .db
+                .read(move |conn| repo::folders::by_role(conn, account_id, roles::INBOX))
+                .await;
+            match inbox {
+                Ok(Some(inbox)) => {
+                    let mut s = session.take().unwrap();
+                    match imap::select(&mut s, &inbox.imap_name).await {
+                        Ok(_) => {
+                            // Cap IDLE at the next full cycle so the 60s
+                            // correctness backstop is preserved (a message that
+                            // slipped in just before IDLE started is still
+                            // caught by the timed-out cycle), clamped to
+                            // IDLE_MAX_SECS as an upper safety bound.
+                            let max = cycle_due
+                                .saturating_duration_since(tokio::time::Instant::now())
+                                .min(std::time::Duration::from_secs(IDLE_MAX_SECS))
+                                .max(std::time::Duration::from_secs(1));
+                            match imap::idle_wait(s, &mut rx, max).await {
+                                Ok((s, outcome)) => {
+                                    session = Some(s);
+                                    match outcome {
+                                        // New mail pushed by the server: fall
+                                        // through, next iteration syncs now.
+                                        imap::IdleOutcome::Activity => {
+                                            tracing::info!(
+                                                account_id,
+                                                "receive: IDLE signaled activity, syncing now",
+                                            );
+                                        }
+                                        // Backstop timeout or a sync/action
+                                        // nudge: next iteration runs a cycle.
+                                        imap::IdleOutcome::Timeout
+                                        | imap::IdleOutcome::Command(SyncCmd::SyncNow)
+                                        | imap::IdleOutcome::Command(SyncCmd::RunActions) => {}
+                                        imap::IdleOutcome::Command(SyncCmd::FetchBody {
+                                            message_id,
+                                        }) => {
+                                            if let Some(ref mut s) = session {
+                                                if let Err(e) =
+                                                    fetch_one_body(&ctx, &config, s, message_id).await
+                                                {
+                                                    tracing::warn!("priority body fetch failed: {e}");
+                                                }
+                                            }
+                                        }
+                                        imap::IdleOutcome::Command(SyncCmd::Shutdown)
+                                        | imap::IdleOutcome::ChannelClosed => {
+                                            if let Some(s) = session.take() {
+                                                imap::logout(s).await;
+                                            }
+                                            return;
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // Session was consumed by idle_wait; drop
+                                    // IDLE state and reconnect next iteration.
+                                    tracing::warn!(account_id, "idle failed: {e}");
+                                    supports_idle = None;
+                                    ctx.bus.emit(CoreEvent::NetworkState { online: false });
+                                }
+                            }
                         }
-                    } else {
+                        Err(e) => {
+                            tracing::warn!(account_id, "select inbox for idle failed: {e}");
+                            imap::logout(s).await;
+                            supports_idle = None;
+                        }
+                    }
+                }
+                _ => {
+                    // No inbox row yet (first onboarding): short wait, then run
+                    // a full cycle so the inbox lands promptly.
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(IDLE_FALLBACK_SECS),
+                        rx.recv(),
+                    )
+                    .await
+                    {
+                        Ok(None) | Ok(Some(SyncCmd::Shutdown)) => {
+                            if let Some(s) = session.take() {
+                                imap::logout(s).await;
+                            }
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        } else {
+            // Poll path: server without IDLE (or no live session). Non-IDLE
+            // servers poll every IDLE_FALLBACK_SECS; on that timer firing we
+            // force a full cycle so the shorter poll actually detects new mail.
+            let fallback = supports_idle == Some(false);
+            let mut deadline = if fallback {
+                tokio::time::Instant::now() + std::time::Duration::from_secs(IDLE_FALLBACK_SECS)
+            } else {
+                cycle_due
+            };
+            loop {
+                match tokio::time::timeout_at(deadline, rx.recv()).await {
+                    Err(_) => {
+                        // Timer fired: next iteration runs a full cycle.
                         break;
+                    }
+                    Ok(None) | Ok(Some(SyncCmd::Shutdown)) => {
+                        if let Some(s) = session.take() {
+                            imap::logout(s).await;
+                        }
+                        return;
+                    }
+                    Ok(Some(SyncCmd::SyncNow)) | Ok(Some(SyncCmd::RunActions)) => {
+                        // Commands need a full cycle (folder sync / action replay).
+                        break;
+                    }
+                    Ok(Some(SyncCmd::FetchBody { message_id })) => {
+                        if let Some(ref mut s) = session {
+                            if let Err(e) = fetch_one_body(&ctx, &config, s, message_id).await {
+                                tracing::warn!("priority body fetch failed: {e}");
+                                deadline = tokio::time::Instant::now();
+                            }
+                        } else {
+                            break;
+                        }
                     }
                 }
             }
@@ -224,22 +519,17 @@ async fn connect(ctx: &SyncCtx, config: &AccountConfig) -> Result<Session> {
     imap::connect(&config.imap_host, config.imap_port, creds).await
 }
 
-/// One sync cycle. Returns true when message bodies are still missing (the
-/// per-cycle budget was exhausted), so the actor can schedule a quick
-/// bodies-only follow-up instead of waiting a full CYCLE_SECS.
+/// One sync cycle: replay queued actions, then sync every folder's headers,
+/// flags, and expunges. Bulk bodies are NOT fetched here — the backfill pool
+/// downloads them concurrently on its own connections; this only nudges it.
 async fn run_cycle(
     ctx: &SyncCtx,
     config: &AccountConfig,
     session: &mut Session,
     cycle: u64,
-    full: bool,
-) -> Result<bool> {
+    pool_tx: &mpsc::UnboundedSender<()>,
+) -> Result<()> {
     let account_id = config.id;
-
-    // Bodies-only drain cycle: no folder sync, no action replay.
-    if !full {
-        return fetch_missing_bodies(ctx, config, session).await;
-    }
 
     // Folder discovery: first cycle and then every ~30 cycles.
     if cycle % 30 == 0 {
@@ -278,16 +568,13 @@ async fn run_cycle(
             tracing::warn!(folder = %folder.imap_name, "folder sync failed: {e}");
             return Err(e); // connection likely broken; reconnect
         }
-        // Right after the inbox lands for the first time, fetch a batch of its
-        // bodies before touching other folders: recent mail becomes readable
-        // within seconds of onboarding.
+        // Right after the inbox lands for the first time, kick the body pool
+        // so recent mail becomes readable within seconds of onboarding, while
+        // this connection keeps syncing the remaining folders' headers.
         if first_time && folder.role.as_deref() == Some(roles::INBOX) {
-            fetch_missing_bodies(ctx, config, session).await?;
+            let _ = pool_tx.send(());
         }
     }
-
-    // Body backfill for the inbox first, then everything else.
-    let more_bodies = fetch_missing_bodies(ctx, config, session).await?;
 
     // GC old finished actions (keep 7 days).
     let _ = ctx
@@ -295,7 +582,7 @@ async fn run_cycle(
         .write(move |conn| repo::actions::gc(conn, now_ms() - 7 * 24 * 3600 * 1000))
         .await;
 
-    Ok(more_bodies)
+    Ok(())
 }
 
 async fn discover_folders(
@@ -373,6 +660,13 @@ async fn sync_folder(
             let new: Vec<FetchedHeader> =
                 headers.into_iter().filter(|h| h.uid > last_seen).collect();
             if !new.is_empty() {
+                tracing::info!(
+                    account_id,
+                    folder = %folder.imap_name,
+                    count = new.len(),
+                    since_uid = last_seen,
+                    "receive: new mail on server",
+                );
                 let thread_ids = store_headers(ctx, config, &fresh_folder, new, true).await?;
                 if fresh_folder.role.as_deref() == Some(roles::INBOX) && !thread_ids.is_empty() {
                     ctx.bus.emit(CoreEvent::MailNew {
@@ -505,6 +799,7 @@ async fn store_headers(
             let auto_labels = repo::settings::get(&tx)?.auto_labels_enabled;
             let mut thread_ids: Vec<i64> = Vec::new();
             let mut max_uid: i64 = 0;
+            let mut inserted = 0u32;
 
             for fh in &headers {
                 max_uid = max_uid.max(fh.uid as i64);
@@ -570,13 +865,15 @@ async fn store_headers(
                     is_draft: fh.flags.draft || folder_role.as_deref() == Some(roles::DRAFTS),
                     is_outgoing,
                     is_automated: parsed.is_automated,
-                    has_attachments: false,
+                    has_attachments: fh.has_attachments,
                     size: fh.size.map(|s| s as i64),
                     snippet: String::new(),
                     references: parsed.references.clone(),
                     list_unsubscribe: parsed.list_unsubscribe.clone(),
+                    sender_addr: parsed.via.clone(),
                 };
                 let msg_id = repo::messages::insert(&tx, &nm, thread_id)?;
+                inserted += 1;
                 repo::labels::reconcile_keywords(&tx, msg_id, &fh.flags.keywords)?;
                 if auto_labels && !is_outgoing && !nm.is_draft {
                     let facts = crate::autolabel::MessageFacts {
@@ -610,6 +907,16 @@ async fn store_headers(
                 repo::folders::set_last_seen_uid(&tx, folder_id, max_uid)?;
             }
             tx.commit()?;
+            if inserted > 0 {
+                tracing::info!(
+                    account_id,
+                    folder = %folder_role.as_deref().unwrap_or("?"),
+                    fetched = headers.len(),
+                    inserted,
+                    threads = thread_ids.len(),
+                    "receive: stored new message headers",
+                );
+            }
             Ok(thread_ids)
         })
         .await
@@ -716,56 +1023,225 @@ async fn reconcile_expunges(ctx: &SyncCtx, session: &mut Session, folder: &Folde
     Ok(())
 }
 
-/// Fetch up to BODIES_PER_CYCLE missing bodies, inbox first. Returns true
-/// when the budget ran out (more bodies are still missing).
-async fn fetch_missing_bodies(
+/// One unit of backfill-pool work: a single folder's chunk of UIDs, pulled in
+/// one batched FETCH.
+struct BodyChunk {
+    folder_name: String,
+    /// (message_id, uid) pairs.
+    items: Vec<(i64, i64)>,
+}
+
+/// Background body backfill. Waits for a nudge from the sync actor (headers
+/// just landed) or a periodic backstop tick, then drains every missing body
+/// for the account with up to BODY_POOL_CONNS concurrent IMAP connections.
+/// Runs beside the main actor, so folder/header sync, IDLE, and offline
+/// actions never wait behind bulk body downloads. Exits when the account
+/// handle is dropped (the nudge channel closes).
+async fn run_backfill_pool(
+    ctx: SyncCtx,
+    config: AccountConfig,
+    mut rx: mpsc::UnboundedReceiver<()>,
+) {
+    let account_id = config.id;
+    loop {
+        if let Ok(None) =
+            tokio::time::timeout(std::time::Duration::from_secs(CYCLE_SECS), rx.recv()).await
+        {
+            return; // channel closed: account removed / shutdown
+        }
+        // Coalesce nudges that piled up while the previous drain ran.
+        while rx.try_recv().is_ok() {}
+        if let Err(e) = drain_missing_bodies(&ctx, &config).await {
+            tracing::warn!(account_id, error = %e, "body backfill: drain failed");
+        }
+    }
+}
+
+/// Fetch ALL missing bodies for the account, inbox first, by handing
+/// folder-grouped chunks to a shared queue serviced by up to BODY_POOL_CONNS
+/// parallel connections. Loops until a scan finds nothing left; bails out when
+/// a full round makes no forward progress (server unreachable, or every
+/// remaining UID vanished) so it can't spin — the next nudge or backstop tick
+/// retries.
+async fn drain_missing_bodies(ctx: &SyncCtx, config: &AccountConfig) -> Result<()> {
+    use std::collections::{HashSet, VecDeque};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let account_id = config.id;
+    // Message ids attempted this drain whose bodies the server didn't return
+    // (expunged mid-sync): skipped for the rest of the drain so it terminates;
+    // expunge reconciliation removes the rows.
+    let skip: Arc<std::sync::Mutex<HashSet<i64>>> = Arc::default();
+    let mut did_work = false;
+
+    loop {
+        let folders = ctx
+            .db
+            .read(move |conn| repo::folders::list(conn, Some(account_id)))
+            .await?;
+        let mut ordered: Vec<&Folder> = folders.iter().collect();
+        ordered.sort_by_key(|f| match f.role.as_deref() {
+            Some(roles::INBOX) => 0,
+            Some(roles::SENT) => 1,
+            _ => 2,
+        });
+
+        let mut chunks: VecDeque<BodyChunk> = VecDeque::new();
+        for folder in ordered {
+            let fid = folder.id;
+            let missing = ctx
+                .db
+                .read(move |conn| repo::messages::missing_bodies(conn, fid, i64::MAX))
+                .await?;
+            let missing: Vec<(i64, i64)> = {
+                let skip = skip.lock().unwrap();
+                missing
+                    .into_iter()
+                    .filter(|(mid, _)| !skip.contains(mid))
+                    .collect()
+            };
+            for chunk in missing.chunks(BODY_FETCH_CHUNK) {
+                chunks.push_back(BodyChunk {
+                    folder_name: folder.imap_name.clone(),
+                    items: chunk.to_vec(),
+                });
+            }
+        }
+
+        if chunks.is_empty() {
+            if did_work {
+                tracing::info!(account_id, "body backfill: drained");
+                set_state(ctx, account_id, "idle").await;
+            }
+            return Ok(());
+        }
+        did_work = true;
+        set_state(ctx, account_id, "syncing").await;
+        tracing::debug!(
+            account_id,
+            chunks = chunks.len(),
+            "body backfill: starting round"
+        );
+
+        // Fan the queue out to a pool of connections. Each worker owns its own
+        // session and pops chunks until the queue is empty or its connection
+        // breaks, so a slow chunk never stalls the others.
+        let workers = BODY_POOL_CONNS.min(chunks.len());
+        let queue = Arc::new(tokio::sync::Mutex::new(chunks));
+        let persisted = Arc::new(AtomicU64::new(0));
+        let mut handles = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            handles.push(tokio::spawn(body_worker(
+                ctx.clone(),
+                config.clone(),
+                queue.clone(),
+                skip.clone(),
+                persisted.clone(),
+            )));
+        }
+        for h in handles {
+            let _ = h.await;
+        }
+        if persisted.load(Ordering::Relaxed) == 0 {
+            return Err(CoreError::Imap(
+                "body backfill made no progress; will retry".into(),
+            ));
+        }
+        // Re-scan: headers that landed while this round ran get picked up too.
+    }
+}
+
+/// One backfill-pool connection: pops chunks off the shared queue until it is
+/// empty or the connection breaks. On error the chunk goes back on the queue
+/// for the surviving workers (or the next round).
+async fn body_worker(
+    ctx: SyncCtx,
+    config: AccountConfig,
+    queue: Arc<tokio::sync::Mutex<std::collections::VecDeque<BodyChunk>>>,
+    skip: Arc<std::sync::Mutex<std::collections::HashSet<i64>>>,
+    persisted: Arc<std::sync::atomic::AtomicU64>,
+) {
+    let account_id = config.id;
+    let mut session = match connect(&ctx, &config).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(account_id, error = %e, "body worker: connect failed");
+            return;
+        }
+    };
+    let mut selected: Option<String> = None;
+    loop {
+        let chunk = queue.lock().await.pop_front();
+        let Some(chunk) = chunk else { break };
+        match fetch_body_chunk(&ctx, &config, &mut session, &mut selected, &chunk, &skip).await {
+            Ok(n) => {
+                persisted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                // Live "Sync x/total": one COUNT per chunk, not per message.
+                let (done, total) = ctx
+                    .db
+                    .read(move |conn| repo::messages::body_progress(conn, account_id))
+                    .await
+                    .unwrap_or((0, 0));
+                ctx.bus.emit(CoreEvent::SyncProgress(SyncProgress {
+                    account_id,
+                    folder: chunk.folder_name.clone(),
+                    phase: "bodies".into(),
+                    done,
+                    total,
+                }));
+            }
+            Err(e) => {
+                tracing::warn!(account_id, error = %e, "body worker: chunk failed; stopping");
+                queue.lock().await.push_front(chunk);
+                // Connection presumed broken; dropping the session closes it.
+                return;
+            }
+        }
+    }
+    imap::logout(session).await;
+}
+
+/// Fetch one chunk's bodies over `session` and persist them. Returns how many
+/// bodies were cached. UIDs the server didn't return have vanished; they go
+/// into `skip` so the drain terminates (expunge reconciliation drops the rows).
+async fn fetch_body_chunk(
     ctx: &SyncCtx,
     config: &AccountConfig,
     session: &mut Session,
-) -> Result<bool> {
-    let account_id = config.id;
-    let folders = ctx
-        .db
-        .read(move |conn| repo::folders::list(conn, Some(account_id)))
-        .await?;
-
-    let mut ordered: Vec<&Folder> = folders.iter().collect();
-    ordered.sort_by_key(|f| match f.role.as_deref() {
-        Some(roles::INBOX) => 0,
-        Some(roles::SENT) => 1,
-        _ => 2,
-    });
-
-    let mut budget = BODIES_PER_CYCLE;
-    for folder in ordered {
-        if budget <= 0 {
-            break;
-        }
-        let fid = folder.id;
-        let missing = ctx
-            .db
-            .read(move |conn| repo::messages::missing_bodies(conn, fid, BODIES_PER_CYCLE))
-            .await?;
-        if missing.is_empty() {
-            continue;
-        }
-        imap::select(session, &folder.imap_name).await?;
-        for (message_id, uid) in missing {
-            if budget <= 0 {
-                break;
-            }
-            budget -= 1;
-            store_one_body(ctx, config, session, message_id, uid as u32).await?;
-        }
-        ctx.bus.emit(CoreEvent::SyncProgress(SyncProgress {
-            account_id,
-            folder: folder.imap_name.clone(),
-            phase: "bodies".into(),
-            done: 0,
-            total: 0,
-        }));
+    selected: &mut Option<String>,
+    chunk: &BodyChunk,
+    skip: &std::sync::Mutex<std::collections::HashSet<i64>>,
+) -> Result<u64> {
+    if selected.as_deref() != Some(chunk.folder_name.as_str()) {
+        imap::select(session, &chunk.folder_name).await?;
+        *selected = Some(chunk.folder_name.clone());
     }
-    Ok(budget <= 0)
+    let mut uids: Vec<u32> = chunk.items.iter().map(|&(_, uid)| uid as u32).collect();
+    uids.sort_unstable();
+    let by_uid: std::collections::HashMap<u32, i64> = chunk
+        .items
+        .iter()
+        .map(|&(mid, uid)| (uid as u32, mid))
+        .collect();
+    let bodies = imap::fetch_full_batch(session, &imap::uid_set(&uids)).await?;
+
+    let mut cached = 0u64;
+    let mut returned: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    for (uid, raw) in bodies {
+        let Some(&message_id) = by_uid.get(&uid) else {
+            continue;
+        };
+        persist_body(ctx, config, message_id, &raw).await?;
+        returned.insert(uid);
+        cached += 1;
+    }
+    let mut skip = skip.lock().unwrap();
+    for &(mid, uid) in &chunk.items {
+        if !returned.contains(&(uid as u32)) {
+            skip.insert(mid);
+        }
+    }
+    Ok(cached)
 }
 
 /// Priority fetch of a single message body (user opened it).
@@ -806,15 +1282,25 @@ async fn store_one_body(
         // Message vanished; expunge reconciliation will clean up.
         return Ok(());
     };
+    persist_body(ctx, config, message_id, &raw).await
+}
 
+/// Parse one already-fetched raw message, persist it to disk + DB, and notify
+/// the UI. Shared by the single-body path and the bulk backfill.
+async fn persist_body(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    message_id: i64,
+    raw: &[u8],
+) -> Result<()> {
     // Persist raw MIME to disk.
     let dir = ctx.paths.mail_dir(config.id);
     tokio::fs::create_dir_all(&dir).await?;
     let path = dir.join(format!("{message_id}.eml"));
-    tokio::fs::write(&path, &raw).await?;
+    tokio::fs::write(&path, raw).await?;
     let path_str = path.to_string_lossy().to_string();
 
-    let parsed = crate::mime::parse_message(&raw)?;
+    let parsed = crate::mime::parse_message(raw)?;
     let config_id = config.id;
     let thread_id = ctx
         .db
@@ -826,7 +1312,10 @@ async fn store_one_body(
                 parsed.text.as_deref(),
                 parsed.html.as_deref(),
                 Some(&path_str),
-                !parsed.attachments.is_empty(),
+                // Real files only, mirroring BODYSTRUCTURE's disposition check
+                // and the message-card footer (both ignore inline images), so
+                // the list paperclip stays consistent before and after backfill.
+                parsed.attachments.iter().any(|a| !a.is_inline),
                 Some(&parsed.snippet),
             )?;
             let atts: Vec<repo::messages::NewAttachment> = parsed

@@ -1,7 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { View } from "../../ipc/types";
-import { splitCount, useAccounts, useLabels, useSplits, useUnreadCounts } from "../../queries/hooks";
+import { buildFolderTree, type FolderNode } from "../../lib/folders";
+import {
+  splitCount,
+  useAccounts,
+  useFolders,
+  useLabels,
+  useSplits,
+  useUnreadCounts,
+} from "../../queries/hooks";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi, type PanelKind } from "../../stores/ui";
 
 const VIEWS: View[] = ["starred", "snoozed", "drafts", "sent", "done", "spam", "trash", "all"];
@@ -14,14 +22,26 @@ export function Sidebar() {
   const splitId = useUi((s) => s.splitId);
   const accountFilter = useUi((s) => s.accountFilter);
   const labelFilter = useUi((s) => s.labelFilter);
+  const folderFilter = useUi((s) => s.folderFilter);
   const setView = useUi((s) => s.setView);
   const selectLabel = useUi((s) => s.selectLabel);
+  const selectFolder = useUi((s) => s.selectFolder);
   const openThread = useUi((s) => s.openThread);
   const set = useUi((s) => s.set);
   const { data: accounts } = useAccounts();
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
+  const { data: folders } = useFolders(accountFilter);
   const { data: counts } = useUnreadCounts(accountFilter, open);
+
+  const folderTree = useMemo(() => buildFolderTree(folders ?? []), [folders]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleCollapsed = (key: string) =>
+    setCollapsed((cur) => {
+      const next = new Set(cur);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   useEffect(() => {
     if (!open) return;
@@ -52,6 +72,12 @@ export function Sidebar() {
     openThread(null);
     set({ searchOpen: false, searchQuery: "" });
     selectLabel(id);
+    close();
+  };
+  const goFolder = (id: number) => {
+    openThread(null);
+    set({ searchOpen: false, searchQuery: "" });
+    selectFolder(id);
     close();
   };
 
@@ -128,6 +154,7 @@ export function Sidebar() {
                     view: "inbox",
                     splitId: null,
                     labelFilter: l.id,
+                    folderFilter: null,
                     searchOpen: false,
                     searchQuery: "",
                     selection: [],
@@ -144,11 +171,28 @@ export function Sidebar() {
           <SideRow
             key={v}
             label={t(`common:view.${v}`)}
-            active={view === v && labelFilter == null}
+            active={view === v && labelFilter == null && folderFilter == null}
             badge={counts?.views[v] || undefined}
             onClick={() => go(v)}
           />
         ))}
+
+        {folderTree.length > 0 && (
+          <>
+            <div className="co-hairline-b mx-4 my-2.5" />
+            <div className="px-4 pb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+              {t("common:sidebar.folders")}
+            </div>
+            <FolderTree
+              nodes={folderTree}
+              depth={0}
+              folderFilter={folderFilter}
+              collapsed={collapsed}
+              onToggle={toggleCollapsed}
+              onSelect={goFolder}
+            />
+          </>
+        )}
 
         <div className="co-hairline-b mx-4 my-2.5" />
         <div className="px-4 pb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
@@ -253,6 +297,131 @@ function SideRow({
         <span className="shrink-0 text-[11.5px] text-ink-faint tabular-nums">{badge}</span>
       )}
       {kbd && <span className="co-kbd shrink-0">{kbd}</span>}
+    </button>
+  );
+}
+
+/** Recursive nested list of user IMAP folders. */
+function FolderTree({
+  nodes,
+  depth,
+  folderFilter,
+  collapsed,
+  onToggle,
+  onSelect,
+}: {
+  nodes: FolderNode[];
+  depth: number;
+  folderFilter: number | null;
+  collapsed: Set<string>;
+  onToggle: (key: string) => void;
+  onSelect: (folderId: number) => void;
+}) {
+  return (
+    <>
+      {nodes.map((node) => {
+        const hasChildren = node.children.length > 0;
+        const isCollapsed = collapsed.has(node.key);
+        return (
+          <div key={node.key}>
+            <FolderRow
+              name={node.name}
+              depth={depth}
+              active={node.folder != null && folderFilter === node.folder.id}
+              expandable={hasChildren}
+              collapsed={isCollapsed}
+              onToggle={() => onToggle(node.key)}
+              onClick={() => {
+                if (node.folder) onSelect(node.folder.id);
+                else if (hasChildren) onToggle(node.key);
+              }}
+            />
+            {hasChildren && !isCollapsed && (
+              <FolderTree
+                nodes={node.children}
+                depth={depth + 1}
+                folderFilter={folderFilter}
+                collapsed={collapsed}
+                onToggle={onToggle}
+                onSelect={onSelect}
+              />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function FolderRow({
+  name,
+  depth,
+  active,
+  expandable,
+  collapsed,
+  onToggle,
+  onClick,
+}: {
+  name: string;
+  depth: number;
+  active: boolean;
+  expandable: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-1.5 rounded-md py-1.5 pr-3 text-left text-[13px] ${
+        active
+          ? "bg-[var(--selected-bg)] font-medium text-ink"
+          : "text-ink-muted hover:bg-bg2 hover:text-ink"
+      }`}
+      style={{ paddingLeft: 12 + depth * 16 }}
+      onClick={onClick}
+    >
+      {expandable ? (
+        <span
+          role="button"
+          tabIndex={-1}
+          aria-label="Toggle folder"
+          className="grid size-4 shrink-0 place-items-center rounded text-ink-faint hover:text-ink"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ transform: collapsed ? "none" : "rotate(90deg)" }}
+          >
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </span>
+      ) : (
+        <span className="size-4 shrink-0" />
+      )}
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="shrink-0 text-ink-faint"
+      >
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      </svg>
+      <span className="min-w-0 flex-1 truncate">{name}</span>
     </button>
   );
 }

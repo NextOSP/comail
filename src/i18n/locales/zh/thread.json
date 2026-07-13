@@ -5,6 +5,7 @@
   "noSubject": "（无主题）",
   "messages_one": "{{count}} 封邮件",
   "messages_other": "{{count}} 封邮件",
+  "jumpToLatest": "跳转到最新邮件",
   "snoozedBadge": "已暂停",
   "positionOf": "第 {{pos}} / {{total}}",
   "footer": {
@@ -14,7 +15,8 @@
     "done": "完成",
     "snooze": "暂停",
     "summarize": "总结",
-    "nextPrev": "下一个 / 上一个"
+    "message": "邮件",
+    "nextPrev": "上/下一会话"
   },
   "aiSummary": {
     "title": "AI 摘要",
@@ -25,16 +27,33 @@
   "sendingBadge": "发送中…",
   "msgTo": "收件人",
   "msgCc": "抄送",
+  "details": {
+    "toggle": "显示详细信息",
+    "from": "发件人",
+    "to": "收件人",
+    "cc": "抄送",
+    "via": "经由",
+    "date": "日期",
+    "subject": "主题"
+  },
   "loadingMessage": "加载邮件…",
   "messageBodyTitle": "邮件正文",
+  "remoteImages": {
+    "hidden": "此邮件中的图片未显示。",
+    "load": "加载图片"
+  },
   "attachment": {
     "fallbackName": "附件",
     "savedMock": "已保存 {{name}}（模拟）",
+    "view": "查看文件",
+    "openExternalHint": "按住 Alt 点击可用默认应用打开",
     "openFailed": "无法打开附件：{{detail}}",
     "preview": {
       "loading": "正在加载预览…",
       "failed": "无法预览附件：{{detail}}",
       "openExternally": "用应用打开",
+      "download": "下载",
+      "downloaded": "已保存 {{name}}",
       "unsupported": "此文件类型不支持预览，请用外部应用打开。",
       "tooLarge": "文件太大，无法预览，请用外部应用打开。",
       "truncated": "预览已截断",

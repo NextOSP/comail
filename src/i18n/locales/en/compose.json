@@ -1,4 +1,6 @@
 {
+  "draftLabel": "Draft",
+  "draftTo": "to {{names}}",
   "modeTitles": {
     "new": "New message",
     "reply": "Reply",
@@ -45,6 +47,7 @@
   "scheduled": "Scheduled. Will send {{date}}",
   "sendingIn": "Sending in {s}s · Z to undo",
   "undo": "Undo",
+  "sendNow": "Send now",
   "couldntSend": "Couldn't send: {{error}}",
   "couldntPickFiles": "Couldn't pick files: {{error}}",
   "showQuoted": "Show quoted text",

@@ -231,9 +231,17 @@
     "label": "Notificaciones de escritorio",
     "hint": "Notificar cuando llegue correo nuevo mientras la ventana no está enfocada."
   },
+  "sound": {
+    "label": "Sonido",
+    "hint": "Reproducir un sonido al recibir correo nuevo y al enviar."
+  },
   "autoAdvance": {
     "label": "Avance automático",
     "hint": "Tras Hecho/Posponer en una conversación, abre la siguiente conversación en lugar de volver a la lista."
+  },
+  "groupByDate": {
+    "label": "Agrupar por fecha",
+    "hint": "Muestra encabezados Hoy / Ayer / … entre conversaciones en la lista."
   },
   "signature": {
     "section": "Firmas",

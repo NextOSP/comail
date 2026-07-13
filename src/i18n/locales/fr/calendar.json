@@ -94,5 +94,7 @@
   },
   "screenHint": "Échap ou 1 pour revenir · cliquez sur un créneau pour créer",
   "reminderBody": "Commence à {{time}}",
+  "newEventBody": "Nouvel évènement · {{when}}",
+  "newEvents": "{{count}} nouveaux évènements dans votre agenda",
   "syncConflict": "« {{summary}} » a changé sur le serveur — votre modification a été conservée en copie"
 }

@@ -32,6 +32,7 @@ fn list_ids(conn: &Connection, label_id: Option<i64>) -> Vec<i64> {
             split: None,
             account_id: None,
             label_id,
+            folder_id: None,
             cursor: None,
             limit: 50,
         },

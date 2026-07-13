@@ -6,11 +6,13 @@ import i18n from "../i18n";
 import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { MOCK_MODE } from "../ipc/mock";
-import type { Account, MessageDetail, ThreadDetail } from "../ipc/types";
+import type { Account, Address, MessageDetail, ThreadDetail } from "../ipc/types";
 import { addMonths, startOfMonth } from "../lib/calendarGrid";
+import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
+import { findCachedSummary } from "../queries/actions";
 import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
-import type { CommandCtx } from "./context";
+import { inboxTabs, type CommandCtx } from "./context";
 import { displayShortcut, type Command } from "./registry";
 
 /** Bridge for composer-scoped commands (composer owns the form state). */
@@ -102,6 +104,21 @@ function runUnsubscribe(ctx: CommandCtx) {
   push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
 }
 
+// ----------------------------------------------------------- Sender search
+
+/** Main correspondent of the open/selected thread (never one of our own
+ *  accounts) — target of "View all from this sender". */
+function currentSender(): Address | null {
+  const ui = useUi.getState();
+  const threadId = ui.openThreadId ?? ui.selectedThreadId ?? ui.selection[0] ?? null;
+  if (threadId == null) return null;
+  const summary = findCachedSummary(threadId);
+  if (!summary) return null;
+  const accounts = queryClient.getQueryData<Account[]>(["accounts"]) ?? [];
+  const self = new Set(accounts.map((a) => a.email.toLowerCase()));
+  return primaryCorrespondent(summary.participants, self);
+}
+
 // --------------------------------------------------------------- Calendar
 
 /** Seed the event-create modal from the focused/open thread: subject becomes
@@ -172,9 +189,31 @@ async function joinNextMeeting() {
   }
 }
 
+// -------------------------------------------------------- Inbox split tabs
+
+/** Cmd+1 = Important, Cmd+2 = Other, Cmd+3 = next tab (Marketing/…), … */
+function splitTabCommand(n: number): Command {
+  const index = n - 1;
+  return {
+    id: `split-tab-${n}`,
+    titleKey: "commands:title.goSplitTab",
+    title: () => {
+      const tab = inboxTabs()[index];
+      return i18n.t("commands:title.goSplitTab", { name: tab ? tab.name : `#${n}` });
+    },
+    aliases: ["split tab", "inbox tab", "go to tab"],
+    keys: [`mod+${n}`],
+    section: "Go to",
+    // Not while search is open — there ⌘/Ctrl+N jumps to the Nth result.
+    when: (ctx) => !ctx.composerOpen && !ctx.panelOpen && !ctx.inSearch && inboxTabs().length > index,
+    run: (ctx) => ctx.gotoSplitTab(index),
+  };
+}
+
 // --------------------------------------------------------- Account filter
 
-/** Ctrl+1 = all accounts, Ctrl+2 = first account, Ctrl+3 = second, … */
+/** Ctrl+1 = all accounts, Ctrl+2 = first account, Ctrl+3 = second, …
+ *  (macOS uses Ctrl so Cmd+N stays free for split tabs; other platforms Alt). */
 function switchAccountCommand(n: number): Command {
   const isAll = n === 1;
   return {
@@ -182,7 +221,7 @@ function switchAccountCommand(n: number): Command {
     titleKey: isAll ? "commands:title.switchAccountAll" : "commands:title.switchAccount",
     titleParams: isAll ? undefined : { n: n - 1 },
     aliases: isAll ? ["all accounts", "account filter"] : [`account ${n - 1}`, "account filter"],
-    keys: [`mod+${n}`],
+    keys: [IS_MAC ? `ctrl+${n}` : `alt+${n}`],
     section: "Go to",
     when: (ctx) => {
       if (ctx.composerOpen || ctx.panelOpen) return false;
@@ -246,6 +285,7 @@ function gotoLabel(l: CachedLabel) {
       view: "inbox",
       splitId: null,
       labelFilter: l.id,
+      folderFilter: null,
       searchOpen: false,
       searchQuery: "",
       openThreadId: null,
@@ -449,7 +489,9 @@ export const ALL_COMMANDS: Command[] = [
     id: "next-thread",
     titleKey: "commands:title.nextThread",
     aliases: ["down"],
-    keys: ["j", "arrowdown"],
+    // Arrows navigate messages inside an open thread (see next-message); J/K
+    // stay on thread nav everywhere, so they still switch threads while reading.
+    keys: ["j"],
     shortcut: "J",
     section: "Navigation",
     when: noOverlay,
@@ -460,10 +502,32 @@ export const ALL_COMMANDS: Command[] = [
     id: "prev-thread",
     titleKey: "commands:title.prevThread",
     aliases: ["up"],
-    keys: ["k", "arrowup"],
+    keys: ["k"],
     shortcut: "K",
     section: "Navigation",
     when: noOverlay,
+    run: (ctx) => ctx.moveCursor(-1),
+    hiddenInPalette: true,
+  },
+  {
+    // Arrow keys move the thread cursor only in the list / search — inside a
+    // conversation they move between messages instead (next-message below).
+    id: "list-down",
+    titleKey: "commands:title.nextThread",
+    aliases: [],
+    keys: ["arrowdown"],
+    section: "Navigation",
+    when: (ctx) => noOverlay(ctx) && !ctx.inConversation,
+    run: (ctx) => ctx.moveCursor(1),
+    hiddenInPalette: true,
+  },
+  {
+    id: "list-up",
+    titleKey: "commands:title.prevThread",
+    aliases: [],
+    keys: ["arrowup"],
+    section: "Navigation",
+    when: (ctx) => noOverlay(ctx) && !ctx.inConversation,
     run: (ctx) => ctx.moveCursor(-1),
     hiddenInPalette: true,
   },
@@ -509,7 +573,7 @@ export const ALL_COMMANDS: Command[] = [
     id: "next-message",
     titleKey: "commands:title.nextMessage",
     aliases: ["expand next"],
-    keys: ["n"],
+    keys: ["n", "arrowdown"],
     section: "Navigation",
     when: (ctx) => noOverlay(ctx) && ctx.inConversation,
     run: (ctx) => ctx.nextMessage(1),
@@ -519,7 +583,7 @@ export const ALL_COMMANDS: Command[] = [
     id: "prev-message",
     titleKey: "commands:title.prevMessage",
     aliases: ["expand previous"],
-    keys: ["p"],
+    keys: ["p", "arrowup"],
     section: "Navigation",
     when: (ctx) => noOverlay(ctx) && ctx.inConversation,
     run: (ctx) => ctx.nextMessage(-1),
@@ -866,6 +930,9 @@ export const ALL_COMMANDS: Command[] = [
     run: () => fireComposerAction("share_availability"),
   },
 
+  // ---------------------------------------------- Inbox split tabs (Cmd+N)
+  ...Array.from({ length: 9 }, (_, i) => splitTabCommand(i + 1)),
+
   // ------------------------------------------------- Account filter (Ctrl+N)
   ...Array.from({ length: 9 }, (_, i) => switchAccountCommand(i + 1)),
 
@@ -892,6 +959,30 @@ export const ALL_COMMANDS: Command[] = [
         searchOpen: true,
         openThreadId: null,
       }),
+  },
+  {
+    id: "view-from-sender",
+    titleKey: "commands:title.viewFromSender",
+    title: () => {
+      const s = currentSender();
+      return i18n.t("commands:title.viewFromSender", { name: s ? addressName(s) : "" });
+    },
+    aliases: ["view all from this sender", "all from sender", "from sender", "sender emails", "search sender"],
+    keys: [],
+    section: "Go to",
+    when: (ctx) => !ctx.composerOpen && !ctx.panelOpen && currentSender() != null,
+    run: () => {
+      const s = currentSender();
+      if (!s) return;
+      useUi.getState().set({
+        calendarScreen: false,
+        searchOpen: true,
+        searchQuery: `from:${s.email}`,
+        openThreadId: null,
+        focusedMessageId: null,
+        selection: [],
+      });
+    },
   },
   {
     id: "help",

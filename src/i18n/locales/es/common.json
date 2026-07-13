@@ -1,4 +1,10 @@
 {
+  "dateGroup": {
+    "today": "Hoy",
+    "yesterday": "Ayer",
+    "thisWeek": "Esta semana",
+    "thisMonth": "Este mes"
+  },
   "view": {
     "inbox": "Bandeja de entrada",
     "starred": "Destacados",
@@ -116,6 +122,7 @@
     "snippets": "Fragmentos",
     "splits": "Reglas de bandeja dividida",
     "labels": "Etiquetas",
+    "folders": "Carpetas",
     "manageLabels": "Gestionar etiquetas",
     "settings": "Ajustes",
     "accountSettings": "Ajustes de la cuenta",
