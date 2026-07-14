@@ -157,9 +157,7 @@ pub fn load(account_id: i64, slot: Slot) -> Result<String> {
     }
     let head = match entry(account_id, &slot)?.get_password() {
         Ok(s) => s,
-        Err(keyring::Error::NoEntry) => {
-            return Err(CoreError::Auth("no stored credential".into()))
-        }
+        Err(keyring::Error::NoEntry) => return Err(CoreError::Auth("no stored credential".into())),
         Err(e) => return Err(e.into()),
     };
     let Some(count) = head.strip_prefix(CHUNK_MARKER) else {
