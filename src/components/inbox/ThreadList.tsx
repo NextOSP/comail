@@ -163,6 +163,32 @@ export function ThreadList({
     [openThread],
   );
 
+  // Right-click a row: open the context menu at the pointer. If the row is part
+  // of an active multi-selection the menu acts on the whole selection; otherwise
+  // it targets (and highlights) just that row.
+  const handleRowContextMenu = useCallback(
+    (id: number, e: ReactMouseEvent) => {
+      e.preventDefault();
+      const state = useUi.getState();
+      const th = rowsRef.current.find((r) => r.id === id);
+      const inSelection = state.selection.length > 0 && state.selection.includes(id);
+      if (!inSelection) {
+        const idx = rowsRef.current.findIndex((r) => r.id === id);
+        state.set({ selection: [], selectedThreadId: id, selectedIndex: idx < 0 ? 0 : idx });
+      }
+      state.set({
+        contextMenu: {
+          x: e.clientX,
+          y: e.clientY,
+          targets: inSelection ? state.selection : [id],
+          unread: (th?.unreadCount ?? 0) > 0,
+          starred: th?.isStarred ?? false,
+        },
+      });
+    },
+    [],
+  );
+
   // Press-and-drag in the checkbox gutter sweeps a contiguous range.
   // Virtualization unmounts off-screen rows, so the hovered index is derived
   // from pointer Y against the scroll container rather than per-row events.
@@ -302,6 +328,7 @@ export function ThreadList({
                   labelMap={labelMap}
                   leaving={leavingIds.has(th.id)}
                   onRowClick={handleRowClick}
+                  onRowContextMenu={handleRowContextMenu}
                   onRowHover={handleRowHover}
                   onToggleCheck={handleToggleCheck}
                   onGutterDown={onGutterDown}

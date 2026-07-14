@@ -571,6 +571,28 @@ export const ALL_COMMANDS: Command[] = [
     hiddenInPalette: true,
   },
   {
+    // Left / right mirror K / J: step the thread cursor, and (like J/K) keep
+    // working inside an open conversation, where up/down are taken by messages.
+    id: "prev-thread-arrow",
+    titleKey: "commands:title.prevThread",
+    aliases: [],
+    keys: ["arrowleft"],
+    section: "Navigation",
+    when: noOverlay,
+    run: (ctx) => ctx.moveCursor(-1),
+    hiddenInPalette: true,
+  },
+  {
+    id: "next-thread-arrow",
+    titleKey: "commands:title.nextThread",
+    aliases: [],
+    keys: ["arrowright"],
+    section: "Navigation",
+    when: noOverlay,
+    run: (ctx) => ctx.moveCursor(1),
+    hiddenInPalette: true,
+  },
+  {
     id: "open-thread",
     titleKey: "commands:title.openThread",
     aliases: ["enter"],

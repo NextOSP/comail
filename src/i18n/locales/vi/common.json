@@ -129,6 +129,19 @@
     "select": "Chọn",
     "deselect": "Bỏ chọn"
   },
+  "contextMenu": {
+    "open": "Mở",
+    "markRead": "Đánh dấu đã đọc",
+    "markUnread": "Đánh dấu chưa đọc",
+    "star": "Gắn sao",
+    "unstar": "Bỏ gắn sao",
+    "archive": "Lưu trữ",
+    "snooze": "Tạm ẩn...",
+    "move": "Chuyển đến...",
+    "label": "Nhãn...",
+    "trash": "Thùng rác",
+    "spam": "Đánh dấu là spam"
+  },
   "sidebar": {
     "snippets": "Mẫu văn bản",
     "splits": "Quy tắc hộp thư chia cột",

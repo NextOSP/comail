@@ -129,6 +129,19 @@
     "select": "选择",
     "deselect": "取消选择"
   },
+  "contextMenu": {
+    "open": "打开",
+    "markRead": "标记为已读",
+    "markUnread": "标记为未读",
+    "star": "加星标",
+    "unstar": "取消星标",
+    "archive": "归档",
+    "snooze": "稍后处理...",
+    "move": "移动到...",
+    "label": "标签...",
+    "trash": "删除",
+    "spam": "标记为垃圾邮件"
+  },
   "sidebar": {
     "snippets": "片段",
     "splits": "分栏收件箱规则",

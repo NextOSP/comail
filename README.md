@@ -7,6 +7,8 @@ whole mailbox lives on your computer, so everything opens instantly, search
 finds what you *meant*, and it all keeps working on a plane. No account, no
 subscription, no telemetry — free and open source.
 
+<a href="https://www.producthunt.com/products/comail?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-comail" target="_blank" rel="noopener noreferrer"><img alt="Comail - Blazing fast email client with keyboard shortcuts | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1195344&amp;theme=light&amp;t=1784029150595"></a>
+
 ![Comail inbox](docs/screenshot.png)
 
 ## Get Comail

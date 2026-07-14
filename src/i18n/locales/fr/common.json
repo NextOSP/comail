@@ -129,6 +129,19 @@
     "select": "Sélectionner",
     "deselect": "Désélectionner"
   },
+  "contextMenu": {
+    "open": "Ouvrir",
+    "markRead": "Marquer comme lu",
+    "markUnread": "Marquer comme non lu",
+    "star": "Suivre",
+    "unstar": "Ne plus suivre",
+    "archive": "Archiver",
+    "snooze": "Reporter...",
+    "move": "Déplacer vers...",
+    "label": "Libellé...",
+    "trash": "Corbeille",
+    "spam": "Marquer comme spam"
+  },
   "sidebar": {
     "snippets": "Extraits",
     "splits": "Règles de boîte divisée",

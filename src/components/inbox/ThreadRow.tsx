@@ -11,6 +11,7 @@ function ThreadRowImpl({
   selfEmails,
   labelMap,
   onRowClick,
+  onRowContextMenu,
   onRowHover,
   onToggleCheck,
   onGutterDown,
@@ -24,6 +25,8 @@ function ThreadRowImpl({
   selfEmails: Set<string>;
   labelMap?: Map<number, Label>;
   onRowClick: (id: number, e: MouseEvent) => void;
+  /** Right-click hook: opens the row context menu at the pointer. */
+  onRowContextMenu?: (id: number, e: MouseEvent) => void;
   /** Hover-intent hook (null on leave); the list debounces and prefetches. */
   onRowHover?: (id: number | null) => void;
   onToggleCheck: (id: number) => void;
@@ -42,6 +45,7 @@ function ThreadRowImpl({
       data-selected={selected}
       data-checked={checked}
       onClick={(e) => onRowClick(thread.id, e)}
+      onContextMenu={onRowContextMenu ? (e) => onRowContextMenu(thread.id, e) : undefined}
       onMouseEnter={onRowHover ? () => onRowHover(thread.id) : undefined}
       onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
     >

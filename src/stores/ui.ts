@@ -130,6 +130,16 @@ interface UiState {
   moveTarget: number[] | null;
   /** thread ids the label popover targets; null = closed */
   labelTarget: number[] | null;
+  /** right-click context menu on a thread row; null = closed */
+  contextMenu: {
+    x: number;
+    y: number;
+    /** threads the menu acts on (the right-clicked row, or the active selection) */
+    targets: number[];
+    /** read/star state of the anchor row, so the menu can label its toggles */
+    unread: boolean;
+    starred: boolean;
+  } | null;
   /** calendar peek drawer: today / next 7 days */
   calendarDrawer: "day" | "week" | null;
   /** full-screen week calendar (the `2` view) */
@@ -237,6 +247,7 @@ export const useUi = create<UiState>((set, get) => ({
   snoozeTarget: null,
   moveTarget: null,
   labelTarget: null,
+  contextMenu: null,
   calendarDrawer: null,
   calendarScreen: false,
   calendarView: "week",

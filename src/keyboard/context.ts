@@ -130,9 +130,12 @@ export function inboxTabs(): { splitId: number | null; labelId: number | null; n
   ];
 }
 
-export function buildCommandContext(): CommandCtx {
+export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
   const ui = useUi.getState();
-  const targets = currentTargets(ui);
+  // The context menu acts on a specific row that may not be the cursor/selection,
+  // so it passes the exact targets; everything else derives them from ui state.
+  const targets =
+    targetsOverride && targetsOverride.length > 0 ? targetsOverride : currentTargets(ui);
 
   const act: CommandCtx["act"] = (kind, params, labelOverride) => {
     if (targets.length === 0) return;
@@ -339,6 +342,7 @@ export function buildCommandContext(): CommandCtx {
     const state = useUi.getState();
     // esc-stack: palette > attachment-preview > event-detail > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection > folder
     if (state.paletteOpen) return state.set({ paletteOpen: false });
+    if (state.contextMenu) return state.set({ contextMenu: null });
     // Focus lives inside the preview's sandboxed iframe (bounced to the app by
     // the iframe focus guard), so the modal's own onKeyDown can't see Esc —
     // close it from the global stack instead.

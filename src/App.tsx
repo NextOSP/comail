@@ -12,6 +12,7 @@ import { FpsMeter } from "./components/common/FpsMeter";
 import { InboxScreen } from "./components/inbox/InboxScreen";
 import { MovePopover } from "./components/common/MovePopover";
 import { LabelPopover } from "./components/common/LabelPopover";
+import { ThreadContextMenu } from "./components/inbox/ThreadContextMenu";
 import { Onboarding } from "./components/onboarding/Onboarding";
 import { SpaceIntro } from "./components/onboarding/SpaceIntro";
 import { SearchScreen } from "./components/search/SearchScreen";
@@ -163,6 +164,7 @@ export default function App() {
       <SnoozePopover />
       <MovePopover />
       <LabelPopover />
+      <ThreadContextMenu />
       <SplitPopover />
       {screen !== "onboarding" && <CalendarDrawer />}
       {screen !== "onboarding" && <EventCreate />}

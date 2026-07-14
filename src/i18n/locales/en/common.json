@@ -129,6 +129,19 @@
     "select": "Select",
     "deselect": "Deselect"
   },
+  "contextMenu": {
+    "open": "Open",
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread",
+    "star": "Star",
+    "unstar": "Unstar",
+    "archive": "Archive",
+    "snooze": "Snooze...",
+    "move": "Move to...",
+    "label": "Label...",
+    "trash": "Trash",
+    "spam": "Mark as spam"
+  },
   "sidebar": {
     "snippets": "Snippets",
     "splits": "Split inbox rules",
