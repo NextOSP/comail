@@ -1079,6 +1079,7 @@ function SyncSection() {
   const replaceSyncStatuses = useUi((state) => state.replaceSyncStatuses);
   const pushToast = useUi((state) => state.pushToast);
   const [busyAccountId, setBusyAccountId] = useState<number | null>(null);
+  const [reauthAccountId, setReauthAccountId] = useState<number | null>(null);
 
   const phaseLabel = (phase: SyncBackgroundPhase) => {
     switch (phase) {
@@ -1117,6 +1118,32 @@ function SyncSection() {
       });
     } finally {
       setBusyAccountId(null);
+    }
+  };
+
+  // Reauth reopens the provider's browser consent and swaps fresh tokens onto
+  // the same account; a second click while waiting cancels the pending flow.
+  const reauth = async (accountId: number, email: string) => {
+    if (reauthAccountId === accountId) {
+      void call("cancel_oauth", {}).catch(() => {});
+      return;
+    }
+    setReauthAccountId(accountId);
+    try {
+      await call("reauth_account", { accountId });
+      const statuses = (await call("get_sync_status", {}))
+        .map(normalizeSyncStatus)
+        .filter((status): status is SyncStatus => status != null);
+      replaceSyncStatuses(statuses);
+      await queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      pushToast({ kind: "info", message: t("settings:sync.reauthDone", { email }) });
+    } catch (error) {
+      const message = errorMessage(error);
+      if (!message.includes("sign-in cancelled")) {
+        pushToast({ kind: "error", message: t("settings:sync.reauthFailed", { email, detail: message }) });
+      }
+    } finally {
+      setReauthAccountId(null);
     }
   };
 
@@ -1172,17 +1199,31 @@ function SyncSection() {
                   {t(`common:syncState.${status.state}`)}
                 </div>
               </div>
-              <button
-                type="button"
-                className={primaryBtnCls}
-                disabled={busyAccountId != null || status.foregroundPhase === "inbox"}
-                aria-label={t("settings:sync.syncNowAccount", { email: account.email })}
-                onClick={() => void syncNow(account.id, account.email)}
-              >
-                {busy || status.foregroundPhase === "inbox"
-                  ? t("settings:sync.syncingNow")
-                  : t("settings:sync.syncNow")}
-              </button>
+              {status.state === "needs_reauth" && account.provider !== "imap" ? (
+                <button
+                  type="button"
+                  className={primaryBtnCls}
+                  disabled={reauthAccountId != null && reauthAccountId !== account.id}
+                  aria-label={t("settings:sync.reauthAccount", { email: account.email })}
+                  onClick={() => void reauth(account.id, account.email)}
+                >
+                  {reauthAccountId === account.id
+                    ? t("settings:sync.reauthWaiting")
+                    : t("settings:sync.reauth")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={primaryBtnCls}
+                  disabled={busyAccountId != null || status.foregroundPhase === "inbox"}
+                  aria-label={t("settings:sync.syncNowAccount", { email: account.email })}
+                  onClick={() => void syncNow(account.id, account.email)}
+                >
+                  {busy || status.foregroundPhase === "inbox"
+                    ? t("settings:sync.syncingNow")
+                    : t("settings:sync.syncNow")}
+                </button>
+              )}
             </div>
 
             <div className="mt-4 grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-hairline pt-3 text-[12.5px]">
@@ -1469,6 +1510,27 @@ function AccountsSection() {
     void call("cancel_oauth", {}).catch(() => {});
   };
 
+  const [reauthId, setReauthId] = useState<number | null>(null);
+  const reauth = async (accountId: number, email: string) => {
+    if (reauthId === accountId) {
+      cancelOauth();
+      return;
+    }
+    setReauthId(accountId);
+    try {
+      await call("reauth_account", { accountId });
+      await queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      pushToast({ kind: "info", message: t("settings:sync.reauthDone", { email }) });
+    } catch (err) {
+      const message = errorMessage(err);
+      if (!message.includes("sign-in cancelled")) {
+        pushToast({ kind: "error", message: t("settings:sync.reauthFailed", { email, detail: message }) });
+      }
+    } finally {
+      setReauthId(null);
+    }
+  };
+
   return (
     <section>
       <SectionLabel>{t("settings:section.accounts")}</SectionLabel>
@@ -1492,6 +1554,16 @@ function AccountsSection() {
             <span className="rounded bg-bg2 px-1.5 py-px text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
               {t(`settings:accounts.provider.${a.provider}`)}
             </span>
+            {a.syncState === "needs_reauth" && a.provider !== "imap" && (
+              <button
+                type="button"
+                className={ghostBtnCls}
+                disabled={reauthId != null && reauthId !== a.id}
+                onClick={() => void reauth(a.id, a.email)}
+              >
+                {reauthId === a.id ? t("settings:sync.reauthWaiting") : t("settings:sync.reauth")}
+              </button>
+            )}
             <ConfirmButton
               label={t("settings:accounts.remove")}
               confirmLabel={t("settings:accounts.reallyRemove")}

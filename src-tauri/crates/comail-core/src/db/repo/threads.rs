@@ -169,11 +169,35 @@ pub fn recompute(conn: &Connection, thread_id: i64) -> Result<()> {
 
 pub fn get_summary(conn: &Connection, thread_id: i64) -> Result<Option<ThreadSummary>> {
     let sql = format!("{SUMMARY_SELECT} WHERE t.id = ?1");
-    // prepare_cached: search hydration calls this once per result row.
     let mut stmt = conn.prepare_cached(&sql)?;
     Ok(stmt
         .query_row(params![thread_id], summary_from_row)
         .optional()?)
+}
+
+/// Summaries for many threads in one query, returned in `thread_ids` order.
+/// Ids that no longer exist are silently skipped. Plain `prepare` (not
+/// cached): the placeholder arity varies per call and would pollute the
+/// statement cache.
+pub fn get_summaries(conn: &Connection, thread_ids: &[i64]) -> Result<Vec<ThreadSummary>> {
+    if thread_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = thread_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!("{SUMMARY_SELECT} WHERE t.id IN ({placeholders})");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params_from_iter(thread_ids.iter()),
+            summary_from_row,
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut by_id: std::collections::HashMap<i64, ThreadSummary> =
+        rows.into_iter().map(|t| (t.id, t)).collect();
+    Ok(thread_ids
+        .iter()
+        .filter_map(|id| by_id.remove(id))
+        .collect())
 }
 
 pub struct ListArgs {

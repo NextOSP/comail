@@ -7,7 +7,7 @@
 
 use comail_core::{Core, NotificationOutboxItem};
 use std::time::Duration;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_notification::NotificationExt;
 use tokio::time::MissedTickBehavior;
 
@@ -61,10 +61,6 @@ async fn dispatch_due<R: Runtime>(app: &AppHandle<R>, core: &Core) {
             suppress(core, item.id, "notifications disabled").await;
             continue;
         }
-        if main_window_is_active(app) {
-            suppress(core, item.id, "main window active").await;
-            continue;
-        }
 
         let (title, body) = notification_copy(&item);
         match app.notification().builder().title(title).body(body).show() {
@@ -112,15 +108,6 @@ async fn suppress(core: &Core, id: i64, reason: &'static str) {
             tracing::warn!(outbox_id = id, reason, %error, "notification suppression failed")
         }
     }
-}
-
-/// A visible-but-background window still needs a banner. Suppress only when
-/// the user is actively looking at Comail.
-fn main_window_is_active<R: Runtime>(app: &AppHandle<R>) -> bool {
-    let Some(window) = app.get_webview_window("main") else {
-        return false;
-    };
-    window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false)
 }
 
 fn notification_copy(item: &NotificationOutboxItem) -> (String, String) {

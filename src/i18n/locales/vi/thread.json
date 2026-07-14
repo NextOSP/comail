@@ -40,7 +40,13 @@
     "cc": "cc",
     "via": "qua",
     "date": "ngày",
-    "subject": "chủ đề"
+    "subject": "chủ đề",
+    "copyAddress": "Sao chép địa chỉ",
+    "copied": "Đã sao chép {{value}}",
+    "copyAll": "Sao chép tất cả",
+    "copyAllHint": "Sao chép tất cả địa chỉ",
+    "copiedAll": "Đã sao chép {{count}} địa chỉ",
+    "copyFailed": "Không thể sao chép vào bộ nhớ tạm"
   },
   "loadingMessage": "Đang tải thư…",
   "messageBodyTitle": "Nội dung thư",

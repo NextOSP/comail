@@ -1731,6 +1731,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "search":
       return delay(searchThreads(a.args as SearchArgs), 60);
 
+    case "warm_search_embedding":
+      return delay(undefined);
+
     case "list_snippets":
       return delay(snippets.map((s) => ({ ...s })));
 

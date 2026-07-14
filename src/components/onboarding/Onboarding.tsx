@@ -168,7 +168,16 @@ export function Onboarding(
             ✕
           </button>
         )}
-        <h1 className="text-[22px] font-semibold tracking-tight text-ink">
+        {/* The welcome card leads with the brand wordmark (TopBar treatment:
+            uppercase, semibold, wide tracking); the add-account variant keeps
+            its plain heading. */}
+        <h1
+          className={
+            onClose
+              ? "text-[22px] font-semibold tracking-tight text-ink"
+              : "text-[19px] font-semibold tracking-[0.14em] text-ink uppercase"
+          }
+        >
           {onClose ? t("onboarding:titleAddAccount") : "Comail"}
         </h1>
         <p className="mt-1 mb-6 text-[13px] text-ink-muted">

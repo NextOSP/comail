@@ -58,6 +58,11 @@
     "syncNowAccount": "Sync {{email}} now",
     "syncComplete": "Inbox checked for {{email}}.",
     "syncFailed": "Couldn't sync {{email}}: {{detail}}",
+    "reauth": "Reauthenticate",
+    "reauthWaiting": "Waiting… (cancel)",
+    "reauthAccount": "Reauthenticate {{email}}",
+    "reauthDone": "Reconnected {{email}}.",
+    "reauthFailed": "Couldn't reconnect {{email}}: {{detail}}",
     "noAccounts": "No accounts connected."
   },
   "ai": {

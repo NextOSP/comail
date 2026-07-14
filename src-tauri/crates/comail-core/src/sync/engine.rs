@@ -2866,12 +2866,8 @@ fn decode_selective_content(
                 planned.section
             ))
         })?;
-        let decoded = crate::mime::decode_text_section(
-            planned.kind,
-            Some(&planned.transfer_encoding),
-            &section.mime_header,
-            &section.body,
-        )?;
+        let decoded =
+            crate::mime::decode_planned_text_section(planned, &section.mime_header, &section.body)?;
         match decoded.kind {
             crate::mime::TextSectionKind::Plain => plain.push(decoded.content),
             crate::mime::TextSectionKind::Html => html.push(decoded.content),
@@ -2881,15 +2877,7 @@ fn decode_selective_content(
 
     let text_body = (!plain.is_empty()).then(|| plain.join("\n\n"));
     let html_body = (!html.is_empty()).then(|| html.join("\n"));
-    let snippet = text_body
-        .as_deref()
-        .map(crate::mime::make_snippet)
-        .or_else(|| {
-            html_body
-                .as_deref()
-                .map(|value| crate::mime::make_snippet(&ammonia::clean_text(value)))
-        })
-        .unwrap_or_default();
+    let snippet = crate::mime::make_body_snippet(text_body.as_deref(), html_body.as_deref());
     Ok(DecodedSelectiveContent {
         message_id: item.message_id,
         uid: item.uid,

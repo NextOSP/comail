@@ -51,12 +51,33 @@ export function flattenThreads(data: { pages: ThreadPage[] } | undefined): Threa
   return data?.pages.flatMap((p) => p.threads) ?? [];
 }
 
+const THREAD_STALE_MS = 10_000;
+
+function fetchThread(threadId: number) {
+  if (!import.meta.env.DEV) return call("get_thread", { threadId });
+  const t0 = performance.now();
+  return call("get_thread", { threadId }).then((data) => {
+    performance.measure(`thread-data:${threadId}`, { start: t0, end: performance.now() });
+    return data;
+  });
+}
+
 export function useThread(threadId: number | null) {
   return useQuery({
     queryKey: ["thread", threadId],
-    queryFn: () => call("get_thread", { threadId: threadId! }),
+    queryFn: () => fetchThread(threadId!),
     enabled: threadId != null,
-    staleTime: 10_000,
+    staleTime: THREAD_STALE_MS,
+  });
+}
+
+/** Warm the thread cache (hover intent, keyboard selection) so opening it
+ *  paints from cache instead of paying the IPC round-trip on click. */
+export function prefetchThread(threadId: number) {
+  void queryClient.prefetchQuery({
+    queryKey: ["thread", threadId],
+    queryFn: () => fetchThread(threadId),
+    staleTime: THREAD_STALE_MS,
   });
 }
 

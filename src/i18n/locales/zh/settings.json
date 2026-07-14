@@ -58,6 +58,11 @@
     "syncNowAccount": "立即同步 {{email}}",
     "syncComplete": "已检查 {{email}} 的收件箱。",
     "syncFailed": "无法同步 {{email}}：{{detail}}",
+    "reauth": "重新认证",
+    "reauthWaiting": "等待中…（取消）",
+    "reauthAccount": "重新认证 {{email}}",
+    "reauthDone": "已重新连接 {{email}}。",
+    "reauthFailed": "无法重新连接 {{email}}：{{detail}}",
     "noAccounts": "尚未连接账户。"
   },
   "ai": {

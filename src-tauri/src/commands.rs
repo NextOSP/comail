@@ -57,6 +57,21 @@ pub async fn start_oauth(
 }
 
 #[tauri::command]
+pub async fn reauth_account(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    account_id: i64,
+) -> CmdResult<Account> {
+    state
+        .core
+        .reauth_account(account_id, move |url| {
+            let _ = app.opener().open_url(url, None::<String>);
+        })
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
 pub async fn cancel_oauth(state: State<'_, AppState>) -> CmdResult<()> {
     state.core.cancel_oauth();
     Ok(())
@@ -497,6 +512,14 @@ pub async fn search(state: State<'_, AppState>, args: SearchArgs) -> CmdResult<V
         .search(args.query, args.limit.unwrap_or(50))
         .await
         .map_err(err)
+}
+
+/// Fire-and-forget: pre-compute the query embedding while the user types so
+/// the search issued when they pause hits the cache.
+#[tauri::command]
+pub async fn warm_search_embedding(state: State<'_, AppState>, query: String) -> CmdResult<()> {
+    state.core.warm_query_embedding(query).await;
+    Ok(())
 }
 
 // ---------- snippets ----------

@@ -38,6 +38,12 @@ fn open_connection(path: &Path) -> Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
+    // Read-latency tuning: mmap the db file (256 MB window) so page reads
+    // skip the syscall path, keep a 64 MB page cache, and spill temp
+    // b-trees (sorts, group-bys) to memory instead of disk.
+    conn.pragma_update(None, "mmap_size", 268_435_456i64)?;
+    conn.pragma_update(None, "cache_size", -65_536i64)?;
+    conn.pragma_update(None, "temp_store", "MEMORY")?;
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
     Ok(conn)
 }

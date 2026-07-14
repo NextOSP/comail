@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { call } from "../../ipc/commands";
 import { useAccounts, useAsk, useContactSuggestions, useLabels, useSearch } from "../../queries/hooks";
 import { useModHeld } from "../../lib/useModHeld";
 import { useUi } from "../../stores/ui";
@@ -67,11 +68,23 @@ export function SearchScreen() {
     }
   }, [modeRequest]);
 
-  // 150ms debounce into the store (which keys the query)
+  // 50ms debounce into the store (which keys the query). keepPreviousData in
+  // useSearch keeps the previous results on screen between keystrokes.
   useEffect(() => {
-    const t = setTimeout(() => set({ searchQuery: input }), 150);
+    const t = setTimeout(() => set({ searchQuery: input }), 50);
     return () => clearTimeout(t);
   }, [input, set]);
+
+  // Pre-warm the semantic query embedding while typing (trailing throttle) so
+  // the search that fires when the user pauses hits the embedding cache
+  // instead of paying the model forward pass. Fire-and-forget.
+  useEffect(() => {
+    if (mode !== "search" || input.trim().length < 3) return;
+    const t = setTimeout(() => {
+      void call("warm_search_embedding", { query: input }).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [input, mode]);
 
   // Adopt a query pushed from outside while already open (palette "View all
   // from this sender"). During typing storedQuery only ever catches up to

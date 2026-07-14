@@ -138,6 +138,7 @@ async fn offline_actions_queue_locally_and_survive_restart() {
         .unwrap();
 
     let core = Core::start(Paths::for_tests(tmp.path())).await.unwrap();
+    core.notify_ui_ready();
 
     // The sync actor detects the dead server and marks the account offline.
     wait_for("offline sync state", Duration::from_secs(15), || async {
@@ -216,6 +217,7 @@ async fn offline_actions_queue_locally_and_survive_restart() {
     // Restart: the queue and the optimistic local state are durable.
     drop(core);
     let core = Core::start(Paths::for_tests(tmp.path())).await.unwrap();
+    core.notify_ui_ready();
     let rows = actions(&db).await;
     assert_eq!(rows.len(), 3, "queue survives restart");
     assert!(

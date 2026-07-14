@@ -58,6 +58,11 @@
     "syncNowAccount": "Synchroniser {{email}}",
     "syncComplete": "Boîte de réception vérifiée pour {{email}}.",
     "syncFailed": "Impossible de synchroniser {{email}} : {{detail}}",
+    "reauth": "Réauthentifier",
+    "reauthWaiting": "En attente… (annuler)",
+    "reauthAccount": "Réauthentifier {{email}}",
+    "reauthDone": "{{email}} reconnecté.",
+    "reauthFailed": "Impossible de reconnecter {{email}} : {{detail}}",
     "noAccounts": "Aucun compte connecté."
   },
   "ai": {

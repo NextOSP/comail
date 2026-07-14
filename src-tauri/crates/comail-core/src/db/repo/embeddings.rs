@@ -40,13 +40,20 @@ pub fn pending(conn: &Connection, limit: i64) -> Result<Vec<i64>> {
 /// Subject + plaintext body for a message, for chunking/embedding.
 pub fn source_text(conn: &Connection, message_id: i64) -> Result<Option<(String, String)>> {
     let mut stmt = conn.prepare(
-        "SELECT m.subject, COALESCE(b.text_body, m.snippet, '')
+        "SELECT m.subject, b.text_body, COALESCE(m.snippet, '')
          FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
          WHERE m.id = ?1",
     )?;
     let row = stmt
         .query_row(params![message_id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            let subject = r.get::<_, String>(0)?;
+            let text = r.get::<_, Option<String>>(1)?;
+            let snippet = r.get::<_, String>(2)?;
+            Ok((
+                subject,
+                text.filter(|value| !value.trim().is_empty())
+                    .unwrap_or(snippet),
+            ))
         })
         .ok();
     Ok(row)

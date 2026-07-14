@@ -606,6 +606,7 @@ export interface Commands {
   test_connection(args: { args: AddPasswordAccountArgs }): Promise<ConnectionTestResult>;
   remove_account(args: { accountId: number }): Promise<void>;
   start_oauth(args: { provider: Provider }): Promise<Account>;
+  reauth_account(args: { accountId: number }): Promise<Account>;
   cancel_oauth(args: Record<string, never>): Promise<void>;
 
   list_threads(args: {
@@ -643,6 +644,8 @@ export interface Commands {
   suggest_contacts(args: { query: string; limit?: number }): Promise<ContactSuggestion[]>;
 
   search(args: { args: SearchArgs }): Promise<ThreadSummary[]>;
+  /** Fire-and-forget: pre-computes the semantic query embedding while typing. */
+  warm_search_embedding(args: { query: string }): Promise<void>;
 
   list_snippets(args: Record<string, never>): Promise<Snippet[]>;
   save_snippet(args: { snippet: Omit<Snippet, "id" | "usageCount"> & { id: number | null } }): Promise<Snippet>;

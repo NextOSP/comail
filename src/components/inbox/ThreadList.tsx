@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
 import { buildCommandContext } from "../../keyboard/context";
 import { dateGroup, primaryCorrespondent } from "../../lib/format";
+import { prefetchThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { ContactPane } from "./ContactPane";
 import { ThreadRow } from "./ThreadRow";
@@ -128,6 +129,25 @@ export function ThreadList({
 
   // Stable per-row handlers so memoized ThreadRows don't re-render on hover.
   const handleToggleCheck = useCallback((id: number) => toggleSelect(id), [toggleSelect]);
+
+  // Hover intent: after the pointer rests on a row for 80ms, warm the thread
+  // cache so a click paints from cache instead of paying the IPC round-trip.
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleRowHover = useCallback((id: number | null) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = id == null ? null : setTimeout(() => prefetchThread(id), 80);
+  }, []);
+  useEffect(
+    () => () => {
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    },
+    [],
+  );
+
+  // Keyboard cursor: prefetch the highlighted thread so Enter opens instantly.
+  useEffect(() => {
+    if (selectedThreadId != null) prefetchThread(selectedThreadId);
+  }, [selectedThreadId]);
 
   // Row click: Shift = range, Cmd/Ctrl = toggle one, plain = open.
   const handleRowClick = useCallback(
@@ -282,6 +302,7 @@ export function ThreadList({
                   labelMap={labelMap}
                   leaving={leavingIds.has(th.id)}
                   onRowClick={handleRowClick}
+                  onRowHover={handleRowHover}
                   onToggleCheck={handleToggleCheck}
                   onGutterDown={onGutterDown}
                   jumpHint={jumpNumbers?.get(th.id)}

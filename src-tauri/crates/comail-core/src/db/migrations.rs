@@ -14,6 +14,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/010_sender_via.sql"),
     include_str!("migrations/011_robot_automated.sql"),
     include_str!("migrations/012_sync_resilience.sql"),
+    include_str!("migrations/013_fts_contentless_delete.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -84,7 +85,10 @@ mod tests {
         )
         .unwrap();
 
-        run(&mut conn).unwrap();
+        let tx = conn.transaction().unwrap();
+        tx.execute_batch(MIGRATIONS[11]).unwrap();
+        tx.pragma_update(None, "user_version", 12).unwrap();
+        tx.commit().unwrap();
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
@@ -134,5 +138,62 @@ mod tests {
             duplicate.is_err(),
             "IMAP section must be unique per message"
         );
+    }
+
+    #[test]
+    fn migration_013_rebuilds_fts_with_real_delete_support() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        run_through(&mut conn, 12);
+        conn.execute(
+            "INSERT INTO accounts (id, email, provider, auth_kind, username,
+             imap_host, imap_port, smtp_host, smtp_port, created_at)
+             VALUES (1, 'me@test.dev', 'imap', 'password', 'me', 'h', 993, 'h', 587, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO folders (id, account_id, imap_name, role)
+             VALUES (1, 1, 'INBOX', 'inbox')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO threads (id, account_id, subject_norm) VALUES (1, 1, 'legacy')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO messages (
+               id, account_id, thread_id, folder_id, uid, subject, from_addr,
+               to_json, cc_json, date, snippet
+             ) VALUES (
+               1, 1, 1, 1, 7, 'Legacy', 'sender@test.dev', '[]', '[]', 1,
+               'rebuiltuniqueterm'
+             )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO messages_fts (rowid, subject, from_text, to_text, body)
+             VALUES (1, 'Legacy', 'sender@test.dev', '', 'staleuniqueterm')",
+            [],
+        )
+        .unwrap();
+
+        run(&mut conn).unwrap();
+        let matches = |term: &str| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH ?1",
+                params![term],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(matches("staleuniqueterm"), 0);
+        assert_eq!(matches("rebuiltuniqueterm"), 1);
+        conn.execute("DELETE FROM messages_fts WHERE rowid = 1", [])
+            .unwrap();
+        assert_eq!(matches("rebuiltuniqueterm"), 0);
     }
 }

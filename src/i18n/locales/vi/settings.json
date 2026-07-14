@@ -58,6 +58,11 @@
     "syncNowAccount": "Đồng bộ {{email}} ngay",
     "syncComplete": "Đã kiểm tra hộp thư đến của {{email}}.",
     "syncFailed": "Không thể đồng bộ {{email}}: {{detail}}",
+    "reauth": "Xác thực lại",
+    "reauthWaiting": "Đang chờ… (huỷ)",
+    "reauthAccount": "Xác thực lại {{email}}",
+    "reauthDone": "Đã kết nối lại {{email}}.",
+    "reauthFailed": "Không thể kết nối lại {{email}}: {{detail}}",
     "noAccounts": "Chưa kết nối tài khoản nào."
   },
   "ai": {

@@ -40,7 +40,13 @@
     "cc": "cc",
     "via": "via",
     "date": "date",
-    "subject": "objet"
+    "subject": "objet",
+    "copyAddress": "Copier l’adresse",
+    "copied": "{{value}} copié",
+    "copyAll": "Tout copier",
+    "copyAllHint": "Copier toutes les adresses",
+    "copiedAll": "{{count}} adresses copiées",
+    "copyFailed": "Impossible de copier dans le presse-papiers"
   },
   "loadingMessage": "Chargement du message…",
   "messageBodyTitle": "Corps du message",

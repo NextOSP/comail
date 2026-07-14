@@ -40,7 +40,13 @@
     "cc": "cc",
     "via": "via",
     "date": "date",
-    "subject": "subject"
+    "subject": "subject",
+    "copyAddress": "Copy address",
+    "copied": "Copied {{value}}",
+    "copyAll": "Copy all",
+    "copyAllHint": "Copy all addresses",
+    "copiedAll": "Copied {{count}} addresses",
+    "copyFailed": "Couldn’t copy to clipboard"
   },
   "loadingMessage": "Loading message…",
   "messageBodyTitle": "Message body",

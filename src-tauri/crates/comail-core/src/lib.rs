@@ -148,6 +148,35 @@ impl Core {
             Ok(n) if n > 0 => tracing::info!("recovered {n} orphaned content fetch(es)"),
             _ => {}
         }
+        match core
+            .db
+            .write(repo::messages::requeue_misdecoded_bodies)
+            .await
+        {
+            Ok(ids) if !ids.is_empty() => tracing::info!(
+                count = ids.len(),
+                "requeued cached bodies with undecoded MIME transfer encoding"
+            ),
+            Err(error) => tracing::warn!(
+                %error,
+                "could not scan cached bodies for MIME transfer-encoding recovery"
+            ),
+            _ => {}
+        }
+        match core
+            .db
+            .write(repo::messages::repair_escaped_html_snippets)
+            .await
+        {
+            Ok(ids) if !ids.is_empty() => {
+                tracing::info!(count = ids.len(), "repaired cached HTML message previews")
+            }
+            Err(error) => tracing::warn!(
+                %error,
+                "could not repair cached HTML message previews"
+            ),
+            _ => {}
+        }
 
         // Spawn actors for existing accounts - but only after the frontend
         // reports ready (notify_ui_ready). Actors immediately load OAuth
@@ -465,6 +494,77 @@ impl Core {
             .ok_or_else(|| CoreError::NotFound("account".into()))
     }
 
+    /// Re-run the OAuth consent for an existing account whose refresh token was
+    /// revoked/expired (state `needs_reauth`) and swap in fresh tokens in place.
+    /// Unlike `start_oauth` this never inserts a row: it updates the existing
+    /// account's credentials and nudges its (paused) actor to reconnect.
+    pub async fn reauth_account(
+        &self,
+        account_id: i64,
+        open_url: impl FnOnce(String) + Send,
+    ) -> Result<Account> {
+        let account = self
+            .db
+            .read(move |conn| repo::accounts::get(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("account".into()))?;
+        // Only OAuth mailboxes reauth through the browser; password/IMAP
+        // accounts recover by re-entering credentials in the account editor.
+        let consent_extra: &[&str] = match account.provider {
+            Provider::Microsoft => &[oauth::providers::MS_ONLINE_MEETINGS_SCOPE],
+            Provider::Gmail => &[],
+            Provider::Imap => return Err(CoreError::Auth("not an oauth provider".into())),
+        };
+        let outcome = tokio::select! {
+            r = oauth::flow::authorize_with(account.provider, consent_extra, None, open_url) => r?,
+            _ = self.oauth_cancel.notified() => {
+                return Err(CoreError::Auth("sign-in cancelled".into()));
+            }
+        };
+        // Refuse to graft another mailbox's tokens onto this account. Signing in
+        // as a different address is "add account", not "reauth".
+        if !outcome.email.eq_ignore_ascii_case(&account.email) {
+            return Err(CoreError::Auth(format!(
+                "signed in as {} but this account is {}",
+                outcome.email, account.email
+            )));
+        }
+
+        self.tokens
+            .store_initial(
+                account_id,
+                outcome.access_token,
+                outcome.expires_in,
+                outcome.refresh_token,
+            )
+            .await?;
+
+        // Clear needs_reauth and wake the actor. The reauth pause loop retries
+        // its connect on the next SyncNow; if no actor is live (e.g. reauth
+        // right after launch), spawn one so the fresh tokens take effect.
+        self.db
+            .write(move |conn| repo::accounts::set_sync_state(conn, account_id, "idle"))
+            .await?;
+        let has_handle = self.handles.read().await.contains_key(&account_id);
+        if has_handle {
+            if let Some(handle) = self.handles.read().await.get(&account_id) {
+                handle.send(SyncCmd::SyncNow { complete: None });
+            }
+        } else {
+            let cfg = self
+                .db
+                .read(move |conn| repo::accounts::get_config(conn, account_id))
+                .await?
+                .ok_or_else(|| CoreError::NotFound("account".into()))?;
+            self.spawn_actor(cfg).await;
+        }
+
+        self.db
+            .read(move |conn| repo::accounts::get(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("account".into()))
+    }
+
     pub async fn remove_account(&self, account_id: i64) -> Result<()> {
         if let Some(h) = self.handles.write().await.remove(&account_id) {
             h.send(SyncCmd::Shutdown);
@@ -558,6 +658,7 @@ impl Core {
     }
 
     pub async fn get_thread(&self, thread_id: i64) -> Result<ThreadDetail> {
+        let t0 = std::time::Instant::now();
         let mut detail = self
             .db
             .read(move |conn| {
@@ -567,13 +668,22 @@ impl Core {
                 Ok(ThreadDetail { thread, messages })
             })
             .await?;
+        let t_db = t0.elapsed();
         // Resolve embedded cid: images to data: URIs so they render in the
-        // sandboxed iframe (which can't fetch cid: URLs).
+        // sandboxed iframe (which can't fetch cid: URLs). Batched: one DB
+        // read and one encode pass for the whole thread.
+        let pairs: Vec<(i64, String)> = detail
+            .messages
+            .iter_mut()
+            .filter_map(|m| m.html_body.take().map(|h| (m.id, h)))
+            .collect();
+        let mut resolved = self.inline_cid_images_batch(thread_id, pairs).await;
         for m in &mut detail.messages {
-            if let Some(html) = m.html_body.take() {
-                m.html_body = Some(self.inline_cid_images(m.id, html).await);
+            if let Some(html) = resolved.remove(&m.id) {
+                m.html_body = Some(html);
             }
         }
+        let t_cid = t0.elapsed() - t_db;
         // Kick off priority fetches for any unfetched bodies. "fetching" is
         // re-nudged too: a fetch command can be dropped (offline, reconnect),
         // and the fetch itself is idempotent once the body is cached. Request
@@ -584,6 +694,16 @@ impl Core {
                 self.request_body(m.account_id, m.id).await;
             }
         }
+        let html_bytes: usize = detail
+            .messages
+            .iter()
+            .filter_map(|m| m.html_body.as_ref().map(String::len))
+            .sum();
+        tracing::debug!(
+            "get_thread {thread_id}: {} msgs, {html_bytes}B html, db {t_db:?}, cid {t_cid:?}, total {:?}",
+            detail.messages.len(),
+            t0.elapsed()
+        );
         Ok(detail)
     }
 
@@ -670,6 +790,122 @@ impl Core {
         })
         .await
         .unwrap_or(fallback)
+    }
+
+    /// Batch variant of `inline_cid_images` for the thread-open path: one DB
+    /// read and one encode pass for the whole thread. Only attachments already
+    /// on disk are inlined; missing ones are downloaded in the background (a
+    /// `MailUpdated` event refreshes the thread when they land) so opening a
+    /// thread never waits on the network. Returns every input id mapped to its
+    /// (possibly rewritten) HTML.
+    async fn inline_cid_images_batch(
+        &self,
+        thread_id: i64,
+        pairs: Vec<(i64, String)>,
+    ) -> std::collections::HashMap<i64, String> {
+        use std::collections::HashMap;
+        let mut out: HashMap<i64, String> = HashMap::new();
+        let mut need: Vec<(i64, String)> = Vec::new();
+        for (id, html) in pairs {
+            if html.contains("cid:") {
+                need.push((id, html));
+            } else {
+                out.insert(id, html);
+            }
+        }
+        if need.is_empty() {
+            return out;
+        }
+
+        let ids: Vec<i64> = need.iter().map(|(id, _)| *id).collect();
+        let atts = self
+            .db
+            .read(move |conn| {
+                let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let sql = format!(
+                    "SELECT message_id, id, content_id, mime_type, file_path FROM attachments
+                     WHERE message_id IN ({placeholders}) AND content_id IS NOT NULL
+                       AND (part_id IS NOT NULL OR imap_section IS NOT NULL)"
+                );
+                let mut stmt = conn.prepare(&sql)?;
+                let rows = stmt
+                    .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, i64>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, Option<String>>(3)?,
+                            r.get::<_, Option<String>>(4)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(rows)
+            })
+            .await
+            .unwrap_or_default();
+        if atts.is_empty() {
+            out.extend(need);
+            return out;
+        }
+
+        let mut fetched: Vec<(i64, String, Option<String>, Vec<u8>)> = Vec::new();
+        let mut missing: Vec<i64> = Vec::new();
+        for (message_id, attachment_id, content_id, mime, file_path) in atts {
+            let bytes = match file_path {
+                Some(path) => tokio::fs::read(path).await.ok(),
+                None => None,
+            };
+            match bytes {
+                Some(bytes) => fetched.push((message_id, content_id, mime, bytes)),
+                None => missing.push(attachment_id),
+            }
+        }
+        if !missing.is_empty() {
+            let core = self.clone();
+            tokio::spawn(async move {
+                let mut any = false;
+                for id in missing {
+                    any |= core.get_attachment(id).await.is_ok();
+                }
+                if any {
+                    core.bus.emit(CoreEvent::MailUpdated {
+                        thread_ids: vec![thread_id],
+                    });
+                }
+            });
+        }
+        if fetched.is_empty() {
+            out.extend(need);
+            return out;
+        }
+
+        // Extraction + base64 of (possibly large) image parts is CPU-bound.
+        let fallback = need.clone();
+        let rewritten = tokio::task::spawn_blocking(move || {
+            use base64::Engine;
+            let mut maps: HashMap<i64, HashMap<String, String>> = HashMap::new();
+            for (message_id, content_id, mime, bytes) in fetched {
+                let mime = mime.unwrap_or_else(|| "application/octet-stream".to_string());
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                maps.entry(message_id).or_default().insert(
+                    crate::mime::normalize_cid(&content_id),
+                    format!("data:{mime};base64,{b64}"),
+                );
+            }
+            need.into_iter()
+                .map(|(id, html)| match maps.get(&id) {
+                    Some(map) => {
+                        let html = crate::mime::rewrite_cid_src(&html, map);
+                        (id, html)
+                    }
+                    None => (id, html),
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or(fallback);
+        out.extend(rewritten);
+        out
     }
 
     pub async fn list_folders(&self, account_id: Option<i64>) -> Result<Vec<FolderInfo>> {
@@ -2178,6 +2414,27 @@ impl Core {
         };
         let idx = self.embed.index.read().await;
         Ok(idx.search(&qv, k))
+    }
+
+    /// Pre-compute and cache the query embedding for `query` while the user is
+    /// still typing, so the search that fires when they pause skips the model
+    /// forward pass. Best-effort: no-ops when the model isn't loaded, the
+    /// query is too short for the semantic branch, or it's already cached.
+    pub async fn warm_query_embedding(&self, query: String) {
+        let parsed = search::parse(&query);
+        if parsed.text.chars().count() < 3 {
+            return;
+        }
+        let Some(embedder) = self.embed.embedder().await else {
+            return;
+        };
+        if self.embed.cached_query(&parsed.text).await.is_some() {
+            return;
+        }
+        let t = parsed.text.clone();
+        if let Ok(Ok(v)) = tokio::task::spawn_blocking(move || embedder.embed_query(&t)).await {
+            self.embed.cache_query(parsed.text, v).await;
+        }
     }
 
     // ---------- semantic index / RAG ----------

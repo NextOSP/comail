@@ -6,20 +6,25 @@ use std::collections::HashMap;
 
 /// Index (or re-index) a message into the contentless FTS table.
 pub fn index_message(conn: &Connection, message_id: i64) -> Result<()> {
-    // Contentless FTS5: delete then insert with explicit rowid.
+    // Migration 013 enables contentless-delete mode, so this removes all old
+    // terms without needing to reproduce the values that were indexed before
+    // the message changed.
     conn.execute(
-        "INSERT INTO messages_fts (messages_fts, rowid, subject, from_text, to_text, body)
-         VALUES ('delete', ?1, '', '', '', '')",
+        "DELETE FROM messages_fts WHERE rowid = ?1",
         params![message_id],
-    )
-    .ok(); // delete of a non-existent row errors; ignore
+    )?;
     conn.execute(
         "INSERT INTO messages_fts (rowid, subject, from_text, to_text, body)
          SELECT m.id,
                 m.subject,
                 COALESCE(m.from_name,'') || ' ' || COALESCE(m.from_addr,''),
                 m.to_json || ' ' || m.cc_json,
-                COALESCE(b.text_body, m.snippet, '')
+                CASE
+                  WHEN b.text_body IS NULL
+                    OR TRIM(b.text_body, char(9) || char(10) || char(11) || char(12) || char(13) || char(32)) = ''
+                  THEN COALESCE(m.snippet, '')
+                  ELSE b.text_body
+                END
          FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
          WHERE m.id = ?1",
         params![message_id],
@@ -480,15 +485,75 @@ pub fn fuse(
 }
 
 fn hydrate(conn: &Connection, thread_ids: &[i64]) -> Result<Vec<ThreadSummary>> {
-    let mut out = Vec::with_capacity(thread_ids.len());
-    for &tid in thread_ids {
-        if let Some(t) = super::threads::get_summary(conn, tid)? {
-            out.push(t);
-        }
-    }
-    Ok(out)
+    // One IN query; get_summaries preserves the fused ranking order.
+    super::threads::get_summaries(conn, thread_ids)
 }
 
 // Silence unused-import warning for Address which is used via ThreadSummary construction elsewhere.
 #[allow(unused)]
 fn _t(_a: Address) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{repo::messages, testutil};
+
+    /// hydrate() runs one IN query; it must return summaries in the fused
+    /// ranking order it was given, skipping ids that no longer exist.
+    #[test]
+    fn hydrate_preserves_ranking_order() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (t1, _) = testutil::seed_message(&c, "a@test.dev", "Alpha", false);
+        let (t2, _) = testutil::seed_message(&c, "b@test.dev", "Beta", false);
+        let (t3, _) = testutil::seed_message(&c, "c@test.dev", "Gamma", false);
+
+        let order = [t2, t3, t1];
+        let out = hydrate(&c, &order).unwrap();
+        assert_eq!(out.iter().map(|t| t.id).collect::<Vec<_>>(), order);
+
+        // Reversed input, reversed output; missing ids are skipped.
+        let out = hydrate(&c, &[t1, 9999, t3, t2]).unwrap();
+        assert_eq!(out.iter().map(|t| t.id).collect::<Vec<_>>(), [t1, t3, t2]);
+    }
+
+    #[test]
+    fn reindex_removes_stale_contentless_fts_terms() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (_, message_id) = testutil::seed_message(&c, "sender@test.dev", "Subject", false);
+        messages::store_body(
+            &c,
+            message_id,
+            Some("obsoleteuniqueterm"),
+            None,
+            None,
+            false,
+            Some("obsoleteuniqueterm"),
+        )
+        .unwrap();
+        index_message(&c, message_id).unwrap();
+        messages::store_body(
+            &c,
+            message_id,
+            Some("replacementuniqueterm"),
+            None,
+            None,
+            false,
+            Some("replacementuniqueterm"),
+        )
+        .unwrap();
+        index_message(&c, message_id).unwrap();
+
+        let matches = |term: &str| {
+            c.query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH ?1",
+                params![term],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(matches("obsoleteuniqueterm"), 0);
+        assert_eq!(matches("replacementuniqueterm"), 1);
+    }
+}

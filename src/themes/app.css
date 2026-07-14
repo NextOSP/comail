@@ -521,10 +521,10 @@ textarea {
   text-shadow: 0 1px 22px rgba(0, 0, 0, 0.5);
   will-change: opacity;
 }
-/* The title card: the wordmark in the app's own font - the end point of the
-   story's typeface evolution (typewriter, Times, Comic Sans... and now this).
-   Solid ink, brand-tight tracking; opacity and a tiny settle are driven
-   per-frame from SpaceIntro.tsx. */
+/* The title card: the brand wordmark exactly as the app sets it (see
+   TopBar: uppercase, semibold, 0.14em tracking, the app sans), scaled up.
+   The end point of the story's typeface evolution. Opacity and a tiny
+   settle are driven per-frame from SpaceIntro.tsx. */
 .co-intro-title {
   max-width: 92vw;
   padding: 0 3vw;
@@ -534,14 +534,20 @@ textarea {
   gap: clamp(20px, 2.4vw, 34px);
   text-align: center;
   font-family: var(--font-sans);
-  font-size: clamp(44px, 7vw, 88px);
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: clamp(36px, 5.6vw, 72px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   line-height: 1.08;
   color: rgba(248, 247, 252, 0.97);
   text-shadow: 0 2px 40px rgba(0, 0, 0, 0.55);
   transform-origin: center;
   will-change: opacity, transform;
+}
+/* Wide tracking also pads after the last letter; pull it back so the
+   wordmark sits optically centered next to the mark. */
+.co-intro-title > span {
+  margin-right: -0.14em;
 }
 /* The mark sits on the same line as the wordmark, sized to its cap height. */
 .co-intro-title-mark {

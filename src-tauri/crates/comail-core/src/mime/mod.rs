@@ -39,7 +39,7 @@ pub struct ParsedAttachment {
 }
 
 /// Schema version written into `messages.mime_plan_json`.
-pub const MIME_PLAN_VERSION: u8 = 1;
+pub const MIME_PLAN_VERSION: u8 = 2;
 
 /// A compact, serializable description of the IMAP sections needed to make a
 /// message readable without downloading unrelated attachment bytes.
@@ -278,6 +278,14 @@ fn qp_artifact_count(content: &str) -> usize {
     count
 }
 
+/// Conservatively identify cached text that still contains a transfer-encoded
+/// quoted-printable body. The threshold intentionally matches selective
+/// decoding's repair gate: isolated `=XX` strings are common in legitimate
+/// prose, while eight escapes strongly indicate an undecoded MIME part.
+pub fn looks_like_undecoded_quoted_printable(content: &str) -> bool {
+    qp_artifact_count(content) >= 8
+}
+
 /// Quoted-printable decoding that never fails: valid `=XX` escapes decode,
 /// soft line breaks (`=` + optional transport padding + line end) vanish,
 /// and anything malformed passes through literally. Mail gateways that
@@ -330,7 +338,12 @@ fn lenient_qp_decode(input: &[u8]) -> Vec<u8> {
 /// The fetched header block with any Content-Transfer-Encoding lines (and
 /// their folded continuations) replaced by `8bit` - for re-parsing a body
 /// whose transfer encoding we have already undone by hand.
-fn header_with_8bit_cte(mime_header: &[u8]) -> Vec<u8> {
+fn header_with_8bit_cte(
+    mime_header: &[u8],
+    kind: TextSectionKind,
+    declared_mime_type: Option<&str>,
+    declared_charset: Option<&str>,
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(mime_header.len() + 40);
     let mut dropping = false;
     for line in mime_header.split_inclusive(|&b| b == b'\n') {
@@ -353,6 +366,21 @@ fn header_with_8bit_cte(mime_header: &[u8]) -> Vec<u8> {
     if !out.is_empty() {
         out.extend_from_slice(b"\r\n");
     }
+    let has_content_type = String::from_utf8_lossy(&out)
+        .to_ascii_lowercase()
+        .contains("content-type:");
+    if !has_content_type {
+        let default_mime = match kind {
+            TextSectionKind::Plain => "text/plain",
+            TextSectionKind::Html => "text/html",
+            TextSectionKind::Calendar => "text/calendar",
+        };
+        let mime_type = declared_mime_type.unwrap_or(default_mime);
+        let charset = declared_charset.unwrap_or("utf-8");
+        out.extend_from_slice(
+            format!("Content-Type: {mime_type}; charset=\"{charset}\"\r\n").as_bytes(),
+        );
+    }
     out.extend_from_slice(b"Content-Transfer-Encoding: 8bit\r\n\r\n");
     out
 }
@@ -361,6 +389,82 @@ fn header_declares_qp(mime_header: &[u8]) -> bool {
     String::from_utf8_lossy(mime_header)
         .to_ascii_lowercase()
         .contains("quoted-printable")
+}
+
+fn header_declares_base64(mime_header: &[u8]) -> bool {
+    String::from_utf8_lossy(mime_header)
+        .to_ascii_lowercase()
+        .lines()
+        .any(|line| {
+            line.strip_prefix("content-transfer-encoding:")
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("base64"))
+        })
+}
+
+fn decode_base64_transfer(input: &[u8]) -> Option<Vec<u8>> {
+    use base64::Engine;
+
+    let compact: Vec<u8> = input
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    if compact.is_empty() {
+        return Some(Vec::new());
+    }
+    base64::engine::general_purpose::STANDARD
+        .decode(&compact)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(&compact))
+        .ok()
+}
+
+fn decoded_looks_like_html(decoded: &[u8]) -> bool {
+    let decoded = decoded.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(decoded);
+    let start = decoded
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(decoded.len());
+    let probe = &decoded[start..decoded.len().min(start.saturating_add(1024))];
+    let probe = String::from_utf8_lossy(probe).to_ascii_lowercase();
+    probe.starts_with("<!doctype html")
+        || probe.starts_with("<html")
+        || probe.starts_with("<head")
+        || probe.starts_with("<body")
+        || probe.starts_with("<meta")
+        || probe.starts_with("<style")
+        || (probe.starts_with("<?xml") && probe.contains("<html"))
+}
+
+fn decoded_looks_like_calendar(decoded: &[u8]) -> bool {
+    let decoded = decoded.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(decoded);
+    let start = decoded
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(decoded.len());
+    decoded[start..]
+        .get(..15)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"BEGIN:VCALENDAR"))
+}
+
+fn decoded_matches_kind(kind: TextSectionKind, decoded: &[u8]) -> bool {
+    match kind {
+        TextSectionKind::Html => decoded_looks_like_html(decoded),
+        TextSectionKind::Calendar => decoded_looks_like_calendar(decoded),
+        // Plain text can legitimately be a Base64 token, so never infer its
+        // transfer encoding without BODYSTRUCTURE or a MIME header.
+        TextSectionKind::Plain => false,
+    }
+}
+
+/// Conservatively identify the bad-cache signature produced when a Base64
+/// HTML part was stored literally. Intended for a one-shot recovery scan that
+/// resets matching cached rows to `body_state = 'none'` for selective refetch.
+pub fn looks_like_base64_encoded_html(content: &str) -> bool {
+    if content.len() < 32 || content.as_bytes().contains(&b'<') {
+        return false;
+    }
+    decode_base64_transfer(content.as_bytes())
+        .is_some_and(|decoded| decoded_looks_like_html(&decoded))
 }
 
 /// Decode transfer encoding and charset for one fetched text MIME entity.
@@ -377,27 +481,83 @@ pub fn decode_text_section(
     mime_header: &[u8],
     encoded_body: &[u8],
 ) -> Result<DecodedTextSection> {
-    let raw = section_entity(mime_header, encoded_body);
+    decode_text_section_inner(
+        kind,
+        declared_encoding,
+        None,
+        None,
+        mime_header,
+        encoded_body,
+    )
+}
+
+/// Decode a fetched text part using the complete BODYSTRUCTURE plan as the
+/// authoritative fallback when Outlook omits `BODY[section.MIME]` or returns
+/// it without Content-Transfer-Encoding.
+pub fn decode_planned_text_section(
+    planned: &PlannedTextSection,
+    mime_header: &[u8],
+    encoded_body: &[u8],
+) -> Result<DecodedTextSection> {
+    decode_text_section_inner(
+        planned.kind,
+        Some(&planned.transfer_encoding),
+        Some(&planned.mime_type),
+        planned.charset.as_deref(),
+        mime_header,
+        encoded_body,
+    )
+}
+
+fn parse_text_entity(mime_header: &[u8], body: &[u8]) -> Result<String> {
+    let raw = section_entity(mime_header, body);
     let msg = mail_parser::MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| CoreError::Mime("unparseable MIME section".into()))?;
-    let mut content = msg
+    Ok(msg
         .root_part()
         .text_contents()
         .map(str::to_owned)
-        .unwrap_or_else(|| String::from_utf8_lossy(msg.root_part().contents()).into_owned());
+        .unwrap_or_else(|| String::from_utf8_lossy(msg.root_part().contents()).into_owned()))
+}
+
+fn decode_text_section_inner(
+    kind: TextSectionKind,
+    declared_encoding: Option<&str>,
+    declared_mime_type: Option<&str>,
+    declared_charset: Option<&str>,
+    mime_header: &[u8],
+    encoded_body: &[u8],
+) -> Result<DecodedTextSection> {
+    let base64_declared = header_declares_base64(mime_header)
+        || declared_encoding.is_some_and(|value| value.eq_ignore_ascii_case("base64"));
+    let decoded_base64 = if base64_declared {
+        Some(
+            decode_base64_transfer(encoded_body)
+                .ok_or_else(|| CoreError::Mime("invalid Base64 selective MIME section".into()))?,
+        )
+    } else {
+        // Legacy callers may not yet pass BODYSTRUCTURE metadata. Infer only
+        // strong structured signatures; never guess for arbitrary plain text.
+        decode_base64_transfer(encoded_body).filter(|decoded| decoded_matches_kind(kind, decoded))
+    };
+
+    let mut content = if let Some(decoded) = decoded_base64.as_deref() {
+        let fixed_header =
+            header_with_8bit_cte(mime_header, kind, declared_mime_type, declared_charset);
+        parse_text_entity(&fixed_header, decoded)?
+    } else {
+        parse_text_entity(mime_header, encoded_body)?
+    };
 
     let qp_declared = header_declares_qp(mime_header)
         || declared_encoding.is_some_and(|value| value.eq_ignore_ascii_case("quoted-printable"));
-    if qp_declared && qp_artifact_count(&content) >= 8 {
+    if decoded_base64.is_none() && qp_declared && looks_like_undecoded_quoted_printable(&content) {
         let decoded = lenient_qp_decode(encoded_body);
-        let fixed = section_entity(&header_with_8bit_cte(mime_header), &decoded);
-        if let Some(reparsed) = mail_parser::MessageParser::default().parse(&fixed) {
-            if let Some(text) = reparsed.root_part().text_contents() {
-                content = text.to_owned();
-            } else {
-                content = String::from_utf8_lossy(reparsed.root_part().contents()).into_owned();
-            }
+        let fixed_header =
+            header_with_8bit_cte(mime_header, kind, declared_mime_type, declared_charset);
+        if let Ok(reparsed) = parse_text_entity(&fixed_header, &decoded) {
+            content = reparsed;
         }
     }
 
@@ -595,6 +755,55 @@ mod selective_section_tests {
     }
 
     #[test]
+    fn decodes_outlook_base64_html_when_mime_header_omits_cte() {
+        use base64::Engine;
+
+        let source = b"<html>\r\n<head><title>Outlook</title></head>\r\n<body><div>Hello from Outlook</div><script>bad()</script></body></html>";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(source);
+        assert!(encoded.starts_with("PGh0bWw+DQo8"));
+        let planned = PlannedTextSection {
+            section: "1".into(),
+            kind: TextSectionKind::Html,
+            mime_type: "text/html".into(),
+            charset: Some("utf-8".into()),
+            transfer_encoding: "base64".into(),
+            size: encoded.len() as u32,
+        };
+
+        // Office 365 occasionally returns no BODY[1.MIME] data even though
+        // BODYSTRUCTURE correctly reports BASE64. The plan must win.
+        let decoded = decode_planned_text_section(&planned, b"", encoded.as_bytes()).unwrap();
+        assert!(decoded.content.contains("Hello from Outlook"));
+        assert!(!decoded.content.contains("PGh0bWw"));
+        assert!(!decoded.content.contains("<script"));
+
+        // Legacy callers without plan metadata remain recoverable, but only
+        // because the decoded bytes carry a strong full-HTML signature.
+        let inferred =
+            decode_text_section(TextSectionKind::Html, None, b"", encoded.as_bytes()).unwrap();
+        assert!(inferred.content.contains("Hello from Outlook"));
+    }
+
+    #[test]
+    fn cached_base64_html_detection_is_conservative() {
+        use base64::Engine;
+
+        let encoded_html = base64::engine::general_purpose::STANDARD
+            .encode(b"<html><body>A cached Outlook message</body></html>");
+        let encoded_plain =
+            base64::engine::general_purpose::STANDARD.encode(b"ordinary plain text payload");
+        let encoded_meta = base64::engine::general_purpose::STANDARD
+            .encode(b"<meta charset=\"utf-8\"><div>Outlook fragment</div>");
+        assert!(looks_like_base64_encoded_html(&encoded_html));
+        assert!(looks_like_base64_encoded_html(&encoded_meta));
+        assert!(!looks_like_base64_encoded_html(&encoded_plain));
+        assert!(!looks_like_base64_encoded_html(
+            "<html><body>Already decoded</body></html>"
+        ));
+        assert!(!looks_like_base64_encoded_html("PGh0bWw+"));
+    }
+
+    #[test]
     fn recovers_gateway_mangled_quoted_printable() {
         // An Exchange-style disclaimer rewrite: the part header lost its
         // Content-Transfer-Encoding, the body kept hundreds of QP escapes,
@@ -602,6 +811,12 @@ mod selective_section_tests {
         // end). BODYSTRUCTURE still declares quoted-printable.
         let body = b"Qu=E1=BA=A3ng c=C3=A1o =E2=80=8D=E2=80=8D=E2=80=8D=E2=80=8D= \r\n=E2=80=8D=E2=80=8D=E2=80=8D=E2=80=8Dduy=E1=BB=87t"
             .to_vec();
+        assert!(looks_like_undecoded_quoted_printable(
+            std::str::from_utf8(&body).unwrap()
+        ));
+        assert!(!looks_like_undecoded_quoted_printable(
+            "A legitimate short token =3D and price =20"
+        ));
         let decoded = decode_text_section(
             TextSectionKind::Plain,
             Some("quoted-printable"),
@@ -696,6 +911,22 @@ pub fn sanitize_html(html: &str) -> String {
 pub fn make_snippet(text: &str) -> String {
     let s: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     s.chars().take(140).collect()
+}
+
+/// Convert HTML into readable preview text before applying the normal snippet
+/// length and whitespace rules. `ammonia::clean_text` is an HTML *escaper*,
+/// not a tag stripper, and caused previews such as `&#10;&lt;div...`.
+pub fn make_html_snippet(html: &str) -> String {
+    make_snippet(&mail_parser::decoders::html::html_to_text(html))
+}
+
+/// Build a preview with the same precedence everywhere. A whitespace-only
+/// plain alternative carries no useful preview, so fall back to HTML.
+pub fn make_body_snippet(text: Option<&str>, html: Option<&str>) -> String {
+    text.filter(|value| !value.trim().is_empty())
+        .map(make_snippet)
+        .or_else(|| html.map(make_html_snippet))
+        .unwrap_or_default()
 }
 
 /// `src="cid:<id>"` / `src='cid:<id>'` in a body (id in group 2 or 3).
@@ -1016,14 +1247,7 @@ pub fn parse_message(raw: &[u8]) -> Result<ParsedBody> {
     let text = msg.body_text(0).map(|t| t.to_string());
     let html = msg.body_html(0).map(|h| sanitize_html(&h));
 
-    let snippet = text
-        .as_deref()
-        .map(make_snippet)
-        .or_else(|| {
-            html.as_deref()
-                .map(|h| make_snippet(&ammonia::clean_text(h)))
-        })
-        .unwrap_or_default();
+    let snippet = make_body_snippet(text.as_deref(), html.as_deref());
 
     let mut attachments = Vec::new();
     let mut calendar_parts = Vec::new();
@@ -1309,6 +1533,29 @@ mod tests {
             "alice@example.com"
         );
         assert!(parsed.text.unwrap().contains("Hello Bob"));
+    }
+
+    #[test]
+    fn html_snippets_extract_readable_text_without_double_decoding() {
+        let html = "\n<div style=\"font-weight:bold\">Dear <b>Alice</b> &amp; Bob<br>Welcome</div><script>hidden()</script>";
+        let snippet = make_html_snippet(html);
+        assert_eq!(snippet, "Dear Alice & Bob Welcome");
+        assert!(!snippet.contains("&#"));
+        assert!(!snippet.contains("&lt;"));
+        assert!(!snippet.contains('<'));
+        assert!(!snippet.contains("hidden"));
+
+        // Only one HTML entity layer is decoded. This preserves text that is
+        // intentionally displaying the literal string "&lt;div&gt;".
+        assert_eq!(
+            make_html_snippet("<div>&amp;lt;div&amp;gt;</div>"),
+            "&lt;div&gt;"
+        );
+        assert_eq!(make_snippet("2 < 3 &amp; 4"), "2 < 3 &amp; 4");
+        assert_eq!(
+            make_body_snippet(Some("\r\n\t"), Some("<p>HTML fallback</p>")),
+            "HTML fallback"
+        );
     }
 
     fn outgoing<'a>(text: &'a str, html: Option<&'a str>) -> OutgoingMessage<'a> {

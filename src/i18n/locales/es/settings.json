@@ -58,6 +58,11 @@
     "syncNowAccount": "Sincronizar {{email}} ahora",
     "syncComplete": "Se comprobó la bandeja de entrada de {{email}}.",
     "syncFailed": "No se pudo sincronizar {{email}}: {{detail}}",
+    "reauth": "Volver a autenticar",
+    "reauthWaiting": "Esperando… (cancelar)",
+    "reauthAccount": "Volver a autenticar {{email}}",
+    "reauthDone": "Se reconectó {{email}}.",
+    "reauthFailed": "No se pudo reconectar {{email}}: {{detail}}",
     "noAccounts": "No hay cuentas conectadas."
   },
   "ai": {

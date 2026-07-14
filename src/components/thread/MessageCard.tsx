@@ -7,7 +7,7 @@ import { errorMessage } from "../../ipc/errors";
 import { MOCK_MODE } from "../../ipc/mock";
 import { useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
-import type { AttachmentMeta, MessageDetail } from "../../ipc/types";
+import type { Address, AttachmentMeta, MessageDetail } from "../../ipc/types";
 import { addressName, formatSize, longTime, relativeTime } from "../../lib/format";
 import { adaptDocumentForDarkMode, fixInvisibleText } from "../../lib/emailDark";
 import {
@@ -273,38 +273,146 @@ export function MessageCard({
   );
 }
 
+/** Writes to the clipboard and confirms with a toast; surfaces the rare
+ *  failure rather than silently dropping the copy. */
+async function copyToClipboard(text: string, confirmation: string) {
+  const { pushToast } = useUi.getState();
+  try {
+    await navigator.clipboard.writeText(text);
+    pushToast({ kind: "info", message: confirmation });
+  } catch {
+    pushToast({ kind: "error", message: i18n.t("thread:details.copyFailed") });
+  }
+}
+
+/** One recipient rendered as a copy-to-clipboard pill: display name plus the
+ *  faint address, clicking copies the bare email. A transient check confirms
+ *  the copy in place so it reads even with the toast off-screen. */
+function AddressChip({ address }: { address: Address }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const name = addressName(address);
+  // Skip the faint email when the "name" is already just the email localpart.
+  const showEmail = name.toLowerCase() !== address.email.toLowerCase();
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return (
+    <button
+      type="button"
+      className="group inline-flex max-w-full items-center gap-1.5 rounded-full border border-hairline bg-bg1 py-0.5 pr-1.5 pl-2 text-[11.5px] transition-colors hover:border-accent/40 hover:bg-bg2"
+      title={`${addressLine(address)} · ${t("thread:details.copyAddress")}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        void copyToClipboard(address.email, t("thread:details.copied", { value: address.email }));
+        window.clearTimeout(timer.current);
+        setCopied(true);
+        timer.current = window.setTimeout(() => setCopied(false), 1200);
+      }}
+    >
+      <span className="shrink-0 font-medium text-ink">{name}</span>
+      {showEmail && <span className="min-w-0 truncate text-ink-faint">{address.email}</span>}
+      {copied ? (
+        <CheckIcon className="shrink-0 text-accent" />
+      ) : (
+        <CopyIcon className="shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100" />
+      )}
+    </button>
+  );
+}
+
+/** A row of recipient chips with a trailing "copy all" when there's more than
+ *  one address to grab in a single click. */
+function AddressRow({ addresses }: { addresses: Address[] }) {
+  const { t } = useTranslation();
+  if (addresses.length === 0) return <span className="text-ink-faint">-</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {addresses.map((a, i) => (
+        <AddressChip key={`${a.email}-${i}`} address={a} />
+      ))}
+      {addresses.length > 1 && (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium text-ink-faint transition-colors hover:bg-bg1 hover:text-accent"
+          title={t("thread:details.copyAllHint")}
+          onClick={(e) => {
+            e.stopPropagation();
+            const joined = addresses.map((a) => a.email).join(", ");
+            void copyToClipboard(joined, t("thread:details.copiedAll", { count: addresses.length }));
+          }}
+        >
+          <CopyIcon className="shrink-0" />
+          {t("thread:details.copyAll")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** `Name <email>` when a display name exists, bare email otherwise. */
 function addressLine(a: { name: string | null; email: string }): string {
   return a.name && a.name.trim() ? `${a.name.trim()} <${a.email}>` : a.email;
 }
 
 /** Expanded header details (Gmail-style "show details"): full from/to/cc
- *  addresses, via, date and subject. Toggled from the recipient summary line. */
+ *  addresses as copyable chips, plus via, date and subject. Toggled from the
+ *  recipient summary line. */
 function MessageDetails({ message, viaDomain }: { message: MessageDetail; viaDomain: string | null }) {
   const { t } = useTranslation();
-  const rows: Array<[string, string]> = [
-    [t("thread:details.from"), addressLine(message.from)],
-    [t("thread:details.to"), message.to.map(addressLine).join(", ") || "-"],
+  // Address rows render as copyable chips; text rows stay plain.
+  const addressRows: Array<[string, Address[]]> = [
+    [t("thread:details.from"), [message.from]],
+    [t("thread:details.to"), message.to],
   ];
-  if (message.cc.length > 0) rows.push([t("thread:details.cc"), message.cc.map(addressLine).join(", ")]);
+  if (message.cc.length > 0) addressRows.push([t("thread:details.cc"), message.cc]);
+  const textRows: Array<[string, string]> = [];
   if (viaDomain) {
     // Full via identity when we have one (an email); just the domain otherwise.
-    rows.push([
+    textRows.push([
       t("thread:details.via"),
       message.via && message.via !== viaDomain ? `${viaDomain} (${message.via})` : viaDomain,
     ]);
   }
-  rows.push([t("thread:details.date"), longTime(message.date)]);
-  rows.push([t("thread:details.subject"), message.subject || t("thread:noSubject")]);
+  textRows.push([t("thread:details.date"), longTime(message.date)]);
+  textRows.push([t("thread:details.subject"), message.subject || t("thread:noSubject")]);
   return (
-    <div className="co-fade-in mx-5 mb-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded-lg border border-hairline bg-bg2/50 px-3.5 py-2.5 text-[12px] select-text">
-      {rows.map(([label, value]) => (
+    <div className="co-fade-in mx-5 mb-3 grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-1.5 rounded-lg border border-hairline bg-bg2/50 px-3.5 py-3 text-[12px] select-text">
+      {addressRows.map(([label, addresses]) => (
         <div key={label} className="contents">
-          <span className="text-right text-ink-faint">{label}</span>
+          <span className="self-center text-right text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+            {label}
+          </span>
+          <AddressRow addresses={addresses} />
+        </div>
+      ))}
+      {textRows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <span className="self-start pt-0.5 text-right text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+            {label}
+          </span>
           <span className="min-w-0 break-words text-ink">{value}</span>
         </div>
       ))}
     </div>
+  );
+}
+
+/** Two overlapping squares — the standard copy affordance. */
+function CopyIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+    </svg>
+  );
+}
+
+/** Check confirming a chip's address landed on the clipboard. */
+function CheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
   );
 }
 
@@ -335,7 +443,7 @@ function MessageBody({ message }: { message: MessageDetail }) {
     return <BodySkeleton snippet={message.snippet} />;
   }
   if (message.htmlBody) {
-    return <HtmlBody html={message.htmlBody} />;
+    return <HtmlBody html={message.htmlBody} messageId={message.id} />;
   }
   // (plaintext path below)
   return (
@@ -396,7 +504,7 @@ function BodySkeleton({ snippet }: { snippet?: string | null }) {
 /** Sanitized HTML rendered inside a sandboxed iframe with theme-matched CSS.
  *  The trailing quoted/forwarded reply is collapsed behind a "⋯" toggle so a
  *  message shows just its new content, matching the plaintext path. */
-function HtmlBody({ html: fullHtml }: { html: string }) {
+function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: number }) {
   const { t } = useTranslation();
   const [showQuoted, setShowQuoted] = useState(false);
   const [visibleHtml, quotedHtml] = useMemo(() => splitQuotedHtml(fullHtml), [fullHtml]);
@@ -543,6 +651,9 @@ function HtmlBody({ html: fullHtml }: { html: string }) {
     // Fit width once (may apply a zoom), then measure the resulting height.
     fitWidth();
     measure();
+    if (import.meta.env.DEV) {
+      performance.mark(`message-painted:${messageId}`);
+    }
     // Keep the height in sync as images/fonts finish loading inside the
     // sandboxed doc (no scripts allowed there, so observe from out here).
     // The observer runs `measure` (height only) — never `fitWidth` — so a late

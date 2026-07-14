@@ -40,7 +40,13 @@
     "cc": "cc",
     "via": "vía",
     "date": "fecha",
-    "subject": "asunto"
+    "subject": "asunto",
+    "copyAddress": "Copiar dirección",
+    "copied": "Copiado {{value}}",
+    "copyAll": "Copiar todo",
+    "copyAllHint": "Copiar todas las direcciones",
+    "copiedAll": "{{count}} direcciones copiadas",
+    "copyFailed": "No se pudo copiar al portapapeles"
   },
   "loadingMessage": "Cargando mensaje…",
   "messageBodyTitle": "Cuerpo del mensaje",

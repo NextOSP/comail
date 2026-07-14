@@ -11,6 +11,7 @@ function ThreadRowImpl({
   selfEmails,
   labelMap,
   onRowClick,
+  onRowHover,
   onToggleCheck,
   onGutterDown,
   leaving,
@@ -23,6 +24,8 @@ function ThreadRowImpl({
   selfEmails: Set<string>;
   labelMap?: Map<number, Label>;
   onRowClick: (id: number, e: MouseEvent) => void;
+  /** Hover-intent hook (null on leave); the list debounces and prefetches. */
+  onRowHover?: (id: number | null) => void;
   onToggleCheck: (id: number) => void;
   /** When provided, press-and-drag in the gutter starts a range sweep. */
   onGutterDown?: (id: number, e: MouseEvent) => void;
@@ -39,6 +42,8 @@ function ThreadRowImpl({
       data-selected={selected}
       data-checked={checked}
       onClick={(e) => onRowClick(thread.id, e)}
+      onMouseEnter={onRowHover ? () => onRowHover(thread.id) : undefined}
+      onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
     >
       {/* gutter: checkbox (selection) / unread dot / star */}
       <button

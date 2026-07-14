@@ -277,6 +277,219 @@ pub fn store_body(
     Ok(())
 }
 
+/// Requeue selective bodies that an older decoder persisted before undoing
+/// their MIME transfer encoding. These rows are otherwise permanently stuck
+/// at `cached`, so merely fixing the decoder would never revisit them.
+///
+/// The recovery is deliberately conservative: it only considers remotely
+/// refetchable rows with no full-message raw cache, and requires either a
+/// Base64 payload that decodes to HTML or many quoted-printable artifacts.
+pub fn requeue_misdecoded_bodies(conn: &mut Connection) -> Result<Vec<i64>> {
+    let ids = {
+        let mut stmt = conn.prepare(
+            "SELECT m.id, b.text_body, b.html_body, m.mime_plan_json
+             FROM messages m
+             JOIN message_bodies b ON b.message_id = m.id
+             JOIN folders f ON f.id = m.folder_id
+             JOIN accounts a ON a.id = m.account_id
+             WHERE m.body_state = 'cached'
+               AND m.folder_id IS NOT NULL
+               AND m.uid IS NOT NULL
+               AND m.raw_path IS NULL
+               AND (a.provider = 'gmail' OR COALESCE(f.role, '') <> 'all')
+               AND (
+                 LOWER(COALESCE(m.mime_plan_json, '')) LIKE '%\"transfer_encoding\":\"base64\"%'
+                 OR LOWER(COALESCE(m.mime_plan_json, '')) LIKE '%\"transfer_encoding\":\"quoted-printable\"%'
+               )",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let (id, text, html, plan_json) = row?;
+            let plan = plan_json
+                .as_deref()
+                .and_then(|value| serde_json::from_str::<MimePlan>(value).ok());
+            let has_any_base64 = plan.as_ref().is_some_and(|plan| {
+                plan.text_sections
+                    .iter()
+                    .any(|section| section.transfer_encoding.eq_ignore_ascii_case("base64"))
+            });
+            let has_html_base64 = plan.as_ref().is_some_and(|plan| {
+                plan.text_sections.iter().any(|section| {
+                    section.kind == crate::mime::TextSectionKind::Html
+                        && section.transfer_encoding.eq_ignore_ascii_case("base64")
+                })
+            });
+            let has_plain_qp = plan.as_ref().is_some_and(|plan| {
+                plan.text_sections.iter().any(|section| {
+                    section.kind == crate::mime::TextSectionKind::Plain
+                        && section
+                            .transfer_encoding
+                            .eq_ignore_ascii_case("quoted-printable")
+                })
+            });
+            let has_html_qp = plan.as_ref().is_some_and(|plan| {
+                plan.text_sections.iter().any(|section| {
+                    section.kind == crate::mime::TextSectionKind::Html
+                        && section
+                            .transfer_encoding
+                            .eq_ignore_ascii_case("quoted-printable")
+                })
+            });
+            let bad_base64 = has_html_base64
+                && html
+                    .as_deref()
+                    .is_some_and(crate::mime::looks_like_base64_encoded_html);
+            // Version 2 introduced authoritative BODYSTRUCTURE Base64
+            // decoding. Re-fetch every older selective Base64 text plan once,
+            // including plain/calendar parts whose encoded form cannot be
+            // distinguished safely from legitimate Base64-looking prose.
+            let legacy_base64 = has_any_base64
+                && plan
+                    .as_ref()
+                    .is_some_and(|plan| plan.version < crate::mime::MIME_PLAN_VERSION);
+            let bad_quoted_printable = (has_plain_qp
+                && text
+                    .as_deref()
+                    .is_some_and(crate::mime::looks_like_undecoded_quoted_printable))
+                || (has_html_qp
+                    && html
+                        .as_deref()
+                        .is_some_and(crate::mime::looks_like_undecoded_quoted_printable));
+            if legacy_base64 || bad_base64 || bad_quoted_printable {
+                ids.push(id);
+            }
+        }
+        ids
+    };
+
+    if ids.is_empty() {
+        return Ok(ids);
+    }
+
+    let tx = conn.transaction()?;
+    let mut thread_ids = std::collections::BTreeSet::new();
+    for &id in &ids {
+        if let Some(thread_id) = tx.query_row(
+            "SELECT thread_id FROM messages WHERE id = ?1",
+            params![id],
+            |row| row.get::<_, Option<i64>>(0),
+        )? {
+            thread_ids.insert(thread_id);
+        }
+        tx.execute(
+            "DELETE FROM message_embeddings WHERE message_id = ?1",
+            params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM message_bodies WHERE message_id = ?1",
+            params![id],
+        )?;
+        tx.execute(
+            "UPDATE messages
+             SET body_state = 'none', embedding_state = 'none', snippet = ''
+             WHERE id = ?1",
+            params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM sync_failures WHERE stage = 'content' AND message_id = ?1",
+            params![id],
+        )?;
+        // Keep subject/address search available while the corrected body is
+        // being fetched, but remove the stale encoded payload from FTS.
+        super::search::index_message(&tx, id)?;
+    }
+    for thread_id in thread_ids {
+        super::threads::recompute(&tx, thread_id)?;
+    }
+    tx.commit()?;
+    Ok(ids)
+}
+
+/// Replace previews produced by the historical misuse of
+/// `ammonia::clean_text`, which escapes HTML instead of extracting its text.
+/// The SQL predicate keeps startup work small by loading bodies only for the
+/// entity-heavy signature generated by that old code.
+pub fn repair_escaped_html_snippets(conn: &mut Connection) -> Result<Vec<i64>> {
+    let repairs = {
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.thread_id, m.snippet, b.text_body, b.html_body
+             FROM messages m
+             JOIN message_bodies b ON b.message_id = m.id
+             WHERE m.body_state = 'cached'
+               AND b.html_body IS NOT NULL
+               AND (
+                 m.snippet LIKE '%&#%'
+                 OR m.snippet LIKE '%&lt;%'
+                 OR m.snippet LIKE '%&gt;%'
+                 OR m.snippet LIKE '%&quot;%'
+                 OR m.snippet LIKE '%&apos;%'
+                 OR m.snippet LIKE '%&grave;%'
+                 OR m.snippet LIKE '%&amp;%'
+               )",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        let mut repairs = Vec::new();
+        for row in rows {
+            let (id, thread_id, old_snippet, text, html) = row?;
+            if text
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            {
+                continue;
+            }
+            let snippet = crate::mime::make_body_snippet(text.as_deref(), Some(&html));
+            if snippet != old_snippet {
+                repairs.push((id, thread_id, snippet));
+            }
+        }
+        repairs
+    };
+
+    if repairs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let tx = conn.transaction()?;
+    let mut ids = Vec::with_capacity(repairs.len());
+    let mut thread_ids = std::collections::BTreeSet::new();
+    for (id, thread_id, snippet) in repairs {
+        tx.execute(
+            "DELETE FROM message_embeddings WHERE message_id = ?1",
+            params![id],
+        )?;
+        tx.execute(
+            "UPDATE messages SET snippet = ?2, embedding_state = 'pending' WHERE id = ?1",
+            params![id, snippet],
+        )?;
+        super::search::index_message(&tx, id)?;
+        ids.push(id);
+        if let Some(thread_id) = thread_id {
+            thread_ids.insert(thread_id);
+        }
+    }
+    for thread_id in thread_ids {
+        super::threads::recompute(&tx, thread_id)?;
+    }
+    tx.commit()?;
+    Ok(ids)
+}
+
 pub struct NewAttachment<'a> {
     pub message_id: i64,
     pub part_id: Option<&'a str>,
@@ -541,6 +754,48 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
+    Ok(MessageDetail {
+        id: row.get("id")?,
+        thread_id: row.get::<_, Option<i64>>("thread_id")?.unwrap_or(0),
+        account_id: row.get("account_id")?,
+        from: Address {
+            name: row.get("from_name")?,
+            email: row
+                .get::<_, Option<String>>("from_addr")?
+                .unwrap_or_default(),
+        },
+        to: parse_addrs(&row.get::<_, String>("to_json")?),
+        cc: parse_addrs(&row.get::<_, String>("cc_json")?),
+        subject: row.get("subject")?,
+        date: row.get("date")?,
+        is_read: row.get::<_, i64>("is_read")? != 0,
+        is_starred: row.get::<_, i64>("is_starred")? != 0,
+        is_draft: row.get::<_, i64>("is_draft")? != 0,
+        is_outgoing: row.get::<_, i64>("is_outgoing")? != 0,
+        snippet: row.get("snippet")?,
+        body_state: row.get("body_state")?,
+        text_body: row.get("text_body")?,
+        html_body: row.get("html_body")?,
+        attachments: Vec::new(),
+        list_unsubscribe: row.get("list_unsubscribe")?,
+        via: row.get("sender_addr")?,
+    })
+}
+
+fn attachment_meta_from_row(
+    row: &rusqlite::Row,
+    first_col: usize,
+) -> rusqlite::Result<AttachmentMeta> {
+    Ok(AttachmentMeta {
+        id: row.get(first_col)?,
+        filename: row.get(first_col + 1)?,
+        mime_type: row.get(first_col + 2)?,
+        size: row.get(first_col + 3)?,
+        is_inline: row.get::<_, i64>(first_col + 4)? != 0,
+    })
+}
+
 pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
     let mut stmt = conn.prepare(
         "SELECT m.*, b.text_body, b.html_body
@@ -548,49 +803,14 @@ pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
          WHERE m.id = ?1",
     )?;
     let mut detail = stmt
-        .query_row(params![id], |row| {
-            Ok(MessageDetail {
-                id: row.get("id")?,
-                thread_id: row.get::<_, Option<i64>>("thread_id")?.unwrap_or(0),
-                account_id: row.get("account_id")?,
-                from: Address {
-                    name: row.get("from_name")?,
-                    email: row
-                        .get::<_, Option<String>>("from_addr")?
-                        .unwrap_or_default(),
-                },
-                to: parse_addrs(&row.get::<_, String>("to_json")?),
-                cc: parse_addrs(&row.get::<_, String>("cc_json")?),
-                subject: row.get("subject")?,
-                date: row.get("date")?,
-                is_read: row.get::<_, i64>("is_read")? != 0,
-                is_starred: row.get::<_, i64>("is_starred")? != 0,
-                is_draft: row.get::<_, i64>("is_draft")? != 0,
-                is_outgoing: row.get::<_, i64>("is_outgoing")? != 0,
-                snippet: row.get("snippet")?,
-                body_state: row.get("body_state")?,
-                text_body: row.get("text_body")?,
-                html_body: row.get("html_body")?,
-                attachments: Vec::new(),
-                list_unsubscribe: row.get("list_unsubscribe")?,
-                via: row.get("sender_addr")?,
-            })
-        })
+        .query_row(params![id], detail_from_row)
         .optional()?
         .ok_or_else(|| CoreError::NotFound(format!("message {id}")))?;
 
     let mut astmt = conn.prepare(
         "SELECT id, filename, mime_type, size, is_inline FROM attachments WHERE message_id = ?1",
     )?;
-    let atts = astmt.query_map(params![id], |row| {
-        Ok(AttachmentMeta {
-            id: row.get(0)?,
-            filename: row.get(1)?,
-            mime_type: row.get(2)?,
-            size: row.get(3)?,
-            is_inline: row.get::<_, i64>(4)? != 0,
-        })
-    })?;
+    let atts = astmt.query_map(params![id], |row| attachment_meta_from_row(row, 0))?;
     for a in atts {
         detail.attachments.push(a?);
     }
@@ -598,14 +818,37 @@ pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
 }
 
 pub fn list_for_thread(conn: &Connection, thread_id: i64) -> Result<Vec<MessageDetail>> {
-    let mut stmt =
-        conn.prepare("SELECT id FROM messages WHERE thread_id = ?1 ORDER BY date ASC")?;
-    let ids = stmt
-        .query_map(params![thread_id], |r| r.get::<_, i64>(0))?
+    let mut stmt = conn.prepare(
+        "SELECT m.*, b.text_body, b.html_body
+         FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
+         WHERE m.thread_id = ?1
+         ORDER BY m.date ASC",
+    )?;
+    let mut out = stmt
+        .query_map(params![thread_id], detail_from_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let mut out = Vec::with_capacity(ids.len());
-    for id in ids {
-        out.push(detail(conn, id)?);
+    if out.is_empty() {
+        return Ok(out);
+    }
+
+    let mut astmt = conn.prepare(
+        "SELECT a.message_id, a.id, a.filename, a.mime_type, a.size, a.is_inline
+         FROM attachments a JOIN messages m ON m.id = a.message_id
+         WHERE m.thread_id = ?1",
+    )?;
+    let mut by_message: std::collections::HashMap<i64, Vec<AttachmentMeta>> =
+        std::collections::HashMap::new();
+    let atts = astmt.query_map(params![thread_id], |row| {
+        Ok((row.get::<_, i64>(0)?, attachment_meta_from_row(row, 1)?))
+    })?;
+    for a in atts {
+        let (mid, meta) = a?;
+        by_message.entry(mid).or_default().push(meta);
+    }
+    for m in &mut out {
+        if let Some(atts) = by_message.remove(&m.id) {
+            m.attachments = atts;
+        }
     }
     Ok(out)
 }
@@ -719,6 +962,350 @@ fn missing_bodies_at(
 mod tests {
     use super::*;
     use crate::db::{repo::sync_failures, testutil};
+
+    /// The batched list_for_thread must return exactly what per-message
+    /// detail() calls would, in date order, across the body/attachment
+    /// combinations: cached body + attachments, cached body only, no body.
+    #[test]
+    fn list_for_thread_matches_per_message_detail() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (thread_id, first_id) = testutil::seed_message(&c, "a@test.dev", "Subject", false);
+        let mut ids = vec![first_id];
+        for i in 2..=3 {
+            c.execute(
+                "INSERT INTO messages (thread_id, account_id, folder_id, uid, message_id,
+                 subject, from_addr, date, is_read, is_draft, is_outgoing)
+                 VALUES (?1, 1, 1, ?2, 'mid-x-' || ?2, 'Subject', 'a@test.dev', ?3, 0, 0, 0)",
+                params![thread_id, 100 + i, 1000 + i],
+            )
+            .unwrap();
+            ids.push(c.last_insert_rowid());
+        }
+        store_body(
+            &c,
+            ids[0],
+            Some("plain"),
+            Some("<p>html</p>"),
+            None,
+            true,
+            None,
+        )
+        .unwrap();
+        store_body(&c, ids[1], Some("only text"), None, None, false, None).unwrap();
+        // ids[2] stays body_state = 'none'.
+        c.execute(
+            "INSERT INTO attachments (message_id, filename, mime_type, size, is_inline, imap_section)
+             VALUES (?1, 'a.png', 'image/png', 10, 1, '2'), (?1, 'b.pdf', 'application/pdf', 20, 0, '3')",
+            params![ids[0]],
+        )
+        .unwrap();
+
+        let batched = list_for_thread(&c, thread_id).unwrap();
+        assert_eq!(batched.len(), 3);
+        let looped: Vec<MessageDetail> =
+            batched.iter().map(|m| detail(&c, m.id).unwrap()).collect();
+        for (b, l) in batched.iter().zip(&looped) {
+            assert_eq!(b.id, l.id);
+            assert_eq!(b.text_body, l.text_body);
+            assert_eq!(b.html_body, l.html_body);
+            assert_eq!(b.body_state, l.body_state);
+            assert_eq!(b.attachments.len(), l.attachments.len());
+            for (ba, la) in b.attachments.iter().zip(&l.attachments) {
+                assert_eq!(ba.id, la.id);
+                assert_eq!(ba.filename, la.filename);
+                assert_eq!(ba.is_inline, la.is_inline);
+            }
+        }
+        // Date order preserved.
+        let dates: Vec<i64> = batched.iter().map(|m| m.date).collect();
+        let mut sorted = dates.clone();
+        sorted.sort_unstable();
+        assert_eq!(dates, sorted);
+    }
+
+    #[test]
+    fn requeues_only_misdecoded_selective_bodies() {
+        use base64::Engine;
+
+        fn html_plan(encoding: &str) -> MimePlan {
+            MimePlan {
+                version: crate::mime::MIME_PLAN_VERSION,
+                text_sections: vec![crate::mime::PlannedTextSection {
+                    section: "1".into(),
+                    kind: crate::mime::TextSectionKind::Html,
+                    mime_type: "text/html".into(),
+                    charset: Some("utf-8".into()),
+                    transfer_encoding: encoding.into(),
+                    size: 100,
+                }],
+                attachments: Vec::new(),
+            }
+        }
+
+        let mut c = testutil::conn();
+        testutil::seed_account(&c);
+        let (_, base64_id) = testutil::seed_message(&c, "one@test.dev", "Base64", false);
+        let (_, qp_id) = testutil::seed_message(&c, "two@test.dev", "QP", false);
+        let (_, good_id) = testutil::seed_message(&c, "three@test.dev", "Good", false);
+        let (_, skipped_all_id) = testutil::seed_message(&c, "four@test.dev", "Skipped All", false);
+        let (_, legacy_plain_id) =
+            testutil::seed_message(&c, "five@test.dev", "Legacy plain Base64", false);
+        c.execute(
+            "INSERT INTO folders (id, account_id, imap_name, role)
+             VALUES (2, 1, 'All', 'all')",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE messages SET folder_id = 2 WHERE id = ?1",
+            params![skipped_all_id],
+        )
+        .unwrap();
+
+        let encoded = format!(
+            "\n{}",
+            base64::engine::general_purpose::STANDARD
+                .encode(b"<html><body><p>Hello</p></body></html>")
+        );
+        let raw_qp = "<div style=3D\"x\">Qu=E1=BA=A3ng=20c=E1=BB=A7a=20b=E1=BA=A1n</div>";
+        for (id, encoding, body) in [
+            (base64_id, "base64", encoded.as_str()),
+            (skipped_all_id, "base64", encoded.as_str()),
+            (qp_id, "quoted-printable", raw_qp),
+            (
+                good_id,
+                "base64",
+                "<html><body>Already decoded</body></html>",
+            ),
+        ] {
+            set_mime_plan(&c, id, Some(&html_plan(encoding))).unwrap();
+            store_body(&c, id, None, Some(body), None, false, Some(body)).unwrap();
+        }
+        let legacy_plain_plan = MimePlan {
+            version: crate::mime::MIME_PLAN_VERSION - 1,
+            text_sections: vec![crate::mime::PlannedTextSection {
+                section: "1".into(),
+                kind: crate::mime::TextSectionKind::Plain,
+                mime_type: "text/plain".into(),
+                charset: Some("utf-8".into()),
+                transfer_encoding: "base64".into(),
+                size: 100,
+            }],
+            attachments: Vec::new(),
+        };
+        set_mime_plan(&c, legacy_plain_id, Some(&legacy_plain_plan)).unwrap();
+        store_body(
+            &c,
+            legacy_plain_id,
+            Some("Already decoded but produced by the old Base64 path"),
+            None,
+            None,
+            false,
+            Some("Already decoded but produced by the old Base64 path"),
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE messages SET embedding_state = 'done' WHERE id IN (?1, ?2, ?3)",
+            params![base64_id, qp_id, legacy_plain_id],
+        )
+        .unwrap();
+        for id in [base64_id, qp_id, legacy_plain_id] {
+            c.execute(
+                "INSERT INTO message_embeddings (message_id, chunk_index, model_id, dim, vec)
+                 VALUES (?1, 0, 'test', 1, X'00000000')",
+                params![id],
+            )
+            .unwrap();
+            sync_failures::record_content_at(&c, id, Some(i64::MAX), "old", 1).unwrap();
+        }
+
+        let mut repaired = requeue_misdecoded_bodies(&mut c).unwrap();
+        repaired.sort_unstable();
+        let mut expected = vec![base64_id, qp_id, legacy_plain_id];
+        expected.sort_unstable();
+        assert_eq!(repaired, expected);
+
+        for id in [base64_id, qp_id, legacy_plain_id] {
+            let state: (String, String, String) = c
+                .query_row(
+                    "SELECT body_state, embedding_state, snippet FROM messages WHERE id = ?1",
+                    params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+            assert_eq!(state, ("none".into(), "none".into(), String::new()));
+            assert_eq!(
+                c.query_row(
+                    "SELECT COUNT(*) FROM message_bodies WHERE message_id = ?1",
+                    params![id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+                0
+            );
+            assert_eq!(
+                c.query_row(
+                    "SELECT COUNT(*) FROM message_embeddings WHERE message_id = ?1",
+                    params![id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+                0
+            );
+            assert!(sync_failures::due_content(&c, 1, i64::MAX, 20)
+                .unwrap()
+                .iter()
+                .all(|failure| failure.message_id != Some(id)));
+        }
+
+        let good: (String, String) = c
+            .query_row(
+                "SELECT m.body_state, b.html_body
+                 FROM messages m JOIN message_bodies b ON b.message_id = m.id
+                 WHERE m.id = ?1",
+                params![good_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(good.0, "cached");
+        assert!(good.1.contains("Already decoded"));
+        assert_eq!(
+            c.query_row(
+                "SELECT body_state FROM messages WHERE id = ?1",
+                params![skipped_all_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "cached"
+        );
+    }
+
+    #[test]
+    fn repairs_escaped_html_snippets_and_derived_indexes() {
+        let mut c = testutil::conn();
+        testutil::seed_account(&c);
+        let (thread_id, message_id) =
+            testutil::seed_message(&c, "sender@test.dev", "HTML preview", false);
+        let html = "\n<div style=\"font-weight:bold\">Dear <b>Alice</b> &amp; Bob<br>Welcome</div>";
+        let escaped = crate::mime::make_snippet(&ammonia::clean_text(html));
+        assert!(escaped.contains("&#10;"));
+        assert!(escaped.contains("&lt;div"));
+        store_body(
+            &c,
+            message_id,
+            None,
+            Some(html),
+            None,
+            false,
+            Some(&escaped),
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE messages SET embedding_state = 'done' WHERE id = ?1",
+            params![message_id],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO message_embeddings (message_id, chunk_index, model_id, dim, vec)
+             VALUES (?1, 0, 'test', 1, X'00000000')",
+            params![message_id],
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE threads SET snippet = ?2 WHERE id = ?1",
+            params![thread_id, escaped],
+        )
+        .unwrap();
+        crate::db::repo::search::index_message(&c, message_id).unwrap();
+        assert_eq!(
+            c.query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'font'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
+
+        // A real plaintext alternative remains authoritative even if its
+        // stored preview happens to contain an entity-like token.
+        let (_, plain_id) = testutil::seed_message(&c, "plain@test.dev", "Plain preview", false);
+        store_body(
+            &c,
+            plain_id,
+            Some("Keep &amp; exactly"),
+            Some("<p>Do not use me</p>"),
+            None,
+            false,
+            Some("Keep &amp; exactly"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            repair_escaped_html_snippets(&mut c).unwrap(),
+            vec![message_id]
+        );
+        let repaired: (String, String, String, String) = c
+            .query_row(
+                "SELECT m.snippet, m.embedding_state, m.body_state, b.html_body
+                 FROM messages m JOIN message_bodies b ON b.message_id = m.id
+                 WHERE m.id = ?1",
+                params![message_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(repaired.0, "Dear Alice & Bob Welcome");
+        assert_eq!(repaired.1, "pending");
+        assert_eq!(repaired.2, "cached");
+        assert_eq!(repaired.3, html);
+        assert_eq!(
+            c.query_row(
+                "SELECT snippet FROM threads WHERE id = ?1",
+                params![thread_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "Dear Alice & Bob Welcome"
+        );
+        assert_eq!(
+            c.query_row(
+                "SELECT COUNT(*) FROM message_embeddings WHERE message_id = ?1",
+                params![message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            c.query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'font'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            c.query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'Alice'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            c.query_row(
+                "SELECT snippet FROM messages WHERE id = ?1",
+                params![plain_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "Keep &amp; exactly"
+        );
+        assert!(repair_escaped_html_snippets(&mut c).unwrap().is_empty());
+    }
 
     #[test]
     fn content_progress_counts_only_remotely_fetchable_messages() {

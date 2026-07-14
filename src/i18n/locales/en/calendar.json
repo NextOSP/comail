@@ -48,6 +48,12 @@
     "saveHint": "⌘/Ctrl+Enter saves",
     "quickPlaceholder": "Try: lunch with sam tomorrow 1pm 45m",
     "quickApply": "Enter fills the form",
+    "section": {
+      "when": "When",
+      "who": "Who",
+      "where": "Where",
+      "notes": "Notes"
+    },
     "summary": "Title",
     "date": "Date",
     "time": "Time",
