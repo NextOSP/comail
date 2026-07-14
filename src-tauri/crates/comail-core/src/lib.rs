@@ -19,6 +19,7 @@ pub mod models;
 pub mod oauth;
 pub mod preview;
 pub mod queue;
+pub mod route;
 pub mod scheduler;
 pub mod search;
 pub mod smtp;
@@ -55,6 +56,8 @@ enum Scenario {
     Command,
     /// One-tap quick-reply chips (tiny output, latency-sensitive).
     QuickReply,
+    /// Sorting incoming mail into categories at sync (short prompt, per-email).
+    Categorize,
 }
 
 /// Resolve the model id a scenario should use: its configured tier's model, or
@@ -65,6 +68,7 @@ fn resolve_ai_model(settings: &Settings, scenario: Scenario) -> String {
         Scenario::Draft => settings.ai_tier_draft.as_str(),
         Scenario::Summarize => settings.ai_tier_summarize.as_str(),
         Scenario::Voice => settings.ai_tier_voice.as_str(),
+        Scenario::Categorize => settings.ai_tier_categorize.as_str(),
         // Palette parsing and reply chips want the fastest model available.
         Scenario::Command | Scenario::QuickReply => "instant",
     };
@@ -102,6 +106,9 @@ pub struct Core {
     /// touching OAuth tokens, so the OS keyring prompt never lands on top of
     /// the intro. A timeout fallback keeps tray-only/headless syncing alive.
     ui_ready: Arc<tokio::sync::Notify>,
+    /// Serializes AI routing passes so the background router and an inline
+    /// re-sort never classify the same 'pending' threads twice.
+    ai_router_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Core {
@@ -120,6 +127,7 @@ impl Core {
             embed: Arc::new(embed::EmbedState::new()),
             oauth_cancel: Arc::new(tokio::sync::Notify::new()),
             ui_ready: Arc::new(tokio::sync::Notify::new()),
+            ai_router_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
 
         // Make saved OAuth app registrations available before any actor
@@ -230,42 +238,84 @@ impl Core {
         core.provision_bundled_model().await;
         embed::worker::spawn(core.db.clone(), core.embed.clone(), core.paths.clone());
 
-        // One-shot auto-label backfill: after the 007 migration the categories
-        // exist but old mail is unclassified; run once in the background.
+        // One-shot routing backfill: on a fresh 007 install or an upgrade to the
+        // 014 routing column, resolve every existing thread's tab once. Guarded
+        // by a marker row so it never repeats (preserved across reroute_all).
         {
             let c = core.clone();
             tokio::spawn(async move {
-                let needed =
-                    c.db.read(|conn| {
+                let (marker, threads, auto) = c
+                    .db
+                    .read(|conn| {
                         let s = repo::settings::get(conn)?;
-                        if !s.auto_labels_enabled {
-                            return Ok(false);
-                        }
-                        let memberships: i64 = conn.query_row(
-                            "SELECT COUNT(*) FROM message_labels ml
-                             JOIN labels l ON l.id = ml.label_id WHERE l.is_auto = 1",
+                        let marker: i64 = conn.query_row(
+                            "SELECT COUNT(*) FROM route_cache
+                             WHERE sender_domain = '__routing_backfill__'",
                             [],
                             |r| r.get(0),
                         )?;
-                        let msgs: i64 = conn.query_row(
-                            "SELECT COUNT(*) FROM messages WHERE is_outgoing = 0",
-                            [],
-                            |r| r.get(0),
-                        )?;
-                        Ok(memberships == 0 && msgs > 0)
+                        let threads: i64 =
+                            conn.query_row("SELECT COUNT(*) FROM threads", [], |r| r.get(0))?;
+                        Ok((marker, threads, s.auto_labels_enabled))
                     })
                     .await
-                    .unwrap_or(false);
-                if needed {
-                    match c.relabel_auto().await {
-                        Ok(n) => tracing::info!("auto-label backfill categorized {n} messages"),
-                        Err(e) => tracing::warn!("auto-label backfill failed: {e}"),
+                    .unwrap_or((1, 0, false));
+                if marker == 0 {
+                    if auto && threads > 0 {
+                        match c.reroute_all().await {
+                            Ok(n) => tracing::info!("routing backfill resolved {n} threads"),
+                            Err(e) => tracing::warn!("routing backfill failed: {e}"),
+                        }
                     }
+                    let _ = c
+                        .db
+                        .write(|conn| {
+                            conn.execute(
+                                "INSERT OR REPLACE INTO route_cache (sender_domain, route_key)
+                                 VALUES ('__routing_backfill__', '1')",
+                                [],
+                            )?;
+                            Ok(())
+                        })
+                        .await;
                 }
             });
         }
 
+        // Background AI router: drains threads marked 'pending' into a category
+        // whenever mail changes. Decoupled from sync so LLM latency never blocks
+        // the sync loop.
+        {
+            let c = core.clone();
+            tokio::spawn(async move { c.ai_router_loop().await });
+        }
+
         Ok(core)
+    }
+
+    /// Long-lived loop: on every mail change, drain the AI routing queue in
+    /// bounded batches. Serial (one broadcast receiver), so batches never
+    /// overlap; the self-emitted refresh settles after one empty pass.
+    async fn ai_router_loop(&self) {
+        use tokio::sync::broadcast::error::RecvError;
+        let mut rx = self.bus.subscribe();
+        loop {
+            match rx.recv().await {
+                Ok(CoreEvent::MailUpdated { .. }) => loop {
+                    match self.classify_pending(50).await {
+                        Ok(0) => break,
+                        Ok(_) => continue,
+                        Err(e) => {
+                            tracing::warn!("ai routing pass failed: {e}");
+                            break;
+                        }
+                    }
+                },
+                Ok(_) => {}
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => break,
+            }
+        }
     }
 
     /// Copy the installer-bundled default model into the data dir if it isn't
@@ -627,23 +677,28 @@ impl Core {
         cursor: Option<i64>,
         limit: i64,
     ) -> Result<ThreadPage> {
-        // Split conventions: -1 = Important (human), -2 = Other (automated),
-        // positive ids = stored custom split rules.
-        let split = match split_id {
-            Some(-1) => Some(SplitRuleQuery {
-                is_automated: Some(false),
-                ..Default::default()
-            }),
-            Some(-2) => Some(SplitRuleQuery {
-                is_automated: Some(true),
-                ..Default::default()
-            }),
-            Some(id) if id > 0 => self
+        use repo::threads::TabFilter;
+        // A category label filters to its single resolved tab; a manual label is
+        // a cross-cutting filter. Split conventions: -1 = Important, -2 = Other,
+        // positive ids = custom split tabs.
+        let tab = if let Some(lid) = label_id {
+            let is_auto = self
                 .db
-                .read(move |conn| repo::splits::get(conn, id))
+                .read(move |conn| Ok(repo::labels::get(conn, lid)?.map(|l| l.is_auto)))
                 .await?
-                .map(|s| s.query),
-            _ => None,
+                .unwrap_or(false);
+            Some(if is_auto {
+                TabFilter::AutoLabel(lid)
+            } else {
+                TabFilter::ManualLabel(lid)
+            })
+        } else {
+            match split_id {
+                Some(-1) => Some(TabFilter::Important),
+                Some(-2) => Some(TabFilter::Other),
+                Some(id) if id > 0 => Some(TabFilter::Split(id)),
+                _ => None,
+            }
         };
         self.db
             .read(move |conn| {
@@ -651,9 +706,8 @@ impl Core {
                     conn,
                     &repo::threads::ListArgs {
                         view,
-                        split,
+                        tab,
                         account_id,
-                        label_id,
                         folder_id,
                         cursor,
                         limit: limit.clamp(1, 200),
@@ -1302,6 +1356,7 @@ impl Core {
 
         let mut safe_name = safe_filename(
             &filename
+                .map(|name| crate::mime::decode_encoded_words(&name))
                 .or(parsed_name)
                 .unwrap_or_else(|| format!("attachment-{attachment_id}")),
         );
@@ -2938,16 +2993,27 @@ impl Core {
         name: String,
         position: i64,
         query: SplitRuleQuery,
+        target: Option<String>,
     ) -> Result<SplitRule> {
-        self.db
-            .write(move |conn| repo::splits::save(conn, id, &name, position, &query))
-            .await
+        let saved = self
+            .db
+            .write(move |conn| {
+                repo::splits::save(conn, id, &name, position, &query, target.as_deref())
+            })
+            .await?;
+        // Rules changed: re-resolve every thread and drop the AI cache so edited
+        // routing takes effect. AI (if any) runs in the background afterwards.
+        self.reroute_all_sync().await?;
+        Ok(saved)
     }
 
     pub async fn delete_split(&self, id: i64) -> Result<()> {
         self.db
             .write(move |conn| repo::splits::delete(conn, id))
-            .await
+            .await?;
+        // A deleted rule's threads must fall back to the AI/heuristic/defaults.
+        self.reroute_all_sync().await?;
+        Ok(())
     }
 
     pub async fn list_labels(&self) -> Result<Vec<Label>> {
@@ -2972,51 +3038,169 @@ impl Core {
             .await
     }
 
-    /// Re-run the auto-label classifier over all stored incoming mail.
-    /// Clears existing auto memberships first; returns how many messages
-    /// received a category.
+    /// Re-run routing over all stored mail. Legacy alias kept for the existing
+    /// "Relabel" action; delegates to [`Core::reroute_all`].
     pub async fn relabel_auto(&self) -> Result<i64> {
-        let labeled = self
+        self.reroute_all().await
+    }
+
+    /// Re-resolve every thread's tab from scratch and drain the AI queue, so the
+    /// caller sees the final state. Used by the explicit "Re-sort" action and the
+    /// one-shot startup backfill.
+    pub async fn reroute_all(&self) -> Result<i64> {
+        let n = self.reroute_all_sync().await?;
+        // Drain the AI queue now so the caller sees the final state.
+        while self.classify_pending(200).await? > 0 {}
+        Ok(n)
+    }
+
+    /// Deterministic re-route only (rules + heuristic, or mark 'pending'); the
+    /// background router handles the AI pass. Fast enough to run on every rule
+    /// edit without blocking on model calls.
+    async fn reroute_all_sync(&self) -> Result<i64> {
+        let n = self
             .db
             .write(|conn| {
                 let tx = conn.transaction()?;
+                // Keep the one-shot backfill marker; drop real sender decisions
+                // so an edited prompt/rules re-evaluates.
+                tx.execute(
+                    "DELETE FROM route_cache WHERE sender_domain <> '__routing_backfill__'",
+                    [],
+                )?;
                 tx.execute(
                     "DELETE FROM message_labels WHERE label_id IN
                      (SELECT id FROM labels WHERE is_auto = 1)",
                     [],
                 )?;
-                let rows: Vec<(i64, String, Option<String>, bool, Option<String>)> = {
-                    let mut stmt = tx.prepare(
-                        "SELECT id, COALESCE(from_addr, ''), subject, is_automated, list_unsubscribe
-                         FROM messages WHERE is_outgoing = 0 AND is_draft = 0",
-                    )?;
-                    let collected = stmt
-                        .query_map([], |r| {
-                            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-                        })?
-                        .collect::<rusqlite::Result<Vec<_>>>()?;
-                    collected
-                };
-                let mut labeled = 0i64;
-                for (id, from, subject, is_automated, unsub) in rows {
-                    let facts = autolabel::MessageFacts {
-                        from_addr: &from,
-                        subject: subject.as_deref().unwrap_or(""),
-                        is_automated,
-                        has_list_headers: unsub.is_some(),
-                        sender_known: autolabel::sender_known(&tx, &from),
+                tx.execute("UPDATE threads SET routed_tab = NULL", [])?;
+                let settings = repo::settings::get(&tx)?;
+                let mut n = 0i64;
+                if settings.auto_labels_enabled {
+                    let splits = repo::splits::list(&tx)?;
+                    let ids: Vec<i64> = {
+                        let mut stmt = tx.prepare("SELECT id FROM threads")?;
+                        let rows = stmt
+                            .query_map([], |r| r.get(0))?
+                            .collect::<rusqlite::Result<Vec<_>>>()?;
+                        rows
                     };
-                    if autolabel::apply(&tx, id, &facts)? {
-                        labeled += 1;
+                    for id in ids {
+                        route::route_thread_deterministic(
+                            &tx,
+                            &splits,
+                            settings.ai_categorize,
+                            id,
+                        )?;
+                        n += 1;
                     }
                 }
                 tx.commit()?;
-                Ok(labeled)
+                Ok(n)
             })
             .await?;
-        // Labels changed across many threads; a blanket refresh is fine here.
+        // Routing changed across many threads; a blanket refresh is fine here.
+        // The emit also wakes the background AI router to handle any 'pending'.
         self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
-        Ok(labeled)
+        Ok(n)
+    }
+
+    /// Classify up to `limit` threads waiting on the AI (`routed_tab = 'pending'`)
+    /// into a category using the custom prompt, caching decisions by sender so
+    /// repeat senders never re-hit the model. Returns how many were resolved.
+    /// A no-op (returns 0) when categorization is off or no key is configured.
+    pub async fn classify_pending(&self, limit: i64) -> Result<i64> {
+        let _guard = self.ai_router_lock.lock().await;
+        let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        if !settings.ai_categorize {
+            return Ok(0);
+        }
+        let cfg = match self.ai_config_from(&settings, Scenario::Categorize).await {
+            Ok(c) => c,
+            // No key: leave threads 'pending' (still shown in Important/Other).
+            Err(_) => return Ok(0),
+        };
+
+        let (jobs, cache) = self
+            .db
+            .read(move |conn| Ok((route::pending_threads(conn, limit)?, route::load_cache(conn)?)))
+            .await?;
+        if jobs.is_empty() {
+            return Ok(0);
+        }
+
+        let prompt = settings.ai_category_prompt.clone();
+        // Resolved (thread_id -> route key or None) and cache writes to persist.
+        let mut resolved: Vec<(i64, Option<String>)> = Vec::new();
+        let mut decided: std::collections::HashMap<String, Option<autolabel::Category>> =
+            std::collections::HashMap::new();
+        let mut cache_writes: Vec<(String, String)> = Vec::new();
+
+        for (tid, facts) in jobs {
+            let domain = route::sender_domain(&facts.from_addr);
+            let category: Option<autolabel::Category> = if let Some(hit) = cache.get(&domain) {
+                // Cache stores the category keyword, "" = no category.
+                autolabel::Category::from_keyword(hit)
+            } else if let Some(d) = decided.get(&domain) {
+                *d
+            } else {
+                let msgs = route::category_prompt(
+                    &prompt,
+                    &facts.from_addr,
+                    &facts.subject,
+                    &facts.snippet,
+                );
+                match ai::chat(&cfg, msgs).await {
+                    Ok(out) => {
+                        let cat = route::parse_category(&out);
+                        decided.insert(domain.clone(), cat);
+                        // Persist the decision keyed by domain ("" = no category).
+                        let key = cat.map(|c| c.keyword().to_string()).unwrap_or_default();
+                        cache_writes.push((domain.clone(), key));
+                        cat
+                    }
+                    // Transient failure: leave this thread 'pending' so it retries
+                    // on the next pass, and don't poison the cache for the sender.
+                    Err(e) => {
+                        tracing::warn!("ai categorize failed for thread {tid}: {e}");
+                        continue;
+                    }
+                }
+            };
+            resolved.push((tid, category.map(|c| c.keyword().to_string())));
+        }
+
+        // One write pass: turn category keywords into route keys and apply.
+        let count = self
+            .db
+            .write(move |conn| {
+                use rusqlite::OptionalExtension;
+                for (domain, key) in &cache_writes {
+                    route::cache_put(conn, domain, key)?;
+                }
+                let mut count = 0i64;
+                for (tid, kw) in &resolved {
+                    let key = match kw {
+                        Some(k) => {
+                            let id: Option<i64> = conn
+                                .query_row(
+                                    "SELECT id FROM labels WHERE keyword = ?1 AND is_auto = 1",
+                                    rusqlite::params![k],
+                                    |r| r.get(0),
+                                )
+                                .optional()?;
+                            id.map(|id| format!("label:{id}"))
+                        }
+                        None => None,
+                    };
+                    route::apply_tab(conn, *tid, key.as_deref())?;
+                    count += 1;
+                }
+                Ok(count)
+            })
+            .await?;
+        self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
+        Ok(count)
     }
 
     /// Exact unread counts for every split tab and sidebar row in one call.

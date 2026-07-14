@@ -15,6 +15,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/011_robot_automated.sql"),
     include_str!("migrations/012_sync_resilience.sql"),
     include_str!("migrations/013_fts_contentless_delete.sql"),
+    include_str!("migrations/014_routing.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {

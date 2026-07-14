@@ -109,6 +109,75 @@ pub struct PlannedAttachment {
     pub transfer_encoding: String,
 }
 
+/// Decode RFC 2047 encoded-words (`=?charset?enc?text?=`) embedded in a header
+/// parameter value. IMAP BODYSTRUCTURE hands back `name`/`filename` parameters
+/// verbatim, and many mailers place encoded-words there (even though RFC 2231
+/// is the standard mechanism for non-ASCII parameters), so an attachment can
+/// arrive named `=?utf-8?B?R2nhuqNp...?=`. Full-message parsing goes through
+/// mail-parser, which already decodes these; this covers the BODYSTRUCTURE-only
+/// path. Plain text and unrecognized tokens pass through unchanged, so this is
+/// idempotent and safe to also apply when reading rows synced before the fix.
+pub(crate) fn decode_encoded_words(value: &str) -> String {
+    use mail_parser::parsers::MessageStream;
+
+    // Cheap reject: no encoded-word can exist without this marker.
+    if !value.contains("=?") {
+        return value.to_string();
+    }
+
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(value.len());
+    let mut cursor = 0; // start of the plain-text run not yet copied to `out`
+    let mut i = 0;
+    // End index of the previously decoded encoded-word; RFC 2047 §6.2 says the
+    // linear whitespace separating two adjacent encoded-words is not part of
+    // the decoded text and must be dropped.
+    let mut prev_word_end: Option<usize> = None;
+
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'=' && bytes[i + 1] == b'?' {
+            if let Some(end) = encoded_word_end(bytes, i) {
+                // The decoder expects the stream positioned just past the
+                // leading `=`, i.e. `?charset?enc?text?=`.
+                if let Some(decoded) = MessageStream::new(&bytes[i + 1..end]).decode_rfc2047() {
+                    let gap = &value[cursor..i];
+                    if !(prev_word_end == Some(cursor) && gap.trim().is_empty()) {
+                        out.push_str(gap);
+                    }
+                    out.push_str(&decoded);
+                    cursor = end;
+                    prev_word_end = Some(end);
+                    i = end;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    out.push_str(&value[cursor..]);
+    out
+}
+
+/// Byte index just past the closing `?=` of the encoded-word starting at
+/// `start` (where `bytes[start..]` begins with `=?`), or None if malformed.
+fn encoded_word_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let charset_end = find_byte(bytes, start + 2, b'?')?; // charset ... `?`
+    let encoding_end = find_byte(bytes, charset_end + 1, b'?')?; // encoding ... `?`
+    // Encoded-text never contains a literal `?` (Q-encoding escapes it as `=3F`,
+    // the Base64 alphabet excludes it), so the next `?` is the terminator.
+    let terminator = find_byte(bytes, encoding_end + 1, b'?')?;
+    (bytes.get(terminator + 1) == Some(&b'=')).then_some(terminator + 2)
+}
+
+fn find_byte(bytes: &[u8], from: usize, target: u8) -> Option<usize> {
+    bytes
+        .get(from..)?
+        .iter()
+        .position(|&b| b == target)
+        .map(|offset| from + offset)
+}
+
 /// Build the selective-fetch plan directly from an IMAP BODYSTRUCTURE tree.
 /// Only readable body parts (plain text, HTML, and calendars) enter
 /// `text_sections`; PDFs, images, and other files are descriptors only.
@@ -159,7 +228,8 @@ pub fn plan_bodystructure(bs: &async_imap::imap_proto::BodyStructure<'_>) -> Mim
             .disposition
             .as_ref()
             .and_then(|value| param(&value.params, "filename"))
-            .or_else(|| param(&common.ty.params, "name"));
+            .or_else(|| param(&common.ty.params, "name"))
+            .map(|name| decode_encoded_words(&name));
         let disposition = common.disposition.as_ref().map(|value| value.ty.as_ref());
         let explicit_attachment = disposition
             .is_some_and(|value| value.eq_ignore_ascii_case("attachment"))
@@ -729,6 +799,50 @@ mod selective_section_tests {
 
         let json = serde_json::to_string(&plan).unwrap();
         assert_eq!(serde_json::from_str::<MimePlan>(&json).unwrap(), plan);
+    }
+
+    #[test]
+    fn decodes_rfc2047_attachment_filename() {
+        // `w6nDqQ==` is the Base64 of the UTF-8 bytes for "éé".
+        let structure = basic(
+            "application",
+            "pdf",
+            Some(("attachment", "=?utf-8?B?w6nDqQ==?=")),
+            None,
+            5_000,
+        );
+        let plan = plan_bodystructure(&structure);
+        assert_eq!(plan.attachments.len(), 1);
+        assert_eq!(plan.attachments[0].filename.as_deref(), Some("éé"));
+    }
+
+    #[test]
+    fn decode_encoded_words_covers_common_shapes() {
+        // Plain ASCII is returned untouched (fast path).
+        assert_eq!(decode_encoded_words("report.pdf"), "report.pdf");
+        // Base64 UTF-8.
+        assert_eq!(
+            decode_encoded_words("=?utf-8?b?VGjDrXMgw61zIHbDoWzDrWQgw5pURjg=?="),
+            "Thís ís válíd ÚTF8"
+        );
+        // Quoted-printable with a non-UTF-8 charset.
+        assert_eq!(
+            decode_encoded_words("=?iso-8859-1?q?Olle_J=E4rnefors?="),
+            "Olle Järnefors"
+        );
+        // Encoded-word surrounded by literal text.
+        assert_eq!(
+            decode_encoded_words("report-=?UTF-8?B?w6nDqQ==?=.pdf"),
+            "report-éé.pdf"
+        );
+        // Whitespace between two adjacent encoded-words is dropped (RFC 2047 §6.2);
+        // `w6k=` is the Base64 of the UTF-8 bytes for "é".
+        assert_eq!(
+            decode_encoded_words("=?utf-8?B?w6k=?= =?utf-8?B?w6k=?="),
+            "éé"
+        );
+        // A malformed token is left verbatim rather than swallowing the tail.
+        assert_eq!(decode_encoded_words("=?utf-8?bogus"), "=?utf-8?bogus");
     }
 
     #[test]

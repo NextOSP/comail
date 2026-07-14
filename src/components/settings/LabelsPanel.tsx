@@ -13,6 +13,8 @@ const SWATCHES = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b
 function invalidateLabelViews() {
   void queryClient.invalidateQueries({ queryKey: ["labels"] });
   void queryClient.invalidateQueries({ queryKey: ["threads"] });
+  // Deleting an auto category re-routes its threads to Important/Other.
+  void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
 }
 
 /** Compat shim: label management moved into Settings → Labels.

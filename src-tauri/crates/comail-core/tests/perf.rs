@@ -117,9 +117,8 @@ async fn hundred_k_messages_stay_instant() {
             conn,
             &repo::threads::ListArgs {
                 view: View::Inbox,
-                split: None,
+                tab: None,
                 account_id: None,
-                label_id: None,
                 folder_id: None,
                 cursor: None,
                 limit: 50,
@@ -137,9 +136,8 @@ async fn hundred_k_messages_stay_instant() {
                 conn,
                 &repo::threads::ListArgs {
                     view: View::Inbox,
-                    split: None,
+                    tab: None,
                     account_id: None,
-                    label_id: None,
                     folder_id: None,
                     cursor: None,
                     limit: 50,
@@ -161,9 +159,8 @@ async fn hundred_k_messages_stay_instant() {
                     conn,
                     &repo::threads::ListArgs {
                         view: View::Inbox,
-                        split: None,
+                        tab: None,
                         account_id: None,
-                        label_id: None,
                         folder_id: None,
                         cursor: Some(cursor - 500_000_000),
                         limit: 50,

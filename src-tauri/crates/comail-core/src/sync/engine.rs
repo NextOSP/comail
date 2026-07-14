@@ -1679,7 +1679,9 @@ async fn store_headers(
     ctx.db
         .write(move |conn| {
             let tx = conn.transaction()?;
-            let auto_labels = repo::settings::get(&tx)?.auto_labels_enabled;
+            let settings = repo::settings::get(&tx)?;
+            let auto_labels = settings.auto_labels_enabled;
+            let ai_categorize = settings.ai_categorize;
             let mut thread_ids: Vec<i64> = Vec::new();
             let mut fresh_ids: Vec<i64> = Vec::new();
             let mut max_uid: i64 = 0;
@@ -1801,16 +1803,6 @@ async fn store_headers(
                 let _ = repo::sync_failures::clear_header(&tx, folder_id, fh.uid as i64);
                 inserted += 1;
                 repo::labels::reconcile_keywords(&tx, msg_id, &fh.flags.keywords)?;
-                if auto_labels && !is_outgoing && !nm.is_draft {
-                    let facts = crate::autolabel::MessageFacts {
-                        from_addr: &from_email,
-                        subject: &parsed.subject,
-                        is_automated: parsed.is_automated,
-                        has_list_headers: parsed.list_unsubscribe.is_some(),
-                        sender_known: crate::autolabel::sender_known(&tx, &from_email),
-                    };
-                    crate::autolabel::apply(&tx, msg_id, &facts)?;
-                }
                 repo::threads::recompute(&tx, thread_id)?;
                 repo::search::index_message(&tx, msg_id)?;
 
@@ -1861,6 +1853,15 @@ async fn store_headers(
 
             if max_uid > 0 {
                 repo::folders::set_last_seen_uid(&tx, folder_id, max_uid)?;
+            }
+            // Resolve each touched thread to a single tab (rules + heuristic, or
+            // mark it 'pending' for the async AI pass). Runs once per thread with
+            // all its messages in place. See crate::route.
+            if auto_labels {
+                let splits = repo::splits::list(&tx)?;
+                for &tid in &thread_ids {
+                    crate::route::route_thread_deterministic(&tx, &splits, ai_categorize, tid)?;
+                }
             }
             tx.commit()?;
             if inserted > 0 {

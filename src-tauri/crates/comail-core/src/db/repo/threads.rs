@@ -200,16 +200,39 @@ pub fn get_summaries(conn: &Connection, thread_ids: &[i64]) -> Result<Vec<Thread
         .collect())
 }
 
+/// Which inbox tab to filter to. Overlay tabs (Split/AutoLabel) read the single
+/// resolved `threads.routed_tab` so a thread appears in exactly one; the
+/// Important/Other defaults catch everything still unrouted. Manual (user)
+/// labels are a cross-cutting filter, not a routed tab.
+pub enum TabFilter {
+    Important,
+    Other,
+    Split(i64),
+    AutoLabel(i64),
+    ManualLabel(i64),
+}
+
 pub struct ListArgs {
     pub view: View,
-    pub split: Option<SplitRuleQuery>,
+    pub tab: Option<TabFilter>,
     pub account_id: Option<i64>,
-    pub label_id: Option<i64>,
     /// Restrict to threads with a message in this folder (user-folder view).
     pub folder_id: Option<i64>,
     pub cursor: Option<i64>,
     pub limit: i64,
 }
+
+/// Threads whose only incoming (non-draft, non-outgoing) messages are human.
+const HUMAN_BUCKET: &str = "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
+        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 0)
+    AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
+        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 1)";
+
+/// Threads whose only incoming messages are automated.
+const AUTO_BUCKET: &str = "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
+        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 1)
+    AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
+        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 0)";
 
 pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
     let mut where_clauses: Vec<String> = Vec::new();
@@ -260,13 +283,32 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         bind.push(Box::new(acc));
         where_clauses.push(format!("t.account_id = ?{}", bind.len()));
     }
-    if let Some(label_id) = args.label_id {
-        bind.push(Box::new(label_id));
-        where_clauses.push(format!(
-            "EXISTS (SELECT 1 FROM message_labels ml JOIN messages m ON m.id = ml.message_id
-                     WHERE m.thread_id = t.id AND ml.label_id = ?{})",
-            bind.len()
-        ));
+    match &args.tab {
+        Some(TabFilter::Important) => where_clauses.push(format!(
+            "(t.routed_tab = 'important'
+              OR ((t.routed_tab IS NULL OR t.routed_tab = 'pending') AND ({HUMAN_BUCKET})))"
+        )),
+        Some(TabFilter::Other) => where_clauses.push(format!(
+            "(t.routed_tab = 'other'
+              OR ((t.routed_tab IS NULL OR t.routed_tab = 'pending') AND ({AUTO_BUCKET})))"
+        )),
+        Some(TabFilter::Split(id)) => {
+            bind.push(Box::new(format!("split:{id}")));
+            where_clauses.push(format!("t.routed_tab = ?{}", bind.len()));
+        }
+        Some(TabFilter::AutoLabel(id)) => {
+            bind.push(Box::new(format!("label:{id}")));
+            where_clauses.push(format!("t.routed_tab = ?{}", bind.len()));
+        }
+        Some(TabFilter::ManualLabel(id)) => {
+            bind.push(Box::new(*id));
+            where_clauses.push(format!(
+                "EXISTS (SELECT 1 FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+                         WHERE m.thread_id = t.id AND ml.label_id = ?{})",
+                bind.len()
+            ));
+        }
+        None => {}
     }
     if let Some(folder_id) = args.folder_id {
         bind.push(Box::new(folder_id));
@@ -278,45 +320,6 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
     if let Some(cur) = args.cursor {
         bind.push(Box::new(cur));
         where_clauses.push(format!("t.last_message_at < ?{}", bind.len()));
-    }
-
-    if let Some(q) = &args.split {
-        if let Some(auto) = q.is_automated {
-            let cmp = if auto { "1" } else { "0" };
-            where_clauses.push(format!(
-                "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                         AND m.is_draft = 0 AND m.is_outgoing = 0
-                         AND m.is_automated = {cmp})
-                 AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                         AND m.is_draft = 0 AND m.is_outgoing = 0
-                         AND m.is_automated = {})",
-                if auto { "0" } else { "1" }
-            ));
-        }
-        if let Some(senders) = &q.senders {
-            if !senders.is_empty() {
-                let mut ors = Vec::new();
-                for s in senders {
-                    bind.push(Box::new(format!("%{}%", s.to_lowercase())));
-                    ors.push(format!(
-                        "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                                 AND LOWER(m.from_addr) LIKE ?{})",
-                        bind.len()
-                    ));
-                }
-                where_clauses.push(format!("({})", ors.join(" OR ")));
-            }
-        }
-        if let Some(subs) = &q.subject_contains {
-            if !subs.is_empty() {
-                let mut ors = Vec::new();
-                for s in subs {
-                    bind.push(Box::new(format!("%{}%", s.to_lowercase())));
-                    ors.push(format!("LOWER(t.subject_norm) LIKE ?{}", bind.len()));
-                }
-                where_clauses.push(format!("({})", ors.join(" OR ")));
-            }
-        }
     }
 
     let where_sql = if where_clauses.is_empty() {

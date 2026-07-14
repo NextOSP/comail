@@ -26,6 +26,18 @@ impl Category {
             Category::Pitch => "ComailAutoPitch",
         }
     }
+
+    /// Inverse of [`Category::keyword`]; `None` for any other string (including
+    /// the empty "no category" cache value).
+    pub fn from_keyword(kw: &str) -> Option<Category> {
+        match kw {
+            "ComailAutoMarketing" => Some(Category::Marketing),
+            "ComailAutoNews" => Some(Category::News),
+            "ComailAutoSocial" => Some(Category::Social),
+            "ComailAutoPitch" => Some(Category::Pitch),
+            _ => None,
+        }
+    }
 }
 
 /// Everything the classifier looks at; kept plain so tests can fabricate it.
@@ -211,6 +223,22 @@ mod tests {
             has_list_headers,
             sender_known: false,
         }
+    }
+
+    #[test]
+    fn keyword_roundtrips() {
+        for cat in [
+            Category::Marketing,
+            Category::News,
+            Category::Social,
+            Category::Pitch,
+        ] {
+            assert_eq!(Category::from_keyword(cat.keyword()), Some(cat));
+        }
+        assert_eq!(Category::from_keyword(""), None);
+        // The display name is NOT the keyword (regression: the AI cache stores
+        // keywords, so reading them back as display names loses the category).
+        assert_eq!(Category::from_keyword("Marketing"), None);
     }
 
     #[test]

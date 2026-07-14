@@ -371,6 +371,7 @@ pub fn run() {
             commands::get_sync_status,
             commands::unread_counts,
             commands::relabel_auto,
+            commands::reroute_all,
             commands::get_settings,
             commands::set_settings,
             commands::list_events,

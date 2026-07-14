@@ -640,6 +640,9 @@ pub struct SplitInput {
     pub name: String,
     pub position: i64,
     pub query: SplitRuleQuery,
+    /// Route key matching mail is sent to, or `None` for a self-tab split.
+    #[serde(default)]
+    pub target: Option<String>,
 }
 
 #[tauri::command]
@@ -651,7 +654,7 @@ pub async fn list_splits(state: State<'_, AppState>) -> CmdResult<Vec<SplitRule>
 pub async fn save_split(state: State<'_, AppState>, split: SplitInput) -> CmdResult<SplitRule> {
     state
         .core
-        .save_split(split.id, split.name, split.position, split.query)
+        .save_split(split.id, split.name, split.position, split.query, split.target)
         .await
         .map_err(err)
 }
@@ -706,6 +709,11 @@ pub async fn get_sync_status(state: State<'_, AppState>) -> CmdResult<Vec<SyncSt
 #[tauri::command]
 pub async fn relabel_auto(state: State<'_, AppState>) -> CmdResult<i64> {
     state.core.relabel_auto().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn reroute_all(state: State<'_, AppState>) -> CmdResult<i64> {
+    state.core.reroute_all().await.map_err(err)
 }
 
 #[tauri::command]

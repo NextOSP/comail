@@ -84,6 +84,9 @@ const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
+  aiCategorize: false,
+  aiCategoryPrompt: "",
+  aiTierCategorize: "instant",
   groupByDate: true,
   dockBadgeEnabled: true,
   dockBadgeSource: "inbox",
@@ -582,12 +585,31 @@ function AiSection({ settings }: { settings: Settings }) {
   const [baseUrl, setBaseUrl] = useState(settings.aiBaseUrl);
   const [model, setModel] = useState(settings.aiModel);
   const [forceCustom, setForceCustom] = useState(false);
+  const [categoryPrompt, setCategoryPrompt] = useState(settings.aiCategoryPrompt);
+  const [resorting, setResorting] = useState(false);
   const baseUrlRef = useRef<HTMLInputElement>(null);
   const { data: models } = useAiModels(settings.aiBaseUrl);
 
   // Follow external settings refreshes (initial load, other writers).
   useEffect(() => setBaseUrl(settings.aiBaseUrl), [settings.aiBaseUrl]);
   useEffect(() => setModel(settings.aiModel), [settings.aiModel]);
+  useEffect(() => setCategoryPrompt(settings.aiCategoryPrompt), [settings.aiCategoryPrompt]);
+
+  const resort = async () => {
+    if (resorting) return;
+    setResorting(true);
+    try {
+      const n = await call("reroute_all", {});
+      pushToast({ kind: "info", message: t("settings:ai.resorted", { count: n }), durationMs: 2500 });
+      void queryClient.invalidateQueries({ queryKey: ["threads"] });
+      void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+      void queryClient.invalidateQueries({ queryKey: ["labels"] });
+    } catch (err) {
+      pushToast({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setResorting(false);
+    }
+  };
 
   const saveKey = async () => {
     setSavingKey(true);
@@ -785,6 +807,57 @@ function AiSection({ settings }: { settings: Settings }) {
         onChange={(v) => commitField({ aiTierVoice: v })}
         tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
       />
+
+      <SectionLabel>{t("settings:ai.categorizeSection")}</SectionLabel>
+      <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
+        {t("settings:ai.categorizeIntro")}
+      </p>
+      <SettingRow
+        label={t("settings:ai.categorizeLabel")}
+        hint={t("settings:ai.categorizeHint")}
+      >
+        <Toggle
+          label={t("settings:ai.categorizeLabel")}
+          checked={settings.aiCategorize}
+          onChange={(aiCategorize) => void updateSettings({ aiCategorize })}
+        />
+      </SettingRow>
+      {settings.aiCategorize && (
+        <>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11.5px] font-medium text-ink-faint">
+              {t("settings:ai.categoryPromptLabel")}
+            </span>
+            <textarea
+              value={categoryPrompt}
+              onChange={(e) => setCategoryPrompt(e.target.value)}
+              onBlur={() => {
+                if (categoryPrompt !== settings.aiCategoryPrompt)
+                  void updateSettings({ aiCategoryPrompt: categoryPrompt });
+              }}
+              rows={6}
+              spellCheck={false}
+              placeholder={t("settings:ai.categoryPromptPlaceholder")}
+              className={`${inputCls} w-full resize-y !text-[12px] leading-relaxed`}
+            />
+          </label>
+          <p className="-mt-1 text-[11.5px] text-ink-faint">
+            {t("settings:ai.categoryPromptHint")}
+          </p>
+          <ScenarioRouteRow
+            label={t("settings:ai.routeCategorize")}
+            hint={t("settings:ai.routeCategorizeHint")}
+            value={settings.aiTierCategorize}
+            onChange={(v) => commitField({ aiTierCategorize: v })}
+            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+          />
+        </>
+      )}
+      <SettingRow label={t("settings:ai.resortLabel")} hint={t("settings:ai.resortHint")}>
+        <button className={primaryBtnCls} disabled={resorting} onClick={() => void resort()}>
+          {resorting ? t("settings:ai.resorting") : t("settings:ai.resort")}
+        </button>
+      </SettingRow>
     </section>
   );
 }

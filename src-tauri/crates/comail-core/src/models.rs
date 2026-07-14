@@ -353,10 +353,16 @@ pub struct Snippet {
 pub struct SplitRuleQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub senders: Option<Vec<String>>,
+    /// Match a recipient (To or Cc) address/domain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipients: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject_contains: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_automated: Option<bool>,
+    /// Match threads that have (true) or lack (false) an attachment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_attachment: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -366,6 +372,11 @@ pub struct SplitRule {
     pub name: String,
     pub position: i64,
     pub query: SplitRuleQuery,
+    /// Where matching mail is routed. `None` = the rule is its own tab (legacy,
+    /// route key `"split:<id>"`); otherwise a route key: `"important"`,
+    /// `"other"`, or `"label:<id>"` to drop matches into an existing tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -535,6 +546,18 @@ pub struct Settings {
     /// Automatic Marketing/News/Social/Pitch categorization at sync time.
     #[serde(default = "default_true")]
     pub auto_labels_enabled: bool,
+    /// When true, mail that no routing rule catches is sorted into a category by
+    /// the AI classifier (using `ai_category_prompt`) instead of the built-in
+    /// heuristic. Off, or with no API key, falls back to the heuristic.
+    #[serde(default)]
+    pub ai_categorize: bool,
+    /// Natural-language description of the categories, fed to the AI classifier.
+    /// Empty uses a built-in default prompt.
+    #[serde(default)]
+    pub ai_category_prompt: String,
+    /// Which model tier the AI classifier uses: "instant" | "cheap" | "intelligent".
+    #[serde(default = "default_tier_instant")]
+    pub ai_tier_categorize: String,
     /// Group the thread list under date headers (Today / Yesterday / …).
     #[serde(default = "default_true")]
     pub group_by_date: bool,
@@ -700,6 +723,9 @@ impl Default for Settings {
             sound_enabled: true,
             auto_advance: true,
             auto_labels_enabled: true,
+            ai_categorize: false,
+            ai_category_prompt: String::new(),
+            ai_tier_categorize: default_tier_instant(),
             group_by_date: true,
             dock_badge_enabled: true,
             dock_badge_source: default_badge_source(),

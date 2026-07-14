@@ -221,10 +221,14 @@ export interface Snippet {
 export interface SplitRuleQuery {
   /** match sender address or domain, e.g. "@github.com" or "boss@co.com" */
   senders?: string[];
+  /** match a recipient (To or Cc) address or domain */
+  recipients?: string[];
   /** substring match on subject */
   subjectContains?: string[];
   /** automated mail: has List-Id / List-Unsubscribe / Precedence: bulk */
   isAutomated?: boolean;
+  /** match threads that have (true) or lack (false) an attachment */
+  hasAttachment?: boolean;
 }
 
 export interface SplitRule {
@@ -232,6 +236,9 @@ export interface SplitRule {
   name: string;
   position: number;
   query: SplitRuleQuery;
+  /** Where matching mail is routed: undefined/null = the rule is its own tab;
+   *  otherwise a route key "important" | "other" | "label:<id>". */
+  target?: string | null;
 }
 
 export interface FolderInfo {
@@ -321,6 +328,12 @@ export interface Settings {
   autoAdvance: boolean;
   /** Automatic Marketing/News/Social/Pitch categorization at sync time. */
   autoLabelsEnabled: boolean;
+  /** Sort mail that no rule catches into a category with the AI classifier. */
+  aiCategorize: boolean;
+  /** Natural-language description of the categories for the AI classifier. */
+  aiCategoryPrompt: string;
+  /** Model tier the AI classifier uses. */
+  aiTierCategorize: AiTier;
   /** Group the thread list under date headers (Today / Yesterday / …). */
   groupByDate: boolean;
   /** Show the unread count on the app icon (macOS Dock badge). */
@@ -670,6 +683,8 @@ export interface Commands {
   unread_counts(args: { accountId?: number | null }): Promise<UnreadCounts>;
   /** Re-run auto-label classification over stored mail; returns labeled count. */
   relabel_auto(args: Record<string, never>): Promise<number>;
+  /** Re-resolve every thread's tab (rules + AI + heuristic); returns thread count. */
+  reroute_all(args: Record<string, never>): Promise<number>;
 
   get_settings(args: Record<string, never>): Promise<Settings>;
   set_settings(args: { settings: Settings }): Promise<void>;

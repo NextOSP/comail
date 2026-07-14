@@ -29,9 +29,8 @@ fn list_ids(conn: &Connection, label_id: Option<i64>) -> Vec<i64> {
         conn,
         &repo::threads::ListArgs {
             view: View::All,
-            split: None,
+            tab: label_id.map(repo::threads::TabFilter::ManualLabel),
             account_id: None,
-            label_id,
             folder_id: None,
             cursor: None,
             limit: 50,

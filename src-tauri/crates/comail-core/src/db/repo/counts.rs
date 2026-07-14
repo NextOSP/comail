@@ -3,7 +3,7 @@
 //! threads.rs so the two evolve independently.
 
 use crate::error::Result;
-use crate::models::{roles, Label, SplitRule, SplitRuleQuery, UnreadCounts};
+use crate::models::{roles, Label, SplitRule, UnreadCounts};
 use rusqlite::Connection;
 use std::collections::HashMap;
 
@@ -61,47 +61,41 @@ impl Q {
         self
     }
 
-    /// Mirrors the split-query SQL in `threads::list`.
-    fn split(mut self, q: &SplitRuleQuery) -> Self {
-        if let Some(auto) = q.is_automated {
-            let cmp = if auto { "1" } else { "0" };
-            self.clauses.push(format!(
-                "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                         AND m.is_draft = 0 AND m.is_outgoing = 0
-                         AND m.is_automated = {cmp})
-                 AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                         AND m.is_draft = 0 AND m.is_outgoing = 0
-                         AND m.is_automated = {})",
-                if auto { "0" } else { "1" }
-            ));
-        }
-        if let Some(senders) = &q.senders {
-            if !senders.is_empty() {
-                let mut ors = Vec::new();
-                for s in senders {
-                    self.bind.push(Box::new(format!("%{}%", s.to_lowercase())));
-                    ors.push(format!(
-                        "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                                 AND LOWER(m.from_addr) LIKE ?{})",
-                        self.bind.len()
-                    ));
-                }
-                self.clauses.push(format!("({})", ors.join(" OR ")));
-            }
-        }
-        if let Some(subs) = &q.subject_contains {
-            if !subs.is_empty() {
-                let mut ors = Vec::new();
-                for s in subs {
-                    self.bind.push(Box::new(format!("%{}%", s.to_lowercase())));
-                    ors.push(format!("LOWER(t.subject_norm) LIKE ?{}", self.bind.len()));
-                }
-                self.clauses.push(format!("({})", ors.join(" OR ")));
-            }
-        }
+    /// Important (`automated=false`) / Other (`automated=true`) default buckets:
+    /// forced by a routing rule, or unrouted mail split by `is_automated`.
+    /// Mirrors the bucket clauses in `threads::list`.
+    fn bucket(mut self, automated: bool) -> Self {
+        let (want, other, forced) = if automated {
+            (1, 0, "other")
+        } else {
+            (0, 1, "important")
+        };
+        self.clauses.push(format!(
+            "(t.routed_tab = '{forced}'
+              OR ((t.routed_tab IS NULL OR t.routed_tab = 'pending')
+                  AND EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
+                              AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = {want})
+                  AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
+                              AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = {other})))"
+        ));
         self
     }
 
+    /// A custom split tab: threads routed to `split:<id>`.
+    fn routed_split(mut self, id: i64) -> Self {
+        self.bind.push(Box::new(format!("split:{id}")));
+        self.clauses.push(format!("t.routed_tab = ?{}", self.bind.len()));
+        self
+    }
+
+    /// An auto-category tab: threads routed to `label:<id>`.
+    fn routed_label(mut self, id: i64) -> Self {
+        self.bind.push(Box::new(format!("label:{id}")));
+        self.clauses.push(format!("t.routed_tab = ?{}", self.bind.len()));
+        self
+    }
+
+    /// A manual (user) label: a cross-cutting membership filter, not a routed tab.
     fn label(mut self, label_id: i64) -> Self {
         self.bind.push(Box::new(label_id));
         self.clauses.push(format!(
@@ -127,13 +121,6 @@ impl Q {
     }
 }
 
-fn automated(flag: bool) -> SplitRuleQuery {
-    SplitRuleQuery {
-        is_automated: Some(flag),
-        ..Default::default()
-    }
-}
-
 pub fn unread_counts(
     conn: &Connection,
     account_id: Option<i64>,
@@ -141,24 +128,25 @@ pub fn unread_counts(
     labels: &[Label],
 ) -> Result<UnreadCounts> {
     let inbox = Q::unread(account_id).inbox().run(conn)?;
-    let important = Q::unread(account_id)
-        .inbox()
-        .split(&automated(false))
-        .run(conn)?;
-    let other = Q::unread(account_id)
-        .inbox()
-        .split(&automated(true))
-        .run(conn)?;
+    let important = Q::unread(account_id).inbox().bucket(false).run(conn)?;
+    let other = Q::unread(account_id).inbox().bucket(true).run(conn)?;
 
     let mut splits_map = HashMap::new();
     for sp in splits {
-        let n = Q::unread(account_id).inbox().split(&sp.query).run(conn)?;
+        let n = Q::unread(account_id).inbox().routed_split(sp.id).run(conn)?;
         splits_map.insert(sp.id.to_string(), n);
     }
 
+    // Auto-category tabs read the single resolved tab; manual labels stay a
+    // membership filter.
     let mut labels_map = HashMap::new();
     for l in labels {
-        let n = Q::unread(account_id).inbox().label(l.id).run(conn)?;
+        let q = Q::unread(account_id).inbox();
+        let n = if l.is_auto {
+            q.routed_label(l.id).run(conn)?
+        } else {
+            q.label(l.id).run(conn)?
+        };
         labels_map.insert(l.id.to_string(), n);
     }
 
@@ -196,6 +184,7 @@ pub fn unread_counts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::SplitRuleQuery;
     use rusqlite::params;
 
     fn test_db() -> Connection {
@@ -269,6 +258,13 @@ mod tests {
             params![msg_id],
         )
         .unwrap();
+        // The custom-split count now reads the resolved tab, so route thread 1
+        // into split:7 (the resolver does this at sync time).
+        conn.execute(
+            "UPDATE threads SET routed_tab = 'split:7' WHERE id = 1",
+            [],
+        )
+        .unwrap();
 
         let split = SplitRule {
             id: 7,
@@ -278,6 +274,7 @@ mod tests {
                 senders: Some(vec!["a@b.c".into()]),
                 ..Default::default()
             },
+            target: None,
         };
         let label = Label {
             id: 5,

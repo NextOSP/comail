@@ -932,6 +932,9 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   soundEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
+  aiCategorize: false,
+  aiCategoryPrompt: "",
+  aiTierCategorize: "instant",
   groupByDate: true,
   dockBadgeEnabled: true,
   dockBadgeSource: "inbox",
@@ -1813,7 +1816,8 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       });
     }
 
-    case "relabel_auto": {
+    case "relabel_auto":
+    case "reroute_all": {
       applyAutoLabels();
       const n = threads.filter((t) => t.labels.some((id) => id >= 100)).length;
       return delay(n, 400);

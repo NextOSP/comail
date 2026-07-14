@@ -76,11 +76,22 @@ pub fn save(
 }
 
 pub fn delete(conn: &Connection, id: i64) -> Result<()> {
-    // Auto labels are system rows: hidden via the Auto Labels toggle, never deleted.
+    let key = format!("label:{id}");
+    // Any thread routed into this label (an auto category) must fall back to
+    // Important/Other, so clear its routed tab before the row goes. Chip
+    // memberships in message_labels cascade via the foreign key.
     conn.execute(
-        "DELETE FROM labels WHERE id = ?1 AND is_auto = 0",
-        params![id],
+        "UPDATE threads SET routed_tab = NULL WHERE routed_tab = ?1",
+        params![key],
     )?;
+    // A rule that routed matches into this category would dangle (and fail the
+    // message_labels foreign key on the next route); revert those rules to their
+    // own tab.
+    conn.execute(
+        "UPDATE split_rules SET target = NULL WHERE target = ?1",
+        params![key],
+    )?;
+    conn.execute("DELETE FROM labels WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -189,22 +200,69 @@ mod tests {
     }
 
     #[test]
-    fn delete_refuses_auto_rows() {
+    fn delete_removes_auto_rows_and_clears_routed_tab() {
+        use crate::db::repo::threads;
         let c = testutil::conn();
+        // Match production (db::open sets this): chip memberships cascade on delete.
+        c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        testutil::seed_account(&c);
         let auto_id: i64 = c
             .query_row("SELECT id FROM labels WHERE is_auto = 1 LIMIT 1", [], |r| {
                 r.get(0)
             })
             .unwrap();
+        // A thread routed into that auto category.
+        let (thread, _msg) = testutil::seed_message(&c, "x@shop.example", "sale", true);
+        crate::route::apply_tab(&c, thread, Some(&format!("label:{auto_id}"))).unwrap();
+
         delete(&c, auto_id).unwrap();
-        assert!(
-            get(&c, auto_id).unwrap().is_some(),
-            "auto label must survive delete"
-        );
+        assert!(get(&c, auto_id).unwrap().is_none(), "auto label must delete");
+        // The orphaned thread falls back to Important/Other (routed_tab cleared).
+        let routed: Option<String> = c
+            .query_row(
+                "SELECT routed_tab FROM threads WHERE id = ?1",
+                params![thread],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(routed, None);
+        assert!(threads::get_summary(&c, thread).unwrap().unwrap().labels.is_empty());
 
         let manual = save(&c, None, "Temp", "#fff", 0).unwrap();
         delete(&c, manual.id).unwrap();
         assert!(get(&c, manual.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn delete_reverts_rules_that_targeted_the_category() {
+        use crate::db::repo::splits;
+        let c = testutil::conn();
+        let auto_id = c
+            .query_row(
+                "SELECT id FROM labels WHERE keyword = 'ComailAutoMarketing'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap();
+        // A rule that routes matches into that category.
+        let rule = splits::save(
+            &c,
+            None,
+            "promos",
+            0,
+            &crate::models::SplitRuleQuery {
+                senders: Some(vec!["shop.example".into()]),
+                ..Default::default()
+            },
+            Some(&format!("label:{auto_id}")),
+        )
+        .unwrap();
+
+        delete(&c, auto_id).unwrap();
+
+        // The rule survives but reverts to its own tab (no dangling target).
+        let got = splits::get(&c, rule.id).unwrap().unwrap();
+        assert_eq!(got.target, None);
     }
 
     /// Regression: server reconcile must never strip local-only auto labels.
