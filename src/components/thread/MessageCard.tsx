@@ -544,9 +544,15 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     const body = trimTrailingEmptyHtml(html);
     // CSP inside the sandboxed iframe: remote http(s) images only when the
     // "load remote images" setting is on; inline/data images always allowed.
+    // The app itself runs in a secure context, so plain http: images (still
+    // common in marketing mail, e.g. TikTok's logo CDN) are blocked by the
+    // webview as mixed content no matter what img-src allows. upgrade-
+    // insecure-requests rewrites them to https: before the fetch, which the
+    // hosts serving them invariably support.
     const imgSrc = loadRemoteImages ? "data: cid: http: https:" : "data: cid:";
+    const upgrade = loadRemoteImages ? "; upgrade-insecure-requests" : "";
     return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}${upgrade}">
 <base target="_top">
 <style>
   :root { color-scheme: ${scheme}; }

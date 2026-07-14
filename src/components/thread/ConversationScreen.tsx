@@ -61,6 +61,38 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
     if (doc) doc.scrollTop = doc.scrollHeight;
   };
 
+  // On open, bring the message that matters (first unread, else the latest)
+  // to the middle of the view. Without this, long threads open pinned to the
+  // top and the new mail sits below the fold. Runs once per thread; keyboard
+  // and pointer scrolling afterwards are untouched.
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const autoScrolledFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!data || autoScrolledFor.current === threadId) return;
+    autoScrolledFor.current = threadId;
+    let timer: number | undefined;
+    const raf = requestAnimationFrame(() => {
+      const el = anchorRef.current;
+      if (!el) return;
+      el.scrollIntoView({ block: "center" });
+      // Message bodies render into iframes that grow after first paint and
+      // shift the layout, so re-center once things settle - unless the user
+      // has scrolled in the meantime.
+      let scroller: HTMLElement | null = el.parentElement;
+      while (scroller && scroller.scrollHeight <= scroller.clientHeight + 1)
+        scroller = scroller.parentElement;
+      const pos = scroller?.scrollTop;
+      timer = window.setTimeout(() => {
+        if (scroller == null || scroller.scrollTop === pos)
+          anchorRef.current?.scrollIntoView({ block: "center" });
+      }, 350);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [data, threadId]);
+
   // Hide the draft that's open in the inline composer so it isn't double-rendered.
   const editingDraftId = useUi((s) => s.editingDraftId);
   const hiddenDraftId = inlineComposer ? editingDraftId : null;
@@ -95,6 +127,9 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   }
 
   const lastId = messages[messages.length - 1]?.id;
+  // Where the on-open auto-scroll lands: the first unread message (start of
+  // what's new), falling back to the newest one.
+  const anchorId = messages.find((m) => !m.isRead && !m.isDraft)?.id ?? lastId;
   // The message a reply will target, mirrored as a highlight so it's always
   // clear which one is selected. Defaults (nothing hovered/navigated yet) to
   // the latest incoming message — matching the keyboard `compose` fallback — so
@@ -181,7 +216,10 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
           {messages.map((m) => (
             <div
               key={m.id}
-              ref={m.id === lastId ? lastMsgRef : undefined}
+              ref={(el) => {
+                if (m.id === lastId) lastMsgRef.current = el;
+                if (m.id === anchorId) anchorRef.current = el;
+              }}
               onMouseEnter={() => selectMessage(m.id)}
             >
               <MessageCard
