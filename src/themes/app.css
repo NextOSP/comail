@@ -62,6 +62,36 @@
   --iframe-scheme: dark;
 }
 
+/* Holiday: a clean, neutral light body (so the mail stays readable) with a
+   beach-sunrise HEADER (see header.co-glass override below) and a gold sun mark.
+   The body palette is deliberately near-neutral - only the header is "the beach". */
+:root[data-theme="holiday"] {
+  color-scheme: light;
+  --bg0: #f4f7fa; /* canvas - clean near-white with the faintest sky cool */
+  --bg1: #ffffff; /* card/surface */
+  --bg2: #e7edf3; /* hover */
+  --bg3: #dbe3ea;
+  --bg4: #c6d2dd;
+  --ink: 18 42 66; /* deep ocean navy for text */
+  --text: rgb(var(--ink) / 0.92);
+  --text-muted: rgb(var(--ink) / 0.60);
+  --text-faint: rgb(var(--ink) / 0.42);
+  --accent: #0a84c2; /* ocean blue - carries selection + links */
+  --info: #1e9fd8; /* shallow-water sky blue */
+  --star: #f5a623; /* the sun - warm gold */
+  --danger: #d0524a;
+  --ok: #2f9e6f;
+  --hairline: rgb(var(--ink) / 0.09);
+  --hairline-strong: rgb(var(--ink) / 0.16);
+  --elev-1: 0 1px 2px rgb(18 42 66 / 0.05);
+  --elev-2: 0 4px 24px rgb(18 42 66 / 0.10), 0 1px 3px rgb(18 42 66 / 0.07);
+  --elev-card: 0 1px 3px rgb(18 42 66 / 0.07), 0 8px 22px rgb(18 42 66 / 0.10);
+  --row-hover: rgb(var(--ink) / 0.035);
+  --selected-bg: color-mix(in srgb, var(--accent) 8%, transparent);
+  --checked-bg: color-mix(in srgb, var(--accent) 15%, transparent);
+  --iframe-scheme: light;
+}
+
 @theme inline {
   --color-bg0: var(--bg0);
   --color-bg1: var(--bg1);
@@ -589,6 +619,72 @@ textarea {
 }
 .co-intro-hint {
   animation: co-fade-in 400ms ease-out;
+}
+
+/* ==========================================================================
+   Holiday - the top bar is a live, sunlit lagoon.
+
+   Structure:
+   - header background: a deep tropical gradient (the water body).
+   - header::before: slow, large caustic net (the swell), drifting right.
+   - header::after:  fast, fine sun-sparkle sheet, drifting left (parallax).
+   - text: header-scoped bump of the ink variables so the mark, title and
+     icons read crisply against bright water (fixes the "dim" look).
+   Everything is confined to <header>; the rest of the app stays neutral.
+   ========================================================================== */
+:root[data-theme="holiday"] header.co-glass {
+  /* the water itself - saturated so it never greys into an overcast look */
+  background: linear-gradient(178deg, #7fe4f0 0%, #29c6e0 54%, #0aa9cf 100%);
+  border-bottom: 1px solid rgb(9 68 92 / 0.16);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.68);
+  /* Header text: deeper, higher-contrast ink so nothing looks washed out. */
+  --ink: 8 54 74;
+  --text-muted: rgb(var(--ink) / 0.82);
+  --text-faint: rgb(var(--ink) / 0.66);
+}
+
+/* Two animated caustic layers, both behind the header content (z-index < 0). */
+:root[data-theme="holiday"] header.co-glass::before,
+:root[data-theme="holiday"] header.co-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  will-change: background-position;
+}
+/* Swell: broad caustic net + veins, slow drift right. */
+:root[data-theme="holiday"] header.co-glass::before {
+  z-index: -2;
+  opacity: 0.85;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22300%22%20height=%2296%22%3E%3Cfilter%20id=%22c%22%20x=%220%22%20y=%220%22%20width=%22100%25%22%20height=%22100%25%22%3E%3CfeTurbulence%20type=%22turbulence%22%20baseFrequency=%220.028%200.05%22%20numOctaves=%223%22%20seed=%229%22%20stitchTiles=%22stitch%22%20result=%22c%22/%3E%3CfeColorMatrix%20in=%22c%22%20type=%22matrix%22%20values=%220%200%200%200%201%200%200%200%200%201%200%200%200%200%201%200.8%200%200%200%20-0.2%22/%3E%3C/filter%3E%3Crect%20width=%22300%22%20height=%2296%22%20filter=%22url(%23c)%22/%3E%3C/svg%3E");
+  background-size: 300px 100%;
+  animation: co-holiday-swell 26s linear infinite;
+}
+/* Sparkle sheet: fine glints, faster drift left, screened for glassy highlights. */
+:root[data-theme="holiday"] header.co-glass::after {
+  z-index: -1;
+  opacity: 0.9;
+  mix-blend-mode: screen;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22240%22%20height=%2296%22%3E%3Cfilter%20id=%22s%22%20x=%220%22%20y=%220%22%20width=%22100%25%22%20height=%22100%25%22%3E%3CfeTurbulence%20type=%22fractalNoise%22%20baseFrequency=%220.06%200.15%22%20numOctaves=%222%22%20seed=%2221%22%20stitchTiles=%22stitch%22%20result=%22g%22/%3E%3CfeColorMatrix%20in=%22g%22%20type=%22matrix%22%20values=%220%200%200%200%201%200%200%200%200%201%200%200%200%200%201%201.9%200%200%200%20-1.42%22/%3E%3C/filter%3E%3Crect%20width=%22240%22%20height=%2296%22%20filter=%22url(%23s)%22/%3E%3C/svg%3E");
+  background-size: 240px 100%;
+  animation: co-holiday-sparkle 18s linear infinite;
+}
+/* Horizontal-only drift, one whole tile per cycle => perfectly seamless loop. */
+@keyframes co-holiday-swell {
+  from { background-position: 0 0; }
+  to { background-position: 300px 0; }
+}
+@keyframes co-holiday-sparkle {
+  from { background-position: 0 0; }
+  to { background-position: -240px 0; }
+}
+
+/* The wordmark IS the sun: a light, bright sun-yellow. A single tight shadow
+   (no blur halo) keeps it legible on the water without looking dark or doubled. */
+:root[data-theme="holiday"] header .co-wordmark {
+  color: #ffdc4a;
+  text-shadow: 0 1px 1px rgb(8 54 74 / 0.38);
 }
 
 .co-chip {

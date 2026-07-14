@@ -12,6 +12,7 @@ pub mod embed;
 pub mod error;
 pub mod events;
 pub mod graph;
+pub mod graphcal;
 pub mod imap;
 pub mod mime;
 pub mod models;
@@ -52,6 +53,8 @@ enum Scenario {
     Voice,
     /// Palette natural-language commands (tiny prompt, latency-sensitive).
     Command,
+    /// One-tap quick-reply chips (tiny output, latency-sensitive).
+    QuickReply,
 }
 
 /// Resolve the model id a scenario should use: its configured tier's model, or
@@ -62,8 +65,8 @@ fn resolve_ai_model(settings: &Settings, scenario: Scenario) -> String {
         Scenario::Draft => settings.ai_tier_draft.as_str(),
         Scenario::Summarize => settings.ai_tier_summarize.as_str(),
         Scenario::Voice => settings.ai_tier_voice.as_str(),
-        // Palette parsing wants the fastest model available.
-        Scenario::Command => "instant",
+        // Palette parsing and reply chips want the fastest model available.
+        Scenario::Command | Scenario::QuickReply => "instant",
     };
     let picked = match tier {
         "instant" => &settings.ai_model_instant,
@@ -1547,10 +1550,19 @@ impl Core {
         // into their Outlook / Microsoft 365 calendar via Graph - that is what
         // Teams and Outlook show. Best-effort: a Graph failure (e.g. the
         // account predates the calendar consent) must not fail event creation,
-        // which already succeeded locally.
+        // which already succeeded locally. Skipped when the account has a
+        // connected calendar: the sync task's push already writes it (and a
+        // second direct POST would duplicate the event in Outlook).
         if account.provider == Provider::Microsoft {
-            if let Err(e) = self.push_event_to_graph(account_id, &args).await {
-                tracing::warn!(error = %e, "graph: could not sync event to Outlook calendar");
+            let has_cal_config = self
+                .db
+                .read(move |conn| repo::caldav::get_config(conn, account_id))
+                .await?
+                .is_some();
+            if !has_cal_config {
+                if let Err(e) = self.push_event_to_graph(account_id, &args).await {
+                    tracing::warn!(error = %e, "graph: could not sync event to Outlook calendar");
+                }
             }
         }
 
@@ -1590,6 +1602,7 @@ impl Core {
             .collect();
         graph::create_calendar_event(
             &token,
+            None,
             &graph::GraphEvent {
                 subject: args.summary.trim(),
                 body_html,
@@ -1601,6 +1614,7 @@ impl Core {
             },
         )
         .await
+        .map(|_| ())
     }
 
     /// Answer an invite: store our response and email an ICS METHOD:REPLY to
@@ -2024,40 +2038,31 @@ impl Core {
         .await
     }
 
-    /// Create a Microsoft Teams online meeting for a Microsoft account and
-    /// return its join URL (for insertion into a compose draft).
-    ///
-    /// Needs a Graph-scoped token. The `OnlineMeetings.ReadWrite` scope is not
-    /// part of the default mail consent, so the first attempt may trigger an
-    /// incremental re-consent in the browser (like `connect_google_calendar`),
-    /// after which the meeting is created. `open_url` opens the consent page.
-    pub async fn create_teams_meeting(
+    /// Mint a Graph token for one extra scope, widening consent in the
+    /// browser when the scope was never granted (incremental consent, like
+    /// `connect_google_calendar`). `open_url` opens the consent page.
+    async fn graph_token_with_consent(
         &self,
         account_id: i64,
-        subject: &str,
-        start_ms: i64,
-        end_ms: i64,
+        scope: &str,
         open_url: impl FnOnce(String) + Send,
-    ) -> Result<graph::OnlineMeeting> {
+    ) -> Result<String> {
         let account = self
             .db
             .read(move |conn| repo::accounts::get(conn, account_id))
             .await?
             .ok_or_else(|| CoreError::NotFound("account".into()))?;
         if account.provider != Provider::Microsoft {
-            return Err(CoreError::Auth(
-                "Teams meetings require a Microsoft account".into(),
-            ));
+            return Err(CoreError::Auth("needs a Microsoft account".into()));
         }
 
-        let scope = oauth::providers::MS_ONLINE_MEETINGS_SCOPE;
         let extra_scopes = [scope];
-        let token = match self
+        match self
             .tokens
             .access_token_for_scope(account_id, Provider::Microsoft, scope)
             .await
         {
-            Ok(t) => t,
+            Ok(t) => Ok(t),
             // Scope not yet consented (or refresh token stale): widen consent
             // in the browser, then mint the Graph token again.
             Err(CoreError::NeedsReauth) => {
@@ -2088,12 +2093,105 @@ impl Core {
                     .await?;
                 self.tokens
                     .access_token_for_scope(account_id, Provider::Microsoft, scope)
-                    .await?
+                    .await
             }
-            Err(e) => return Err(e),
-        };
+            Err(e) => Err(e),
+        }
+    }
 
+    /// Create a Microsoft Teams online meeting for a Microsoft account and
+    /// return its join URL (for insertion into a compose draft).
+    ///
+    /// Needs a Graph-scoped token; the first attempt may trigger an
+    /// incremental re-consent in the browser.
+    pub async fn create_teams_meeting(
+        &self,
+        account_id: i64,
+        subject: &str,
+        start_ms: i64,
+        end_ms: i64,
+        open_url: impl FnOnce(String) + Send,
+    ) -> Result<graph::OnlineMeeting> {
+        let token = self
+            .graph_token_with_consent(
+                account_id,
+                oauth::providers::MS_ONLINE_MEETINGS_SCOPE,
+                open_url,
+            )
+            .await?;
         graph::create_online_meeting(&token, subject, start_ms, end_ms).await
+    }
+
+    /// Microsoft calendar connection: Outlook / Microsoft 365 has no CalDAV
+    /// endpoint, so the calendar syncs via Graph. Widens consent to
+    /// `Calendars.ReadWrite` when needed, lists the account's calendars and
+    /// persists them under a "microsoft"-kind config; the shared calendar
+    /// task then pulls via calendarView delta.
+    pub async fn connect_microsoft_calendar(
+        &self,
+        account_id: i64,
+        open_url: impl FnOnce(String) + Send,
+    ) -> Result<Vec<Calendar>> {
+        let token = self
+            .graph_token_with_consent(account_id, oauth::providers::MS_CALENDARS_SCOPE, open_url)
+            .await?;
+        let discovered = graph::list_calendars(&token).await?;
+        if discovered.is_empty() {
+            return Err(CoreError::CalDav("no calendars found".into()));
+        }
+
+        let cfg = repo::caldav::CaldavConfig {
+            account_id,
+            kind: "microsoft".to_string(),
+            base_url: graph::GRAPH_BASE.to_string(),
+            username: None,
+            principal_url: None,
+            home_set_url: None,
+            enabled: true,
+            last_error: None,
+        };
+        let out = self
+            .db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                repo::caldav::upsert_config(&tx, &cfg)?;
+                let mut default_id = None;
+                let mut first_id = None;
+                for c in &discovered {
+                    let id = repo::caldav::upsert_calendar(
+                        &tx,
+                        account_id,
+                        &c.id,
+                        c.name.as_deref(),
+                        c.hex_color.as_deref(),
+                        !c.can_edit,
+                    )?;
+                    first_id.get_or_insert(id);
+                    if c.is_default {
+                        default_id.get_or_insert(id);
+                    }
+                }
+                if let Some(id) = default_id.or(first_id) {
+                    // Keep an existing default if one is set; else Outlook's
+                    // default calendar (or the first) wins.
+                    let has_default: i64 = tx.query_row(
+                        "SELECT COUNT(*) FROM calendars WHERE account_id = ?1 AND is_default = 1",
+                        rusqlite::params![account_id],
+                        |r| r.get(0),
+                    )?;
+                    if has_default == 0 {
+                        repo::caldav::set_default_calendar(&tx, account_id, id)?;
+                    }
+                }
+                let list = repo::caldav::list_calendars(&tx, Some(account_id))?;
+                tx.commit()?;
+                Ok(list)
+            })
+            .await?;
+
+        self.spawn_cal_task(account_id).await;
+        self.nudge_cal(Some(account_id)).await;
+        Ok(out)
     }
 
     /// Disconnect the calendar server: events stay locally, sync bookkeeping
@@ -2276,6 +2374,16 @@ impl Core {
         ai::summarize_thread(&cfg, &detail.thread.subject, &context).await
     }
 
+    /// Up to 3 short one-tap reply suggestions grounded in the thread, shown
+    /// as chips in an empty reply composer. Runs on the instant tier: the
+    /// chips are only useful if they appear before the user starts typing.
+    pub async fn ai_quick_replies(&self, thread_id: i64) -> Result<Vec<String>> {
+        let cfg = self.ai_config(Scenario::QuickReply).await?;
+        let detail = self.get_thread(thread_id).await?;
+        let context = ai::thread_context(&detail.messages, 12_000);
+        ai::quick_replies(&cfg, &detail.thread.subject, &context).await
+    }
+
     /// Draft or rewrite email body text. With a thread, the reply is grounded
     /// in its content; without, it's freeform writing from the instruction.
     /// When `voice` (or the persisted setting) is on, the draft imitates the
@@ -2287,6 +2395,7 @@ impl Core {
         instruction: String,
         sender_name: String,
         voice: Option<bool>,
+        has_signature: bool,
     ) -> Result<String> {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
         let cfg = self.ai_config_from(&settings, Scenario::Draft).await?;
@@ -2318,6 +2427,7 @@ impl Core {
                         &sender_name,
                         &settings.voice_profile,
                         &examples,
+                        has_signature,
                     ),
                     &cfg,
                 ),
@@ -2334,6 +2444,7 @@ impl Core {
                     &reply_target,
                     &instruction,
                     &sender_name,
+                    has_signature,
                 ),
                 &cfg,
             ),
@@ -2346,6 +2457,17 @@ impl Core {
     pub async fn ai_proofread(&self, body: String) -> Result<String> {
         let cfg = self.ai_config(Scenario::Draft).await?;
         ai::chat(&cfg, ai::proofread_prompt(&body)).await
+    }
+
+    /// Generate a clean email signature for an account from its name and
+    /// address. Returns plain text with line breaks for the caller to render.
+    pub async fn ai_signature(&self, name: String, email: String) -> Result<String> {
+        let cfg = self.ai_config(Scenario::Draft).await?;
+        ai::chat(
+            &cfg,
+            ai::apply_language(ai::signature_prompt(&name, &email), &cfg),
+        )
+        .await
     }
 
     /// Distill the user's writing voice from their sent mail and persist it as

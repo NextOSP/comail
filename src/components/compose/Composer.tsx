@@ -119,6 +119,24 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
   };
 }
 
+/** Bare closing words a draft might end on ("Best,", "Kind regards", ...). Used
+ *  to drop a model-generated sign-off before the stored signature is appended,
+ *  so the reply never shows two closings. */
+const SIGNOFF_RE =
+  /^(best|regards|thanks|thank you|cheers|sincerely|warmly|best regards|kind regards|best wishes|all the best|warm regards|many thanks)[\s,.!]*$/i;
+
+/** Trim trailing blank lines and a single trailing sign-off line from a plain
+ *  text draft (the appended signature carries its own closing). */
+function stripTrailingSignoff(text: string): string {
+  const lines = text.replace(/\s+$/, "").split("\n");
+  while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length > 1 && SIGNOFF_RE.test(lines[lines.length - 1].trim())) {
+    lines.pop();
+    while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+  }
+  return lines.join("\n");
+}
+
 /** A passage selected from the thread, rendered as a leading blockquote with a
  *  blank line after it for the reply. Shared by the seeded-reply path and the
  *  "insert into the open composer" action. */
@@ -186,6 +204,29 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const [proofPending, setProofPending] = useState(false);
   const [teamsPending, setTeamsPending] = useState(false);
   const aiInputRef = useRef<HTMLInputElement>(null);
+
+  // Quick-reply chips: AI suggestions generated when a reply opens; the
+  // static i18n chips show instantly and are swapped out when these arrive.
+  const [quickReplies, setQuickReplies] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (state.mode !== "reply" && state.mode !== "reply_all") return;
+    const threadId = state.replyTo?.threadId;
+    if (threadId == null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const status = await call("ai_status", {});
+        if (!status.configured || cancelled) return;
+        const suggestions = await call("ai_quick_replies", { threadId });
+        if (!cancelled && suggestions.length > 0) setQuickReplies(suggestions);
+      } catch {
+        // AI unavailable or slow: the static chips stay.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.mode, state.replyTo?.threadId]);
 
   const bodyRef = useRef<RichBodyHandle>(null);
   const dirtyRef = useRef(false);
@@ -451,15 +492,24 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     setAiPending(true);
     try {
       const account = accounts?.find((a) => a.id === fieldsRef.current.accountId);
+      // The signature is appended to the draft here (the model is told to skip
+      // its own sign-off), so the AI reply carries the account's signature.
+      const sigHtml = (activeSig?.html ?? "").trim();
       const text = await call("ai_draft", {
         threadId: state.replyTo?.threadId ?? null,
         replyToMessageId: state.replyTo?.id ?? null,
         instruction,
         senderName: account ? (account.displayName ?? account.email) : null,
         voice: voiceOn,
+        hasSignature: sigHtml !== "",
       });
       setAiPrevBody(fieldsRef.current.body);
-      setBody(textToHtml(text));
+      // Append the signature the composer would use; the model is told to skip
+      // its own sign-off, but strip any stray trailing "Best,"/"Regards," it
+      // adds anyway so it never doubles up with the signature. The body is now
+      // non-pristine, so the signature effect leaves this content alone.
+      const draftHtml = textToHtml(sigHtml ? stripTrailingSignoff(text) : text);
+      setBody(sigHtml ? `${draftHtml}<br><br>${sigHtml}` : draftHtml);
       markDirty();
       setAiOpen(false);
       setAiInstruction("");
@@ -470,7 +520,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       setAiPending(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiInstruction, aiPending, accounts, state.replyTo, pushToast, voiceOn]);
+  }, [aiInstruction, aiPending, accounts, state.replyTo, pushToast, voiceOn, activeSig]);
 
   // "Proofread": AI copy-edits the current body in place; the existing
   // restore bar undoes it. HTML formatting is preserved by the prompt.
@@ -816,7 +866,13 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
 
           {(state.mode === "reply" || state.mode === "reply_all") && isHtmlEmpty(body) && (
             <div className="flex flex-wrap gap-2 pb-3" data-testid="quick-replies">
-              {[t("compose:quickReply1"), t("compose:quickReply2"), t("compose:quickReply3")].map(
+              {(
+                quickReplies ?? [
+                  t("compose:quickReply1"),
+                  t("compose:quickReply2"),
+                  t("compose:quickReply3"),
+                ]
+              ).map(
                 (s) => (
                   <button
                     key={s}

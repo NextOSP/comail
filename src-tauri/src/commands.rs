@@ -342,6 +342,15 @@ pub async fn connect_calendar(
             })
             .await
             .map_err(err)
+    } else if args.kind == "microsoft" {
+        let account_id = args.account_id;
+        state
+            .core
+            .connect_microsoft_calendar(account_id, move |url| {
+                let _ = app.opener().open_url(url, None::<String>);
+            })
+            .await
+            .map_err(err)
     } else {
         state.core.connect_calendar(args).await.map_err(err)
     }
@@ -483,6 +492,14 @@ pub async fn ai_summarize(
 }
 
 #[tauri::command]
+pub async fn ai_quick_replies(
+    state: State<'_, AppState>,
+    thread_id: i64,
+) -> CmdResult<Vec<String>> {
+    state.core.ai_quick_replies(thread_id).await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn ai_draft(
     state: State<'_, AppState>,
     thread_id: Option<i64>,
@@ -490,6 +507,7 @@ pub async fn ai_draft(
     instruction: String,
     sender_name: Option<String>,
     voice: Option<bool>,
+    has_signature: Option<bool>,
 ) -> CmdResult<String> {
     state
         .core
@@ -499,6 +517,7 @@ pub async fn ai_draft(
             instruction,
             sender_name.unwrap_or_default(),
             voice,
+            has_signature.unwrap_or(false),
         )
         .await
         .map_err(err)
@@ -507,6 +526,15 @@ pub async fn ai_draft(
 #[tauri::command]
 pub async fn ai_proofread(state: State<'_, AppState>, body: String) -> CmdResult<String> {
     state.core.ai_proofread(body).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn ai_signature(
+    state: State<'_, AppState>,
+    name: String,
+    email: String,
+) -> CmdResult<String> {
+    state.core.ai_signature(name, email).await.map_err(err)
 }
 
 #[tauri::command]

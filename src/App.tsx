@@ -310,8 +310,16 @@ function ThreadOrderSync() {
 /** Applies the theme setting to <html data-theme> and follows the OS in system mode. */
 function useThemeSync() {
   const { data: settings } = useSettings();
+  const { data: accounts } = useAccounts();
   const theme = useUi((s) => s.theme);
+  const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
+  const accountThemes = settings?.accountThemes;
+  // The active account drives the theme. In the "All accounts" view there is no
+  // single account, so fall back to the global theme - unless there is exactly
+  // one account, in which case "All accounts" is effectively that account.
+  const effectiveAccountId =
+    accountFilter ?? (accounts?.length === 1 ? accounts[0].id : null);
 
   useEffect(() => {
     if (settings?.theme && settings.theme !== useUi.getState().theme) {
@@ -326,8 +334,13 @@ function useThemeSync() {
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    // The active account may override the global theme; "All accounts" and
+    // accounts with no override fall back to the global setting.
+    const chosen =
+      (effectiveAccountId != null ? accountThemes?.[String(effectiveAccountId)] : undefined) ??
+      theme;
     const apply = () => {
-      const resolved = theme === "system" ? (mq.matches ? "carbon" : "snow") : theme;
+      const resolved = chosen === "system" ? (mq.matches ? "carbon" : "snow") : chosen;
       document.documentElement.dataset.theme = resolved;
       try {
         localStorage.setItem("comail:theme", resolved);
@@ -336,9 +349,9 @@ function useThemeSync() {
       }
     };
     apply();
-    if (theme === "system") {
+    if (chosen === "system") {
       mq.addEventListener("change", apply);
       return () => mq.removeEventListener("change", apply);
     }
-  }, [theme]);
+  }, [theme, effectiveAccountId, accountThemes]);
 }

@@ -19,6 +19,7 @@
     "hint": "雪白为浅色，碳黑为深色。",
     "snow": "雪白",
     "carbon": "碳黑",
+    "holiday": "假日",
     "system": "跟随系统"
   },
   "language": {
@@ -126,20 +127,23 @@
       "title": "分步设置",
       "googleTitle": "Google (Gmail)",
       "openGoogle": "打开 Google Cloud Console",
-      "g1": "在 console.cloud.google.com 创建一个项目，然后前往 API 和服务。",
-      "g2": "OAuth 同意屏幕：选择“外部”，填写应用名称，并将您自己的 Gmail 地址添加为测试用户。",
-      "g3": "范围：添加 https://mail.google.com/（Google 接受用于 IMAP/SMTP 的唯一范围）。",
-      "g4": "凭据：创建凭据，OAuth 客户端 ID，应用类型选择桌面应用。",
-      "g5": "将客户端 ID 和客户端密钥复制到下方字段中。",
-      "g6": "成功后，将同意屏幕发布到正式版。在测试状态下，Google 会在 7 天后使登录失效。",
+      "g1": "创建项目：在 console.cloud.google.com 打开顶栏的项目选择器，点击“新建项目”，命名（例如 Comail），创建后选中它。然后打开菜单进入“API 和服务”。",
+      "g2": "OAuth 同意屏幕：选择“外部”（仅当你有 Workspace 组织时才选“内部”），填写应用名称，把你的邮箱填为支持和开发者联系人，并把你自己的 Gmail 地址添加到“测试用户”。",
+      "g3": "范围：点击“添加或移除范围”，把 https://mail.google.com/ 粘贴到手动输入框并添加。这是 Google 用于 IMAP/SMTP XOAUTH2 接受的唯一范围；无需启用 Gmail API。",
+      "g4": "凭据：创建凭据，OAuth 客户端 ID，应用类型选择桌面应用。桌面客户端会自动接受 http://127.0.0.1 环回地址，因此无需配置重定向 URI。",
+      "g5": "将客户端 ID（以 .apps.googleusercontent.com 结尾）和客户端密钥（以 GOCSPX- 开头）复制到下方字段。字段在失焦或按 Enter 时保存。",
+      "g6": "登录成功后，回到同意屏幕点击“发布应用”（正式版）。在测试状态下，Google 会在 7 天后使刷新令牌过期，账户每周需要重新验证；发布可避免这种情况。",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "打开 Microsoft Entra",
-      "m1": "在 entra.microsoft.com 前往应用注册，新注册。命名为 Comail：用户会在授权页面上看到这个名称。",
-      "m2": "支持的账户类型：选择同时包含个人 Microsoft 账户的多租户选项。这是必需的：Comail 通过共享的 /common 端点登录，单租户应用会报错 AADSTS50194。之后可在“身份验证”中修改。",
-      "m3": "重定向 URI：平台选择移动和桌面应用程序（不是 Web），值为 http://localhost。",
-      "m4": "API 权限：添加权限，Microsoft Graph，然后选择委托的权限（不是应用程序权限；如果权限列表看起来不对，说明选错了框）。勾选 IMAP.AccessAsUser.All、SMTP.Send、offline_access、openid 和 email。",
-      "m5": "Microsoft 这边不需要创建任何密钥或机密，跳过“证书和密码”。只需把概述页面上的应用程序（客户端）ID 复制到下方字段。",
-      "m6": "仅限工作或学校邮箱：如果登录时提示“需要管理员批准”，租户管理员需在 API 权限页面点击“授予管理员同意”一次。个人 Outlook.com 账户永远不需要。"
+      "m1": "在 entra.microsoft.com（或 portal.azure.com）前往应用注册，新注册。命名为 Comail：用户会在授权页面上看到这个名称。",
+      "m2": "支持的账户类型：选择同时包含个人 Microsoft 账户的多租户选项（任意组织目录 + 个人）。这是必需的：Comail 通过共享的 /common 端点登录，单租户应用会报错 AADSTS50194。之后可在“身份验证”中修改。",
+      "m3": "重定向 URI：平台选择移动和桌面应用程序（不是 Web），值为 http://localhost。Web 变体需要密钥并会报重定向不匹配；随后环回端口会被自动接受。",
+      "m4": "API 权限：添加权限，Microsoft Graph，然后选择委托的权限（不是应用程序权限；如果搜索 email 出现无关的 API，说明你在应用程序框里）。勾选 IMAP.AccessAsUser.All、SMTP.Send、offline_access、openid 和 email，然后点击“添加权限”。",
+      "m5": "无需创建任何密钥或机密：跳过“证书和密码”（Comail 是公共客户端）。把概述页面上的应用程序（客户端）ID 复制到下方字段，并将 Microsoft 客户端密钥留空。",
+      "m6": "仅限工作或学校邮箱：如果登录时提示“需要管理员批准”，租户管理员需在 API 权限页面点击“授予管理员同意”一次。个人 Outlook.com 账户永远不需要。",
+      "msNote": "个人 Outlook.com / Hotmail / Live 账户？仍然在这里注册应用。用你的个人账户登录门户（免费，无需 Azure 订阅），并在第 2 步选择多租户 + 个人选项。用于注册的账户和你连接的邮箱可以不同。",
+      "docsHint": "想查看包含截图和故障排除的完整教程？",
+      "viewDocs": "在 GitHub 上查看完整指南"
     }
   },
   "accounts": {
@@ -148,6 +152,7 @@
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
+    "theme": "主题",
     "remove": "移除",
     "reallyRemove": "确定要移除吗？",
     "removed": "已移除 {{email}}",
@@ -291,7 +296,10 @@
     "forReply": "回复 / 转发时",
     "none": "无签名",
     "delete": "删除",
-    "deleteConfirm": "确认删除？"
+    "deleteConfirm": "确认删除？",
+    "ai": "AI",
+    "aiGenerating": "生成中…",
+    "aiHint": "用 AI 生成签名"
   },
   "autoLabels": {
     "label": "自动标签",
@@ -312,13 +320,14 @@
   },
   "calendar": {
     "section": "日历同步",
-    "hint": "通过 CalDAV 双向同步。Google 需要一次性重新授权；Fastmail/iCloud/自建服务器使用应用专用密码。",
+    "hint": "双向同步：Google 和 Microsoft 需要一次性重新授权；Fastmail/iCloud/自建 CalDAV 服务器使用应用专用密码。",
     "connected": "日历已连接 — 正在进行首次同步",
     "disconnected": "日历已断开 — 日程保留在本设备上",
     "syncStarted": "日历同步已开始",
     "syncNow": "立即同步",
     "disconnect": "断开连接",
     "connectGoogle": "连接 Google 日历",
+    "connectMicrosoft": "连接 Microsoft 日历",
     "connectCaldav": "连接 CalDAV…",
     "connect": "连接",
     "urlPlaceholder": "服务器地址，如 https://caldav.fastmail.com",

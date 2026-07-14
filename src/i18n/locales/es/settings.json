@@ -19,6 +19,7 @@
     "hint": "Snow es claro, Carbon es oscuro.",
     "snow": "Snow",
     "carbon": "Carbon",
+    "holiday": "Vacaciones",
     "system": "Sistema"
   },
   "language": {
@@ -126,20 +127,23 @@
       "title": "Configuración paso a paso",
       "googleTitle": "Google (Gmail)",
       "openGoogle": "Abrir Google Cloud Console",
-      "g1": "Crea un proyecto en console.cloud.google.com y ve a APIs y servicios.",
-      "g2": "Pantalla de consentimiento de OAuth: elige Externo, rellena el nombre de la app y añade tu propia dirección de Gmail como usuario de prueba.",
-      "g3": "Ámbitos: añade https://mail.google.com/ (el único ámbito que Google acepta para IMAP/SMTP).",
-      "g4": "Credenciales: Crear credenciales, ID de cliente de OAuth, tipo de aplicación App de escritorio.",
-      "g5": "Copia el ID de cliente y el secreto de cliente en los campos de abajo.",
-      "g6": "Cuando funcione, publica la pantalla de consentimiento en Producción. En estado de Pruebas, Google caduca los inicios de sesión tras 7 días.",
+      "g1": "Crea un proyecto: en console.cloud.google.com abre el selector de proyectos de la barra superior, pulsa Nuevo proyecto, ponle nombre (p. ej. Comail), Crear y selecciónalo. Luego abre el menú y ve a APIs y servicios.",
+      "g2": "Pantalla de consentimiento de OAuth: elige Externo (Interno solo si tienes una organización de Workspace), rellena el nombre de la app y tu correo como contacto de soporte y de desarrollador, y añade tu propia dirección de Gmail en Usuarios de prueba.",
+      "g3": "Ámbitos: pulsa Agregar o quitar ámbitos, pega https://mail.google.com/ en el cuadro de entrada manual y añádelo. Es el único ámbito que Google acepta para IMAP/SMTP XOAUTH2; no necesitas habilitar la API de Gmail.",
+      "g4": "Credenciales: Crear credenciales, ID de cliente de OAuth, tipo de aplicación App de escritorio. Los clientes de escritorio aceptan automáticamente el bucle local http://127.0.0.1, así que no hay URI de redirección que configurar.",
+      "g5": "Copia el ID de cliente (termina en .apps.googleusercontent.com) y el secreto de cliente (empieza por GOCSPX-) en los campos de abajo. Se guardan al salir del campo o con Enter.",
+      "g6": "Cuando el inicio de sesión funcione, vuelve a la pantalla de consentimiento y pulsa Publicar app (Producción). En estado de Pruebas, Google caduca los tokens de actualización tras 7 días y la cuenta pasa a necesitar reautenticación cada semana; publicar lo evita.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Abrir Microsoft Entra",
-      "m1": "En entra.microsoft.com ve a Registros de aplicaciones, Nuevo registro. Llámala Comail: los usuarios ven este nombre en la pantalla de consentimiento.",
-      "m2": "Tipos de cuenta admitidos: elige la opción multiinquilino que también incluye cuentas personales de Microsoft. Es obligatorio: Comail inicia sesión por el punto de conexión compartido /common y una app de un solo inquilino falla con el error AADSTS50194. Se puede corregir después en Autenticación.",
-      "m3": "URI de redirección: plataforma Aplicaciones móviles y de escritorio (no Web), valor http://localhost.",
-      "m4": "Permisos de API: Agregar un permiso, Microsoft Graph, y luego Permisos delegados (no Permisos de aplicación; si la lista se ve rara estás en el cuadro equivocado). Marca IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid y email.",
-      "m5": "No hay ninguna clave ni secreto que crear para Microsoft; omite Certificados y secretos. Solo copia el ID de aplicación (cliente) de la página Información general en el campo de abajo.",
-      "m6": "Solo buzones de trabajo o escuela: si el inicio de sesión termina con \"Se necesita aprobación del administrador\", un administrador del inquilino debe dar su consentimiento una vez con Conceder consentimiento de administrador en la página de permisos de API. Las cuentas personales de Outlook.com nunca lo necesitan."
+      "m1": "En entra.microsoft.com (o portal.azure.com) ve a Registros de aplicaciones, Nuevo registro. Llámala Comail: los usuarios ven este nombre en la pantalla de consentimiento.",
+      "m2": "Tipos de cuenta admitidos: elige la opción multiinquilino que también incluye cuentas personales de Microsoft (cualquier directorio de organización + personales). Es obligatorio: Comail inicia sesión por el punto de conexión compartido /common y una app de un solo inquilino falla con el error AADSTS50194. Se puede corregir después en Autenticación.",
+      "m3": "URI de redirección: elige la plataforma Aplicaciones móviles y de escritorio (no Web), valor http://localhost. La variante Web espera un secreto y falla con un error de redirección; los puertos de bucle local se aceptan luego automáticamente.",
+      "m4": "Permisos de API: Agregar un permiso, Microsoft Graph, y luego Permisos delegados (no Permisos de aplicación; si al buscar email aparecen APIs sin relación, estás en el cuadro de Aplicación). Marca IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid y email, y pulsa Agregar permisos.",
+      "m5": "No hay ninguna clave ni secreto que crear: omite Certificados y secretos (Comail es un cliente público). Copia el ID de aplicación (cliente) de la página Información general en el campo de abajo y deja vacío el secreto de cliente de Microsoft.",
+      "m6": "Solo buzones de trabajo o escuela: si el inicio de sesión termina con \"Se necesita aprobación del administrador\", un administrador del inquilino debe dar su consentimiento una vez con Conceder consentimiento de administrador en la página de permisos de API. Las cuentas personales de Outlook.com nunca lo necesitan.",
+      "msNote": "¿Cuenta personal de Outlook.com / Hotmail / Live? Aun así registras la app aquí. Inicia sesión en el portal con tu cuenta personal (es gratis, no necesitas suscripción de Azure) y elige la opción multiinquilino + personal en el paso 2. La cuenta con la que te registras y el buzón que conectas pueden ser distintos.",
+      "docsHint": "¿Prefieres la guía completa con capturas de pantalla y solución de problemas?",
+      "viewDocs": "Ver la guía completa en GitHub"
     }
   },
   "accounts": {
@@ -148,6 +152,7 @@
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
+    "theme": "Tema",
     "remove": "Eliminar",
     "reallyRemove": "¿Eliminar de verdad?",
     "removed": "{{email}} eliminada",
@@ -291,7 +296,10 @@
     "forReply": "Al responder / reenviar",
     "none": "Sin firma",
     "delete": "Eliminar",
-    "deleteConfirm": "¿Eliminar?"
+    "deleteConfirm": "¿Eliminar?",
+    "ai": "IA",
+    "aiGenerating": "Generando…",
+    "aiHint": "Generar una firma con IA"
   },
   "autoLabels": {
     "label": "Etiquetas automáticas",
@@ -312,13 +320,14 @@
   },
   "calendar": {
     "section": "Sincronización de calendario",
-    "hint": "Sincronización bidireccional por CalDAV. Google requiere un nuevo consentimiento único; Fastmail/iCloud/servidores propios usan una contraseña de aplicación.",
+    "hint": "Sincronización bidireccional: Google y Microsoft requieren un nuevo consentimiento único; los servidores CalDAV de Fastmail/iCloud/propios usan una contraseña de aplicación.",
     "connected": "Calendario conectado — primera sincronización en curso",
     "disconnected": "Calendario desconectado — los eventos permanecen en este dispositivo",
     "syncStarted": "Sincronización de calendario iniciada",
     "syncNow": "Sincronizar ahora",
     "disconnect": "Desconectar",
     "connectGoogle": "Conectar Google Calendar",
+    "connectMicrosoft": "Conectar Calendario de Microsoft",
     "connectCaldav": "Conectar CalDAV…",
     "connect": "Conectar",
     "urlPlaceholder": "URL del servidor, p. ej. https://caldav.fastmail.com",

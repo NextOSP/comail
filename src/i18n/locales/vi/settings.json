@@ -19,6 +19,7 @@
     "hint": "Snow là sáng, Carbon là tối.",
     "snow": "Snow",
     "carbon": "Carbon",
+    "holiday": "Kỳ nghỉ",
     "system": "Hệ thống"
   },
   "language": {
@@ -126,20 +127,23 @@
       "title": "Thiết lập từng bước",
       "googleTitle": "Google (Gmail)",
       "openGoogle": "Mở Google Cloud Console",
-      "g1": "Tạo một dự án tại console.cloud.google.com, rồi vào APIs & Services.",
-      "g2": "Màn hình chấp thuận OAuth: chọn External, điền tên ứng dụng và thêm địa chỉ Gmail của bạn làm người dùng thử nghiệm.",
-      "g3": "Phạm vi: thêm https://mail.google.com/ (phạm vi duy nhất Google chấp nhận cho IMAP/SMTP).",
-      "g4": "Thông tin đăng nhập: Create credentials, OAuth client ID, loại ứng dụng Desktop app.",
-      "g5": "Sao chép client ID và client secret vào các ô bên dưới.",
-      "g6": "Khi hoạt động, hãy xuất bản màn hình chấp thuận lên Production. Ở trạng thái Testing, Google làm hết hạn đăng nhập sau 7 ngày.",
+      "g1": "Tạo dự án: tại console.cloud.google.com mở bộ chọn dự án trên thanh trên cùng, bấm New project, đặt tên (ví dụ Comail), Create rồi chọn nó. Sau đó mở menu và vào APIs & Services.",
+      "g2": "Màn hình chấp thuận OAuth: chọn External (chọn Internal chỉ khi bạn có tổ chức Workspace), điền tên ứng dụng và email của bạn làm liên hệ hỗ trợ và nhà phát triển, rồi thêm địa chỉ Gmail của bạn vào mục Test users.",
+      "g3": "Phạm vi: bấm Add or remove scopes, dán https://mail.google.com/ vào ô nhập thủ công và thêm. Đó là phạm vi duy nhất Google chấp nhận cho IMAP/SMTP XOAUTH2; bạn không cần bật Gmail API.",
+      "g4": "Thông tin đăng nhập: Create credentials, OAuth client ID, loại ứng dụng Desktop app. Client desktop tự động chấp nhận loopback http://127.0.0.1, nên không cần cấu hình URI chuyển hướng.",
+      "g5": "Sao chép Client ID (kết thúc bằng .apps.googleusercontent.com) và Client secret (bắt đầu bằng GOCSPX-) vào các ô bên dưới. Chúng được lưu khi rời ô hoặc nhấn Enter.",
+      "g6": "Khi đăng nhập hoạt động, quay lại màn hình chấp thuận và bấm Publish app (Production). Ở trạng thái Testing, Google làm hết hạn refresh token sau 7 ngày và tài khoản cần đăng nhập lại hằng tuần; xuất bản sẽ ngăn điều đó.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Mở Microsoft Entra",
-      "m1": "Tại entra.microsoft.com vào App registrations, New registration. Đặt tên Comail: người dùng sẽ thấy tên này trên màn hình cấp quyền.",
-      "m2": "Loại tài khoản được hỗ trợ: chọn tùy chọn multitenant có kèm tài khoản Microsoft cá nhân. Bắt buộc: Comail đăng nhập qua endpoint dùng chung /common, ứng dụng single-tenant sẽ lỗi AADSTS50194. Có thể sửa sau trong mục Authentication.",
-      "m3": "URI chuyển hướng: nền tảng Mobile and desktop applications (không phải Web), giá trị http://localhost.",
-      "m4": "Quyền API: Add a permission, Microsoft Graph, rồi chọn Delegated permissions (không phải Application permissions; nếu danh sách trông lạ nghĩa là bạn đang ở nhầm ô). Tích IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid và email.",
-      "m5": "Không cần tạo key hay secret nào cho Microsoft; bỏ qua mục Certificates & secrets. Chỉ cần sao chép Application (client) ID từ trang Overview vào ô bên dưới.",
-      "m6": "Chỉ với hộp thư công ty hoặc trường học: nếu đăng nhập báo \"Cần quản trị viên phê duyệt\", quản trị viên tenant phải đồng ý một lần bằng Grant admin consent trên trang API permissions. Tài khoản Outlook.com cá nhân không bao giờ cần."
+      "m1": "Tại entra.microsoft.com (hoặc portal.azure.com) vào App registrations, New registration. Đặt tên Comail: người dùng sẽ thấy tên này trên màn hình cấp quyền.",
+      "m2": "Loại tài khoản được hỗ trợ: chọn tùy chọn multitenant có kèm tài khoản Microsoft cá nhân (mọi thư mục tổ chức + cá nhân). Bắt buộc: Comail đăng nhập qua endpoint dùng chung /common, ứng dụng single-tenant sẽ lỗi AADSTS50194. Có thể sửa sau trong mục Authentication.",
+      "m3": "URI chuyển hướng: chọn nền tảng Mobile and desktop applications (không phải Web), giá trị http://localhost. Biến thể Web cần secret và sẽ lỗi redirect mismatch; các cổng loopback sau đó được chấp nhận tự động.",
+      "m4": "Quyền API: Add a permission, Microsoft Graph, rồi chọn Delegated permissions (không phải Application permissions; nếu tìm email mà ra các API không liên quan thì bạn đang ở ô Application). Tích IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid và email, rồi bấm Add permissions.",
+      "m5": "Không cần tạo key hay secret nào: bỏ qua mục Certificates & secrets (Comail là public client). Sao chép Application (client) ID từ trang Overview vào ô bên dưới, và để trống ô Microsoft client secret.",
+      "m6": "Chỉ với hộp thư công ty hoặc trường học: nếu đăng nhập báo \"Cần quản trị viên phê duyệt\", quản trị viên tenant phải đồng ý một lần bằng Grant admin consent trên trang API permissions. Tài khoản Outlook.com cá nhân không bao giờ cần.",
+      "msNote": "Tài khoản Outlook.com / Hotmail / Live cá nhân? Bạn vẫn đăng ký ứng dụng tại đây. Đăng nhập cổng bằng tài khoản cá nhân của bạn (miễn phí, không cần gói đăng ký Azure) và chọn tùy chọn đa tenant + cá nhân ở bước 2. Tài khoản dùng để đăng ký và hộp thư bạn kết nối có thể khác nhau.",
+      "docsHint": "Muốn xem hướng dẫn đầy đủ có ảnh chụp màn hình và khắc phục sự cố?",
+      "viewDocs": "Xem hướng dẫn đầy đủ trên GitHub"
     }
   },
   "accounts": {
@@ -148,6 +152,7 @@
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
+    "theme": "Giao diện",
     "remove": "Xóa",
     "reallyRemove": "Thực sự xóa?",
     "removed": "Đã xóa {{email}}",
@@ -291,7 +296,10 @@
     "forReply": "Khi trả lời / chuyển tiếp",
     "none": "Không có chữ ký",
     "delete": "Xóa",
-    "deleteConfirm": "Xóa?"
+    "deleteConfirm": "Xóa?",
+    "ai": "AI",
+    "aiGenerating": "Đang tạo…",
+    "aiHint": "Tạo chữ ký bằng AI"
   },
   "autoLabels": {
     "label": "Nhãn tự động",
@@ -315,13 +323,14 @@
   },
   "calendar": {
     "section": "Đồng bộ lịch",
-    "hint": "Đồng bộ hai chiều qua CalDAV. Google cần cấp quyền lại một lần; Fastmail/iCloud/máy chủ tự vận hành dùng mật khẩu ứng dụng.",
+    "hint": "Đồng bộ hai chiều: Google và Microsoft cần cấp quyền lại một lần; máy chủ CalDAV Fastmail/iCloud/tự vận hành dùng mật khẩu ứng dụng.",
     "connected": "Đã kết nối lịch — đang đồng bộ lần đầu",
     "disconnected": "Đã ngắt kết nối lịch — sự kiện vẫn ở trên thiết bị này",
     "syncStarted": "Đã bắt đầu đồng bộ lịch",
     "syncNow": "Đồng bộ ngay",
     "disconnect": "Ngắt kết nối",
     "connectGoogle": "Kết nối Google Calendar",
+    "connectMicrosoft": "Kết nối Lịch Microsoft",
     "connectCaldav": "Kết nối CalDAV…",
     "connect": "Kết nối",
     "urlPlaceholder": "URL máy chủ, ví dụ https://caldav.fastmail.com",

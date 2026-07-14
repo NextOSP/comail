@@ -19,6 +19,7 @@
     "hint": "Snow is light, Carbon is dark.",
     "snow": "Snow",
     "carbon": "Carbon",
+    "holiday": "Holiday",
     "system": "System"
   },
   "language": {
@@ -126,20 +127,23 @@
       "title": "Step-by-step setup",
       "googleTitle": "Google (Gmail)",
       "openGoogle": "Open Google Cloud Console",
-      "g1": "Create a project at console.cloud.google.com, then go to APIs & Services.",
-      "g2": "OAuth consent screen: choose External, fill in the app name, and add your own Gmail address as a test user.",
-      "g3": "Scopes: add https://mail.google.com/ (the only scope Google accepts for IMAP/SMTP).",
-      "g4": "Credentials: Create credentials, OAuth client ID, application type Desktop app.",
-      "g5": "Copy the client ID and client secret into the fields below.",
-      "g6": "Once it works, publish the consent screen to Production. In Testing status Google expires sign-ins after 7 days.",
+      "g1": "Create a project: at console.cloud.google.com open the project picker in the top bar, click New project, name it (e.g. Comail), Create, then select it. Then open the menu and go to APIs & Services.",
+      "g2": "OAuth consent screen: choose External (Internal only if you have a Workspace org), fill in the app name and your email for the support + developer contact, then add your own Gmail address under Test users.",
+      "g3": "Scopes: click Add or remove scopes, paste https://mail.google.com/ into the manual entry box and add it. That is the only scope Google accepts for IMAP/SMTP XOAUTH2; you do not need to enable the Gmail API.",
+      "g4": "Credentials: Create credentials, OAuth client ID, application type Desktop app. Desktop clients accept the http://127.0.0.1 loopback automatically, so there is no redirect URI to configure.",
+      "g5": "Copy the Client ID (ends in .apps.googleusercontent.com) and the Client secret (starts GOCSPX-) into the fields below. They save on blur or Enter.",
+      "g6": "Once sign-in works, return to the consent screen and click Publish app (Production). While in Testing, Google expires refresh tokens after 7 days and the account flips to needs-reauth weekly; publishing stops that.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Open Microsoft Entra",
-      "m1": "At entra.microsoft.com go to App registrations, New registration. Name it Comail: users see this name on the consent screen.",
-      "m2": "Supported account types: pick the multitenant option that also includes personal Microsoft accounts. This is required: Comail signs in via the shared /common endpoint, and a single-tenant app fails with error AADSTS50194. Fixable later under Authentication.",
-      "m3": "Redirect URI: platform Mobile and desktop applications (not Web), value http://localhost.",
-      "m4": "API permissions: Add a permission, Microsoft Graph, then Delegated permissions (not Application permissions; if the list looks wrong you are in the Application box). Tick IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid, and email.",
-      "m5": "There is no key or secret to create for Microsoft; skip Certificates & secrets. Just copy the Application (client) ID from the Overview page into the field below.",
-      "m6": "Work or school mailboxes only: if sign-in ends with \"Need admin approval\", a tenant admin must consent once via Grant admin consent on the API permissions page. Personal Outlook.com accounts never need this."
+      "m1": "At entra.microsoft.com (or portal.azure.com) go to App registrations, New registration. Name it Comail: users see this name on the consent screen.",
+      "m2": "Supported account types: pick the multitenant option that also includes personal Microsoft accounts (Any org directory + personal). Required: Comail signs in via the shared /common endpoint, and a single-tenant app fails with error AADSTS50194. Fixable later under Authentication.",
+      "m3": "Redirect URI: choose platform Mobile and desktop applications (not Web), value http://localhost. The Web variant expects a secret and fails with a redirect mismatch; loopback ports are then accepted automatically.",
+      "m4": "API permissions: Add a permission, Microsoft Graph, then Delegated permissions (not Application; if searching email shows unrelated APIs you are in the Application box). Tick IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid, and email, then Add permissions.",
+      "m5": "No key or secret to create: skip Certificates & secrets (Comail is a public client). Copy the Application (client) ID from the Overview page into the field below, and leave the Microsoft client secret empty.",
+      "m6": "Work or school mailboxes only: if sign-in ends with \"Need admin approval\", a tenant admin must consent once via Grant admin consent on the API permissions page. Personal Outlook.com accounts never need this.",
+      "msNote": "Personal Outlook.com / Hotmail / Live account? You still register the app here. Sign into the portal with your personal account (it is free, no Azure subscription needed) and pick the multitenant + personal option in step 2. The account you register with and the mailbox you connect can be different.",
+      "docsHint": "Prefer the full walkthrough with screenshots and troubleshooting?",
+      "viewDocs": "View full guide on GitHub"
     }
   },
   "accounts": {
@@ -148,6 +152,7 @@
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
+    "theme": "Theme",
     "remove": "Remove",
     "reallyRemove": "Really remove?",
     "removed": "Removed {{email}}",
@@ -291,7 +296,10 @@
     "forReply": "On reply / forward",
     "none": "No signature",
     "delete": "Delete",
-    "deleteConfirm": "Delete?"
+    "deleteConfirm": "Delete?",
+    "ai": "AI",
+    "aiGenerating": "Generating…",
+    "aiHint": "Generate a signature with AI"
   },
   "autoLabels": {
     "label": "Auto Labels",
@@ -315,13 +323,14 @@
   },
   "calendar": {
     "section": "Calendar sync",
-    "hint": "Two-way sync over CalDAV. Google needs a one-time re-consent; Fastmail/iCloud/self-hosted servers use an app password.",
+    "hint": "Two-way sync: Google and Microsoft need a one-time re-consent; Fastmail/iCloud/self-hosted CalDAV servers use an app password.",
     "connected": "Calendar connected — first sync running",
     "disconnected": "Calendar disconnected — events stay on this device",
     "syncStarted": "Calendar sync started",
     "syncNow": "Sync now",
     "disconnect": "Disconnect",
     "connectGoogle": "Connect Google Calendar",
+    "connectMicrosoft": "Connect Microsoft Calendar",
     "connectCaldav": "Connect CalDAV…",
     "connect": "Connect",
     "urlPlaceholder": "Server URL, e.g. https://caldav.fastmail.com",

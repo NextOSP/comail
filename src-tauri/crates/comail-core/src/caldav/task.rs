@@ -100,7 +100,10 @@ pub async fn transport_for(
 }
 
 async fn run_cycle(db: &Db, bus: &EventBus, tokens: &TokenProvider, account_id: i64) -> Result<()> {
-    let Some(transport) = transport_for(db, tokens, account_id).await? else {
+    let cfg = db
+        .read(move |conn| repo::caldav::get_config(conn, account_id))
+        .await?;
+    let Some(cfg) = cfg.filter(|c| c.enabled) else {
         return Ok(());
     };
 
@@ -120,7 +123,16 @@ async fn run_cycle(db: &Db, bus: &EventBus, tokens: &TokenProvider, account_id: 
         })
         .await?;
 
-    let result = sync_account(db, bus, &transport, account_id).await;
+    // Microsoft calendars sync over Graph (no CalDAV endpoint exists);
+    // everything else goes through the DAV transport.
+    let result = if cfg.kind == "microsoft" {
+        crate::graphcal::sync_account(db, bus, tokens, account_id).await
+    } else {
+        match transport_for(db, tokens, account_id).await? {
+            Some(transport) => sync_account(db, bus, &transport, account_id).await,
+            None => return Ok(()),
+        }
+    };
 
     match &result {
         Ok(_) => {

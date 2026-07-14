@@ -16,6 +16,7 @@ import type {
   SyncStatus,
 } from "../../ipc/types";
 import { normalizeSyncStatus } from "../../lib/syncStatus";
+import { textToHtml } from "../../lib/richtext";
 import { RichBody } from "../compose/RichBody";
 import { queryClient } from "../../queries/client";
 import {
@@ -89,6 +90,7 @@ const DEFAULT_SETTINGS: Settings = {
   signatures: {},
   signatureList: [],
   signatureDefaults: {},
+  accountThemes: {},
 };
 
 /** Optimistic settings write: cache first, backend follows, rollback on error. */
@@ -253,6 +255,7 @@ export function SettingsPanel() {
                 options={[
                   { value: "snow", label: t("settings:theme.snow") },
                   { value: "carbon", label: t("settings:theme.carbon") },
+                  { value: "holiday", label: t("settings:theme.holiday") },
                   { value: "system", label: t("settings:theme.system") },
                 ]}
                 onChange={(theme) => void updateSettings({ theme })}
@@ -985,6 +988,9 @@ function OAuthField({
   );
 }
 
+/** Full setup guide on GitHub; packaged builds ship no docs folder. */
+const OAUTH_DOCS_URL = "https://github.com/NextOSP/comail/blob/master/docs/oauth-setup.md";
+
 /** In-app setup walkthrough; packaged builds have no docs folder. */
 function OAuthGuide() {
   const { t } = useTranslation();
@@ -998,6 +1004,7 @@ function OAuthGuide() {
       linkLabel: t("settings:oauth.guide.openGoogle"),
       url: "https://console.cloud.google.com/apis/credentials",
       steps: ["g1", "g2", "g3", "g4", "g5", "g6"],
+      note: undefined as string | undefined,
     },
     {
       key: "ms",
@@ -1005,6 +1012,7 @@ function OAuthGuide() {
       linkLabel: t("settings:oauth.guide.openMs"),
       url: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
       steps: ["m1", "m2", "m3", "m4", "m5", "m6"],
+      note: t("settings:oauth.guide.msNote"),
     },
   ];
   return (
@@ -1026,8 +1034,21 @@ function OAuthGuide() {
                 <li key={k}>{t(`settings:oauth.guide.${k}`)}</li>
               ))}
             </ol>
+            {p.note && (
+              <p className="mt-2 rounded-md bg-bg2 px-2.5 py-1.5 text-[11.5px] text-ink-faint">
+                {p.note}
+              </p>
+            )}
           </div>
         ))}
+        <div className="flex items-center justify-between gap-2 border-t border-hairline pt-3">
+          <span className="text-[11.5px] text-ink-faint">
+            {t("settings:oauth.guide.docsHint")}
+          </span>
+          <button className={ghostBtnCls} onClick={() => open(OAUTH_DOCS_URL)}>
+            {t("settings:oauth.guide.viewDocs")}
+          </button>
+        </div>
       </div>
     </details>
   );
@@ -1290,7 +1311,13 @@ function SignaturesSection({ settings }: { settings: Settings }) {
     <section className="flex flex-col gap-6">
       <SectionLabel>{t("settings:signature.section")}</SectionLabel>
       {(accounts ?? []).map((a) => (
-        <AccountSignatures key={a.id} accountId={a.id} email={a.email} settings={settings} />
+        <AccountSignatures
+          key={a.id}
+          accountId={a.id}
+          email={a.email}
+          displayName={a.displayName ?? ""}
+          settings={settings}
+        />
       ))}
     </section>
   );
@@ -1307,10 +1334,12 @@ function writeSignatures(
 function AccountSignatures({
   accountId,
   email,
+  displayName,
   settings,
 }: {
   accountId: number;
   email: string;
+  displayName: string;
   settings: Settings;
 }) {
   const { t } = useTranslation();
@@ -1351,27 +1380,42 @@ function AccountSignatures({
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-hairline bg-bg0/40 p-4">
-      <div className="text-[13px] font-medium text-ink">{email}</div>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-[12px] font-medium tracking-wide text-ink-muted">
+        <span
+          className="size-1.5 shrink-0 rounded-full bg-accent/60"
+          aria-hidden="true"
+        />
+        {email}
+      </div>
 
       {sigs.length === 0 ? (
-        <div className="text-[12.5px] text-ink-faint">{t("settings:signature.empty")}</div>
+        <p className="rounded-lg border border-dashed border-hairline px-3 py-4 text-center text-[12.5px] text-ink-faint">
+          {t("settings:signature.empty")}
+        </p>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2.5">
           {sigs.map((sig) => (
-            <SignatureEditor key={sig.id} sig={sig} settings={settings} onDelete={deleteSignature} />
+            <SignatureEditor
+              key={sig.id}
+              sig={sig}
+              settings={settings}
+              email={email}
+              displayName={displayName}
+              onDelete={deleteSignature}
+            />
           ))}
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div>
         <button type="button" className={ghostBtnCls} onClick={addSignature}>
           {t("settings:signature.add")}
         </button>
       </div>
 
       {sigs.length > 0 && (
-        <div className="flex flex-col gap-2 pt-1">
+        <div className="flex flex-col gap-2 border-t border-hairline pt-3">
           <DefaultSelect
             label={t("settings:signature.forNew")}
             value={defs.newId ?? ""}
@@ -1423,15 +1467,21 @@ function DefaultSelect({
 function SignatureEditor({
   sig,
   settings,
+  email,
+  displayName,
   onDelete,
 }: {
   sig: Signature;
   settings: Settings;
+  email: string;
+  displayName: string;
   onDelete: (id: string) => void;
 }) {
   const { t } = useTranslation();
+  const pushToast = useUi((s) => s.pushToast);
   const [name, setName] = useState(sig.name);
   const [html, setHtml] = useState(sig.html);
+  const [generating, setGenerating] = useState(false);
   useEffect(() => setName(sig.name), [sig.name]);
   useEffect(() => setHtml(sig.html), [sig.html]);
 
@@ -1443,29 +1493,61 @@ function SignatureEditor({
     writeSignatures(list, settings.signatureDefaults);
   };
 
+  // One-click AI: build a clean signature from the account name/email and drop
+  // it into the editor (persisted immediately so it survives without a blur).
+  const generate = async () => {
+    setGenerating(true);
+    try {
+      const text = await call("ai_signature", { name: displayName || email, email });
+      const nextHtml = textToHtml(text.trim());
+      setHtml(nextHtml);
+      commit({ html: nextHtml });
+    } catch (err) {
+      pushToast({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-hairline bg-bg1/50 p-3">
-      <div className="flex items-center gap-2">
+    <div className="overflow-hidden rounded-lg border border-hairline bg-bg0 focus-within:border-accent/50">
+      {/* Header strip: the name reads as an editable title, delete sits opposite. */}
+      <div className="flex items-center gap-2 border-b border-hairline bg-bg1/40 py-1.5 pr-2 pl-3">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => name.trim() && name !== sig.name && commit({ name: name.trim() })}
           placeholder={t("settings:signature.newName")}
-          className={`${inputCls} !h-8 flex-1`}
+          className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-ink outline-none placeholder:text-ink-faint"
         />
+        <button
+          type="button"
+          onClick={() => void generate()}
+          disabled={generating}
+          title={t("settings:signature.aiHint")}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2l1.9 4.9L19 8.8l-4.1 1.9L12 16l-1.9-5.3L6 8.8l5.1-1.9zM19 14l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z" />
+          </svg>
+          {generating ? t("settings:signature.aiGenerating") : t("settings:signature.ai")}
+        </button>
         <ConfirmButton
           label={t("settings:signature.delete")}
           confirmLabel={t("settings:signature.deleteConfirm")}
           onConfirm={() => onDelete(sig.id)}
         />
       </div>
-      <RichBody
-        value={html}
-        onChange={setHtml}
-        onBlur={() => html !== sig.html && commit({ html })}
-        placeholder={t("settings:signature.placeholder")}
-        minHeightClass="min-h-[80px]"
-      />
+      {/* Editor body: toolbar + contenteditable share the card, no inner border. */}
+      <div className="px-3 pb-1">
+        <RichBody
+          value={html}
+          onChange={setHtml}
+          onBlur={() => html !== sig.html && commit({ html })}
+          placeholder={t("settings:signature.placeholder")}
+          minHeightClass="min-h-[72px]"
+        />
+      </div>
     </div>
   );
 }
@@ -1473,6 +1555,8 @@ function SignatureEditor({
 function AccountsSection() {
   const { t } = useTranslation();
   const { data: accounts } = useAccounts();
+  const { data: settings } = useSettings();
+  const accountThemes = settings?.accountThemes ?? {};
   const pushToast = useUi((s) => s.pushToast);
   const set = useUi((s) => s.set);
   const [oauthBusy, setOauthBusy] = useState<Provider | null>(null);
@@ -1562,6 +1646,24 @@ function AccountsSection() {
                 <span className="ml-2 text-[11.5px] text-ink-faint">{a.displayName}</span>
               )}
             </span>
+            <Select
+              className="!w-auto !py-1 !pr-8 !text-[12.5px]"
+              value={accountThemes[String(a.id)] ?? "system"}
+              title={t("settings:accounts.theme")}
+              onChange={(e) =>
+                void updateSettings({
+                  accountThemes: {
+                    ...accountThemes,
+                    [String(a.id)]: e.target.value as Settings["theme"],
+                  },
+                })
+              }
+            >
+              <option value="system">{t("settings:theme.system")}</option>
+              <option value="snow">{t("settings:theme.snow")}</option>
+              <option value="carbon">{t("settings:theme.carbon")}</option>
+              <option value="holiday">{t("settings:theme.holiday")}</option>
+            </Select>
             <span className="rounded bg-bg2 px-1.5 py-px text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
               {t(`settings:accounts.provider.${a.provider}`)}
             </span>

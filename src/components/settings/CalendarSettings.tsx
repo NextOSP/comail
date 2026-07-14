@@ -17,8 +17,9 @@ function useCalendars() {
 }
 
 /** Per-account calendar sync (Settings → Accounts): connect Google Calendar
- *  (OAuth re-consent) or a generic CalDAV server (Fastmail, iCloud, Radicale…)
- *  with an app password; then per-collection enable toggles + sync now. */
+ *  (OAuth re-consent), Microsoft 365 (Graph consent; Outlook has no CalDAV)
+ *  or a generic CalDAV server (Fastmail, iCloud, Radicale…) with an app
+ *  password; then per-collection enable toggles + sync now. */
 export function CalendarSettings() {
   const { t } = useTranslation();
   const { data: accounts } = useAccounts();
@@ -67,14 +68,14 @@ function AccountCalendarCard({
     void queryClient.invalidateQueries({ queryKey: ["events"] });
   };
 
-  const connect = async (kind: "google" | "generic") => {
+  const connect = async (kind: "google" | "microsoft" | "generic") => {
     setBusy(true);
     try {
       await call("connect_calendar", {
         args:
-          kind === "google"
-            ? { accountId: account.id, kind }
-            : { accountId: account.id, kind, url, username, password },
+          kind === "generic"
+            ? { accountId: account.id, kind, url, username, password }
+            : { accountId: account.id, kind },
       });
       pushToast({ kind: "info", message: t("settings:calendar.connected") });
       setFormOpen(false);
@@ -139,12 +140,24 @@ function AccountCalendarCard({
                 {t("settings:calendar.connectGoogle")}
               </button>
             )}
-            <button
-              className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2 hover:text-ink"
-              onClick={() => setFormOpen((v) => !v)}
-            >
-              {t("settings:calendar.connectCaldav")}
-            </button>
+            {account.provider === "microsoft" ? (
+              // Outlook / Microsoft 365 has no CalDAV endpoint; the calendar
+              // syncs through Microsoft Graph on the account's own sign-in.
+              <button
+                className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2 hover:text-ink disabled:opacity-50"
+                disabled={busy}
+                onClick={() => void connect("microsoft")}
+              >
+                {t("settings:calendar.connectMicrosoft")}
+              </button>
+            ) : (
+              <button
+                className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2 hover:text-ink"
+                onClick={() => setFormOpen((v) => !v)}
+              >
+                {t("settings:calendar.connectCaldav")}
+              </button>
+            )}
           </>
         )}
       </div>

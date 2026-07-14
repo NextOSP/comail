@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { folderLeafName } from "../../lib/folders";
-import { accountColor, accountLabel, IS_MAC, MOD_LABEL } from "../../lib/format";
+import { accountLabel, IS_MAC, MOD_LABEL } from "../../lib/format";
 import { aggregateSyncStatuses } from "../../lib/syncStatus";
 import { displayShortcut } from "../../keyboard/registry";
 import { useAccounts, useFolders } from "../../queries/hooks";
@@ -46,7 +46,7 @@ export function TopBar() {
           <path d="M3 6h18M3 12h18M3 18h18" />
         </svg>
       </button>
-      <span className="text-[12px] font-semibold tracking-[0.14em] text-ink-faint uppercase">
+      <span className="co-wordmark text-[12px] font-semibold tracking-[0.14em] text-ink-faint uppercase">
         Comail
       </span>
       <span className="text-[13px] font-medium text-ink-muted">{title}</span>
@@ -117,10 +117,6 @@ export function TopBar() {
           title={active ? active.email : t("common:topbar.allAccounts")}
           onClick={() => setMenuOpen((v) => !v)}
         >
-          <span
-            className="size-2.5 shrink-0 rounded-full"
-            style={{ background: active ? accountColor(active.email) : "var(--info)" }}
-          />
           <span className="max-w-[150px] truncate">
             {active ? accountLabel(active) : t("common:topbar.allAccounts")}
           </span>
@@ -137,7 +133,6 @@ export function TopBar() {
             >
               <MenuItem
                 label={t("common:topbar.allAccounts")}
-                color="var(--info)"
                 hint={displayShortcut(IS_MAC ? "ctrl+0" : "alt+0")}
                 selected={accountFilter == null}
                 onClick={() => {
@@ -150,7 +145,6 @@ export function TopBar() {
                   key={a.id}
                   label={accountLabel(a)}
                   detail={a.displayName?.trim() ? a.email : undefined}
-                  color={accountColor(a.email)}
                   hint={i < 9 ? displayShortcut(IS_MAC ? `ctrl+${i + 1}` : `alt+${i + 1}`) : undefined}
                   sub={a.syncState !== "idle" ? t(`common:syncState.${a.syncState}`) : undefined}
                   selected={accountFilter === a.id}
@@ -173,7 +167,6 @@ function MenuItem({
   detail,
   sub,
   hint,
-  color,
   selected,
   onClick,
 }: {
@@ -184,7 +177,6 @@ function MenuItem({
   sub?: string;
   /** keyboard hint chip, e.g. "⌃1" */
   hint?: string;
-  color: string;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -193,7 +185,6 @@ function MenuItem({
       className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] ${selected ? "bg-bg2" : "hover:bg-bg2"}`}
       onClick={onClick}
     >
-      <span className="size-2 shrink-0 rounded-full" style={{ background: color }} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className={`truncate ${selected ? "font-medium text-ink" : "text-ink"}`}>{label}</span>
         {detail && <span className="truncate text-[11px] text-ink-faint">{detail}</span>}

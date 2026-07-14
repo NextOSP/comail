@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { View } from "../../ipc/types";
 import { buildFolderTree, type FolderNode } from "../../lib/folders";
-import { accountColor } from "../../lib/format";
 import {
   splitCount,
   useAccounts,
@@ -98,10 +97,6 @@ export function Sidebar() {
           title={t("common:sidebar.accountSettings")}
           onClick={() => set({ panel: "settings", settingsTab: "accounts", sidebarOpen: false })}
         >
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: active ? accountColor(active.email) : "var(--info)" }}
-          />
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
             {active ? active.email : t("common:topbar.allAccounts")}
           </span>

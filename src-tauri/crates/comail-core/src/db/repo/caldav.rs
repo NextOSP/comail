@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 #[derive(Debug, Clone)]
 pub struct CaldavConfig {
     pub account_id: i64,
-    /// "google" | "generic"
+    /// "google" | "generic" | "microsoft" (Graph, not CalDAV)
     pub kind: String,
     pub base_url: String,
     pub username: Option<String>,

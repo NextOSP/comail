@@ -292,7 +292,7 @@ export interface SignatureDefaults {
 export type AiTier = "instant" | "cheap" | "intelligent";
 
 export interface Settings {
-  theme: "snow" | "carbon" | "system";
+  theme: "snow" | "carbon" | "holiday" | "system";
   /** UI language: "system" follows the OS locale, otherwise a code like "en". */
   language: string;
   undoSendSeconds: number;
@@ -334,6 +334,8 @@ export interface Settings {
   signatureList: Signature[];
   /** Which signature each account defaults to, keyed by stringified account id. */
   signatureDefaults: Record<string, SignatureDefaults>;
+  /** Per-account theme override, keyed by stringified account id. Missing = global theme. */
+  accountThemes: Record<string, "snow" | "carbon" | "holiday" | "system">;
   /** Semantic-search backend: "local" runs a small on-device model, "off" is keyword-only. */
   embeddingBackend: "local" | "off";
   /** Registry key of the local embedding model. */
@@ -683,9 +685,19 @@ export interface Commands {
   update_event(args: { args: UpdateEventArgs }): Promise<CalendarEvent>;
   /** Delete an event; organized events email METHOD:CANCEL when notify. */
   delete_event(args: { eventId: number; notify?: boolean }): Promise<void>;
-  /** Connect a CalDAV server (kind "google" runs OAuth re-consent first). */
+  /**
+   * Connect a calendar: "google" runs OAuth re-consent then CalDAV,
+   * "microsoft" runs Graph consent (Outlook has no CalDAV), "generic" is a
+   * plain CalDAV server with an app password.
+   */
   connect_calendar(args: {
-    args: { accountId: number; kind: "google" | "generic"; url?: string; username?: string; password?: string };
+    args: {
+      accountId: number;
+      kind: "google" | "microsoft" | "generic";
+      url?: string;
+      username?: string;
+      password?: string;
+    };
   }): Promise<Calendar[]>;
   disconnect_calendar(args: { accountId: number }): Promise<void>;
   /**
@@ -717,6 +729,8 @@ export interface Commands {
   /** Parse a natural-language palette query into an executable intent. */
   ai_command(args: { query: string }): Promise<AiIntent>;
   ai_summarize(args: { threadId: number }): Promise<AiThreadSummary>;
+  /** Up to 3 short thread-grounded one-tap reply suggestions (instant tier). */
+  ai_quick_replies(args: { threadId: number }): Promise<string[]>;
   ai_draft(args: {
     threadId: number | null;
     /** The message the user hit reply on, so the draft targets the right one. */
@@ -725,9 +739,13 @@ export interface Commands {
     senderName: string | null;
     /** Write in the user's learned voice; falls back to the saved setting when omitted. */
     voice?: boolean;
+    /** A signature will be appended to the draft, so the model skips its own sign-off. */
+    hasSignature?: boolean;
   }): Promise<string>;
   /** Copy-edit a draft (plain text or simple HTML); returns the corrected draft. */
   ai_proofread(args: { body: string }): Promise<string>;
+  /** Generate a clean email signature from an account's name/email (plain text). */
+  ai_signature(args: { name: string; email: string }): Promise<string>;
   /** Learn the user's writing voice from their sent mail; returns the profile text. */
   ai_learn_voice(args: Record<string, never>): Promise<string>;
   /** RAG: answer a question grounded in the most relevant messages, with citations. */

@@ -556,6 +556,10 @@ pub struct Settings {
     /// Which signature each account defaults to, keyed by stringified account id.
     #[serde(default)]
     pub signature_defaults: std::collections::HashMap<String, SignatureDefaults>,
+    /// Per-account theme override ("snow" | "carbon" | "system"), keyed by
+    /// stringified account id. Missing = follow the global `theme`.
+    #[serde(default)]
+    pub account_themes: std::collections::HashMap<String, String>,
 }
 
 /// A named, rich-HTML signature belonging to one account.
@@ -702,6 +706,7 @@ impl Default for Settings {
             signatures: std::collections::HashMap::new(),
             signature_list: Vec::new(),
             signature_defaults: std::collections::HashMap::new(),
+            account_themes: std::collections::HashMap::new(),
         }
     }
 }

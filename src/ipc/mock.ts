@@ -938,6 +938,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   signatures: {},
   signatureList: [],
   signatureDefaults: {},
+  accountThemes: {},
 };
 
 let settings: Settings = (() => {
@@ -1976,7 +1977,12 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         id: id(),
         accountId: args.accountId,
         url: `${base.replace(/\/$/, "")}/personal/`,
-        displayName: args.kind === "google" ? "Google Calendar" : "Personal",
+        displayName:
+          args.kind === "google"
+            ? "Google Calendar"
+            : args.kind === "microsoft"
+              ? "Calendar (Outlook)"
+              : "Personal",
         color: null,
         readOnly: false,
         enabled: true,
@@ -2103,13 +2109,31 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(summary, 900);
     }
 
+    case "ai_quick_replies": {
+      const t = threads.find((x) => x.id === a.threadId);
+      if (!t) throw new Error(`Thread ${a.threadId} not found`);
+      const other = threadSender(t);
+      const first = (other.name ?? other.email).split(" ")[0];
+      return delay(
+        [
+          `Sounds good ${first}, let's go ahead.`,
+          "I'd rather hold off for now.",
+          "Can you share a bit more detail first?",
+        ],
+        700,
+      );
+    }
+
     case "ai_draft": {
       const instruction = (a.instruction as string) ?? "";
       const senderName = (a.senderName as string | null) ?? "me";
       const t = threads.find((x) => x.id === a.threadId);
       const greeting = t ? `Hi ${(threadSender(t).name ?? threadSender(t).email).split(" ")[0]},` : "Hi,";
+      // With a signature to append, the mock ends on a bare closing (mirrors the
+      // real prompt, which tells the model to skip its own sign-off).
+      const signOff = a.hasSignature ? "Best," : `Best,\n${senderName}`;
       return delay(
-        `${greeting}\n\nThanks for your note. As requested (${instruction.trim() || "no instruction"}), here's where I've landed: happy to proceed as discussed, and I'll follow up with details shortly.\n\nBest,\n${senderName}`,
+        `${greeting}\n\nThanks for your note. As requested (${instruction.trim() || "no instruction"}), here's where I've landed: happy to proceed as discussed, and I'll follow up with details shortly.\n\n${signOff}`,
         1200,
       );
     }
@@ -2126,6 +2150,12 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         .replace(/\bi\b/g, "I")
         .replace(/ {2,}/g, " ");
       return delay(fixed, 900);
+    }
+
+    case "ai_signature": {
+      const name = ((a.name as string) ?? "").trim();
+      const email = ((a.email as string) ?? "").trim();
+      return delay(`Best,\n${name || "Your name"}${email ? `\n${email}` : ""}`, 900);
     }
 
     case "ai_ask": {

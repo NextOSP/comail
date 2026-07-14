@@ -19,6 +19,7 @@
     "hint": "Snow est clair, Carbon est sombre.",
     "snow": "Snow",
     "carbon": "Carbon",
+    "holiday": "Vacances",
     "system": "Système"
   },
   "language": {
@@ -126,20 +127,23 @@
       "title": "Configuration pas à pas",
       "googleTitle": "Google (Gmail)",
       "openGoogle": "Ouvrir Google Cloud Console",
-      "g1": "Créez un projet sur console.cloud.google.com, puis accédez à API et services.",
-      "g2": "Écran de consentement OAuth : choisissez Externe, renseignez le nom de l’application et ajoutez votre propre adresse Gmail comme utilisateur test.",
-      "g3": "Scopes : ajoutez https://mail.google.com/ (le seul scope accepté par Google pour IMAP/SMTP).",
-      "g4": "Identifiants : Créer des identifiants, ID client OAuth, type d’application Application de bureau.",
-      "g5": "Copiez le client ID et le secret client dans les champs ci-dessous.",
-      "g6": "Une fois que cela fonctionne, publiez l’écran de consentement en Production. En statut Test, Google fait expirer les connexions après 7 jours.",
+      "g1": "Créez un projet : sur console.cloud.google.com ouvrez le sélecteur de projet dans la barre du haut, cliquez sur Nouveau projet, nommez-le (p. ex. Comail), Créer, puis sélectionnez-le. Ouvrez ensuite le menu et allez dans API et services.",
+      "g2": "Écran de consentement OAuth : choisissez Externe (Interne seulement si vous avez une organisation Workspace), renseignez le nom de l’application et votre e-mail comme contact d’assistance et de développeur, puis ajoutez votre propre adresse Gmail sous Utilisateurs test.",
+      "g3": "Scopes : cliquez sur Ajouter ou supprimer des scopes, collez https://mail.google.com/ dans la zone de saisie manuelle et ajoutez-le. C’est le seul scope accepté par Google pour IMAP/SMTP XOAUTH2 ; vous n’avez pas besoin d’activer l’API Gmail.",
+      "g4": "Identifiants : Créer des identifiants, ID client OAuth, type d’application Application de bureau. Les clients de bureau acceptent automatiquement la boucle locale http://127.0.0.1, il n’y a donc aucune URI de redirection à configurer.",
+      "g5": "Copiez le client ID (se termine par .apps.googleusercontent.com) et le secret client (commence par GOCSPX-) dans les champs ci-dessous. Ils sont enregistrés à la perte de focus ou avec Entrée.",
+      "g6": "Une fois la connexion fonctionnelle, revenez à l’écran de consentement et cliquez sur Publier l’application (Production). En statut Test, Google fait expirer les jetons d’actualisation après 7 jours et le compte doit être réauthentifié chaque semaine ; la publication l’évite.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Ouvrir Microsoft Entra",
-      "m1": "Sur entra.microsoft.com, allez dans Inscriptions d’applications, Nouvelle inscription. Nommez-la Comail : les utilisateurs voient ce nom sur l’écran de consentement.",
-      "m2": "Types de comptes pris en charge : choisissez l’option multilocataire qui inclut aussi les comptes Microsoft personnels. C’est obligatoire : Comail se connecte via le point de terminaison partagé /common, et une application monolocataire échoue avec l’erreur AADSTS50194. Corrigeable ensuite sous Authentification.",
-      "m3": "URI de redirection : plateforme Applications mobiles et de bureau (pas Web), valeur http://localhost.",
-      "m4": "Autorisations d’API : Ajouter une autorisation, Microsoft Graph, puis Autorisations déléguées (pas Autorisations d’application ; si la liste semble étrange, vous êtes dans la mauvaise case). Cochez IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid et email.",
-      "m5": "Il n’y a aucune clé ni aucun secret à créer pour Microsoft ; ignorez Certificats et secrets. Copiez simplement l’ID d’application (client) de la page Vue d’ensemble dans le champ ci-dessous.",
-      "m6": "Boîtes professionnelles ou scolaires uniquement : si la connexion se termine par « Approbation de l’administrateur requise », un administrateur du locataire doit consentir une fois via Accorder un consentement d’administrateur sur la page des autorisations d’API. Les comptes personnels Outlook.com n’en ont jamais besoin."
+      "m1": "Sur entra.microsoft.com (ou portal.azure.com), allez dans Inscriptions d’applications, Nouvelle inscription. Nommez-la Comail : les utilisateurs voient ce nom sur l’écran de consentement.",
+      "m2": "Types de comptes pris en charge : choisissez l’option multilocataire qui inclut aussi les comptes Microsoft personnels (tout annuaire d’organisation + personnels). Obligatoire : Comail se connecte via le point de terminaison partagé /common, et une application monolocataire échoue avec l’erreur AADSTS50194. Corrigeable ensuite sous Authentification.",
+      "m3": "URI de redirection : choisissez la plateforme Applications mobiles et de bureau (pas Web), valeur http://localhost. La variante Web attend un secret et échoue avec une erreur de redirection ; les ports de boucle locale sont ensuite acceptés automatiquement.",
+      "m4": "Autorisations d’API : Ajouter une autorisation, Microsoft Graph, puis Autorisations déléguées (pas Autorisations d’application ; si la recherche « email » renvoie des API sans rapport, vous êtes dans la case Application). Cochez IMAP.AccessAsUser.All, SMTP.Send, offline_access, openid et email, puis Ajouter des autorisations.",
+      "m5": "Aucune clé ni secret à créer : ignorez Certificats et secrets (Comail est un client public). Copiez l’ID d’application (client) de la page Vue d’ensemble dans le champ ci-dessous, et laissez vide le secret client Microsoft.",
+      "m6": "Boîtes professionnelles ou scolaires uniquement : si la connexion se termine par « Approbation de l’administrateur requise », un administrateur du locataire doit consentir une fois via Accorder un consentement d’administrateur sur la page des autorisations d’API. Les comptes personnels Outlook.com n’en ont jamais besoin.",
+      "msNote": "Compte personnel Outlook.com / Hotmail / Live ? Vous enregistrez quand même l’application ici. Connectez-vous au portail avec votre compte personnel (c’est gratuit, aucun abonnement Azure requis) et choisissez l’option multilocataire + personnel à l’étape 2. Le compte utilisé pour l’enregistrement et la boîte que vous connectez peuvent être différents.",
+      "docsHint": "Vous préférez le guide complet avec captures d’écran et dépannage ?",
+      "viewDocs": "Voir le guide complet sur GitHub"
     }
   },
   "accounts": {
@@ -148,6 +152,7 @@
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
+    "theme": "Thème",
     "remove": "Supprimer",
     "reallyRemove": "Vraiment supprimer ?",
     "removed": "{{email}} supprimé",
@@ -291,7 +296,10 @@
     "forReply": "En réponse / transfert",
     "none": "Aucune signature",
     "delete": "Supprimer",
-    "deleteConfirm": "Supprimer ?"
+    "deleteConfirm": "Supprimer ?",
+    "ai": "IA",
+    "aiGenerating": "Génération…",
+    "aiHint": "Générer une signature avec l'IA"
   },
   "autoLabels": {
     "label": "Libellés automatiques",
@@ -312,13 +320,14 @@
   },
   "calendar": {
     "section": "Synchronisation du calendrier",
-    "hint": "Synchronisation bidirectionnelle via CalDAV. Google demande un nouveau consentement unique ; Fastmail/iCloud/serveurs auto-hébergés utilisent un mot de passe d’application.",
+    "hint": "Synchronisation bidirectionnelle : Google et Microsoft demandent un nouveau consentement unique ; les serveurs CalDAV Fastmail/iCloud/auto-hébergés utilisent un mot de passe d’application.",
     "connected": "Calendrier connecté — première synchronisation en cours",
     "disconnected": "Calendrier déconnecté — les événements restent sur cet appareil",
     "syncStarted": "Synchronisation du calendrier lancée",
     "syncNow": "Synchroniser",
     "disconnect": "Déconnecter",
     "connectGoogle": "Connecter Google Agenda",
+    "connectMicrosoft": "Connecter le calendrier Microsoft",
     "connectCaldav": "Connecter CalDAV…",
     "connect": "Connecter",
     "urlPlaceholder": "URL du serveur, p. ex. https://caldav.fastmail.com",
