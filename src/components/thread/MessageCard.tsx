@@ -557,6 +557,9 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
   body {
     font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: ${text}; overflow-wrap: break-word;
+    /* The app sets a global user-select:none; make email text explicitly
+       selectable so the user can copy content (e.g. an OTP) out of it. */
+    -webkit-user-select: text; user-select: text;
     /* Contain child margins in a block-formatting context. Otherwise a leading/
        trailing <p> margin collapses through the margin-less body and escapes
        body.scrollHeight, so the frame is measured a margin short and clips the
@@ -667,8 +670,17 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     // the keyboard registry listens on, so app shortcuts (Esc to go back, Cmd+K
     // palette, J/K, R…) stop working. Route the iframe's keydowns through the
     // registry directly. It applies its own guards (typing in a field or
-    // activating a focused link is left native), so we forward every key.
-    doc.addEventListener("keydown", (e) => dispatchKeyboardEvent(e));
+    // activating a focused link is left native), so we forward every key —
+    // except the native clipboard/selection shortcuts. Those must stay native
+    // so the user can select and copy text (e.g. an OTP code) out of the email;
+    // forwarding Cmd/Ctrl+A would trigger the app's "select all" command and
+    // Cmd/Ctrl+C/X could be swallowed before the webview copies.
+    doc.addEventListener("keydown", (e) => {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (mod && (key === "a" || key === "c" || key === "x" || key === "v")) return;
+      dispatchKeyboardEvent(e);
+    });
     // The sandboxed iframe runs no scripts, so links can't reach a browser on
     // their own. Intercept clicks from out here and hand http(s)/mailto links to
     // the OS (default browser / mail client). If this ever misses, the link's
