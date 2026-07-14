@@ -259,10 +259,121 @@ fn section_entity(mime_header: &[u8], encoded_body: &[u8]) -> Vec<u8> {
     raw
 }
 
+/// Does the decoded output still read as raw quoted-printable? Counts
+/// `=XX` escapes (uppercase hex, as QP mandates); legitimate prose rarely
+/// has more than a couple.
+fn qp_artifact_count(content: &str) -> usize {
+    let bytes = content.as_bytes();
+    let mut count = 0;
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        let is_hex = |b: u8| b.is_ascii_digit() || (b'A'..=b'F').contains(&b);
+        if bytes[i] == b'=' && is_hex(bytes[i + 1]) && is_hex(bytes[i + 2]) {
+            count += 1;
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    count
+}
+
+/// Quoted-printable decoding that never fails: valid `=XX` escapes decode,
+/// soft line breaks (`=` + optional transport padding + line end) vanish,
+/// and anything malformed passes through literally. Mail gateways that
+/// splice disclaimers into bodies (Exchange transport rules) routinely
+/// produce QP that strict decoders refuse.
+fn lenient_qp_decode(input: &[u8]) -> Vec<u8> {
+    let hex = |b: u8| -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            _ => None,
+        }
+    };
+    let mut out = Vec::with_capacity(input.len());
+    let mut i = 0;
+    while i < input.len() {
+        if input[i] != b'=' {
+            out.push(input[i]);
+            i += 1;
+            continue;
+        }
+        // Soft break: '=' then optional spaces/tabs, then CRLF or LF.
+        let mut j = i + 1;
+        while j < input.len() && (input[j] == b' ' || input[j] == b'\t') {
+            j += 1;
+        }
+        if input.get(j) == Some(&b'\r') && input.get(j + 1) == Some(&b'\n') {
+            i = j + 2;
+            continue;
+        }
+        if input.get(j) == Some(&b'\n') {
+            i = j + 1;
+            continue;
+        }
+        if let (Some(high), Some(low)) = (
+            input.get(i + 1).copied().and_then(hex),
+            input.get(i + 2).copied().and_then(hex),
+        ) {
+            out.push(high * 16 + low);
+            i += 3;
+            continue;
+        }
+        out.push(b'=');
+        i += 1;
+    }
+    out
+}
+
+/// The fetched header block with any Content-Transfer-Encoding lines (and
+/// their folded continuations) replaced by `8bit` - for re-parsing a body
+/// whose transfer encoding we have already undone by hand.
+fn header_with_8bit_cte(mime_header: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(mime_header.len() + 40);
+    let mut dropping = false;
+    for line in mime_header.split_inclusive(|&b| b == b'\n') {
+        let is_continuation = line.first().is_some_and(|&b| b == b' ' || b == b'\t');
+        if dropping && is_continuation {
+            continue;
+        }
+        dropping = line
+            .len()
+            .checked_sub(26)
+            .is_some_and(|_| line[..26].eq_ignore_ascii_case(b"content-transfer-encoding:"));
+        if !dropping {
+            out.extend_from_slice(line);
+        }
+    }
+    while out.ends_with(b"\r\n") || out.ends_with(b"\n") {
+        let cut = if out.ends_with(b"\r\n") { 2 } else { 1 };
+        out.truncate(out.len() - cut);
+    }
+    if !out.is_empty() {
+        out.extend_from_slice(b"\r\n");
+    }
+    out.extend_from_slice(b"Content-Transfer-Encoding: 8bit\r\n\r\n");
+    out
+}
+
+fn header_declares_qp(mime_header: &[u8]) -> bool {
+    String::from_utf8_lossy(mime_header)
+        .to_ascii_lowercase()
+        .contains("quoted-printable")
+}
+
 /// Decode transfer encoding and charset for one fetched text MIME entity.
 /// HTML is sanitized through the same allow-list as full-message parsing.
+///
+/// `declared_encoding` is the BODYSTRUCTURE's transfer encoding for the part.
+/// It backstops gateway-mangled mail (Exchange disclaimer banners and the
+/// like), where the part's own header and body drift out of sync: if the part
+/// is quoted-printable by either account and the parsed output still reads as
+/// raw QP, the body is decoded leniently by hand and re-parsed for charset.
 pub fn decode_text_section(
     kind: TextSectionKind,
+    declared_encoding: Option<&str>,
     mime_header: &[u8],
     encoded_body: &[u8],
 ) -> Result<DecodedTextSection> {
@@ -270,11 +381,26 @@ pub fn decode_text_section(
     let msg = mail_parser::MessageParser::default()
         .parse(&raw)
         .ok_or_else(|| CoreError::Mime("unparseable MIME section".into()))?;
-    let content = msg
+    let mut content = msg
         .root_part()
         .text_contents()
         .map(str::to_owned)
         .unwrap_or_else(|| String::from_utf8_lossy(msg.root_part().contents()).into_owned());
+
+    let qp_declared = header_declares_qp(mime_header)
+        || declared_encoding.is_some_and(|value| value.eq_ignore_ascii_case("quoted-printable"));
+    if qp_declared && qp_artifact_count(&content) >= 8 {
+        let decoded = lenient_qp_decode(encoded_body);
+        let fixed = section_entity(&header_with_8bit_cte(mime_header), &decoded);
+        if let Some(reparsed) = mail_parser::MessageParser::default().parse(&fixed) {
+            if let Some(text) = reparsed.root_part().text_contents() {
+                content = text.to_owned();
+            } else {
+                content = String::from_utf8_lossy(reparsed.root_part().contents()).into_owned();
+            }
+        }
+    }
+
     Ok(DecodedTextSection {
         kind,
         content: if kind == TextSectionKind::Html {
@@ -449,6 +575,7 @@ mod selective_section_tests {
     fn decodes_charset_and_sanitizes_html_sections() {
         let plain = decode_text_section(
             TextSectionKind::Plain,
+            Some("quoted-printable"),
             b"Content-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n",
             b"Ol=E1 mundo",
         )
@@ -457,6 +584,7 @@ mod selective_section_tests {
 
         let html = decode_text_section(
             TextSectionKind::Html,
+            Some("8bit"),
             b"Content-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n",
             b"<p onclick=\"steal()\">Hello</p><script>steal()</script>",
         )
@@ -464,6 +592,27 @@ mod selective_section_tests {
         assert!(html.content.contains("<p>Hello</p>"));
         assert!(!html.content.contains("onclick"));
         assert!(!html.content.contains("<script"));
+    }
+
+    #[test]
+    fn recovers_gateway_mangled_quoted_printable() {
+        // An Exchange-style disclaimer rewrite: the part header lost its
+        // Content-Transfer-Encoding, the body kept hundreds of QP escapes,
+        // and soft breaks picked up transport padding ("= " before the line
+        // end). BODYSTRUCTURE still declares quoted-printable.
+        let body = b"Qu=E1=BA=A3ng c=C3=A1o =E2=80=8D=E2=80=8D=E2=80=8D=E2=80=8D= \r\n=E2=80=8D=E2=80=8D=E2=80=8D=E2=80=8Dduy=E1=BB=87t"
+            .to_vec();
+        let decoded = decode_text_section(
+            TextSectionKind::Plain,
+            Some("quoted-printable"),
+            b"Content-Type: text/plain; charset=utf-8\r\n\r\n",
+            &body,
+        )
+        .unwrap();
+        assert!(decoded.content.starts_with("Qu\u{1ea3}ng c\u{e1}o"));
+        assert!(decoded.content.ends_with("duy\u{1ec7}t"));
+        assert!(!decoded.content.contains("=E1"));
+        assert!(!decoded.content.contains("= "));
     }
 
     #[test]

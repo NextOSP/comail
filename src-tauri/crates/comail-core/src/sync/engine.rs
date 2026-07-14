@@ -2866,8 +2866,12 @@ fn decode_selective_content(
                 planned.section
             ))
         })?;
-        let decoded =
-            crate::mime::decode_text_section(planned.kind, &section.mime_header, &section.body)?;
+        let decoded = crate::mime::decode_text_section(
+            planned.kind,
+            Some(&planned.transfer_encoding),
+            &section.mime_header,
+            &section.body,
+        )?;
         match decoded.kind {
             crate::mime::TextSectionKind::Plain => plain.push(decoded.content),
             crate::mime::TextSectionKind::Html => html.push(decoded.content),
