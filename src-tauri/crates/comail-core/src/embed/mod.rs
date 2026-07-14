@@ -110,6 +110,17 @@ const REGISTRY: &[ModelSpec] = &[
         max_tokens: 512,
         query_prefix: "Represent this sentence for searching relevant passages: ",
     },
+    // Multilingual sentence encoder (BERT architecture, XLM-R vocabulary) so
+    // semantic search works across languages - Vietnamese, Spanish, French,
+    // Chinese, and 50+ others - not just English. No retrieval instruction
+    // prefix (paraphrase/MiniLM models are trained without one).
+    ModelSpec {
+        key: "paraphrase-multilingual-MiniLM-L12-v2",
+        hf_repo: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        dim: 384,
+        max_tokens: 256,
+        query_prefix: "",
+    },
 ];
 
 /// The model used when none is configured. Bundled in the installer so first

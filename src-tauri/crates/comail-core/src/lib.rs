@@ -436,7 +436,10 @@ impl Core {
         // `flow::authorize_with`); the multi-resource refresh token covers
         // Graph, redeemed on demand by `access_token_for_scope`.
         let consent_extra: &[&str] = match provider {
-            Provider::Microsoft => &[oauth::providers::MS_ONLINE_MEETINGS_SCOPE],
+            Provider::Microsoft => &[
+                oauth::providers::MS_ONLINE_MEETINGS_SCOPE,
+                oauth::providers::MS_CALENDARS_SCOPE,
+            ],
             _ => &[],
         };
         let outcome = tokio::select! {
@@ -1539,10 +1542,65 @@ impl Core {
 
         self.enqueue_cal_push(event_id, account_id, "cal_put")
             .await?;
+
+        // Microsoft accounts have no CalDAV endpoint, so also write the event
+        // into their Outlook / Microsoft 365 calendar via Graph - that is what
+        // Teams and Outlook show. Best-effort: a Graph failure (e.g. the
+        // account predates the calendar consent) must not fail event creation,
+        // which already succeeded locally.
+        if account.provider == Provider::Microsoft {
+            if let Err(e) = self.push_event_to_graph(account_id, &args).await {
+                tracing::warn!(error = %e, "graph: could not sync event to Outlook calendar");
+            }
+        }
+
         self.db
             .read(move |conn| repo::calendar::get(conn, event_id))
             .await?
             .ok_or_else(|| CoreError::NotFound("event".into()))
+    }
+
+    /// Write a just-created event into the Microsoft 365 calendar via Graph.
+    async fn push_event_to_graph(&self, account_id: i64, args: &CreateEventArgs) -> Result<()> {
+        let token = self
+            .tokens
+            .access_token_for_scope(
+                account_id,
+                Provider::Microsoft,
+                oauth::providers::MS_CALENDARS_SCOPE,
+            )
+            .await?;
+        // Fold the join link into the body so it rides along in Outlook/Teams.
+        let body_html = match (&args.description, &args.join_url) {
+            (d, Some(url)) => Some(format!(
+                "{}<p><a href=\"{}\">Join the meeting</a></p>",
+                d.as_deref().unwrap_or(""),
+                url
+            )),
+            (Some(d), None) if !d.trim().is_empty() => Some(d.clone()),
+            _ => None,
+        };
+        let attendees = args
+            .attendees
+            .iter()
+            .map(|a| graph::GraphAttendee {
+                email: a.email.clone(),
+                name: a.name.clone(),
+            })
+            .collect();
+        graph::create_calendar_event(
+            &token,
+            &graph::GraphEvent {
+                subject: args.summary.trim(),
+                body_html,
+                location: args.location.as_deref(),
+                start_ms: args.starts_at,
+                end_ms: args.ends_at,
+                all_day: args.all_day,
+                attendees,
+            },
+        )
+        .await
     }
 
     /// Answer an invite: store our response and email an ICS METHOD:REPLY to
@@ -2171,6 +2229,7 @@ impl Core {
             base_url: settings.ai_base_url.clone(),
             model: resolve_ai_model(settings, scenario),
             api_key,
+            language: ai::ui_language_name(&settings.language).map(str::to_string),
         })
     }
 
@@ -2250,14 +2309,17 @@ impl Core {
             let examples = self.voice_examples(&query, 3).await.unwrap_or_default();
             return ai::chat(
                 &cfg,
-                ai::draft_prompt_voiced(
-                    &subject,
-                    &context,
-                    &reply_target,
-                    &instruction,
-                    &sender_name,
-                    &settings.voice_profile,
-                    &examples,
+                ai::apply_language(
+                    ai::draft_prompt_voiced(
+                        &subject,
+                        &context,
+                        &reply_target,
+                        &instruction,
+                        &sender_name,
+                        &settings.voice_profile,
+                        &examples,
+                    ),
+                    &cfg,
                 ),
             )
             .await;
@@ -2265,12 +2327,15 @@ impl Core {
 
         ai::chat(
             &cfg,
-            ai::draft_prompt(
-                &subject,
-                &context,
-                &reply_target,
-                &instruction,
-                &sender_name,
+            ai::apply_language(
+                ai::draft_prompt(
+                    &subject,
+                    &context,
+                    &reply_target,
+                    &instruction,
+                    &sender_name,
+                ),
+                &cfg,
             ),
         )
         .await
@@ -2497,8 +2562,9 @@ impl Core {
         for (i, m) in sources.iter().enumerate() {
             initial_context.push_str(&ai::format_excerpt(i + 1, m));
         }
+        let ask_system = format!("{}{}", ai::AGENTIC_ASK_SYSTEM, ai::language_directive(&cfg));
         let mut messages: Vec<serde_json::Value> = vec![
-            serde_json::json!({ "role": "system", "content": ai::AGENTIC_ASK_SYSTEM }),
+            serde_json::json!({ "role": "system", "content": ask_system }),
             serde_json::json!({
                 "role": "user",
                 "content": format!("Emails:\n\n{initial_context}\nQuestion: {question}"),

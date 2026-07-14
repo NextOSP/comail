@@ -74,6 +74,7 @@ const ICON = {
     </>,
   ),
   notes: svg(<path d="M17 10H3M21 6H3M21 14H3M17 18H3" />),
+  close: svg(<path d="M18 6L6 18M6 6l12 12" />),
   video: svg(
     <>
       <path d="M15 10l5-3v10l-5-3v-4z" />
@@ -116,6 +117,16 @@ function toTimeInput(ms: number): string {
 
 function fromInputs(date: string, time: string): number {
   return new Date(`${date}T${time || "09:00"}`).getTime();
+}
+
+/** Does this natural-language text ask for an online / Teams meeting? */
+function wantsOnlineMeeting(text: string): boolean {
+  const s = text.toLowerCase();
+  if (/\b(teams|zoom|webex|google meet|video call|virtual meeting|online meeting)\b/.test(s))
+    return true;
+  if (/\bteam meeting\b/.test(s)) return true;
+  if (s.includes("online") && (s.includes("meeting") || s.includes("call"))) return true;
+  return false;
 }
 
 function parseAttendees(raw: string): Address[] {
@@ -191,6 +202,51 @@ export function EventCreate() {
   const accountId =
     open.prefill?.accountId ?? useUi.getState().accountFilter ?? accounts?.[0]?.id ?? null;
 
+  const isMicrosoftAccount =
+    accounts?.find((a) => a.id === accountId)?.provider === "microsoft";
+
+  // Mint a real Teams meeting via Graph and drop its join URL into the field.
+  // Microsoft accounts only; first use may open the browser once for consent.
+  const fillTeamsMeeting = async (startMs: number, endMs: number, subject: string) => {
+    if (accountId == null || teamsPending) return;
+    setTeamsPending(true);
+    try {
+      const { joinUrl: url } = await call("create_teams_meeting", {
+        accountId,
+        subject: subject.trim() || t("calendar:create.teamsMeeting"),
+        startMs,
+        endMs,
+      });
+      setJoinUrl(url);
+      pushToast({ kind: "info", message: t("calendar:create.teamsAdded"), durationMs: 2500 });
+    } catch (e) {
+      pushToast({
+        kind: "error",
+        message: t("calendar:create.teamsError", { error: errorMessage(e) }),
+      });
+    } finally {
+      setTeamsPending(false);
+    }
+  };
+
+  // Button in the WHERE section: build a meeting from the current form values.
+  const createTeamsMeeting = () => {
+    const startsAt = allDay ? fromInputs(date, "00:00") : fromInputs(date, time);
+    const endsAt = allDay ? startsAt + 24 * H_MS : startsAt + durationMin * 60_000;
+    return fillTeamsMeeting(startsAt, endsAt, summary);
+  };
+
+  // Quick-add asked for an online meeting ("create team meeting 2pm tmr"):
+  // auto-create it with the parsed time. Needs a Microsoft account.
+  const maybeAddMeeting = (text: string, subject: string, startsAt: number, endsAt: number) => {
+    if (!wantsOnlineMeeting(text)) return;
+    if (!isMicrosoftAccount) {
+      pushToast({ kind: "info", message: t("calendar:create.teamsNeedsMs"), durationMs: 4000 });
+      return;
+    }
+    void fillTeamsMeeting(startsAt, endsAt, subject);
+  };
+
   // Natural-language fallback: anything the deterministic parser can't read
   // ("tao meeting ngay mai", any language) goes to the AI intent parser.
   const quickAi = async () => {
@@ -200,15 +256,20 @@ export function EventCreate() {
     try {
       const intent = await call("ai_command", { query: q });
       if (intent.kind === "create_event" && intent.startsAt != null) {
+        const endsAt =
+          intent.allDay !== true && intent.endsAt != null
+            ? intent.endsAt
+            : intent.startsAt + 30 * 60_000;
         setSummary(intent.summary ?? q);
         setDate(toDateInput(intent.startsAt));
         setTime(toTimeInput(intent.startsAt));
         setAllDay(intent.allDay === true);
-        if (intent.allDay !== true && intent.endsAt != null) {
-          setDurationMin(Math.max(15, Math.round((intent.endsAt - intent.startsAt) / 60_000)));
+        if (intent.allDay !== true) {
+          setDurationMin(Math.max(15, Math.round((endsAt - intent.startsAt) / 60_000)));
         }
         if (intent.location) setLocation(intent.location);
         setQuick("");
+        maybeAddMeeting(q, intent.summary ?? q, intent.startsAt, endsAt);
       } else {
         pushToast({ kind: "info", message: t("calendar:create.quickAiMiss"), durationMs: 3500 });
       }
@@ -221,44 +282,15 @@ export function EventCreate() {
 
   const applyQuick = () => {
     if (!quickPreview) return;
-    setSummary(quickPreview.summary);
-    setDate(toDateInput(quickPreview.startsAt));
-    setTime(toTimeInput(quickPreview.startsAt));
-    setAllDay(quickPreview.allDay);
-    if (!quickPreview.allDay) {
-      setDurationMin(Math.round((quickPreview.endsAt - quickPreview.startsAt) / 60_000));
-    }
+    const text = quick;
+    const { summary: s, startsAt, endsAt, allDay: ad } = quickPreview;
+    setSummary(s);
+    setDate(toDateInput(startsAt));
+    setTime(toTimeInput(startsAt));
+    setAllDay(ad);
+    if (!ad) setDurationMin(Math.round((endsAt - startsAt) / 60_000));
     setQuick("");
-  };
-
-  const isMicrosoftAccount =
-    accounts?.find((a) => a.id === accountId)?.provider === "microsoft";
-
-  // Mint a real Teams meeting via Graph and drop its join URL into the field,
-  // using this event's own date/time/duration. Microsoft accounts only; first
-  // use may open the browser once for consent.
-  const createTeamsMeeting = async () => {
-    if (accountId == null || teamsPending) return;
-    setTeamsPending(true);
-    try {
-      const startsAt = allDay ? fromInputs(date, "00:00") : fromInputs(date, time);
-      const endsAt = allDay ? startsAt + 24 * H_MS : startsAt + durationMin * 60_000;
-      const { joinUrl: url } = await call("create_teams_meeting", {
-        accountId,
-        subject: summary.trim() || t("calendar:create.teamsMeeting"),
-        startMs: startsAt,
-        endMs: endsAt,
-      });
-      setJoinUrl(url);
-      pushToast({ kind: "info", message: t("calendar:create.teamsAdded"), durationMs: 2500 });
-    } catch (e) {
-      pushToast({
-        kind: "error",
-        message: t("calendar:create.teamsError", { error: errorMessage(e) }),
-      });
-    } finally {
-      setTeamsPending(false);
-    }
+    maybeAddMeeting(text, s, startsAt, endsAt);
   };
 
   const close = () => set({ eventCreate: null });
@@ -308,7 +340,7 @@ export function EventCreate() {
     : [...[15, 30, 45, 60, 90, 120], durationMin].sort((a, b) => a - b);
 
   const inputCls =
-    "w-full rounded-md border border-hairline bg-bg0 px-2.5 py-1.5 text-[13px] text-ink outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/15";
+    "w-full rounded-md border border-hairline bg-bg0 px-2.5 py-1.5 text-[13px] text-ink outline-none transition focus:border-accent/60";
 
   return (
     <div
@@ -339,11 +371,18 @@ export function EventCreate() {
         <div className="-mx-4 mt-3 mb-3 border-b border-hairline" />
 
         {/* Smart quick-add: natural language fills the form below. */}
-        <div className="flex items-center gap-2 rounded-lg border border-accent/25 bg-accent/[0.06] px-2.5 py-2 transition focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/15">
-          <span className="shrink-0 text-accent">{ICON.sparkle}</span>
+        <div className="relative">
+          <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-accent">
+            {ICON.sparkle}
+          </span>
           <input
             ref={quickRef}
-            className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-faint"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            name="event-quickadd"
+            className="w-full rounded-lg border border-accent/40 bg-accent/[0.05] py-2 pr-9 pl-8 text-[13px] text-ink outline-none transition placeholder:text-ink-faint focus:border-accent/70 focus-visible:outline-none"
             placeholder={t("calendar:create.quickPlaceholder")}
             value={quick}
             onChange={(e) => setQuick(e.target.value)}
@@ -355,6 +394,24 @@ export function EventCreate() {
               }
             }}
           />
+          {quickAiPending || teamsPending ? (
+            <span className="co-spinner absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+          ) : (
+            quick && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuick("");
+                  quickRef.current?.focus();
+                }}
+                title={t("common:action.clear")}
+                aria-label={t("common:action.clear")}
+                className="absolute top-1/2 right-2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-ink-faint transition hover:bg-accent/10 hover:text-ink"
+              >
+                {ICON.close}
+              </button>
+            )
+          )}
         </div>
         <div className="mt-1 mb-3 h-4 px-1 text-[11.5px] text-accent">
           {!quickPreview && quickAiPending && <span>{t("calendar:create.quickAiPending")}</span>}
@@ -390,7 +447,7 @@ export function EventCreate() {
           <div>
             <SectionLabel>{t("calendar:create.section.when")}</SectionLabel>
             <div className="flex items-end gap-2">
-              <div className="flex-1">
+              <div className="w-44">
                 <FieldLabel icon={ICON.date}>{t("calendar:create.date")}</FieldLabel>
                 <input
                   type="date"
@@ -426,7 +483,7 @@ export function EventCreate() {
                   </div>
                 </>
               )}
-              <label className="flex items-center gap-1.5 pb-2 text-[12px] text-ink-muted select-none">
+              <label className="ml-auto flex items-center gap-1.5 pb-2 text-[12px] text-ink-muted select-none">
                 <input
                   type="checkbox"
                   checked={allDay}
@@ -454,7 +511,10 @@ export function EventCreate() {
             <SectionLabel>{t("calendar:create.section.where")}</SectionLabel>
             <div className="flex gap-2">
               <div className="flex-1">
-                <FieldLabel icon={ICON.location}>{t("calendar:create.location")}</FieldLabel>
+                <div className="mb-1 flex h-6 items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
+                  {ICON.location}
+                  {t("calendar:create.location")}
+                </div>
                 <input
                   className={inputCls}
                   value={location}
@@ -462,7 +522,7 @@ export function EventCreate() {
                 />
               </div>
               <div className="flex-1">
-                <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="mb-1 flex h-6 items-center justify-between gap-2">
                   <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
                     {ICON.link}
                     {t("calendar:create.joinUrl")}

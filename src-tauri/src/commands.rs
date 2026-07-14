@@ -47,13 +47,19 @@ pub async fn start_oauth(
     app: tauri::AppHandle,
     provider: Provider,
 ) -> CmdResult<Account> {
-    state
+    // The sign-in opens the system browser, which steals foreground. Whatever
+    // the outcome, pull Comail back in front so the user isn't left staring at
+    // the browser wondering where the app went.
+    let opener = app.clone();
+    let result = state
         .core
         .start_oauth(provider, move |url| {
-            let _ = app.opener().open_url(url, None::<String>);
+            let _ = opener.opener().open_url(url, None::<String>);
         })
         .await
-        .map_err(err)
+        .map_err(err);
+    crate::show_main(&app);
+    result
 }
 
 #[tauri::command]
@@ -62,13 +68,16 @@ pub async fn reauth_account(
     app: tauri::AppHandle,
     account_id: i64,
 ) -> CmdResult<Account> {
-    state
+    let opener = app.clone();
+    let result = state
         .core
         .reauth_account(account_id, move |url| {
-            let _ = app.opener().open_url(url, None::<String>);
+            let _ = opener.opener().open_url(url, None::<String>);
         })
         .await
-        .map_err(err)
+        .map_err(err);
+    crate::show_main(&app);
+    result
 }
 
 #[tauri::command]
@@ -411,6 +420,36 @@ pub async fn calendar_sync_now(
 #[tauri::command]
 pub fn ui_ready(state: State<'_, AppState>) {
     state.core.notify_ui_ready();
+}
+
+/// Fade and close the intro's cinema-backdrop window. Everything runs from
+/// Rust - the fade is eval'd straight into the backdrop webview and the close
+/// is a window-manager call - so no webview capability or global-API wiring
+/// can break the teardown. `fade_ms` starts the black sheet's fade right
+/// away; `delay_ms` is how long to wait before closing the window.
+#[tauri::command]
+pub async fn cinema_close(app: tauri::AppHandle, delay_ms: Option<u64>, fade_ms: Option<u64>) {
+    use tauri::Manager;
+    tracing::info!("cinema_close: fade={fade_ms:?}ms delay={delay_ms:?}ms");
+    let Some(backdrop) = app.get_webview_window("cinema-backdrop") else {
+        tracing::info!("cinema_close: backdrop window already gone");
+        return;
+    };
+    if let Some(fade) = fade_ms {
+        let js = format!(
+            "(function(){{var s=document.getElementById('sheet');\
+             if(s){{s.style.transition='opacity {fade}ms ease';s.style.opacity='0';}}}})();"
+        );
+        if let Err(e) = backdrop.eval(&js) {
+            tracing::warn!("fading cinema backdrop: {e}");
+        }
+    }
+    if let Some(ms) = delay_ms {
+        tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+    }
+    if let Err(e) = backdrop.close() {
+        tracing::warn!("closing cinema backdrop: {e}");
+    }
 }
 
 // ---------- AI ----------

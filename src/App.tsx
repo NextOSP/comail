@@ -34,7 +34,8 @@ import {
   registerCommands,
 } from "./keyboard/registry";
 import { call } from "./ipc/commands";
-import { checkForUpdate, installUpdate } from "./ipc/updater";
+import { checkForUpdate } from "./ipc/updater";
+import { useInstallUpdate } from "./lib/useInstallUpdate";
 import { hasSeenIntro, markIntroSeen } from "./lib/intro";
 import { initSounds } from "./lib/sound";
 import { useDockBadge } from "./queries/dockBadge";
@@ -86,8 +87,24 @@ export default function App() {
   // Tell the backend when the startup show is out of the way (or absent):
   // it holds back the account sync - whose OAuth token loads are the first
   // OS keyring access - so the keychain prompt never lands on the intro.
+  // The window also launches hidden (no white flash of unstyled webview);
+  // the intro reveals it itself, and every other launch reveals it here.
   useEffect(() => {
-    if (!showIntro) void call("ui_ready", {});
+    if (showIntro) return;
+    void call("ui_ready", {});
+    void (async () => {
+      if (!("__TAURI_INTERNALS__" in window)) return;
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        if (!(await win.isVisible())) {
+          await win.show();
+          await win.setFocus();
+        }
+      } catch {
+        /* the window may already be visible */
+      }
+    })();
   }, [showIntro]);
 
   // Replies/forwards render inside the conversation (thread stays visible);
@@ -172,6 +189,7 @@ export default function App() {
 function useStartupUpdateCheck() {
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
+  const install = useInstallUpdate();
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -182,7 +200,7 @@ function useStartupUpdateCheck() {
           kind: "info",
           message: t("settings:about.updateAvailable", { version: update.version }),
           actionLabel: t("settings:about.restartInstall"),
-          onAction: () => void installUpdate(update),
+          onAction: () => install(update),
           durationMs: 30000,
         });
       } catch {
@@ -192,7 +210,7 @@ function useStartupUpdateCheck() {
     return () => {
       cancelled = true;
     };
-  }, [t, pushToast]);
+  }, [t, pushToast, install]);
 }
 
 /**

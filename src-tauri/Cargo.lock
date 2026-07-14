@@ -865,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "comail"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "comail-core",
  "serde",

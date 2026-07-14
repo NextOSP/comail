@@ -1,11 +1,21 @@
 import { MOCK_MODE } from "./mock";
 
+/** Download progress for the in-flight update, emitted as bytes arrive. */
+export interface DownloadProgress {
+  /** Bytes received so far. */
+  downloaded: number;
+  /** Total bytes to download, or null when the server sends no length. */
+  total: number | null;
+  /** 0..1 completion, or null when `total` is unknown (indeterminate). */
+  fraction: number | null;
+}
+
 /** Result of a successful update check when a newer version is available. */
 export interface UpdateInfo {
   version: string;
   currentVersion: string;
   /** Opaque handle used by installUpdate(); kept off the public shape. */
-  download: () => Promise<void>;
+  download: (onProgress?: (p: DownloadProgress) => void) => Promise<void>;
 }
 
 /**
@@ -21,15 +31,38 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
   return {
     version: update.version,
     currentVersion: update.currentVersion,
-    download: async () => {
-      await update.downloadAndInstall();
+    download: async (onProgress) => {
+      // The plugin streams three event kinds: Started (carries the total, when
+      // the server sends one), Progress (one per chunk), and Finished. We tally
+      // chunk lengths ourselves since the events don't report a running total.
+      let downloaded = 0;
+      let total: number | null = null;
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            total = event.data.contentLength ?? null;
+            break;
+          case "Progress":
+            downloaded += event.data.chunkLength;
+            break;
+          case "Finished":
+            downloaded = total ?? downloaded;
+            break;
+        }
+        const fraction =
+          event.event === "Finished" ? 1 : total != null && total > 0 ? downloaded / total : null;
+        onProgress?.({ downloaded, total, fraction });
+      });
     },
   };
 }
 
 /** Install an already-found update, then relaunch into the new version. */
-export async function installUpdate(update: UpdateInfo): Promise<void> {
-  await update.download();
+export async function installUpdate(
+  update: UpdateInfo,
+  onProgress?: (p: DownloadProgress) => void,
+): Promise<void> {
+  await update.download(onProgress);
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
 }

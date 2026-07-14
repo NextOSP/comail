@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { call } from "../../ipc/commands";
 import { prefersReducedMotion } from "../../lib/intro";
 import { playIntroMusic } from "../../lib/sound";
 import { IntroMark } from "./IntroMark";
@@ -153,6 +154,9 @@ async function openCinemaBackdrop() {
       // Transparent window; backdrop.html's black sheet does the fading
       // (in at the start, out on "cinema:fade-out").
       transparent: true,
+      // Float above normal windows so no other app can sandwich itself
+      // between the backdrop and the (also floated, focused) app window.
+      alwaysOnTop: true,
     });
     // The backdrop is created above the app window; bring the app back to front.
     void backdrop.once("tauri://created", () => {
@@ -175,8 +179,18 @@ async function fadeCinemaBackdrop() {
   }
 }
 
-async function closeCinemaBackdrop() {
+/** Fade and close the backdrop. The Rust command is the authoritative
+ *  teardown (it evals the fade into the backdrop and closes the window
+ *  itself, so no webview capability or global-API wiring can break it); the
+ *  JS handle close stays as a fallback for older binaries. */
+async function closeCinemaBackdrop(delayMs?: number, fadeMs?: number) {
   if (!isTauri) return;
+  try {
+    await call("cinema_close", { delayMs: delayMs ?? null, fadeMs: fadeMs ?? null });
+    return;
+  } catch {
+    /* fall through to the JS close */
+  }
   try {
     const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
     const backdrop = await WebviewWindow.getByLabel(CINEMA_LABEL);
@@ -199,13 +213,66 @@ async function setAppDecorations(on: boolean) {
   }
 }
 
-/** Center the app window on the screen for the show - against the black
- *  backdrop an off-center window reads as a mistake. No-op on web. */
-async function centerAppWindow() {
+/** Cold start: the main window launches hidden (tauri.conf `visible: false`)
+ *  so the user never sees a flash of unstyled white app. Dress the window
+ *  while it is still invisible - chromeless, centered, the intro painted
+ *  black via `paintBlackNow` - and only then reveal it. On a preview run
+ *  (window already visible) just dress it in place; the theater dim-down
+ *  covers that transition. No-op on web. */
+async function prepareCinemaWindow(paintBlackNow: () => void): Promise<void> {
+  if (!isTauri) return;
+  // Every step individually best-effort, and the reveal at the end runs NO
+  // MATTER WHAT failed before it: a hidden window that never shows is the
+  // worst possible outcome. (Rust holds a second forced-show watchdog.)
+  let win;
+  try {
+    win = (await import("@tauri-apps/api/window")).getCurrentWindow();
+  } catch {
+    return;
+  }
+  let hidden = false;
+  try {
+    hidden = !(await win.isVisible());
+  } catch {
+    /* assume visible */
+  }
+  if (hidden) paintBlackNow();
+  try {
+    await win.setDecorations(false);
+  } catch {
+    /* cosmetic */
+  }
+  try {
+    await win.center();
+  } catch {
+    /* cosmetic */
+  }
+  try {
+    // Float with the backdrop for the show, so nothing can slot in between;
+    // released again when the darkness lifts.
+    await win.setAlwaysOnTop(true);
+  } catch {
+    /* cosmetic */
+  }
+  try {
+    if (hidden) {
+      // Let the black commit before the reveal. A timer, not an animation
+      // frame: hidden webviews may not tick rAF at all.
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    }
+    await win.show(); // no-op when already visible
+    await win.setFocus();
+  } catch {
+    /* the Rust watchdog will force the show */
+  }
+}
+
+/** Release the show's always-on-top float (see prepareCinemaWindow). */
+async function releaseCinemaFloat(): Promise<void> {
   if (!isTauri) return;
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().center();
+    await getCurrentWindow().setAlwaysOnTop(false);
   } catch {
     /* cosmetic, never fatal */
   }
@@ -223,6 +290,7 @@ export function SpaceIntro({
   onFinished: () => void;
 }) {
   const { t } = useTranslation();
+  const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
   const photoRef = useRef<HTMLDivElement>(null);
@@ -233,6 +301,8 @@ export function SpaceIntro({
   // the button just calls whatever is current.
   const beginExitRef = useRef<() => void>(() => {});
   const [blackIn, setBlackIn] = useState(false);
+  // Cold start from a hidden window: skip the dim-down and open on black.
+  const [instantBlack, setInstantBlack] = useState(false);
   const [fading, setFading] = useState(false);
 
   const raw = t("onboarding:intro.lines", { returnObjects: true });
@@ -255,8 +325,10 @@ export function SpaceIntro({
     const ctaAt = titleStart + CTA_IN_START; // title landed -> continue button
 
     void openCinemaBackdrop();
-    void setAppDecorations(false);
-    void centerAppWindow();
+    void prepareCinemaWindow(() => {
+      setInstantBlack(true);
+      setBlackIn(true);
+    });
 
     // Warm the photo cache so each flip lands on a decoded image.
     for (const src of PHOTOS) {
@@ -274,15 +346,23 @@ export function SpaceIntro({
       if (done) return;
       done = true;
       setFading(true); // fade the whole scene out to the gradient onboarding
+      // Also write the fade straight onto the element: the handoff must not
+      // depend on a React re-render actually happening.
+      if (rootRef.current) {
+        rootRef.current.style.transition = `opacity ${FADE_DUR}ms ease ${FADE_DELAY}ms`;
+        rootRef.current.style.opacity = "0";
+      }
       // Bring the window chrome back while the scene still covers the window,
       // so the titlebar's return is masked by the fade, and let the black
       // desktop backdrop dissolve with it.
       void setAppDecorations(true);
+      void releaseCinemaFloat();
       void fadeCinemaBackdrop();
-      // Belt and suspenders: the backdrop also self-closes after its fade,
-      // and the unmount cleanup closes it again - it must never outlive the
-      // show, whatever race wins.
-      window.setTimeout(() => void closeCinemaBackdrop(), FADE_DELAY + FADE_DUR + 400);
+      // Rust fades the backdrop's black sheet in step with the scene fade
+      // and closes the window after it (the delay runs backend-side, so even
+      // an unmount race can't cancel it); the event-driven fade above and
+      // the unmount cleanup remain as fallback layers.
+      void closeCinemaBackdrop(FADE_DELAY + FADE_DUR + 400, FADE_DELAY + FADE_DUR);
       onReveal(); // mount the card + gradient backdrop underneath
       finishTimer = window.setTimeout(onFinished, FADE_DELAY + FADE_DUR);
     };
@@ -358,10 +438,25 @@ export function SpaceIntro({
       return () => {
         void closeCinemaBackdrop();
         void setAppDecorations(true);
+        void releaseCinemaFloat();
         window.clearTimeout(finishTimer);
         window.removeEventListener("resize", resize);
       };
     }
+
+    // Fail-open watchdog: the show must NEVER trap the user. If, for any
+    // reason (a crashed frame loop, a stalled webview, a bug we have not
+    // met yet), the intro has not handed off well past its natural end, it
+    // hands off by force. Sized from mount with generous slack for a slow
+    // first frame.
+    const watchdog = window.setTimeout(
+      () => {
+        if (done) return;
+        console.error("intro watchdog fired; forcing the handoff");
+        settle();
+      },
+      ctaAt + AUTO_EXIT_AFTER_CTA + 15_000,
+    );
 
     // The intro clock starts at the FIRST FRAME, not at mount: a cold launch
     // can stall the main thread for seconds after the effect runs, and an
@@ -370,10 +465,30 @@ export function SpaceIntro({
     // keeps them in sync no matter how late rendering actually starts.
     let start = 0;
     let raf = 0;
+    // Windows that launch hidden can leave the webview's display link paused:
+    // requestAnimationFrame never fires even after the window shows. If the
+    // first frame has not arrived shortly after mount, drive the show with a
+    // plain timer instead (timers keep running when rAF does not).
+    let timerDriven = false;
+    let intervalId = 0;
+    const rafFallback = window.setTimeout(() => {
+      if (start || done) return;
+      console.error("intro rAF never ticked; driving the show with a timer");
+      cancelAnimationFrame(raf);
+      timerDriven = true;
+      intervalId = window.setInterval(() => {
+        if (done) {
+          window.clearInterval(intervalId);
+          return;
+        }
+        safeFrame(performance.now());
+      }, 33);
+    }, 1500);
     let typedCount = -1;
     let typedIdx = -2;
     let caretPhase = -1;
     let activePhoto = -1;
+    let backdropGone = false; // the desktop darkness lifts once, mid-show
     let exitFrom: number | null = null; // elapsed ms when the exit began
     // An occasional vertical scratch, like worn stock.
     let scratchX = 0;
@@ -389,6 +504,18 @@ export function SpaceIntro({
       if (ctaRef.current) ctaRef.current.style.pointerEvents = "none";
       stopMusic?.(EXIT_MUSIC_FADE_S);
       settle();
+    };
+
+    // Fail-open: an exception anywhere in the frame loop would silently end
+    // the rAF chain and freeze the show with no exit. Crash -> log it and
+    // hand off to onboarding instead.
+    const safeFrame = (now: number) => {
+      try {
+        frame(now);
+      } catch (e) {
+        console.error("intro frame crashed; handing off", e);
+        settle();
+      }
     };
 
     const frame = (now: number) => {
@@ -469,6 +596,18 @@ export function SpaceIntro({
         ctaRef.current.style.pointerEvents = p > 0.6 ? "auto" : "none";
       }
 
+      // The theater darkness lifts while the show is STILL PLAYING, but only
+      // once the story has been told: as the title lands, the desktop slowly
+      // fades back in around the window - the dark belongs to the opening
+      // and the reel, the finale plays in daylight.
+      if (!backdropGone && elapsed >= titleStart) {
+        backdropGone = true;
+        void fadeCinemaBackdrop();
+        void closeCinemaBackdrop(4600, 4200);
+        // The darkness is lifting: stop floating over other apps.
+        window.setTimeout(() => void releaseCinemaFloat(), 4600);
+      }
+
       // Self-advance: if the user never clicks, the show ends on its own beat.
       if (exitFrom == null && elapsed >= ctaAt + AUTO_EXIT_AFTER_CTA) {
         beginExitRef.current();
@@ -480,7 +619,7 @@ export function SpaceIntro({
 
       // Act 0: hold pure black while the scene fades in.
       if (elapsed < BLACKOUT_MS) {
-        raf = requestAnimationFrame(frame);
+        if (!timerDriven) raf = requestAnimationFrame(safeFrame);
         return;
       }
 
@@ -558,15 +697,19 @@ export function SpaceIntro({
         ctx.fillRect(0, 0, w, h);
       }
 
-      raf = requestAnimationFrame(frame);
+      if (!timerDriven) raf = requestAnimationFrame(safeFrame);
     };
-    raf = requestAnimationFrame(frame);
+    raf = requestAnimationFrame(safeFrame);
 
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(rafFallback);
+      window.clearInterval(intervalId);
+      window.clearTimeout(watchdog);
       stopMusic?.();
       void closeCinemaBackdrop();
       void setAppDecorations(true);
+      void releaseCinemaFloat();
       window.clearTimeout(finishTimer);
       window.removeEventListener("resize", resize);
     };
@@ -576,15 +719,20 @@ export function SpaceIntro({
 
   return (
     <div
+      ref={rootRef}
       className="co-space-intro"
       style={{
         zIndex: 60,
         // Three phases: mount transparent, fade to black (Act 0), and at the
-        // end fade the whole scene out to the onboarding (Act 4).
+        // end fade the whole scene out to the onboarding (Act 4). The exit
+        // fade is ALSO written straight onto the element in settle(), so the
+        // handoff cannot be blocked by a wedged React render.
         opacity: fading ? 0 : blackIn ? 1 : 0,
         transition: fading
           ? `opacity ${FADE_DUR}ms ease ${FADE_DELAY}ms`
-          : `opacity ${BLACKOUT_MS}ms ease-in`,
+          : instantBlack
+            ? "none"
+            : `opacity ${BLACKOUT_MS}ms ease-in`,
         // The scene ignores the pointer; only the continue button (which sets
         // its own pointer-events once visible) is interactive.
         pointerEvents: "none",

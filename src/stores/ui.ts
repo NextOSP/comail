@@ -43,6 +43,8 @@ export interface ToastItem {
   durationMs?: number;
   /** show a live countdown of remaining seconds (undo send) */
   countdown?: boolean;
+  /** 0..1 determinate progress bar (update download); null/undefined hides it */
+  progress?: number;
 }
 
 export interface ComposerState {
@@ -199,6 +201,8 @@ interface UiState {
   openComposer: (c: ComposerState) => void;
   closeComposer: () => void;
   pushToast: (t: Omit<ToastItem, "id" | "expiresAt"> & { durationMs?: number }) => number;
+  /** Mutate an existing toast in place (e.g. live download progress). No-op if gone. */
+  updateToast: (id: number, partial: Partial<Omit<ToastItem, "id">>) => void;
   dismissToast: (id: number) => void;
 }
 
@@ -377,14 +381,22 @@ export const useUi = create<UiState>((set, get) => ({
   closeComposer: () =>
     set({ composer: null, composerDirty: false, composerConfirmOpen: false, editingDraftId: null }),
 
-  pushToast: ({ durationMs = 5000, ...t }) => {
+  pushToast: ({ durationMs, ...t }) => {
+    // Errors linger longer than confirmations: they carry more to read and the
+    // user may need a beat to react. Explicit durationMs (e.g. undo-send) wins.
+    const lifetime = durationMs ?? (t.kind === "error" ? 8000 : 5000);
     const id = toastSeq++;
-    const toast: ToastItem = { ...t, id, durationMs, expiresAt: Date.now() + durationMs };
+    const toast: ToastItem = { ...t, id, durationMs: lifetime, expiresAt: Date.now() + lifetime };
     set({ toasts: [...get().toasts.slice(-3), toast] });
-    const timer = setTimeout(() => get().dismissToast(id), durationMs);
+    const timer = setTimeout(() => get().dismissToast(id), lifetime);
     toastTimers.set(id, timer);
     return id;
   },
+
+  updateToast: (id, partial) =>
+    set((state) => ({
+      toasts: state.toasts.map((t) => (t.id === id ? { ...t, ...partial } : t)),
+    })),
 
   dismissToast: (id) => {
     const timer = toastTimers.get(id);

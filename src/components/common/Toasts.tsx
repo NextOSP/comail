@@ -24,16 +24,34 @@ export function Toasts() {
         const remaining = Math.ceil(msLeft / 1000);
         // Fraction of time elapsed, for the countdown bar (undo-send toasts).
         const progress = t.countdown && t.durationMs ? 1 - msLeft / t.durationMs : 0;
+        const isError = t.kind === "error";
         return (
           <div
             key={t.id}
-            className="co-toast-in pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-lg border border-hairline bg-bg1 py-2 pr-2 pl-4 text-[13px] text-ink"
+            role={isError ? "alert" : "status"}
+            aria-live={isError ? "assertive" : "polite"}
+            className={`co-toast-in pointer-events-auto relative flex max-w-[min(30rem,92vw)] items-start gap-2.5 overflow-hidden rounded-lg border py-2.5 pr-2 pl-3.5 text-[13px] text-ink ${
+              isError ? "border-danger/35 bg-danger/[0.06]" : "border-hairline bg-bg1"
+            }`}
             style={{ boxShadow: "var(--elev-2)" }}
           >
-            {t.kind === "error" && (
-              <span className="size-1.5 shrink-0 rounded-full bg-danger" aria-hidden />
+            {isError && (
+              <svg
+                className="mt-px size-4 shrink-0 text-danger"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 8v5" />
+                <path d="M12 16.5v.01" />
+              </svg>
             )}
-            <span>
+            <span className="min-w-0 break-words leading-snug">
               {t.countdown ? t.message.replace("{s}", String(remaining)) : t.message}
             </span>
             {t.secondaryLabel && (
@@ -71,6 +89,14 @@ export function Toasts() {
                 className="absolute inset-x-0 bottom-0 h-0.5 bg-accent/60"
                 aria-hidden
                 style={{ width: `${Math.max(0, (1 - progress) * 100)}%` }}
+              />
+            )}
+            {t.progress != null && (
+              // Determinate fill growing along the bottom edge (update download).
+              <span
+                className="absolute inset-x-0 bottom-0 h-0.5 bg-accent transition-[width] duration-200 ease-out"
+                aria-hidden
+                style={{ width: `${Math.min(100, Math.max(0, t.progress * 100))}%` }}
               />
             )}
           </div>

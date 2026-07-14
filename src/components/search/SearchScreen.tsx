@@ -9,7 +9,7 @@ import { Markdown } from "../common/Markdown";
 import { SourcePreview } from "./SourcePreview";
 
 // Shown in the "Try" row when nothing is being completed.
-const OPERATORS = ["from:", "in:", "is:unread", "has:attachment"];
+const OPERATORS = ["from:", "subject:", "in:", "is:unread", "has:attachment"];
 
 // The most recent line of the model's reasoning, for the clipped one-line trace.
 function lastLine(text: string): string {
@@ -23,6 +23,8 @@ function lastLine(text: string): string {
 const OPERATOR_SUGGESTIONS = [
   "from:",
   "to:",
+  "subject:",
+  "body:",
   "in:inbox",
   "in:sent",
   "in:drafts",
@@ -98,9 +100,18 @@ export function SearchScreen() {
   // Typing (or switching mode) disarms Enter so refining a query can't open a
   // stale row.
   useEffect(() => setEnterArmed(false), [storedQuery, mode]);
-  const { data: contactHits } = useContactSuggestions(
-    mode === "search" && !storedQuery.includes("from:") ? storedQuery : "",
-  );
+  // Contact autocomplete: while typing a `from:`/`to:` value, suggest senders
+  // matching the partial after the colon; for a plain query (no operator),
+  // suggest people to turn the query into a `from:` filter.
+  const tokenStart = input.lastIndexOf(" ") + 1;
+  const currentToken = input.slice(tokenStart);
+  const contactOp = /^(from:|to:)/i.exec(currentToken)?.[1].toLowerCase() ?? null;
+  const contactQuery = contactOp
+    ? currentToken.slice(contactOp.length)
+    : mode === "search" && !input.includes(":")
+      ? input.trim()
+      : "";
+  const { data: contactHits } = useContactSuggestions(contactQuery);
   const { data: accounts } = useAccounts();
   const { data: labels } = useLabels();
   const selfEmails = useMemo(
@@ -130,8 +141,6 @@ export function SearchScreen() {
   // As-you-type operator completion: match the token being typed (the text
   // after the last space) against the known operators. The first match is the
   // "active" suggestion — Tab or Enter completes to it.
-  const tokenStart = input.lastIndexOf(" ") + 1;
-  const currentToken = input.slice(tokenStart);
   const opSuggestions = useMemo(() => {
     const tok = currentToken.toLowerCase();
     if (!tok) return [];
@@ -363,14 +372,21 @@ export function SearchScreen() {
         )
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          {(contactHits?.length ?? 0) > 0 && storedQuery.trim() !== "" && (
+          {(contactHits?.length ?? 0) > 0 && contactQuery.trim() !== "" && (
             <div className="co-hairline-b flex shrink-0 flex-wrap items-center gap-2 px-6 py-2.5">
               {contactHits!.map((c) => (
                 <button
                   key={c.email}
                   type="button"
-                  title={`from:${c.email}`}
-                  onClick={() => setInput(`from:${c.email} `)}
+                  title={`${contactOp ?? "from:"}${c.email}`}
+                  onClick={() => {
+                    setInput(
+                      contactOp
+                        ? `${input.slice(0, tokenStart)}${contactOp}${c.email} `
+                        : `from:${c.email} `,
+                    );
+                    inputRef.current?.focus();
+                  }}
                   className="co-chip flex items-center gap-2 !py-1 hover:bg-bg2"
                 >
                   <span className="flex size-5 items-center justify-center rounded-full bg-bg2 text-[10px] font-semibold uppercase text-ink-muted">

@@ -2023,6 +2023,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "ui_ready":
       return delay(undefined, 10);
 
+    case "cinema_close":
+      return delay(undefined, 10);
+
     case "ai_status":
       return delay<AiStatus>(
         { configured: true, model: settings.aiModel || "mock/gpt", baseUrl: settings.aiBaseUrl },

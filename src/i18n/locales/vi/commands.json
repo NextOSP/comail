@@ -66,6 +66,7 @@
     "switchAccountAll": "Chuyển tài khoản: Tất cả tài khoản",
     "switchAccount": "Chuyển tài khoản: tài khoản {{n}}",
     "palette": "Bảng lệnh",
+    "goToFolder": "Đi tới thư mục: {{name}}",
     "search": "Tìm kiếm",
     "viewFromSender": "Xem tất cả từ {{name}}",
     "help": "Phím tắt",
@@ -115,6 +116,7 @@
     "nothingToUndo": "Không có gì để hoàn tác"
   },
   "actionFailed": "Thao tác thất bại: {{detail}}",
+  "searchFor": "Tìm trong thư: “{{query}}”",
   "aiIntent": {
     "badge": "AI",
     "row": "Yêu cầu AI thực hiện: “{{query}}”",

@@ -305,7 +305,10 @@
     "checking": "检查中…",
     "upToDate": "已是最新版本。",
     "updateAvailable": "版本 {{version}} 可用。",
-    "restartInstall": "重启并安装"
+    "restartInstall": "重启并安装",
+    "downloading": "正在下载更新… {{percent}}%",
+    "downloadingUnknown": "正在下载更新…",
+    "installing": "正在安装更新…"
   },
   "calendar": {
     "section": "日历同步",

@@ -67,6 +67,7 @@
     "switchAccountAll": "Switch account: All accounts",
     "switchAccount": "Switch account: account {{n}}",
     "palette": "Command palette",
+    "goToFolder": "Go to folder: {{name}}",
     "search": "Search",
     "viewFromSender": "View all from {{name}}",
     "help": "Keyboard shortcuts",
@@ -116,6 +117,7 @@
     "nothingToUndo": "Nothing to undo"
   },
   "actionFailed": "Action failed: {{detail}}",
+  "searchFor": "Search mail for: “{{query}}”",
   "aiIntent": {
     "badge": "AI",
     "row": "Ask AI to do: “{{query}}”",

@@ -306,6 +306,9 @@
     "upToDate": "You're on the latest version.",
     "updateAvailable": "Version {{version}} is available.",
     "restartInstall": "Restart & install",
+    "downloading": "Downloading update… {{percent}}%",
+    "downloadingUnknown": "Downloading update…",
+    "installing": "Installing update…",
     "logs": "Logs",
     "logsHint": "Open the folder where log files are stored on this computer.",
     "openLogs": "View logs folder"

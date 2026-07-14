@@ -66,6 +66,7 @@
     "switchAccountAll": "Changer de compte : Tous les comptes",
     "switchAccount": "Changer de compte : compte {{n}}",
     "palette": "Palette de commandes",
+    "goToFolder": "Aller au dossier : {{name}}",
     "search": "Rechercher",
     "viewFromSender": "Tout voir de {{name}}",
     "help": "Raccourcis clavier",
@@ -115,6 +116,7 @@
     "nothingToUndo": "Rien à annuler"
   },
   "actionFailed": "Échec de l’action : {{detail}}",
+  "searchFor": "Rechercher dans le courrier : “{{query}}”",
   "aiIntent": {
     "badge": "IA",
     "row": "Demander à l’IA de faire : « {{query}} »",

@@ -33,10 +33,22 @@ pub struct ParsedQuery {
     pub has_attachment: Option<bool>,
 }
 
-/// A raw query token: a bare word or a `"quoted phrase"`.
+/// A raw query token: a bare word or a `"quoted phrase"`. A phrase can be
+/// column-scoped when it directly follows `subject:` / `body:`, e.g.
+/// `subject:"quarterly report"` carries `Some("subject")`.
 enum Token {
     Word(String),
-    Phrase(String),
+    Phrase(Option<String>, String),
+}
+
+/// `subject:` / `body:` (the column-scoped operators that accept a quoted
+/// value) mapped to their FTS5 column name; anything else is `None`.
+fn scoped_col(token: &str) -> Option<&'static str> {
+    match token.strip_suffix(':')?.to_ascii_lowercase().as_str() {
+        "subject" => Some("subject"),
+        "body" => Some("body"),
+        _ => None,
+    }
 }
 
 /// Split on whitespace, keeping double-quoted spans together as phrases.
@@ -45,19 +57,31 @@ fn tokenize(input: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut in_quote = false;
+    // Column carried from a `subject:`/`body:` prefix into the phrase that opens
+    // immediately after it.
+    let mut pending_col: Option<String> = None;
     for c in input.chars() {
         match c {
             '"' => {
-                if !cur.is_empty() {
-                    out.push(if in_quote {
-                        Token::Phrase(std::mem::take(&mut cur))
+                if in_quote {
+                    if !cur.is_empty() {
+                        out.push(Token::Phrase(pending_col.take(), std::mem::take(&mut cur)));
                     } else {
-                        Token::Word(std::mem::take(&mut cur))
-                    });
+                        pending_col = None;
+                    }
+                    in_quote = false;
                 } else {
-                    cur.clear();
+                    // A bare `subject:`/`body:` right before the quote scopes it.
+                    if !cur.is_empty() {
+                        if let Some(col) = scoped_col(&cur) {
+                            pending_col = Some(col.to_string());
+                            cur.clear();
+                        } else {
+                            out.push(Token::Word(std::mem::take(&mut cur)));
+                        }
+                    }
+                    in_quote = true;
                 }
-                in_quote = !in_quote;
             }
             c if c.is_whitespace() && !in_quote => {
                 if !cur.is_empty() {
@@ -69,7 +93,7 @@ fn tokenize(input: &str) -> Vec<Token> {
     }
     if !cur.is_empty() {
         out.push(if in_quote {
-            Token::Phrase(cur)
+            Token::Phrase(pending_col.take(), cur)
         } else {
             Token::Word(cur)
         });
@@ -85,8 +109,9 @@ pub fn parse(input: &str) -> ParsedQuery {
 
     for token in tokenize(input) {
         let token = match token {
-            // Quoted phrase: exact (non-prefix) FTS phrase match.
-            Token::Phrase(p) => {
+            // Quoted phrase: exact (non-prefix) FTS phrase match, optionally
+            // scoped to a column (`subject:"quarterly report"`).
+            Token::Phrase(col, p) => {
                 let words: Vec<String> = p
                     .split_whitespace()
                     .map(clean_token)
@@ -94,8 +119,14 @@ pub fn parse(input: &str) -> ParsedQuery {
                     .collect();
                 if !words.is_empty() {
                     let phrase = words.join(" ");
-                    fts_terms.push(format!("\"{phrase}\""));
-                    q.terms.push(fold(&phrase));
+                    match col {
+                        Some(c) => fts_terms.push(format!("{c}:\"{phrase}\"")),
+                        None => {
+                            fts_terms.push(format!("\"{phrase}\""));
+                            // Sender-boost only applies to unscoped free text.
+                            q.terms.push(fold(&phrase));
+                        }
+                    }
                     text_terms.push(phrase);
                 }
                 continue;
@@ -156,6 +187,16 @@ pub fn parse(input: &str) -> ParsedQuery {
                     q.has_attachment = Some(true);
                 }
             }
+            // Column-scoped text: `subject:foo` / `body:foo` restrict the FTS
+            // match to that column. A bare `subject:` / `body:` is a no-op.
+            // Free-text (embedding) still sees the word; sender-boost does not.
+            "subject" | "body" => {
+                let clean = clean_token(value);
+                if !clean.is_empty() {
+                    fts_terms.push(fts_col_term(Some(key.as_str()), &clean));
+                    text_terms.push(clean);
+                }
+            }
             // Exclude a term from results: "exclude:draft" drops any thread
             // whose messages match "draft". A bare "exclude:" is a no-op.
             "exclude" => {
@@ -198,10 +239,21 @@ fn clean_token(token: &str) -> String {
 /// đ/Đ - a distinct letter, not a combining mark - so a leading unaccented
 /// "d" also tries the "đ" variant ("don" matches both "dọn" and "đơn").
 fn fts_term(clean: &str) -> String {
-    if let Some(rest) = clean.strip_prefix(['d', 'D']) {
+    fts_col_term(None, clean)
+}
+
+/// Like `fts_term`, but optionally constrained to a single FTS5 column
+/// (`subject` / `body`) so `subject:foo` only matches the subject. FTS5 accepts
+/// a column filter in front of a phrase or a parenthesized group.
+fn fts_col_term(col: Option<&str>, clean: &str) -> String {
+    let base = if let Some(rest) = clean.strip_prefix(['d', 'D']) {
         format!("(\"{clean}\"* OR \"đ{rest}\"*)")
     } else {
         format!("\"{clean}\"*")
+    };
+    match col {
+        Some(c) => format!("{c}:{base}"),
+        None => base,
     }
 }
 
@@ -230,6 +282,44 @@ mod tests {
         assert_eq!(q.in_folder.as_deref(), Some("inbox"));
         assert_eq!(q.is_unread, Some(true));
         assert_eq!(q.has_attachment, Some(true));
+    }
+
+    #[test]
+    fn subject_and_body_scope_to_their_column() {
+        let q = parse("subject:invoice body:overdue report");
+        // Column-scoped terms carry an FTS5 column filter; free text does not.
+        assert_eq!(
+            q.fts,
+            "subject:\"invoice\"* AND body:\"overdue\"* AND \"report\"*"
+        );
+        // "invoice"/"overdue" reach the embedding text but not sender-boost terms.
+        assert!(q.text.contains("invoice") && q.text.contains("overdue"));
+        assert_eq!(q.terms, vec!["report"]);
+        // A bare operator is a no-op.
+        assert!(parse("subject:").fts.is_empty());
+    }
+
+    #[test]
+    fn subject_quoted_value_scopes_the_phrase() {
+        let q = parse("subject:\"quarterly report\" budget");
+        // The quoted value is an exact, column-scoped phrase; "budget" is free.
+        assert_eq!(q.fts, "subject:\"quarterly report\" AND \"budget\"*");
+        // Column-scoped phrases feed embedding text but not sender-boost.
+        assert!(q.text.contains("quarterly report"));
+        assert_eq!(q.terms, vec!["budget"]);
+    }
+
+    #[test]
+    fn body_quoted_value_scopes_the_phrase() {
+        let q = parse("body:\"past due\"");
+        assert_eq!(q.fts, "body:\"past due\"");
+    }
+
+    #[test]
+    fn subject_column_term_expands_dj_variant() {
+        // d-initial values still get the đ variant, inside the column filter.
+        let q = parse("subject:don");
+        assert_eq!(q.fts, "subject:(\"don\"* OR \"đon\"*)");
     }
 
     #[test]

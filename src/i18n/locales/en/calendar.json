@@ -66,6 +66,7 @@
     "teamsTip": "Create a Microsoft Teams meeting and fill in the link",
     "teamsAdded": "Teams meeting link added",
     "teamsError": "Couldn't create Teams meeting: {{error}}",
+    "teamsNeedsMs": "Add a Microsoft account to auto-create Teams meetings",
     "description": "Description",
     "save": "Save",
     "saveInvite": "Save & send invites",

@@ -1,6 +1,10 @@
 //! Access-token lifecycle: hands out valid tokens, refreshing behind a mutex
 //! when close to expiry. Refresh tokens live in the keyring; access tokens are
-//! cached in memory (and mirrored to keyring so restarts avoid one refresh).
+//! cached in memory only. They are deliberately NOT written to the keyring:
+//! nothing ever reads them back (a restart just refreshes from the refresh
+//! token), and a Microsoft access-token JWT is large enough to blow past the
+//! Windows Credential Manager blob limit (~2560 bytes), which failed the whole
+//! store with a "secure storage error" and left the account uncredentialed.
 
 use crate::accounts::credentials::{self, Slot};
 use crate::error::{CoreError, Result};
@@ -48,7 +52,6 @@ impl TokenProvider {
         }
         let expires_at_ms =
             crate::models::now_ms() + expires_in.unwrap_or(3600).saturating_sub(60) * 1000;
-        credentials::store_async(account_id, Slot::AccessToken, access_token.clone()).await?;
         self.cache.lock().await.insert(
             account_id,
             CachedToken {
@@ -150,7 +153,6 @@ impl TokenProvider {
         if let Some(rt) = tok.refresh_token {
             credentials::store_async(account_id, Slot::RefreshToken, rt).await?;
         }
-        credentials::store_async(account_id, Slot::AccessToken, tok.access_token.clone()).await?;
         Ok(CachedToken {
             access_token: tok.access_token,
             expires_at_ms: crate::models::now_ms()

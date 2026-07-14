@@ -306,6 +306,9 @@
     "upToDate": "Bạn đang dùng phiên bản mới nhất.",
     "updateAvailable": "Đã có phiên bản {{version}}.",
     "restartInstall": "Khởi động lại và cài đặt",
+    "downloading": "Đang tải bản cập nhật… {{percent}}%",
+    "downloadingUnknown": "Đang tải bản cập nhật…",
+    "installing": "Đang cài đặt bản cập nhật…",
     "logs": "Nhật ký",
     "logsHint": "Mở thư mục chứa các tệp nhật ký trên máy tính này.",
     "openLogs": "Xem thư mục nhật ký"

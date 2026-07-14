@@ -518,6 +518,34 @@ mod tests {
     }
 
     #[test]
+    fn subject_and_body_operators_scope_the_column() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        // Subject and body carry the two distinct words in opposite columns.
+        let (thread_id, message_id) =
+            testutil::seed_message(&c, "sender@test.dev", "quarterlyplan meeting", false);
+        messages::store_body(
+            &c,
+            message_id,
+            Some("budgetnumbers here"),
+            None,
+            None,
+            false,
+            Some("budgetnumbers here"),
+        )
+        .unwrap();
+        index_message(&c, message_id).unwrap();
+
+        let ids = |query: &str| lexical_thread_ids(&c, &crate::search::parse(query), 20).unwrap();
+        // Column-scoped match hits when the word is in that column...
+        assert_eq!(ids("subject:quarterlyplan"), vec![thread_id]);
+        assert_eq!(ids("body:budgetnumbers"), vec![thread_id]);
+        // ...and misses when the word lives in the other column.
+        assert!(ids("subject:budgetnumbers").is_empty());
+        assert!(ids("body:quarterlyplan").is_empty());
+    }
+
+    #[test]
     fn reindex_removes_stale_contentless_fts_terms() {
         let c = testutil::conn();
         testutil::seed_account(&c);

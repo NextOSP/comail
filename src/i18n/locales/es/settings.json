@@ -305,7 +305,10 @@
     "checking": "Comprobando…",
     "upToDate": "Tienes la última versión.",
     "updateAvailable": "La versión {{version}} está disponible.",
-    "restartInstall": "Reiniciar e instalar"
+    "restartInstall": "Reiniciar e instalar",
+    "downloading": "Descargando actualización… {{percent}} %",
+    "downloadingUnknown": "Descargando actualización…",
+    "installing": "Instalando actualización…"
   },
   "calendar": {
     "section": "Sincronización de calendario",

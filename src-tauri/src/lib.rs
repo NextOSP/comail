@@ -267,6 +267,30 @@ pub fn run() {
                 lang
             });
 
+            // Startup-show failsafes. The main window launches hidden
+            // (tauri.conf `visible: false`, no white flash) and the frontend
+            // reveals it; if that wiring ever fails, force it visible after a
+            // grace period. And the intro's cinema backdrop must never
+            // outlive the show, whatever happens in the webviews.
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    if let Some(main) = handle.get_webview_window("main") {
+                        if !main.is_visible().unwrap_or(true) {
+                            tracing::warn!("main window still hidden after 10s; forcing show");
+                            let _ = main.show();
+                            let _ = main.set_focus();
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(80)).await;
+                    if let Some(backdrop) = handle.get_webview_window("cinema-backdrop") {
+                        tracing::warn!("cinema backdrop still open after 90s; forcing close");
+                        let _ = backdrop.close();
+                    }
+                });
+            }
+
             // Tray: closing the window hides it; sync keeps running.
             let (open_label, quit_label) = tray_labels(&lang);
             let open = MenuItem::with_id(app, "open", &open_label, true, None::<&str>)?;
@@ -305,6 +329,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::ui_ready,
+            commands::cinema_close,
             commands::list_accounts,
             commands::add_account_password,
             commands::test_connection,

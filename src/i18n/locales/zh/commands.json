@@ -66,6 +66,7 @@
     "switchAccountAll": "切换账户：所有账户",
     "switchAccount": "切换账户：账户 {{n}}",
     "palette": "命令面板",
+    "goToFolder": "前往文件夹：{{name}}",
     "search": "搜索",
     "viewFromSender": "查看来自 {{name}} 的所有邮件",
     "help": "键盘快捷键",
@@ -115,6 +116,7 @@
     "nothingToUndo": "没有可撤销的操作"
   },
   "actionFailed": "操作失败：{{detail}}",
+  "searchFor": "在邮件中搜索：“{{query}}”",
   "aiIntent": {
     "badge": "AI",
     "row": "让 AI 执行：“{{query}}”",

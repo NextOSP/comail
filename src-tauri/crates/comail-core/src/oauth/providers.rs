@@ -12,6 +12,11 @@ pub const GOOGLE_CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calenda
 /// IMAP/SMTP audience. It is consented separately and redeemed for its own
 /// Graph-audience token (see `TokenProvider::access_token_for_scope`).
 pub const MS_ONLINE_MEETINGS_SCOPE: &str = "https://graph.microsoft.com/OnlineMeetings.ReadWrite";
+
+/// Incremental-consent scope (Microsoft Graph) for writing events into the
+/// user's Outlook / Microsoft 365 calendar, so events created in the app show
+/// up in Outlook and Teams. Same single-resource caveat as the meetings scope.
+pub const MS_CALENDARS_SCOPE: &str = "https://graph.microsoft.com/Calendars.ReadWrite";
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 

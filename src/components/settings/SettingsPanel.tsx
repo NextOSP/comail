@@ -4,7 +4,8 @@ import { Trans, useTranslation } from "react-i18next";
 import i18n, { setLanguage, SUPPORTED_LANGUAGES, SYSTEM_LANGUAGE } from "../../i18n";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
-import { appVersion, checkForUpdate, installUpdate } from "../../ipc/updater";
+import { appVersion, checkForUpdate } from "../../ipc/updater";
+import { useInstallUpdate } from "../../lib/useInstallUpdate";
 import type {
   AiTier,
   Provider,
@@ -424,20 +425,26 @@ export function SettingsPanel() {
 
 /** Known OpenAI-compatible providers; picking one fills the base URL. */
 const AI_PROVIDER_PRESETS: { id: string; label: string; baseUrl: string; defaultModel?: string }[] = [
-  { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-4o-mini" },
-  { id: "anthropic", label: "Anthropic (Claude)", baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-sonnet-4-5" },
-  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini" },
+  { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-5.6-luna" },
+  { id: "anthropic", label: "Anthropic (Claude)", baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-sonnet-5" },
+  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5.6-luna" },
   { id: "lmstudio", label: "LM Studio (local)", baseUrl: "http://localhost:1234/v1" },
   { id: "ollama", label: "Ollama (local)", baseUrl: "http://localhost:11434/v1" },
-  { id: "minimax", label: "MiniMax", baseUrl: "https://api.minimax.io/v1", defaultModel: "MiniMax-M2" },
-  { id: "kimi", label: "Kimi (Moonshot)", baseUrl: "https://api.moonshot.ai/v1", defaultModel: "kimi-k2-turbo-preview" },
-  { id: "zai", label: "Z.ai (GLM)", baseUrl: "https://api.z.ai/api/paas/v4", defaultModel: "glm-4.6" },
+  { id: "minimax", label: "MiniMax", baseUrl: "https://api.minimax.io/v1", defaultModel: "MiniMax-M3" },
+  { id: "kimi", label: "Kimi (Moonshot)", baseUrl: "https://api.moonshot.ai/v1", defaultModel: "kimi-k2.6" },
+  { id: "zai", label: "Z.ai (GLM)", baseUrl: "https://api.z.ai/api/paas/v4", defaultModel: "glm-5.2" },
+  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-v4-flash" },
+  { id: "gemini", label: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-flash-latest" },
+  { id: "mistral", label: "Mistral", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-large-latest" },
+  { id: "qwen", label: "Alibaba Qwen (multilingual)", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", defaultModel: "qwen-plus" },
+  { id: "groq", label: "Groq", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "openai/gpt-oss-120b" },
 ];
 
 /** Version readout plus a manual "check for updates" against GitHub Releases. */
 function AboutSection() {
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
+  const install = useInstallUpdate();
   const [version, setVersion] = useState("");
   const [checking, setChecking] = useState(false);
 
@@ -454,7 +461,7 @@ function AboutSection() {
           kind: "info",
           message: t("settings:about.updateAvailable", { version: update.version }),
           actionLabel: t("settings:about.restartInstall"),
-          onAction: () => void installUpdate(update),
+          onAction: () => install(update),
           durationMs: 30000,
         });
       } else {
@@ -784,6 +791,10 @@ const EMBEDDING_MODELS: { id: string; label: string }[] = [
   { id: "bge-small-en-v1.5", label: "BGE Small (384d · fast · bundled)" },
   { id: "all-MiniLM-L6-v2", label: "MiniLM L6 (384d · fast)" },
   { id: "bge-base-en-v1.5", label: "BGE Base (768d · higher quality)" },
+  {
+    id: "paraphrase-multilingual-MiniLM-L12-v2",
+    label: "Multilingual MiniLM (384d · 50+ languages)",
+  },
 ];
 
 /** Semantic search: local embedding backend, model picker, index progress. */

@@ -705,6 +705,10 @@ export interface Commands {
   /** Startup show (first-run intro) is done, or absent: release the deferred
    *  account sync (and with it the first OS keyring access). */
   ui_ready(args: Record<string, never>): Promise<void>;
+  /** Fade (fadeMs, eval'd into the backdrop by Rust) and close (after
+   *  delayMs) the intro's cinema backdrop window. Rust-side teardown: no
+   *  webview capability or global-API wiring can break it. */
+  cinema_close(args: { delayMs: number | null; fadeMs: number | null }): Promise<void>;
 
   ai_status(args: Record<string, never>): Promise<AiStatus>;
   /** Model ids from the endpoint's GET /models (OpenAI-compatible). */

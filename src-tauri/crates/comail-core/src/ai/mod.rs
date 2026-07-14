@@ -7,12 +7,55 @@ use crate::error::{CoreError, Result};
 use serde_json::json;
 
 pub const DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
-pub const DEFAULT_MODEL: &str = "openai/gpt-4o-mini";
+pub const DEFAULT_MODEL: &str = "openai/gpt-5.6-luna";
 
 pub struct AiConfig {
     pub base_url: String,
     pub model: String,
     pub api_key: String,
+    /// Human-readable name of the user's chosen UI language (e.g. "Vietnamese"),
+    /// or `None` to let the model infer the language from the input. Applied to
+    /// generative prompts (draft / ask / summarize) via [`apply_language`].
+    pub language: Option<String>,
+}
+
+/// Human-readable name for a stored UI language code, or `None` for "system" /
+/// an unknown code (the model then infers the language from the input).
+pub fn ui_language_name(code: &str) -> Option<&'static str> {
+    match code {
+        "en" => Some("English"),
+        "es" => Some("Spanish"),
+        "fr" => Some("French"),
+        "zh" => Some("Chinese"),
+        "vi" => Some("Vietnamese"),
+        _ => None,
+    }
+}
+
+/// One sentence instructing the model to answer in the user's UI language, or
+/// empty when no concrete language is set. Appended to generative system
+/// prompts; NOT used for proofread/intent, which must preserve the input's
+/// language.
+pub fn language_directive(cfg: &AiConfig) -> String {
+    match &cfg.language {
+        Some(lang) => format!(
+            " Always write your response in {lang}, regardless of the language of the emails."
+        ),
+        None => String::new(),
+    }
+}
+
+/// Append [`language_directive`] to a prompt's leading system message.
+pub fn apply_language(mut msgs: Vec<ChatMessage>, cfg: &AiConfig) -> Vec<ChatMessage> {
+    let directive = language_directive(cfg);
+    if !directive.is_empty() {
+        if let Some(first) = msgs.first_mut() {
+            if first.role == "system" {
+                first.content.push_str(&directive);
+            }
+        }
+    }
+    msgs
 }
 
 /// Inline reasoning tags emitted by chain-of-thought models (DeepSeek-R1, QwQ,
@@ -882,7 +925,7 @@ pub async fn summarize_thread(
     subject: &str,
     context: &str,
 ) -> Result<crate::models::AiThreadSummary> {
-    let raw_text = chat(cfg, summarize_prompt(subject, context)).await?;
+    let raw_text = chat(cfg, apply_language(summarize_prompt(subject, context), cfg)).await?;
     let start = raw_text.find('{');
     let end = raw_text.rfind('}');
     let json = match (start, end) {
@@ -1378,10 +1421,15 @@ fn intent_prompt(query: &str) -> Vec<ChatMessage> {
     let now = chrono::Local::now();
     let system = format!(
         "You convert one natural-language command for an email client into a single JSON tool call.\n\
-         NOW is {} ({}). Resolve all relative dates/times against NOW; times are the user's local time.\n\
+         NOW is {} ({}). The user's local UTC offset is {}. Resolve all relative dates/times against NOW.\n\
+         startsAtIso and endsAtIso are ALWAYS in the user's LOCAL time (offset above), written \
+         without any offset suffix. If the command states a time in another timezone or city \
+         (e.g. '3pm London time', 'noon New York'), CONVERT it to the user's local time first, then \
+         emit that converted local time. Do the timezone math yourself.\n\
          Tools (pick exactly one kind):\n\
          - create_event: {{\"kind\":\"create_event\",\"summary\":str,\"startsAtIso\":\"YYYY-MM-DDTHH:MM\",\"endsAtIso\":str?,\"location\":str?,\"allDay\":bool?}}\n\
-           Default duration 60 minutes. If no time of day was given, use allDay:true.\n\
+           Default duration 60 minutes. If no time of day was given, use allDay:true. \
+           Put any place, venue, or city in `location` - never in the summary.\n\
          - compose: {{\"kind\":\"compose\",\"to\":[email]?,\"subject\":str?,\"body\":str?}}\n\
          - search: {{\"kind\":\"search\",\"query\":str}}\n\
          - go_to: {{\"kind\":\"go_to\",\"view\":\"inbox|starred|snoozed|sent|drafts|done|trash|spam|all\"}}\n\
@@ -1392,7 +1440,8 @@ fn intent_prompt(query: &str) -> Vec<ChatMessage> {
          user's language but REMOVE the date/time/create words from it.\n\
          Reply with ONLY the JSON object. No prose, no markdown fences.",
         now.format("%Y-%m-%dT%H:%M"),
-        now.format("%A")
+        now.format("%A"),
+        now.format("%:z"),
     );
     vec![
         ChatMessage {
