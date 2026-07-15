@@ -654,7 +654,13 @@ pub async fn list_splits(state: State<'_, AppState>) -> CmdResult<Vec<SplitRule>
 pub async fn save_split(state: State<'_, AppState>, split: SplitInput) -> CmdResult<SplitRule> {
     state
         .core
-        .save_split(split.id, split.name, split.position, split.query, split.target)
+        .save_split(
+            split.id,
+            split.name,
+            split.position,
+            split.query,
+            split.target,
+        )
         .await
         .map_err(err)
 }

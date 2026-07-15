@@ -84,14 +84,16 @@ impl Q {
     /// A custom split tab: threads routed to `split:<id>`.
     fn routed_split(mut self, id: i64) -> Self {
         self.bind.push(Box::new(format!("split:{id}")));
-        self.clauses.push(format!("t.routed_tab = ?{}", self.bind.len()));
+        self.clauses
+            .push(format!("t.routed_tab = ?{}", self.bind.len()));
         self
     }
 
     /// An auto-category tab: threads routed to `label:<id>`.
     fn routed_label(mut self, id: i64) -> Self {
         self.bind.push(Box::new(format!("label:{id}")));
-        self.clauses.push(format!("t.routed_tab = ?{}", self.bind.len()));
+        self.clauses
+            .push(format!("t.routed_tab = ?{}", self.bind.len()));
         self
     }
 
@@ -133,7 +135,10 @@ pub fn unread_counts(
 
     let mut splits_map = HashMap::new();
     for sp in splits {
-        let n = Q::unread(account_id).inbox().routed_split(sp.id).run(conn)?;
+        let n = Q::unread(account_id)
+            .inbox()
+            .routed_split(sp.id)
+            .run(conn)?;
         splits_map.insert(sp.id.to_string(), n);
     }
 
@@ -260,11 +265,8 @@ mod tests {
         .unwrap();
         // The custom-split count now reads the resolved tab, so route thread 1
         // into split:7 (the resolver does this at sync time).
-        conn.execute(
-            "UPDATE threads SET routed_tab = 'split:7' WHERE id = 1",
-            [],
-        )
-        .unwrap();
+        conn.execute("UPDATE threads SET routed_tab = 'split:7' WHERE id = 1", [])
+            .unwrap();
 
         let split = SplitRule {
             id: 7,

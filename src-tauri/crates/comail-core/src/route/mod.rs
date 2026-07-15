@@ -455,9 +455,16 @@ mod tests {
         let t = seed_auto_thread(&c, "offers@shop.example", "50% off everything", true);
         route_thread_deterministic(&c, &[], false, t).unwrap();
         let key: Option<String> = c
-            .query_row("SELECT routed_tab FROM threads WHERE id = ?1", params![t], |r| r.get(0))
+            .query_row(
+                "SELECT routed_tab FROM threads WHERE id = ?1",
+                params![t],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(key, Some(format!("label:{}", label_id(&c, "ComailAutoMarketing"))));
+        assert_eq!(
+            key,
+            Some(format!("label:{}", label_id(&c, "ComailAutoMarketing")))
+        );
     }
 
     #[test]
@@ -479,7 +486,11 @@ mod tests {
         };
         route_thread_deterministic(&c, &[rule], false, t).unwrap();
         let key: Option<String> = c
-            .query_row("SELECT routed_tab FROM threads WHERE id = ?1", params![t], |r| r.get(0))
+            .query_row(
+                "SELECT routed_tab FROM threads WHERE id = ?1",
+                params![t],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(key, Some(format!("label:{news}")));
     }
@@ -491,7 +502,11 @@ mod tests {
         let t = seed_auto_thread(&c, "alice@example.com", "Lunch?", false);
         route_thread_deterministic(&c, &[], true, t).unwrap();
         let key: Option<String> = c
-            .query_row("SELECT routed_tab FROM threads WHERE id = ?1", params![t], |r| r.get(0))
+            .query_row(
+                "SELECT routed_tab FROM threads WHERE id = ?1",
+                params![t],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(key.as_deref(), Some("pending"));
     }
@@ -503,7 +518,11 @@ mod tests {
         let t = seed_auto_thread(&c, "alice@example.com", "Lunch tomorrow?", false);
         route_thread_deterministic(&c, &[], false, t).unwrap();
         let key: Option<String> = c
-            .query_row("SELECT routed_tab FROM threads WHERE id = ?1", params![t], |r| r.get(0))
+            .query_row(
+                "SELECT routed_tab FROM threads WHERE id = ?1",
+                params![t],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(key, None);
     }
@@ -522,7 +541,9 @@ mod tests {
         assert_eq!(labels, vec![label_id(&c, "ComailAutoNews")]);
         // Switching to unrouted clears the chip entirely.
         apply_tab(&c, t, None).unwrap();
-        assert!(crate::db::repo::labels::for_thread(&c, t).unwrap().is_empty());
+        assert!(crate::db::repo::labels::for_thread(&c, t)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -620,9 +641,16 @@ mod tests {
         };
         // sender
         assert!(split_matches(&c, t, &q(|q| q.senders = Some(vec!["github.com".into()]))).unwrap());
-        assert!(!split_matches(&c, t, &q(|q| q.senders = Some(vec!["gitlab.com".into()]))).unwrap());
+        assert!(
+            !split_matches(&c, t, &q(|q| q.senders = Some(vec!["gitlab.com".into()]))).unwrap()
+        );
         // subject
-        assert!(split_matches(&c, t, &q(|q| q.subject_contains = Some(vec!["build failed".into()]))).unwrap());
+        assert!(split_matches(
+            &c,
+            t,
+            &q(|q| q.subject_contains = Some(vec!["build failed".into()]))
+        )
+        .unwrap());
         // automated flag
         assert!(split_matches(&c, t, &q(|q| q.is_automated = Some(true))).unwrap());
         assert!(!split_matches(&c, t, &q(|q| q.is_automated = Some(false))).unwrap());
@@ -633,13 +661,26 @@ mod tests {
             params![t],
         )
         .unwrap();
-        assert!(split_matches(&c, t, &q(|q| q.recipients = Some(vec!["sales@acme.co".into()]))).unwrap());
-        assert!(!split_matches(&c, t, &q(|q| q.recipients = Some(vec!["other@x.com".into()]))).unwrap());
+        assert!(split_matches(
+            &c,
+            t,
+            &q(|q| q.recipients = Some(vec!["sales@acme.co".into()]))
+        )
+        .unwrap());
+        assert!(!split_matches(
+            &c,
+            t,
+            &q(|q| q.recipients = Some(vec!["other@x.com".into()]))
+        )
+        .unwrap());
         // has attachment
         assert!(!split_matches(&c, t, &q(|q| q.has_attachment = Some(true))).unwrap());
         assert!(split_matches(&c, t, &q(|q| q.has_attachment = Some(false))).unwrap());
-        c.execute("UPDATE messages SET has_attachments = 1 WHERE thread_id = ?1", params![t])
-            .unwrap();
+        c.execute(
+            "UPDATE messages SET has_attachments = 1 WHERE thread_id = ?1",
+            params![t],
+        )
+        .unwrap();
         assert!(split_matches(&c, t, &q(|q| q.has_attachment = Some(true))).unwrap());
         assert!(!split_matches(&c, t, &q(|q| q.has_attachment = Some(false))).unwrap());
         // multiple conditions are ANDed
@@ -672,14 +713,19 @@ mod tests {
         // A route key for a label that doesn't exist must not blow up the FK.
         apply_tab(&c, t, Some("label:99999")).unwrap();
         assert_eq!(routed(&c, t).as_deref(), Some("label:99999"));
-        assert!(crate::db::repo::labels::for_thread(&c, t).unwrap().is_empty());
+        assert!(crate::db::repo::labels::for_thread(&c, t)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn parse_category_is_tolerant() {
         assert_eq!(parse_category("News"), Some(Category::News));
         assert_eq!(parse_category("  \"Social\" "), Some(Category::Social));
-        assert_eq!(parse_category("The best fit is Marketing."), Some(Category::Marketing));
+        assert_eq!(
+            parse_category("The best fit is Marketing."),
+            Some(Category::Marketing)
+        );
         assert_eq!(parse_category("None"), None);
         assert_eq!(parse_category("gibberish"), None);
     }

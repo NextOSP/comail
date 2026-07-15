@@ -164,8 +164,8 @@ pub(crate) fn decode_encoded_words(value: &str) -> String {
 fn encoded_word_end(bytes: &[u8], start: usize) -> Option<usize> {
     let charset_end = find_byte(bytes, start + 2, b'?')?; // charset ... `?`
     let encoding_end = find_byte(bytes, charset_end + 1, b'?')?; // encoding ... `?`
-    // Encoded-text never contains a literal `?` (Q-encoding escapes it as `=3F`,
-    // the Base64 alphabet excludes it), so the next `?` is the terminator.
+                                                                 // Encoded-text never contains a literal `?` (Q-encoding escapes it as `=3F`,
+                                                                 // the Base64 alphabet excludes it), so the next `?` is the terminator.
     let terminator = find_byte(bytes, encoding_end + 1, b'?')?;
     (bytes.get(terminator + 1) == Some(&b'=')).then_some(terminator + 2)
 }

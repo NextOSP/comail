@@ -244,9 +244,8 @@ impl Core {
         {
             let c = core.clone();
             tokio::spawn(async move {
-                let (marker, threads, auto) = c
-                    .db
-                    .read(|conn| {
+                let (marker, threads, auto) =
+                    c.db.read(|conn| {
                         let s = repo::settings::get(conn)?;
                         let marker: i64 = conn.query_row(
                             "SELECT COUNT(*) FROM route_cache
@@ -267,9 +266,8 @@ impl Core {
                             Err(e) => tracing::warn!("routing backfill failed: {e}"),
                         }
                     }
-                    let _ = c
-                        .db
-                        .write(|conn| {
+                    let _ =
+                        c.db.write(|conn| {
                             conn.execute(
                                 "INSERT OR REPLACE INTO route_cache (sender_domain, route_key)
                                  VALUES ('__routing_backfill__', '1')",
@@ -3123,7 +3121,12 @@ impl Core {
 
         let (jobs, cache) = self
             .db
-            .read(move |conn| Ok((route::pending_threads(conn, limit)?, route::load_cache(conn)?)))
+            .read(move |conn| {
+                Ok((
+                    route::pending_threads(conn, limit)?,
+                    route::load_cache(conn)?,
+                ))
+            })
             .await?;
         if jobs.is_empty() {
             return Ok(0);

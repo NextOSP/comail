@@ -216,7 +216,10 @@ mod tests {
         crate::route::apply_tab(&c, thread, Some(&format!("label:{auto_id}"))).unwrap();
 
         delete(&c, auto_id).unwrap();
-        assert!(get(&c, auto_id).unwrap().is_none(), "auto label must delete");
+        assert!(
+            get(&c, auto_id).unwrap().is_none(),
+            "auto label must delete"
+        );
         // The orphaned thread falls back to Important/Other (routed_tab cleared).
         let routed: Option<String> = c
             .query_row(
@@ -226,7 +229,11 @@ mod tests {
             )
             .unwrap();
         assert_eq!(routed, None);
-        assert!(threads::get_summary(&c, thread).unwrap().unwrap().labels.is_empty());
+        assert!(threads::get_summary(&c, thread)
+            .unwrap()
+            .unwrap()
+            .labels
+            .is_empty());
 
         let manual = save(&c, None, "Temp", "#fff", 0).unwrap();
         delete(&c, manual.id).unwrap();
