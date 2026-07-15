@@ -274,7 +274,7 @@ async fn run_body_fetcher(
             // paths recover: a reopen re-nudges, and the bulk backfill (which
             // only scans body_state = 'none') can pick them up. Left at
             // "fetching" they would be stuck and the UI would show an endless
-            // skeleton. No event is emitted here on purpose — invalidating the
+            // skeleton. No event is emitted here on purpose - invalidating the
             // open thread would make get_thread re-nudge immediately and, while
             // offline, spin a tight fail/retry loop.
             reset_bodies_none(&ctx, ids.into_iter()).await;
@@ -366,7 +366,7 @@ async fn fetch_bodies_batch(
             .await?;
         let Some(folder) = folder else {
             // Folder row gone (deleted/renamed mid-flight): don't fail the whole
-            // batch — just release these back to "none" for a later retry.
+            // batch - just release these back to "none" for a later retry.
             reset_bodies_none(ctx, items.iter().map(|(_, m)| *m)).await;
             continue;
         };
@@ -969,7 +969,7 @@ async fn connect(ctx: &SyncCtx, config: &AccountConfig) -> Result<Session> {
 }
 
 /// One sync cycle: replay queued actions, then sync every folder's headers,
-/// flags, and expunges. Bulk bodies are NOT fetched here — the backfill pool
+/// flags, and expunges. Bulk bodies are NOT fetched here - the backfill pool
 /// downloads them concurrently on its own connections; this only nudges it.
 async fn run_cycle(
     ctx: &SyncCtx,
@@ -1236,7 +1236,7 @@ async fn sync_folder(
 /// Dedicated header-backfill connection. Performs first-time folder backfills
 /// and extends the historical window on its own IMAP session, so the sync
 /// actor's cycles stay short (actions, new-mail checks, reconciliation) and it
-/// can sit in IDLE — new mail keeps landing within seconds even while months
+/// can sit in IDLE - new mail keeps landing within seconds even while months
 /// of history are downloading. Woken by the actor's nudges or a backstop tick;
 /// exits when the account handle is dropped.
 async fn run_history_backfill(
@@ -1256,8 +1256,8 @@ async fn run_history_backfill(
         while rx.try_recv().is_ok() {} // coalesce piled-up nudges
 
         // Work passes: each pass advances every folder that still needs
-        // headers by one step — a full (resumable) initial backfill, or one
-        // HISTORY_CHUNK extension — until nothing is left or the connection
+        // headers by one step - a full (resumable) initial backfill, or one
+        // HISTORY_CHUNK extension - until nothing is left or the connection
         // breaks. One step per pass keeps folders progressing evenly.
         'work: loop {
             let mut progressed = match retry_one_header_failure(&ctx, &config, &mut session).await {
@@ -1344,7 +1344,7 @@ async fn run_history_backfill(
             }
             if !progressed {
                 // Fully caught up. Don't hold an idle connection open between
-                // ticks — servers reap them and the next step would fail.
+                // ticks - servers reap them and the next step would fail.
                 if let Some(s) = session.take() {
                     imap::logout(s).await;
                 }
@@ -1422,7 +1422,7 @@ async fn initial_backfill(
     let uids = imap::uid_search_since(session, since).await?;
 
     // Resume support: a previous run may have died partway (flaky server, app
-    // quit) — skip UIDs whose headers already landed so a restart only fetches
+    // quit) - skip UIDs whose headers already landed so a restart only fetches
     // what's missing instead of re-downloading the whole window every time.
     let existing: std::collections::HashSet<i64> = {
         let fid = folder.id;
@@ -1533,7 +1533,7 @@ async fn extend_history(
 }
 
 /// A message older than this never triggers the new-mail chime/notification,
-/// even if it lands unread — catches UIDVALIDITY resets and server-side moves
+/// even if it lands unread - catches UIDVALIDITY resets and server-side moves
 /// replaying old mail as new-to-the-folder UIDs.
 const CHIME_RECENT_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -2242,7 +2242,7 @@ async fn run_backfill_pool(
 /// folder-grouped chunks to a shared queue serviced by up to BODY_POOL_CONNS
 /// parallel connections. Loops until a scan finds nothing left; bails out when
 /// a full round makes no forward progress (server unreachable, or every
-/// remaining UID vanished) so it can't spin — the next nudge or backstop tick
+/// remaining UID vanished) so it can't spin - the next nudge or backstop tick
 /// retries.
 async fn drain_missing_bodies(ctx: &SyncCtx, config: &AccountConfig) -> Result<()> {
     use std::collections::{HashSet, VecDeque};
@@ -2311,7 +2311,7 @@ async fn drain_missing_bodies(ctx: &SyncCtx, config: &AccountConfig) -> Result<(
         // session and pops chunks until the queue is empty or its connection
         // breaks, so a slow chunk never stalls the others. Office 365 throttles
         // concurrent IMAP FETCH streams hard (it resets extra connections), so
-        // it gets a smaller pool — more workers there just die and burn
+        // it gets a smaller pool - more workers there just die and burn
         // reconnect round-trips.
         let cap = match config.provider {
             Provider::Microsoft => 1,

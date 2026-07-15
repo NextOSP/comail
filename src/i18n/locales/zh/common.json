@@ -77,7 +77,7 @@
     "try": "试试",
     "emptyHint": "在所有账户、文件夹和邮件中搜索。",
     "noResults": "没有关于“{{query}}”的结果",
-    "toggleHint": "切换搜索 / 提问 — ⌘/Ctrl+J"
+    "toggleHint": "切换搜索 / 提问 - ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "键盘快捷键",

@@ -364,9 +364,11 @@ pub fn run() {
             commands::list_splits,
             commands::save_split,
             commands::delete_split,
+            commands::reorder_tabs,
             commands::list_labels,
             commands::save_label,
             commands::delete_label,
+            commands::restore_auto_labels,
             commands::sync_now,
             commands::get_sync_status,
             commands::unread_counts,
@@ -388,6 +390,8 @@ pub fn run() {
             commands::calendar_sync_now,
             commands::ai_status,
             commands::ai_list_models,
+            commands::ai_usage_stats,
+            commands::ai_plan_automation,
             commands::set_ai_key,
             commands::ai_command,
             commands::ai_summarize,
@@ -405,7 +409,7 @@ pub fn run() {
         .run(|_app, _event| {
             // macOS reactivation (Dock-icon click, and clicking a notification
             // that activates the app) fires Reopen with the window hidden to the
-            // tray — re-show it so the app actually appears.
+            // tray - re-show it so the app actually appears.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
                 show_main(_app);

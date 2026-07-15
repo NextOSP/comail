@@ -5,7 +5,7 @@ Email that keeps up with you.
 Comail is a fast, keyboard-driven mail client for Mac, Windows, and Linux. Your
 whole mailbox lives on your computer, so everything opens instantly, search
 finds what you *meant*, and it all keeps working on a plane. No account, no
-subscription, no telemetry — free and open source.
+subscription, no telemetry - free and open source.
 
 <a href="https://www.producthunt.com/products/comail?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-comail" target="_blank" rel="noopener noreferrer"><img alt="Comail - Blazing fast email client with keyboard shortcuts | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1195344&amp;theme=light&amp;t=1784029150595"></a>
 
@@ -16,29 +16,28 @@ subscription, no telemetry — free and open source.
 Grab the installer for your platform from the
 [latest release](https://github.com/NextOSP/comail/releases/latest):
 
-- **macOS** — `.dmg` (universal, Apple Silicon and Intel)
-- **Windows** — `.msi` or setup `.exe`
-- **Linux** — `.deb` or `.AppImage`
+- **macOS** - `.dmg` (universal, Apple Silicon and Intel)
+- **Windows** - `.msi` or setup `.exe`
+- **Linux** - `.deb` or `.AppImage`
 
 Comail keeps itself up to date: it checks for new releases on launch and
 installs them in place after asking you.
 
 Works with **Gmail**, **Microsoft 365 / Outlook**, and any **IMAP** provider
 (Fastmail, iCloud, self-hosted, your company server). Regular IMAP accounts
-just need an app password — no setup at all.
+just need an app password - no setup at all.
 
 ## Fly through your inbox
 
 - **Everything is a keystroke.** `J`/`K` to move, `E` to mark done, `H` to
   snooze, `C` to compose, `?` shows every shortcut. Your hands never leave the
   keyboard.
-- **A command palette for the rest.** `Cmd/Ctrl+K` finds any action by name —
-  even plain language like "archive everything from LinkedIn" works.
+- **A command palette for the rest.** `Cmd/Ctrl+K` finds any action by name -   even plain language like "archive everything from LinkedIn" works.
 - **Split inbox.** Important mail and everything else land in separate tabs,
-  plus your own rules — newsletters, receipts, alerts — so the inbox you look
+  plus your own rules - newsletters, receipts, alerts - so the inbox you look
   at is only the mail that matters.
 - **Snooze, send later, undo send.** Make mail come back when you can deal with
-  it, schedule sends, and actually cancel a send you regret — the message
+  it, schedule sends, and actually cancel a send you regret - the message
   doesn't leave for a few seconds, and Comail can really stop it.
 - **Triage in bulk.** Select a batch with the keyboard or a drag, then archive,
   label, or snooze them all at once. Every action works offline and syncs when
@@ -48,7 +47,7 @@ just need an app password — no setup at all.
 
 - **Ask in your own words.** "What did Ana want changed on the roadmap deck"
   finds the right thread even if it never used those words. The understanding
-  happens on your machine — nothing is sent anywhere.
+  happens on your machine - nothing is sent anywhere.
 - **Or be precise.** Instant keyword search with `from:`, `in:`, `is:unread`,
   `has:attachment`, and `exclude:` filters. Sender searches rank people you
   actually talk to first.
@@ -67,20 +66,20 @@ just need an app password — no setup at all.
   sentences you type every day.
 - **Attachments without the detour.** PDFs, Word, Excel, PowerPoint, CSVs, and
   images preview right in the app. Alt-click opens them externally.
-- **See who really sent it.** Expand any message to see the full details — and
+- **See who really sent it.** Expand any message to see the full details - and
   a "via" line whenever a service sent mail on someone else's behalf, so
   spoofed or on-behalf-of senders are obvious instead of hidden.
 - **One-key unsubscribe.** `Cmd+U` on any newsletter.
 - **Lives in the tray.** Keeps syncing after you close the window, shows an
   unread badge on the dock, and plays a short (optional) chime only for
-  genuinely new mail — never for the backlog it downloads when you reopen it.
+  genuinely new mail - never for the backlog it downloads when you reopen it.
 
 ## A real calendar, built in
 
 - **Week and month views** one keystroke away (`2` full screen, `0` for a quick
   peek). Click or drag to create; drag to move and resize.
 - **Type events like you'd say them.** "Lunch with Ana tuesday 12:30" becomes
-  an event — timezone-aware, in any language with the optional AI.
+  an event - timezone-aware, in any language with the optional AI.
 - **Invites just work.** Meeting invitations show up as RSVP cards inside the
   thread; accepting, editing, or cancelling emails the attendees for you.
   Reminders arrive as native notifications, and you can paste your free slots
@@ -92,8 +91,7 @@ just need an app password — no setup at all.
 
 ## AI on your terms
 
-All AI features are optional and work with any OpenAI-compatible provider —
-including a local one like LM Studio. Bring your own key, pick which model
+All AI features are optional and work with any OpenAI-compatible provider - including a local one like LM Studio. Bring your own key, pick which model
 handles which job, or use none of it.
 
 - **Summaries** of long threads on one key.
@@ -105,7 +103,7 @@ handles which job, or use none of it.
 
 ## Private by design
 
-- **Your mail stays on your machine** — the full mailbox syncs into a local
+- **Your mail stays on your machine** - the full mailbox syncs into a local
   database, and search (including the semantic kind) runs entirely on-device.
 - **Credentials live in the OS keyring**, never in a file.
 - **Offline is a feature, not an error.** Read, search, write, and triage with
@@ -130,13 +128,13 @@ More info → Run anyway in SmartScreen.
 ## Gmail and Microsoft accounts
 
 Gmail and Microsoft 365 sign in with OAuth using your own (free) app
-registration — a one-time, ten-minute setup with a full walkthrough in
+registration - a one-time, ten-minute setup with a full walkthrough in
 [docs/oauth-setup.md](docs/oauth-setup.md). Everyone else just uses an app
 password.
 
 ## For developers
 
-Comail is built on Tauri 2 — a Rust core with a React front end. Setup, tests,
+Comail is built on Tauri 2 - a Rust core with a React front end. Setup, tests,
 architecture notes, and the release process live in
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), with contribution conventions in
 [CONTRIBUTING.md](CONTRIBUTING.md).

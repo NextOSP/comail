@@ -6,7 +6,7 @@
 //
 // This runs against the *live* iframe document (after load), not a detached
 // parse, so getComputedStyle resolves backgrounds and colors defined in
-// <style> blocks / CSS classes — not just inline style="" / bgcolor="" — which
+// <style> blocks / CSS classes - not just inline style="" / bgcolor="" - which
 // is exactly where senders hide the white card that used to break readability.
 // No scripts run in the sandboxed iframe; we only rewrite color values.
 
@@ -95,7 +95,7 @@ function walk(el: HTMLElement, getStyle: (el: Element) => CSSStyleDeclaration) {
 
     // Darken the element's own opaque light surface. Computed backgroundColor
     // is not inherited, so this reflects a background the element truly paints
-    // (from inline style, bgcolor, or a <style>/class rule) — the case the old
+    // (from inline style, bgcolor, or a <style>/class rule) - the case the old
     // detached-DOM detector missed.
     const bg = parseColor(cs.backgroundColor);
     if (bg && bg[3] >= 0.5 && luminance(bg) > 0.5) {
@@ -144,7 +144,7 @@ function paintedBackground(
 }
 
 /** Rescue text the sender colored light for a dark background it no longer has
- *  — the sanitizer keeps inline `color` but drops the `<style>`/class rule (or
+ * - the sanitizer keeps inline `color` but drops the `<style>`/class rule (or
  *  `bgcolor`-less wrapper) that painted the dark surface, so near-white text
  *  renders invisibly on our light card. For each text element whose color is
  *  too light to read on the light backdrop and that has no dark background of

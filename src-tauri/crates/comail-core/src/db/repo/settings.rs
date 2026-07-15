@@ -57,6 +57,17 @@ mod tests {
                 reply_id: None,
             },
         );
+        s.ai_automation_rules.push(crate::models::AiAutomationRule {
+            id: "invoice".into(),
+            name: "Invoices".into(),
+            source_prompt: "For vendor invoices, move to Important".into(),
+            instruction: "It is a vendor invoice".into(),
+            enabled: true,
+            actions: vec![crate::models::AiAutomationAction {
+                kind: "route_to".into(),
+                value: "important".into(),
+            }],
+        });
         set(&c, &s).unwrap();
 
         let back = get(&c).unwrap();
@@ -64,6 +75,7 @@ mod tests {
         assert!(!back.notifications_enabled);
         assert_eq!(back.signature_list.len(), 1);
         assert_eq!(back.signature_list[0].html, "<b>Dean</b>");
+        assert_eq!(back.ai_automation_rules, s.ai_automation_rules);
         assert_eq!(
             back.signature_defaults
                 .get("1")
@@ -112,6 +124,7 @@ mod tests {
         assert!(s.notifications_enabled);
         assert!(s.auto_advance);
         assert!(s.auto_labels_enabled);
+        assert!(s.ai_automation_rules.is_empty());
         assert!(s.signatures.is_empty());
     }
 }

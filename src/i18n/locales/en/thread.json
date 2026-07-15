@@ -1,4 +1,5 @@
 {
+  "automationNote": "Automation note",
   "couldntLoad": "Couldn’t load this thread.",
   "backToList": "Back to list (Esc)",
   "back": "Back",
@@ -66,8 +67,8 @@
       "openExternally": "Open in app",
       "download": "Download",
       "downloaded": "Saved {{name}}",
-      "unsupported": "No preview for this file type — open it externally.",
-      "tooLarge": "This file is too large to preview — open it externally.",
+      "unsupported": "No preview for this file type - open it externally.",
+      "tooLarge": "This file is too large to preview - open it externally.",
       "truncated": "Preview truncated",
       "slide": "Slide {{n}}",
       "emptySlide": "(no text)",

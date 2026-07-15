@@ -206,7 +206,7 @@ export function parseQuickAdd(input: string, now: Date = new Date()): QuickAddRe
       i += 2;
       continue;
     }
-    // "at 3pm" / "at 3 pm" — consume the "at" when a time follows
+    // "at 3pm" / "at 3 pm" - consume the "at" when a time follows
     if (
       word === "at" &&
       words[i + 1] &&

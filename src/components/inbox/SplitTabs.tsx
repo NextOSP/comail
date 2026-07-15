@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { inboxTabOrder } from "../../lib/splitOrder";
 import { useModHeld } from "../../lib/useModHeld";
 import { splitCount, useLabels, useSettings, useSplits, useUnreadCounts } from "../../queries/hooks";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../../stores/ui";
@@ -16,20 +17,19 @@ export function SplitTabs() {
   // While ⌘/Ctrl is held, reveal each tab's jump-to number (Cmd+1..9).
   const modHeld = useModHeld();
 
-  const tabs: { key: string; name: string; splitId?: number; labelId?: number }[] = [
-    { key: "important", name: t("inbox:split.important"), splitId: SPLIT_IMPORTANT },
-    { key: "other", name: t("inbox:split.other"), splitId: SPLIT_OTHER },
-    ...(splits ?? [])
-      .slice()
-      .sort((a, b) => a.position - b.position)
-      .map((s) => ({ key: `s${s.id}`, name: s.name, splitId: s.id })),
-    ...(settings?.autoLabelsEnabled !== false
-      ? (labels ?? [])
-          .filter((l) => l.isAuto)
-          .sort((a, b) => a.position - b.position)
-          .map((l) => ({ key: `l${l.id}`, name: l.name, labelId: l.id }))
-      : []),
-  ];
+  const tabs: { key: string; name: string; splitId?: number; labelId?: number }[] = inboxTabOrder(
+    splits,
+    labels,
+    settings?.autoLabelsEnabled !== false,
+  ).map((item) => {
+    if (item.kind === "important")
+      return { key: "important", name: t("inbox:split.important"), splitId: SPLIT_IMPORTANT };
+    if (item.kind === "other")
+      return { key: "other", name: t("inbox:split.other"), splitId: SPLIT_OTHER };
+    if (item.kind === "split")
+      return { key: `s${item.id}`, name: item.name, splitId: item.id };
+    return { key: `l${item.id}`, name: item.name, labelId: item.id };
+  });
 
   const activeKey =
     labelFilter != null

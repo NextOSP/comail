@@ -21,7 +21,7 @@ export interface RichBodyHandle {
 }
 
 /** Replace `range` with `text` (newlines become <br>) and collapse the selection
- *  just after the inserted content. Engine-independent — the Range API works
+ *  just after the inserted content. Engine-independent - the Range API works
  *  reliably in WebKitGTK where a programmatic execCommand("insertText") can be a
  *  silent no-op. */
 function replaceRangeWithText(range: Range, sel: Selection, text: string) {
@@ -272,7 +272,7 @@ export const RichBody = forwardRef<
 
     // Resolve the caret to a text node + offset. On replies, focusStart leaves an
     // element-level caret and WebKit keeps anchorNode on the contenteditable div
-    // rather than the text node — descend into the preceding text child so the
+    // rather than the text node - descend into the preceding text child so the
     // shortcut is still seen.
     let node = sel.anchorNode;
     let offset = sel.anchorOffset;

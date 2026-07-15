@@ -128,7 +128,7 @@ async function notifyNewEvents(events: NewEventInfo[]) {
 
 /** Wire backend push events into targeted query invalidations. Mount once. */
 export function useBackendEvents() {
-  // Clicking any desktop notification should bring the app forward — the window
+  // Clicking any desktop notification should bring the app forward - the window
   // is hidden to the tray on close, so macOS activating the process alone shows
   // nothing. Registered once, independent of the backend-event listeners below.
   useEffect(() => {

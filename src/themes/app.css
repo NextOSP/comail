@@ -154,6 +154,17 @@ body {
   background: transparent;
 }
 
+/* Fully hide a scrollbar while keeping the region scrollable (wheel/trackpad).
+   Used for short master-detail nav rails so the panel shows a single, tidy
+   scrollbar on the content pane instead of two competing bars. */
+.co-scroll-none {
+  scrollbar-width: none;
+}
+.co-scroll-none::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 input,
 textarea {
   user-select: text;
@@ -243,6 +254,20 @@ textarea {
   );
   background-size: 200% 100%;
   animation: co-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Accent-tinted shimmer for AI work-in-progress (e.g. generating quick
+ * replies): reads as "the AI is doing something" rather than a plain
+ * content placeholder. */
+.co-ai-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 10%, var(--bg2)) 25%,
+    color-mix(in srgb, var(--accent) 42%, var(--bg2)) 50%,
+    color-mix(in srgb, var(--accent) 10%, var(--bg2)) 75%
+  );
+  background-size: 200% 100%;
+  animation: co-shimmer 1.25s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -374,7 +399,7 @@ textarea {
    Ambient animated backdrop (shown only on the empty-inbox / onboarding states)
 
    Softness comes from each blob's *own* radial-gradient alpha falloff, never
-   from `filter: blur` — blurring an oversized layer (or any backdrop-filter)
+   from `filter: blur` - blurring an oversized layer (or any backdrop-filter)
    pins WebKitGTK's software compositor at 100% CPU because it re-rasterises
    every frame. Here the blob bitmaps are cached and the compositor only moves
    them (translate3d/scale = GPU transform), so motion stays cheap.
@@ -435,7 +460,7 @@ textarea {
   50% { transform: translate3d(-12%, -14%, 0) scale(0.9); }
 }
 
-/* Frosted, translucent chrome — the calm canvas reads through it.
+/* Frosted, translucent chrome - the calm canvas reads through it.
    Deliberately no backdrop-filter (blur is the expensive path on WebKitGTK);
    translucency + a hairline top sheen carries the "matte glass" look. */
 .co-glass {

@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod actions;
+pub mod ai_usage;
 pub mod caldav;
 pub mod calendar;
 pub mod contacts;

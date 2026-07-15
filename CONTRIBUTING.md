@@ -23,7 +23,7 @@ pnpm dev              # frontend only, in a browser with mock data
 ```
 
 **Mock mode** is the fastest way to work on UI: `pnpm dev` serves the app at
-`localhost:1420` with a fully scripted backend (`src/ipc/mock.ts`) — threads,
+`localhost:1420` with a fully scripted backend (`src/ipc/mock.ts`) - threads,
 splits, labels, settings, AI, everything. If a feature needs a new IPC command,
 add a mock implementation so the browser workflow keeps working.
 
@@ -71,8 +71,7 @@ python3 crates/comail-core/tests/support/smtp_sink.py /tmp/sink-out /tmp/sink-ce
 COMAIL_TEST_IMAP=1 COMAIL_TEST_SINK_DIR=/tmp/sink-out cargo test -p comail-core --test send_e2e
 ```
 
-Gotchas: a stale sink squatting on port 10588 makes `send_e2e` time out —
-kill it first. Run the integration binaries one at a time; parallel runs can
+Gotchas: a stale sink squatting on port 10588 makes `send_e2e` time out - kill it first. Run the integration binaries one at a time; parallel runs can
 exceed Dovecot's per-user connection cap and stall.
 
 Perf suite (100k messages, latency budgets): `COMAIL_TEST_PERF=1 cargo test -p comail-core --test perf --release`.
@@ -87,8 +86,8 @@ Dev/test env switches (never for real accounts): `COMAIL_TLS_INSECURE=1`,
 camelCase). Change one, change the other in the same commit.
 
 **Adding a `Settings` field touches five places**, all in one commit:
-1. `models.rs` (`Settings` struct — give it a `#[serde(default)]` so old blobs
-   still deserialize — plus the `Default` impl)
+1. `models.rs` (`Settings` struct - give it a `#[serde(default)]` so old blobs
+   still deserialize - plus the `Default` impl)
 2. `src/ipc/types.ts`
 3. `DEFAULT_SETTINGS` in `src/components/settings/SettingsPanel.tsx`
 4. `DEFAULT_MOCK_SETTINGS` in `src/ipc/mock.ts`
@@ -99,7 +98,7 @@ catches forgetting the serde default.
 
 **Split-id convention:** `-1` = implicit Important, `-2` = implicit Other,
 `> 0` = a `split_rules` row, `null` = whole inbox. Important/Other are not
-stored rows — they are `is_automated` filters computed at sync time.
+stored rows - they are `is_automated` filters computed at sync time.
 
 **Auto labels are local-only.** The Marketing/News/Social/Pitch rows in
 `labels` carry `is_auto = 1`, are classified in `autolabel/` during
@@ -120,7 +119,7 @@ and no em dashes in UI copy (use periods or `·`).
 
 **Unit-test placement:** Rust tests live in `#[cfg(test)]` modules next to the
 code, using `crate::db::testutil` for a migrated in-memory DB. Frontend tests
-are `src/**/*.test.ts`, vitest in node mode — pure logic only; UI behavior is
+are `src/**/*.test.ts`, vitest in node mode - pure logic only; UI behavior is
 covered by mock-mode scenarios and the e2e suites. Extract logic into
 `src/lib/` when it's worth testing (see `quotes.ts`).
 

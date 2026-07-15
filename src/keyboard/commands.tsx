@@ -48,7 +48,7 @@ export function onComposerAction(handler: (a: ComposerAction, text?: string) => 
 }
 
 /** Text selected in the thread (top document or an email-body iframe) but NOT
- *  inside an editable field like the composer. Read at keypress time — opening
+ *  inside an editable field like the composer. Read at keypress time - opening
  *  a composer moves focus and clears the selection. */
 export function threadSelectionText(): string | null {
   const sel = document.getSelection();
@@ -146,7 +146,7 @@ function runUnsubscribe(ctx: CommandCtx) {
 // ----------------------------------------------------------- Sender search
 
 /** Main correspondent of the open/selected thread (never one of our own
- *  accounts) — target of "View all from this sender". */
+ *  accounts) - target of "View all from this sender". */
 function currentSender(): Address | null {
   const ui = useUi.getState();
   const threadId = ui.openThreadId ?? ui.selectedThreadId ?? ui.selection[0] ?? null;
@@ -230,7 +230,7 @@ async function joinNextMeeting() {
 
 // -------------------------------------------------------- Inbox split tabs
 
-/** Cmd+1 = Important, Cmd+2 = Other, Cmd+3 = next tab (Marketing/…), … */
+/** Cmd+1 through Cmd+9 follow the current visible inbox tab arrangement. */
 function splitTabCommand(n: number): Command {
   const index = n - 1;
   return {
@@ -243,7 +243,7 @@ function splitTabCommand(n: number): Command {
     aliases: ["split tab", "inbox tab", "go to tab"],
     keys: [`mod+${n}`],
     section: "Go to",
-    // Not while search is open — there ⌘/Ctrl+N jumps to the Nth result.
+    // Not while search is open - there ⌘/Ctrl+N jumps to the Nth result.
     when: (ctx) => !ctx.composerOpen && !ctx.panelOpen && !ctx.inSearch && inboxTabs().length > index,
     run: (ctx) => ctx.gotoSplitTab(index),
   };
@@ -338,7 +338,7 @@ function gotoLabel(l: CachedLabel) {
   }
 }
 
-/** "Go to <label name>" — one palette slot per cached label. */
+/** "Go to <label name>" - one palette slot per cached label. */
 function labelSlotCommand(i: number): Command {
   return {
     id: `go-label-${i}`,
@@ -549,7 +549,7 @@ export const ALL_COMMANDS: Command[] = [
     hiddenInPalette: true,
   },
   {
-    // Arrow keys move the thread cursor only in the list / search — inside a
+    // Arrow keys move the thread cursor only in the list / search - inside a
     // conversation they move between messages instead (next-message below).
     id: "list-down",
     titleKey: "commands:title.nextThread",

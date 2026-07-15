@@ -21,7 +21,7 @@ pub struct ParsedHeaders {
     /// Raw List-Unsubscribe header value, e.g. "<https://…>, <mailto:…>".
     pub list_unsubscribe: Option<String>,
     /// The party that actually transmitted the message, when its domain does
-    /// NOT align with From: (mailing lists, ESPs, send-on-behalf — and mail
+    /// NOT align with From: (mailing lists, ESPs, send-on-behalf - and mail
     /// whose From: is spoofed). First misaligned identity out of the RFC 5322
     /// Sender:, the receiver-stamped Return-Path, and the DKIM d= domain;
     /// None when everything aligns with From:.
@@ -1053,7 +1053,7 @@ pub fn normalize_cid(id: &str) -> String {
 }
 
 /// Rewrite inline `src="cid:<id>"` references to `data:` URIs using `map`
-/// (keyed by [`normalize_cid`]). Unknown cids are left untouched — the browser
+/// (keyed by [`normalize_cid`]). Unknown cids are left untouched - the browser
 /// still can't fetch them, but nothing else is changed.
 pub fn rewrite_cid_src(html: &str, map: &std::collections::HashMap<String, String>) -> String {
     CID_SRC
@@ -1123,7 +1123,7 @@ fn domains_aligned(a: &str, b: &str) -> bool {
 
 /// The transmitting party to show as "via", when it doesn't align with From:.
 /// Order: Sender: (self-declared), Return-Path (envelope sender, stamped by
-/// the receiving server — a forged From: can't easily hide it), DKIM d=.
+/// the receiving server - a forged From: can't easily hide it), DKIM d=.
 fn resolve_via(msg: &mail_parser::Message, from: Option<&Address>) -> Option<String> {
     let from_domain = from.map(|a| domain_of(&a.email).to_string());
 

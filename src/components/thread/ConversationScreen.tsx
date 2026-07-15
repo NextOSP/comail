@@ -18,7 +18,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   const set = useUi((s) => s.set);
   const hasSummary = useUi((s) => s.aiSummaries[threadId] != null);
   // Pointer selection (hover / click) makes a message the reply target without
-  // scrolling the view — only keyboard nav (N/P) scrolls the cursor into view.
+  // scrolling the view - only keyboard nav (N/P) scrolls the cursor into view.
   const selectMessage = (id: number) => {
     if (useUi.getState().focusedMessageId !== id)
       set({ focusedMessageId: id, messageCursorSource: "pointer" });
@@ -42,7 +42,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   // Ref on the newest (last) message so the count header can jump to it on long
   // threads. We walk up from it to find the actual scroll container (the
   // overflow-y-auto wrapper isn't reliably the scroller at runtime) and scroll
-  // that fully to the bottom — guaranteed to land on the latest message.
+  // that fully to the bottom - guaranteed to land on the latest message.
   const lastMsgRef = useRef<HTMLDivElement>(null);
   const scrollToLatest = () => {
     const target = lastMsgRef.current;
@@ -132,7 +132,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   const anchorId = messages.find((m) => !m.isRead && !m.isDraft)?.id ?? lastId;
   // The message a reply will target, mirrored as a highlight so it's always
   // clear which one is selected. Defaults (nothing hovered/navigated yet) to
-  // the latest incoming message — matching the keyboard `compose` fallback — so
+  // the latest incoming message - matching the keyboard `compose` fallback - so
   // the highlight and the reply target never disagree.
   const nonDraft = messages.filter((m) => !m.isDraft);
   const defaultTargetId =
@@ -143,7 +143,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
 
   // Seed a reply composer with the AI's proposed answer, targeting the same
   // message a manual reply would (the highlighted one), quote and recipients
-  // included — the user reviews and sends.
+  // included - the user reviews and sends.
   const useProposedReply = (text: string) => {
     const target =
       nonDraft.find((m) => m.id === selectedId) ??
@@ -163,8 +163,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
       },
     });
   };
-  // Expansion follows explicit toggles, the last message, and unread state —
-  // NOT the selection, so hovering to pick a reply target never expands or
+  // Expansion follows explicit toggles, the last message, and unread state -   // NOT the selection, so hovering to pick a reply target never expands or
   // collapses a message. Keyboard nav (N/P) expands its target via the effect
   // below ("expand next/previous").
   const isExpanded = (id: number, isRead: boolean) => {

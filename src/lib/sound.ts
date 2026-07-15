@@ -115,7 +115,7 @@ export function markSoundsReady(): void {
 }
 
 /**
- * Keep the chime quiet while the initial catch-up sync is still running — a
+ * Keep the chime quiet while the initial catch-up sync is still running - a
  * big backlog easily outlasts the fixed startup grace window, and arming on
  * that timer mid-sync replays chimes for mail that arrived while the app was
  * closed. Each call pushes the ready time to "grace window from now"; the

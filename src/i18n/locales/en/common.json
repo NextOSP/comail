@@ -77,7 +77,7 @@
     "try": "Try",
     "emptyHint": "Search across every account, folder, and message.",
     "noResults": "No results for “{{query}}”",
-    "toggleHint": "Switch Search / Ask — ⌘/Ctrl+J"
+    "toggleHint": "Switch Search / Ask - ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Keyboard shortcuts",

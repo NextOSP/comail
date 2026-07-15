@@ -427,7 +427,7 @@ export function EventCreate() {
                 day: "numeric",
                 ...(quickPreview.allDay ? {} : { hour: "2-digit", minute: "2-digit" }),
               })}{" "}
-              — {t("calendar:create.quickApply")}
+ - {t("calendar:create.quickApply")}
             </>
           )}
         </div>

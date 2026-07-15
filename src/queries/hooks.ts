@@ -264,6 +264,15 @@ export function useAiModels(baseUrl: string) {
   });
 }
 
+export function useAiUsage() {
+  return useQuery({
+    queryKey: ["aiUsage"],
+    queryFn: () => call("ai_usage_stats", {}),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
 /** Semantic index progress; polls while indexing is in flight. */
 export function useEmbeddingStatus() {
   return useQuery({
@@ -327,7 +336,7 @@ export function useAsk() {
       })
       .catch((e) => {
         if (activeId.current !== requestId) return;
-        // If the answer already streamed in, keep it — a failure on the final
+        // If the answer already streamed in, keep it - a failure on the final
         // response shouldn't erase a complete, visible answer.
         if (streamed.current.trim() !== "") {
           setStatus("done");

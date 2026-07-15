@@ -865,7 +865,7 @@ pub enum IdleOutcome<C> {
 }
 
 /// Enter IDLE on the currently-selected mailbox and wait until the server
-/// reports activity, `max` elapses, or a command arrives on `rx` — whichever
+/// reports activity, `max` elapses, or a command arrives on `rx` - whichever
 /// comes first. Always leaves IDLE (`DONE`) on the happy path so the returned
 /// session is reusable. On any IMAP/IO error the session is consumed and `Err`
 /// is returned; the caller must reconnect.
@@ -884,7 +884,7 @@ pub async fn idle_wait<C>(
     // The wait future borrows `idle` mutably and `done()` consumes it, so the
     // future and its StopSource must live only inside this block and be dropped
     // before we call `done()`. `_stop` is named (not a bare `_`) so it is NOT
-    // dropped early — dropping it would interrupt the wait immediately.
+    // dropped early - dropping it would interrupt the wait immediately.
     let outcome = {
         let (wait_fut, _stop) = idle.wait_with_timeout(max);
         tokio::pin!(wait_fut);

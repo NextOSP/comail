@@ -77,7 +77,7 @@
     "try": "Prueba",
     "emptyHint": "Busca en cada cuenta, carpeta y mensaje.",
     "noResults": "Sin resultados para “{{query}}”",
-    "toggleHint": "Cambiar Buscar / Preguntar — ⌘/Ctrl+J"
+    "toggleHint": "Cambiar Buscar / Preguntar - ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Atajos de teclado",

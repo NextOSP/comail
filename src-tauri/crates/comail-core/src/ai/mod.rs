@@ -5,6 +5,7 @@
 
 use crate::error::{CoreError, Result};
 use serde_json::json;
+use std::sync::Arc;
 
 pub const DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
 pub const DEFAULT_MODEL: &str = "openai/gpt-5.6-luna";
@@ -17,6 +18,50 @@ pub struct AiConfig {
     /// or `None` to let the model infer the language from the input. Applied to
     /// generative prompts (draft / ask / summarize) via [`apply_language`].
     pub language: Option<String>,
+    pub usage_sink: Option<Arc<dyn Fn(AiUsage) + Send + Sync>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiUsage {
+    pub model: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
+    pub exact: bool,
+}
+
+fn approximate_tokens(text: &str) -> i64 {
+    ((text.chars().count() as i64 + 3) / 4).max(1)
+}
+
+fn record_usage(
+    cfg: &AiConfig,
+    request: &serde_json::Value,
+    response: Option<&serde_json::Value>,
+    completion: &str,
+) {
+    let Some(sink) = &cfg.usage_sink else { return };
+    let usage = response.and_then(|value| value.get("usage"));
+    let reported_prompt = usage
+        .and_then(|u| u.get("prompt_tokens").or_else(|| u.get("input_tokens")))
+        .and_then(|v| v.as_i64());
+    let reported_completion = usage
+        .and_then(|u| u.get("completion_tokens").or_else(|| u.get("output_tokens")))
+        .and_then(|v| v.as_i64());
+    let prompt_tokens = reported_prompt
+        .unwrap_or_else(|| approximate_tokens(&serde_json::to_string(request).unwrap_or_default()));
+    let completion_tokens = reported_completion.unwrap_or_else(|| approximate_tokens(completion));
+    let total_tokens = usage
+        .and_then(|u| u.get("total_tokens"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(prompt_tokens + completion_tokens);
+    sink(AiUsage {
+        model: cfg.model.clone(),
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        exact: reported_prompt.is_some() && reported_completion.is_some(),
+    });
 }
 
 /// Human-readable name for a stored UI language code, or `None` for "system" /
@@ -386,10 +431,12 @@ pub async fn chat(cfg: &AiConfig, messages: Vec<ChatMessage>) -> Result<String> 
     if let Some(err) = parsed.get("error") {
         return Err(CoreError::Other(format!("ai api: {err}")));
     }
-    parsed["choices"][0]["message"]["content"]
+    let content = parsed["choices"][0]["message"]["content"]
         .as_str()
         .map(strip_reasoning)
-        .ok_or_else(|| CoreError::Other("ai response had no content".into()))
+        .ok_or_else(|| CoreError::Other("ai response had no content".into()))?;
+    record_usage(cfg, &body, Some(&parsed), &content);
+    Ok(content)
 }
 
 /// Stream an SSE completion through the reasoning filter, forwarding confirmed
@@ -431,6 +478,7 @@ pub async fn chat_stream(
     let (full, _reasoning) =
         stream_split(&url, &cfg.api_key, &body, &mut on_delta, &mut noop).await?;
     if !full.trim().is_empty() {
+        record_usage(cfg, &body, None, &full);
         return Ok(full);
     }
     // Endpoint didn't stream anything usable - fall back to a plain completion.
@@ -484,6 +532,7 @@ pub async fn chat_tools(
         return Err(CoreError::Other(format!("ai api: {err}")));
     }
     let msg = &parsed["choices"][0]["message"];
+    record_usage(cfg, &body, Some(&parsed), &msg.to_string());
     if let Some(tcs) = msg.get("tool_calls").and_then(|v| v.as_array()) {
         let calls: Vec<ToolCall> = tcs
             .iter()
@@ -524,6 +573,7 @@ pub async fn chat_stream_json_split(
     let (answer, reasoning) =
         stream_split(&url, &cfg.api_key, &body, &mut on_answer, &mut on_reasoning).await?;
     if !answer.trim().is_empty() || !reasoning.trim().is_empty() {
+        record_usage(cfg, &body, None, &format!("{answer}{reasoning}"));
         return Ok((answer, reasoning));
     }
     // Endpoint didn't stream - fall back to a plain completion.
@@ -549,6 +599,7 @@ pub async fn chat_stream_json_split(
     if !answer.is_empty() {
         on_answer(&answer);
     }
+    record_usage(cfg, &body, Some(&parsed), &format!("{answer}{reasoning}"));
     Ok((answer, reasoning))
 }
 
@@ -986,13 +1037,43 @@ pub fn quick_replies_prompt(subject: &str, context: &str) -> Vec<ChatMessage> {
     ]
 }
 
+/// Like [`quick_replies_prompt`] but nudged toward the user's learned writing
+/// voice: their style profile is appended to the system message so the one-tap
+/// suggestions carry their tone, word choice, and emoji habits. `profile` may
+/// be empty, in which case this is identical to the plain prompt.
+pub fn quick_replies_prompt_voiced(
+    subject: &str,
+    context: &str,
+    profile: &str,
+) -> Vec<ChatMessage> {
+    let mut msgs = quick_replies_prompt(subject, context);
+    let profile = profile.trim();
+    if !profile.is_empty() {
+        if let Some(system) = msgs.first_mut() {
+            system.content.push_str(
+                "\n\nWrite the suggestions in this person's own voice - match the tone, \
+                 warmth, formality, punctuation, and emoji habits described below (still no \
+                 greeting or sign-off, still at most 12 words each). Their writing style:\n",
+            );
+            system.content.push_str(profile);
+        }
+    }
+    msgs
+}
+
 /// Suggest up to 3 short one-tap replies to a thread. Tolerates prose or code
 /// fences around the JSON by extracting the outermost array span; blank
-/// entries are dropped.
-pub async fn quick_replies(cfg: &AiConfig, subject: &str, context: &str) -> Result<Vec<String>> {
+/// entries are dropped. When `profile` is non-empty the suggestions imitate the
+/// user's learned writing voice.
+pub async fn quick_replies(
+    cfg: &AiConfig,
+    subject: &str,
+    context: &str,
+    profile: &str,
+) -> Result<Vec<String>> {
     let raw = chat(
         cfg,
-        apply_language(quick_replies_prompt(subject, context), cfg),
+        apply_language(quick_replies_prompt_voiced(subject, context, profile), cfg),
     )
     .await?;
     let json = match (raw.find('['), raw.rfind(']')) {
@@ -1315,6 +1396,7 @@ mod tests {
             body_state: "cached".into(),
             text_body: Some(body.to_string()),
             html_body: None,
+            automation_note: None,
             attachments: vec![],
             list_unsubscribe: None,
             via: None,

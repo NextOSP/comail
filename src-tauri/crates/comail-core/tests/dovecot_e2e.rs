@@ -378,7 +378,7 @@ async fn full_sync_triage_and_search() {
     .await;
 
     // 11. IMAP IDLE push: with the actor waiting in IDLE, a message appended to
-    // INBOX should surface in seconds — far faster than the 60s poll cycle.
+    // INBOX should surface in seconds - far faster than the 60s poll cycle.
     // Wait until the actor is quiescent (state "idle" => in the IDLE wait), then
     // append; the server's push must wake it.
     wait_for("account idle", Duration::from_secs(90), || async {

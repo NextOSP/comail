@@ -60,6 +60,20 @@ enum Scenario {
     Categorize,
 }
 
+impl Scenario {
+    fn as_str(self) -> &'static str {
+        match self {
+            Scenario::Ask => "ask",
+            Scenario::Draft => "draft",
+            Scenario::Summarize => "summarize",
+            Scenario::Voice => "voice",
+            Scenario::Command => "command",
+            Scenario::QuickReply => "quick_reply",
+            Scenario::Categorize => "automation",
+        }
+    }
+}
+
 /// Resolve the model id a scenario should use: its configured tier's model, or
 /// the legacy single `ai_model` when that tier is left blank.
 fn resolve_ai_model(settings: &Settings, scenario: Scenario) -> String {
@@ -2381,7 +2395,70 @@ impl Core {
             model: resolve_ai_model(settings, scenario),
             api_key,
             language: ai::ui_language_name(&settings.language).map(str::to_string),
+            usage_sink: {
+                let db = self.db.clone();
+                let scenario = scenario.as_str().to_string();
+                Some(Arc::new(move |usage: ai::AiUsage| {
+                    let db = db.clone();
+                    let scenario = scenario.clone();
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        handle.spawn(async move {
+                            let result = db
+                                .write(move |conn| {
+                                    repo::ai_usage::record(
+                                        conn,
+                                        now_ms(),
+                                        &usage.model,
+                                        &scenario,
+                                        usage.prompt_tokens,
+                                        usage.completion_tokens,
+                                        usage.total_tokens,
+                                        usage.exact,
+                                    )
+                                })
+                                .await;
+                            if let Err(e) = result {
+                                tracing::warn!("recording ai usage: {e}");
+                            }
+                        });
+                    }
+                }))
+            },
         })
+    }
+
+    pub async fn ai_usage_stats(&self) -> Result<AiUsageStats> {
+        self.db.read(|conn| repo::ai_usage::stats(conn)).await
+    }
+
+    /// Translate a plain-language automation request into a validated action
+    /// plan. This only previews behavior; it never executes mailbox actions.
+    pub async fn ai_plan_automation(&self, prompt: String) -> Result<AiAutomationPlan> {
+        let prompt = prompt.trim();
+        if prompt.is_empty() {
+            return Ok(AiAutomationPlan {
+                issues: vec!["Describe the emails to match and what Comail should do.".into()],
+                ..AiAutomationPlan::default()
+            });
+        }
+        let (settings, labels, splits) = self
+            .db
+            .read(|conn| {
+                Ok((
+                    repo::settings::get(conn)?,
+                    repo::labels::list(conn)?,
+                    repo::splits::list(conn)?,
+                ))
+            })
+            .await?;
+        let cfg = self.ai_config_from(&settings, Scenario::Categorize).await?;
+        let messages = route::automation_planner_prompt(prompt, &labels, &splits);
+        let output = ai::chat(&cfg, messages).await?;
+        Ok(route::validate_automation_plan(
+            route::parse_automation_plan(&output),
+            &labels,
+            &splits,
+        ))
     }
 
     pub async fn set_ai_key(&self, api_key: String) -> Result<()> {
@@ -2431,10 +2508,18 @@ impl Core {
     /// as chips in an empty reply composer. Runs on the instant tier: the
     /// chips are only useful if they appear before the user starts typing.
     pub async fn ai_quick_replies(&self, thread_id: i64) -> Result<Vec<String>> {
-        let cfg = self.ai_config(Scenario::QuickReply).await?;
+        let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        let cfg = self.ai_config_from(&settings, Scenario::QuickReply).await?;
         let detail = self.get_thread(thread_id).await?;
         let context = ai::thread_context(&detail.messages, 12_000);
-        ai::quick_replies(&cfg, &detail.thread.subject, &context).await
+        // Match the user's learned voice when voice drafting is enabled, same as
+        // full AI drafts; otherwise pass an empty profile for the neutral prompt.
+        let profile = if settings.voice_drafting {
+            settings.voice_profile.as_str()
+        } else {
+            ""
+        };
+        ai::quick_replies(&cfg, &detail.thread.subject, &context, profile).await
     }
 
     /// Draft or rewrite email body text. With a thread, the reply is grounded
@@ -3014,6 +3099,52 @@ impl Core {
         Ok(())
     }
 
+    /// Persist a single shared tab order across custom splits and auto-label
+    /// tabs. `order` lists every reorderable tab top-to-bottom as `(kind, id)`
+    /// where `kind` is `"split"` or `"label"`; its index becomes the row's
+    /// `position`. Built-in Important/Other are pinned and never included.
+    ///
+    /// Only re-resolves routing when the splits' relative priority actually
+    /// changed (moving an auto-label around can't affect first-match-wins), so a
+    /// pure label move stays cheap.
+    pub async fn reorder_tabs(&self, order: Vec<(String, i64)>) -> Result<()> {
+        let split_order_changed = self
+            .db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                let split_ids = |tx: &rusqlite::Transaction| -> rusqlite::Result<Vec<i64>> {
+                    tx.prepare("SELECT id FROM split_rules ORDER BY position, id")?
+                        .query_map([], |r| r.get(0))?
+                        .collect()
+                };
+                let before = split_ids(&tx)?;
+                for (i, (kind, id)) in order.iter().enumerate() {
+                    let pos = i as i64;
+                    match kind.as_str() {
+                        "split" => tx.execute(
+                            "UPDATE split_rules SET position = ?2 WHERE id = ?1",
+                            rusqlite::params![id, pos],
+                        )?,
+                        "label" => tx.execute(
+                            "UPDATE labels SET position = ?2 WHERE id = ?1",
+                            rusqlite::params![id, pos],
+                        )?,
+                        _ => 0,
+                    };
+                }
+                let after = split_ids(&tx)?;
+                tx.commit()?;
+                Ok(before != after)
+            })
+            .await?;
+        if split_order_changed {
+            self.reroute_all_sync().await?;
+        } else {
+            self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
+        }
+        Ok(())
+    }
+
     pub async fn list_labels(&self) -> Result<Vec<Label>> {
         self.db.read(|conn| repo::labels::list(conn)).await
     }
@@ -3034,6 +3165,17 @@ impl Core {
         self.db
             .write(move |conn| repo::labels::delete(conn, id))
             .await
+    }
+
+    pub async fn restore_auto_labels(&self) -> Result<i64> {
+        let restored = self
+            .db
+            .write(|conn| repo::labels::restore_auto_defaults(conn))
+            .await?;
+        if restored > 0 {
+            self.reroute_all_sync().await?;
+        }
+        Ok(restored)
     }
 
     /// Re-run routing over all stored mail. Legacy alias kept for the existing
@@ -3072,6 +3214,10 @@ impl Core {
                     [],
                 )?;
                 tx.execute("UPDATE threads SET routed_tab = NULL", [])?;
+                tx.execute(
+                    "UPDATE messages SET local_subject_prefix = '', local_body_note = ''",
+                    [],
+                )?;
                 let settings = repo::settings::get(&tx)?;
                 let mut n = 0i64;
                 if settings.auto_labels_enabled {
@@ -3103,10 +3249,10 @@ impl Core {
         Ok(n)
     }
 
-    /// Classify up to `limit` threads waiting on the AI (`routed_tab = 'pending'`)
-    /// into a category using the custom prompt, caching decisions by sender so
-    /// repeat senders never re-hit the model. Returns how many were resolved.
-    /// A no-op (returns 0) when categorization is off or no key is configured.
+    /// Classify up to `limit` pending threads. With no custom automations this
+    /// preserves the low-cost sender-domain category cache. Compound rules are
+    /// evaluated per message (their conditions may depend on subject/body), and
+    /// only their preconfigured action allow-lists are executed.
     pub async fn classify_pending(&self, limit: i64) -> Result<i64> {
         let _guard = self.ai_router_lock.lock().await;
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
@@ -3133,14 +3279,54 @@ impl Core {
         }
 
         let prompt = settings.ai_category_prompt.clone();
-        // Resolved (thread_id -> route key or None) and cache writes to persist.
-        let mut resolved: Vec<(i64, Option<String>)> = Vec::new();
+        let rules: Vec<AiAutomationRule> = settings
+            .ai_automation_rules
+            .iter()
+            .filter(|rule| rule.enabled && !rule.actions.is_empty())
+            .cloned()
+            .collect();
+        let compound = !rules.is_empty();
+        // Resolved (thread id, category keyword, configured actions).
+        let mut resolved: Vec<(i64, Option<String>, Vec<AiAutomationAction>)> = Vec::new();
         let mut decided: std::collections::HashMap<String, Option<autolabel::Category>> =
             std::collections::HashMap::new();
         let mut cache_writes: Vec<(String, String)> = Vec::new();
 
         for (tid, facts) in jobs {
             let domain = route::sender_domain(&facts.from_addr);
+            if compound {
+                let msgs = route::automation_prompt(
+                    &prompt,
+                    &rules,
+                    &facts.from_addr,
+                    &facts.subject,
+                    &facts.snippet,
+                );
+                match ai::chat(&cfg, msgs).await {
+                    Ok(out) => {
+                        let decision = route::parse_automation_decision(&out);
+                        let selected: std::collections::HashSet<&str> =
+                            decision.rule_ids.iter().map(String::as_str).collect();
+                        // Preserve the user's rule/action order, not the model's
+                        // output order, so compound behavior is deterministic.
+                        let actions = rules
+                            .iter()
+                            .filter(|rule| selected.contains(rule.id.as_str()))
+                            .flat_map(|rule| rule.actions.iter().cloned())
+                            .collect();
+                        resolved.push((
+                            tid,
+                            decision.category.map(|c| c.keyword().to_string()),
+                            actions,
+                        ));
+                    }
+                    Err(e) => {
+                        tracing::warn!("ai automation failed for thread {tid}: {e}");
+                    }
+                }
+                continue;
+            }
+
             let category: Option<autolabel::Category> = if let Some(hit) = cache.get(&domain) {
                 // Cache stores the category keyword, "" = no category.
                 autolabel::Category::from_keyword(hit)
@@ -3170,10 +3356,14 @@ impl Core {
                     }
                 }
             };
-            resolved.push((tid, category.map(|c| c.keyword().to_string())));
+            resolved.push((tid, category.map(|c| c.keyword().to_string()), Vec::new()));
         }
 
-        // One write pass: turn category keywords into route keys and apply.
+        let action_plans: Vec<(i64, Vec<AiAutomationAction>)> = resolved
+            .iter()
+            .map(|(tid, _, actions)| (*tid, actions.clone()))
+            .collect();
+        // One write pass: apply category/tab routing and local annotations.
         let count = self
             .db
             .write(move |conn| {
@@ -3182,7 +3372,7 @@ impl Core {
                     route::cache_put(conn, domain, key)?;
                 }
                 let mut count = 0i64;
-                for (tid, kw) in &resolved {
+                for (tid, kw, actions) in &resolved {
                     let key = match kw {
                         Some(k) => {
                             let id: Option<i64> = conn
@@ -3197,11 +3387,84 @@ impl Core {
                         None => None,
                     };
                     route::apply_tab(conn, *tid, key.as_deref())?;
+
+                    let mut prefixes = Vec::new();
+                    let mut notes = Vec::new();
+                    for action in actions {
+                        match action.kind.as_str() {
+                            "route_to" if valid_automation_route(conn, &action.value)? => {
+                                route::apply_tab(conn, *tid, Some(&action.value))?;
+                            }
+                            "subject_prefix" if !action.value.trim().is_empty() => {
+                                prefixes.push(action.value.as_str());
+                            }
+                            "body_note" if !action.value.trim().is_empty() => {
+                                notes.push(action.value.trim());
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !prefixes.is_empty() || !notes.is_empty() {
+                        conn.execute(
+                            "UPDATE messages
+                             SET local_subject_prefix = ?2, local_body_note = ?3
+                             WHERE id = (SELECT id FROM messages
+                                         WHERE thread_id = ?1 AND is_outgoing = 0 AND is_draft = 0
+                                         ORDER BY date DESC LIMIT 1)",
+                            rusqlite::params![tid, prefixes.concat(), notes.join("\n\n")],
+                        )?;
+                    }
                     count += 1;
                 }
                 Ok(count)
             })
             .await?;
+
+        // Mailbox mutations reuse the normal optimistic + queued action path,
+        // so IMAP state, retries, and UI refreshes behave exactly like a click.
+        for (thread_id, actions) in action_plans {
+            for action in actions {
+                let (kind, params) = match action.kind.as_str() {
+                    "mark_read" => (Some(ActionKind::MarkRead), None),
+                    "star" => (Some(ActionKind::Star), None),
+                    "archive" => (Some(ActionKind::Archive), None),
+                    "trash" => (Some(ActionKind::Trash), None),
+                    "add_label" | "remove_label" => {
+                        let Some(label_id) = action.value.parse::<i64>().ok() else {
+                            continue;
+                        };
+                        let kind = if action.kind == "add_label" {
+                            ActionKind::AddLabel
+                        } else {
+                            ActionKind::RemoveLabel
+                        };
+                        (
+                            Some(kind),
+                            Some(ActionParams {
+                                wake_at: None,
+                                target_folder_id: None,
+                                label_id: Some(label_id),
+                            }),
+                        )
+                    }
+                    _ => (None, None),
+                };
+                let Some(kind) = kind else { continue };
+                if let Err(e) = self
+                    .perform_action(PerformActionArgs {
+                        kind,
+                        thread_ids: vec![thread_id],
+                        params,
+                    })
+                    .await
+                {
+                    tracing::warn!(
+                        "automation action {} failed for thread {thread_id}: {e}",
+                        action.kind
+                    );
+                }
+            }
+        }
         self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
         Ok(count)
     }
@@ -3472,6 +3735,26 @@ fn apply_oauth_settings(settings: &Settings) {
     );
 }
 
+/// Validate a model-selected route against current local rows. The model only
+/// receives configured values, but this protects stale/deleted targets too.
+fn valid_automation_route(conn: &rusqlite::Connection, target: &str) -> Result<bool> {
+    if matches!(target, "important" | "other") {
+        return Ok(true);
+    }
+    let (table, id) = if let Some(id) = target.strip_prefix("split:") {
+        ("split_rules", id)
+    } else if let Some(id) = target.strip_prefix("label:") {
+        ("labels", id)
+    } else {
+        return Ok(false);
+    };
+    let Some(id) = id.parse::<i64>().ok() else {
+        return Ok(false);
+    };
+    let sql = format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = ?1)");
+    Ok(conn.query_row(&sql, rusqlite::params![id], |row| row.get::<_, i64>(0))? != 0)
+}
+
 /// Optimistic local mutation + enqueue, in one transaction.
 /// Returns (action_id, account_id) pairs.
 fn apply_thread_action(
@@ -3565,7 +3848,12 @@ fn apply_thread_action(
         }
         ActionKind::Star => {
             // Star the latest message only (thread-level star).
-            if let Some((id, ..)) = msgs.iter().max_by_key(|m| m.0) {
+            if let Some((id, _f, _u, _r, is_starred, _role)) = msgs.iter().max_by_key(|m| m.0) {
+                if *is_starred {
+                    repo::threads::recompute(&tx, thread_id)?;
+                    tx.commit()?;
+                    return Ok(out);
+                }
                 repo::messages::set_starred(&tx, *id, true)?;
                 let aid = repo::actions::enqueue(
                     &tx,

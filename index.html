@@ -11,11 +11,12 @@
         try {
           theme = localStorage.getItem("comail:theme");
         } catch (e) {}
-        if (theme !== "snow" && theme !== "carbon") {
+        if (theme !== "snow" && theme !== "carbon" && theme !== "holiday") {
           theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "carbon" : "snow";
         }
         document.documentElement.dataset.theme = theme;
-        document.documentElement.style.backgroundColor = theme === "carbon" ? "#141413" : "#faf9f7";
+        document.documentElement.style.backgroundColor =
+          theme === "carbon" ? "#141413" : theme === "holiday" ? "#f4f7fa" : "#faf9f7";
       })();
     </script>
   </head>

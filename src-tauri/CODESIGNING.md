@@ -23,7 +23,7 @@ a **gitignored** `src-tauri/.cargo/config.toml` whose cargo `runner`
 that identity + the fixed `com.deanoss.comail` identifier.
 
 On the first launch afterward you'll get **one** keychain prompt (the old ad-hoc
-grant doesn't match the new stable signature) — click **Always Allow**. You
+grant doesn't match the new stable signature) - click **Always Allow**. You
 won't be asked again on subsequent rebuilds.
 
 Revert: delete `src-tauri/.cargo/config.toml` and remove the `comail-dev`
@@ -38,7 +38,7 @@ codesign -d -r- src-tauri/target/debug/comail 2>&1 | grep designated
 
 ---
 
-## 2. Distributed builds (release.yml) — needs an Apple Developer ID
+## 2. Distributed builds (release.yml) - needs an Apple Developer ID
 
 The release workflow already reads the secrets below; until they're set, the
 shipped `.app` stays ad-hoc (users get repeated keychain prompts across updates
@@ -68,14 +68,14 @@ membership ($99/yr) and a **Developer ID Application** certificate.
 | --- | --- |
 | `APPLE_CERTIFICATE` | base64 of the `.p12` (step 4) |
 | `APPLE_CERTIFICATE_PASSWORD` | the `.p12` export password |
-| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` — copy exactly from `security find-identity -v -p codesigning` |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` - copy exactly from `security find-identity -v -p codesigning` |
 | `APPLE_ID` | your Apple ID email (for notarization) |
 | `APPLE_PASSWORD` | an app-specific password from https://account.apple.com → Sign-In & Security → App-Specific Passwords |
 | `APPLE_TEAM_ID` | your 10-char Team ID (developer.apple.com → Membership) |
 
 ### Turn signing on
 
-The workflow only passes these secrets when signing is explicitly enabled — an
+The workflow only passes these secrets when signing is explicitly enabled - an
 invalid/missing `APPLE_CERTIFICATE` otherwise fails the whole build at
 `security import`. After adding the six secrets, set a repository **variable**:
 

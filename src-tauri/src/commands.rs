@@ -479,6 +479,19 @@ pub async fn ai_list_models(state: State<'_, AppState>) -> CmdResult<Vec<String>
 }
 
 #[tauri::command]
+pub async fn ai_usage_stats(state: State<'_, AppState>) -> CmdResult<AiUsageStats> {
+    state.core.ai_usage_stats().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn ai_plan_automation(
+    state: State<'_, AppState>,
+    prompt: String,
+) -> CmdResult<AiAutomationPlan> {
+    state.core.ai_plan_automation(prompt).await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn ai_command(state: State<'_, AppState>, query: String) -> CmdResult<AiIntent> {
     state.core.ai_command(query).await.map_err(err)
 }
@@ -670,6 +683,20 @@ pub async fn delete_split(state: State<'_, AppState>, split_id: i64) -> CmdResul
     state.core.delete_split(split_id).await.map_err(err)
 }
 
+/// One reorderable tab: `kind` is `"split"` or `"label"`, `id` its row id.
+#[derive(serde::Deserialize)]
+pub struct TabRef {
+    pub kind: String,
+    pub id: i64,
+}
+
+/// Persist the shared top-to-bottom order of custom splits and auto-label tabs.
+#[tauri::command]
+pub async fn reorder_tabs(state: State<'_, AppState>, order: Vec<TabRef>) -> CmdResult<()> {
+    let order = order.into_iter().map(|t| (t.kind, t.id)).collect();
+    state.core.reorder_tabs(order).await.map_err(err)
+}
+
 // ---------- labels ----------
 
 #[derive(serde::Deserialize)]
@@ -698,6 +725,11 @@ pub async fn save_label(state: State<'_, AppState>, label: LabelInput) -> CmdRes
 #[tauri::command]
 pub async fn delete_label(state: State<'_, AppState>, label_id: i64) -> CmdResult<()> {
     state.core.delete_label(label_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn restore_auto_labels(state: State<'_, AppState>) -> CmdResult<i64> {
+    state.core.restore_auto_labels().await.map_err(err)
 }
 
 // ---------- sync / settings ----------

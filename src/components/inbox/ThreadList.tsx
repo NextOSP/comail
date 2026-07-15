@@ -26,7 +26,7 @@ type ListItem =
   | { kind: "thread"; thread: ThreadSummary };
 
 /** Interleave date-group headers into the thread rows. When grouping is off the
- *  result is just the threads, one item each — identical to the old behavior. */
+ *  result is just the threads, one item each - identical to the old behavior. */
 function buildListItems(threads: ThreadSummary[], grouped: boolean): ListItem[] {
   if (!grouped) return threads.map((thread) => ({ kind: "thread", thread }));
   const items: ListItem[] = [];

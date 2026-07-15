@@ -3,7 +3,7 @@
 
 Approach (pure Pillow):
   * A multi-point *mesh* gradient (several blended colour fields) rather than a
-    flat linear ramp — reads as "designed", not "AI default".
+    flat linear ramp - reads as "designed", not "AI default".
   * Fine film grain to kill banding and add texture.
   * Palettes lean monochromatic/duotone (intentional, brand-like) instead of
     the overused purple->pink->orange sunset.

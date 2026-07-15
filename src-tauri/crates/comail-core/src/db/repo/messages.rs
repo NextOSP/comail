@@ -31,8 +31,7 @@ pub struct NewMessage {
     pub snippet: String,
     pub references: Vec<String>,
     pub list_unsubscribe: Option<String>,
-    /// Transmitting party misaligned with From: (see mime::resolve_via) —
-    /// email or bare DKIM domain, shown as "via" in the UI. None when the
+    /// Transmitting party misaligned with From: (see mime::resolve_via) -     /// email or bare DKIM domain, shown as "via" in the UI. None when the
     /// transmitting domain aligns with From:.
     pub sender_addr: Option<String>,
 }
@@ -755,6 +754,9 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
 }
 
 fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
+    let subject: String = row.get("subject")?;
+    let prefix: String = row.get("local_subject_prefix")?;
+    let automation_note = row.get::<_, String>("local_body_note")?;
     Ok(MessageDetail {
         id: row.get("id")?,
         thread_id: row.get::<_, Option<i64>>("thread_id")?.unwrap_or(0),
@@ -767,7 +769,11 @@ fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
         },
         to: parse_addrs(&row.get::<_, String>("to_json")?),
         cc: parse_addrs(&row.get::<_, String>("cc_json")?),
-        subject: row.get("subject")?,
+        subject: if prefix.is_empty() {
+            subject
+        } else {
+            format!("{prefix}{subject}")
+        },
         date: row.get("date")?,
         is_read: row.get::<_, i64>("is_read")? != 0,
         is_starred: row.get::<_, i64>("is_starred")? != 0,
@@ -777,6 +783,7 @@ fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
         body_state: row.get("body_state")?,
         text_body: row.get("text_body")?,
         html_body: row.get("html_body")?,
+        automation_note: (!automation_note.trim().is_empty()).then_some(automation_note),
         attachments: Vec::new(),
         list_unsubscribe: row.get("list_unsubscribe")?,
         via: row.get("sender_addr")?,
@@ -1480,5 +1487,35 @@ mod tests {
             .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn local_automation_annotations_are_exposed_without_rewriting_source_fields() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (_thread_id, message_id) =
+            testutil::seed_message(&c, "billing@vendor.test", "July invoice", false);
+        c.execute(
+            "UPDATE messages SET local_subject_prefix = '[FINANCE] ',
+                                 local_body_note = 'Send to accounts payable.'
+             WHERE id = ?1",
+            params![message_id],
+        )
+        .unwrap();
+
+        let shown = detail(&c, message_id).unwrap();
+        assert_eq!(shown.subject, "[FINANCE] July invoice");
+        assert_eq!(
+            shown.automation_note.as_deref(),
+            Some("Send to accounts payable.")
+        );
+        let stored: String = c
+            .query_row(
+                "SELECT subject FROM messages WHERE id = ?1",
+                params![message_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "July invoice");
     }
 }

@@ -7,6 +7,9 @@ import { errorMessage } from "../../ipc/errors";
 import { appVersion, checkForUpdate } from "../../ipc/updater";
 import { useInstallUpdate } from "../../lib/useInstallUpdate";
 import type {
+  AiAutomationAction,
+  AiAutomationPlan,
+  AiAutomationRule,
   AiTier,
   Provider,
   Settings,
@@ -23,9 +26,12 @@ import {
   useAccounts,
   useAiModels,
   useAiStatus,
+  useAiUsage,
   useEmbeddingStatus,
+  useLabels,
   useLearnVoice,
   useSettings,
+  useSplits,
 } from "../../queries/hooks";
 import { commandScore } from "../../keyboard/commandScore";
 import { useUi, type SettingsTab } from "../../stores/ui";
@@ -38,7 +44,6 @@ import {
   ghostBtnCls,
   inputCls,
   PanelShell,
-  PanelTab,
   primaryBtnCls,
   SectionLabel,
   Segmented,
@@ -86,6 +91,7 @@ const DEFAULT_SETTINGS: Settings = {
   autoLabelsEnabled: true,
   aiCategorize: false,
   aiCategoryPrompt: "",
+  aiAutomationRules: [],
   aiTierCategorize: "instant",
   groupByDate: true,
   dockBadgeEnabled: true,
@@ -113,6 +119,69 @@ async function updateSettings(patch: Partial<Settings>) {
   }
 }
 
+function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
+  const paths: Record<SettingsTab, React.ReactNode> = {
+    general: (
+      <>
+        <path d="M4 7h6M14 7h6M4 17h9M17 17h3" />
+        <circle cx="12" cy="7" r="2" /><circle cx="15" cy="17" r="2" />
+      </>
+    ),
+    splits: (
+      <>
+        <rect x="3" y="4" width="7" height="16" rx="2" />
+        <rect x="14" y="4" width="7" height="7" rx="2" />
+        <rect x="14" y="15" width="7" height="5" rx="2" />
+      </>
+    ),
+    snippets: (
+      <>
+        <path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5M9 12h6M9 16h6" />
+      </>
+    ),
+    labels: (
+      <>
+        <path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9z" /><circle cx="8" cy="8" r="1.5" />
+      </>
+    ),
+    ai: (
+      <>
+        <path d="M12 3l1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2z" />
+        <path d="M18.5 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7zM5.5 14l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z" />
+      </>
+    ),
+    ai_automation: (
+      <>
+        <path d="M5 4v5M5 15v5M19 4v5M19 15v5M5 12h14" />
+        <circle cx="5" cy="12" r="3" /><circle cx="19" cy="12" r="3" />
+      </>
+    ),
+    rag: (
+      <>
+        <ellipse cx="10" cy="6" rx="6" ry="3" /><path d="M4 6v7c0 1.7 2.7 3 6 3 1 0 2-.1 2.8-.4M16 6v4" />
+        <circle cx="17" cy="16" r="4" /><path d="M20 19l2 2" />
+      </>
+    ),
+    accounts: (
+      <>
+        <circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+        <circle cx="17" cy="9" r="2.5" /><path d="M15.5 15.5A5 5 0 0 1 21 20" />
+      </>
+    ),
+    sync: (
+      <>
+        <path d="M20 7h-5V2" /><path d="M19 7a8 8 0 0 0-13.5-2L4 7" />
+        <path d="M4 17h5v5" /><path d="M5 17a8 8 0 0 0 13.5 2L20 17" />
+      </>
+    ),
+  };
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[tab]}
+    </svg>
+  );
+}
+
 export function SettingsPanel() {
   const { t } = useTranslation();
   const open = useUi((s) => s.panel === "settings");
@@ -128,6 +197,8 @@ export function SettingsPanel() {
     "snippets",
     "labels",
     "ai",
+    "ai_automation",
+    "rag",
     "accounts",
     "sync",
   ];
@@ -160,9 +231,24 @@ export function SettingsPanel() {
     snippets: t("settings:section.snippets"),
     labels: t("settings:section.labels"),
     ai: t("settings:section.ai"),
+    ai_automation: t("settings:section.aiAutomation"),
+    rag: t("settings:section.ragSearch"),
     accounts: t("settings:section.accounts"),
     sync: t("settings:section.sync"),
   };
+
+  const TAB_GROUPS: { label: string; tabs: SettingsTab[] }[] = [
+    { label: t("settings:navigation.general"), tabs: ["general"] },
+    {
+      label: t("settings:navigation.organization"),
+      tabs: ["splits", "snippets", "labels"],
+    },
+    {
+      label: t("settings:navigation.intelligence"),
+      tabs: ["ai", "ai_automation", "rag"],
+    },
+    { label: t("settings:navigation.system"), tabs: ["accounts", "sync"] },
+  ];
 
   // Flat index of every setting, so search can jump straight to its tab.
   // `label` is localized (matches localized queries); `keywords` add English synonyms.
@@ -180,7 +266,8 @@ export function SettingsPanel() {
     { tab: "snippets", label: t("settings:snippets.title"), keywords: "snippets templates canned responses shortcuts" },
     { tab: "labels", label: t("settings:labels.title"), keywords: "labels tags colors folders" },
     { tab: "ai", label: t("settings:section.ai"), keywords: "ai provider model api key openai anthropic openrouter" },
-    { tab: "ai", label: "Semantic search", keywords: "semantic search embeddings vector meaning offline reindex" },
+    { tab: "ai_automation", label: t("settings:section.aiAutomation"), keywords: "ai automation rules sort actions labels trash subject" },
+    { tab: "rag", label: t("settings:section.ragSearch"), keywords: "rag semantic search embeddings vector meaning offline reindex" },
     { tab: "ai", label: "Writing voice", keywords: "voice draft style learn tone" },
     { tab: "accounts", label: t("settings:section.accounts"), keywords: "accounts add remove gmail microsoft imap oauth" },
     { tab: "accounts", label: t("settings:signature.section"), keywords: "signature sign-off footer" },
@@ -199,19 +286,46 @@ export function SettingsPanel() {
           .sort((a, b) => b.score - a.score)
           .map((r) => r.e);
 
-  const tabs = (
-    <>
-      {TAB_KEYS.map((k) => (
-        <PanelTab key={k} active={tab === k && q === ""} onClick={() => goTab(k)}>
-          {TAB_LABELS[k]}
-        </PanelTab>
+  const sideNav = (
+    <nav className="flex flex-col" aria-label={t("settings:title")}>
+      {TAB_GROUPS.map((group, groupIndex) => (
+        <section
+          key={group.label}
+          className={groupIndex === 0 ? "pb-2" : "border-t border-hairline py-2"}
+        >
+          <h3 className="mb-1 px-3 text-[10px] font-semibold tracking-[0.13em] text-ink-faint uppercase">
+            {group.label}
+          </h3>
+          <div className="flex flex-col gap-0.5">
+            {group.tabs.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => goTab(k)}
+                aria-current={tab === k && q === "" ? "page" : undefined}
+                className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[13.5px] transition-colors ${
+                  tab === k && q === ""
+                    ? "bg-accent/10 font-medium text-accent"
+                    : "text-ink-muted hover:bg-bg2 hover:text-ink"
+                }`}
+              >
+                <span className={`flex size-6 shrink-0 items-center justify-center rounded-md ${
+                  tab === k && q === "" ? "bg-accent/10" : "bg-bg1 group-hover:bg-bg0"
+                }`}>
+                  <SettingsNavIcon tab={k} />
+                </span>
+                <span className="truncate">{TAB_LABELS[k]}</span>
+              </button>
+            ))}
+          </div>
+        </section>
       ))}
-    </>
+    </nav>
   );
 
   const search = (
     <input
-      className={`${inputCls} !w-[220px] !py-1.5`}
+      className={`${inputCls} !w-[280px] !py-1.5`}
       placeholder={t("settings:search.placeholder")}
       value={query}
       onChange={(e) => setQuery(e.target.value)}
@@ -222,7 +336,7 @@ export function SettingsPanel() {
 
   if (q !== "") {
     return (
-      <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} tabs={tabs} search={search} width={680}>
+      <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} sidebar={sideNav} search={search} width={940}>
         {results.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-ink-faint">
             {t("settings:search.noResults", { query: q })}
@@ -248,7 +362,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} tabs={tabs} search={search} width={680}>
+    <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} sidebar={sideNav} search={search} width={940}>
       <div className="flex flex-col gap-7">
         {tab === "general" && (
           <section className="flex flex-col gap-4">
@@ -408,11 +522,15 @@ export function SettingsPanel() {
 
         {tab === "ai" && (
           <>
-            <AiSection settings={s} />
-            <SemanticSearchSection settings={s} />
+            <AiUsageDashboard />
+            <AiSection settings={s} page="models" />
             <VoiceSection settings={s} />
           </>
         )}
+
+        {tab === "ai_automation" && <AiSection settings={s} page="automation" />}
+
+        {tab === "rag" && <SemanticSearchSection settings={s} />}
 
         {tab === "accounts" && (
           <>
@@ -576,7 +694,403 @@ function ScenarioRouteRow({
   );
 }
 
-function AiSection({ settings }: { settings: Settings }) {
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatTokenCount(value: number): string {
+  return new Intl.NumberFormat(i18n.language, {
+    notation: value >= 10_000 ? "compact" : "standard",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+/** Token totals and a GitHub-style daily activity grid for recent AI requests. */
+function AiUsageDashboard() {
+  const { t } = useTranslation();
+  const { data: usage } = useAiUsage();
+  const dayByDate = new Map((usage?.days ?? []).map((day) => [day.date, day]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  // A full year of weeks (GitHub-style) so the grid fills the card width instead
+  // of a narrow 13-week strip stranded on the left of a wide panel.
+  start.setDate(start.getDate() - start.getDay() - 51 * 7);
+  const heatmapDays: Date[] = [];
+  for (const cursor = new Date(start); cursor <= today; cursor.setDate(cursor.getDate() + 1)) {
+    heatmapDays.push(new Date(cursor));
+  }
+  const maxTokens = Math.max(1, ...Array.from(dayByDate.values(), (day) => day.totalTokens));
+  const summaries = [
+    { label: t("settings:ai.usage.total"), value: usage?.totalTokens ?? 0 },
+    { label: t("settings:ai.usage.today"), value: usage?.todayTokens ?? 0 },
+    { label: t("settings:ai.usage.yesterday"), value: usage?.yesterdayTokens ?? 0 },
+    { label: t("settings:ai.usage.last7"), value: usage?.last7DaysTokens ?? 0 },
+    { label: t("settings:ai.usage.last30"), value: usage?.last30DaysTokens ?? 0 },
+  ];
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <SectionLabel>{t("settings:ai.usage.section")}</SectionLabel>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-faint">
+            {t("settings:ai.usage.intro")}
+          </p>
+        </div>
+        <span className="shrink-0 text-[11.5px] tabular-nums text-ink-faint">
+          {t("settings:ai.usage.requests", { count: usage?.totalRequests ?? 0 })}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-5 gap-2">
+        {summaries.map((summary) => (
+          <div key={summary.label} className="rounded-xl border border-hairline bg-bg1 px-3 py-2.5">
+            <div className="truncate text-[10.5px] font-medium text-ink-faint">{summary.label}</div>
+            <div
+              className="mt-1 truncate text-[18px] font-semibold tabular-nums tracking-tight text-ink"
+              title={(summary.value ?? 0).toLocaleString(i18n.language)}
+            >
+              {formatTokenCount(summary.value)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <span className="text-[12px] font-medium text-ink-muted">
+            {t("settings:ai.usage.activity")}
+          </span>
+          <span className="text-[10.5px] text-ink-faint">
+            {t("settings:ai.usage.recent")}
+          </span>
+        </div>
+        <div className="flex items-stretch gap-2">
+          <div className="grid shrink-0 grid-rows-7 items-center gap-[3px] text-[9px] leading-[10px] text-ink-faint">
+            <span />
+            <span>{t("settings:ai.usage.monday")}</span>
+            <span />
+            <span>{t("settings:ai.usage.wednesday")}</span>
+            <span />
+            <span>{t("settings:ai.usage.friday")}</span>
+            <span />
+          </div>
+          <div
+            className="grid flex-1 gap-[3px]"
+            style={{
+              gridAutoFlow: "column",
+              gridTemplateRows: "repeat(7, auto)",
+              gridAutoColumns: "minmax(0, 1fr)",
+            }}
+            aria-label={t("settings:ai.usage.activity")}
+          >
+            {heatmapDays.map((date) => {
+              const key = localDateKey(date);
+              const day = dayByDate.get(key);
+              const tokens = day?.totalTokens ?? 0;
+              const ratio = tokens / maxTokens;
+              const opacity = tokens === 0 ? undefined : 0.18 + Math.ceil(ratio * 4) * 0.17;
+              const title = t("settings:ai.usage.dayTitle", {
+                date: date.toLocaleDateString(i18n.language, {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                }),
+                tokens: tokens.toLocaleString(i18n.language),
+                requests: day?.requests ?? 0,
+              });
+              return (
+                <span
+                  key={key}
+                  className="aspect-square w-full rounded-[2px] bg-bg3 ring-1 ring-inset ring-black/[0.035]"
+                  style={tokens > 0 ? { background: "var(--accent)", opacity } : undefined}
+                  title={title}
+                  aria-label={title}
+                />
+              );
+            })}
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-end gap-1 text-[9.5px] text-ink-faint">
+          <span>{t("settings:ai.usage.less")}</span>
+          {[0, 0.35, 0.52, 0.69, 0.86].map((opacity, index) => (
+            <span
+              key={opacity}
+              className="size-2.5 rounded-[2px] bg-bg3"
+              style={index === 0 ? undefined : { background: "var(--accent)", opacity }}
+            />
+          ))}
+          <span>{t("settings:ai.usage.more")}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AiAutomationsEditor({ settings }: { settings: Settings }) {
+  const { t } = useTranslation();
+  const { data: labels } = useLabels();
+  const { data: splits } = useSplits();
+  const pushToast = useUi((s) => s.pushToast);
+  const [draft, setDraft] = useState<AiAutomationRule | null>(null);
+  const [plan, setPlan] = useState<AiAutomationPlan | null>(null);
+  const [trying, setTrying] = useState(false);
+
+  const commitRules = (rules: AiAutomationRule[]) => void updateSettings({ aiAutomationRules: rules });
+  const targetName = (value: string) => {
+    if (value === "important") return t("inbox:split.important");
+    if (value === "other") return t("inbox:split.other");
+    if (value.startsWith("split:"))
+      return splits?.find((s) => s.id === Number(value.slice(6)))?.name ?? value;
+    if (value.startsWith("label:"))
+      return labels?.find((l) => l.id === Number(value.slice(6)))?.name ?? value;
+    return value;
+  };
+  const describeAction = (action: AiAutomationAction) => {
+    const base = t(`settings:ai.actions.${action.kind}`);
+    if (action.kind === "route_to") return `${base}: ${targetName(action.value)}`;
+    if (action.kind === "add_label" || action.kind === "remove_label") {
+      const name = labels?.find((l) => l.id === Number(action.value))?.name ?? action.value;
+      return `${base}: ${name}`;
+    }
+    if (action.kind === "subject_prefix" || action.kind === "body_note")
+      return `${base}: ${action.value}`;
+    return base;
+  };
+  const openRule = (rule: AiAutomationRule) => {
+    const sourcePrompt = rule.sourcePrompt?.trim() ||
+      `${rule.instruction}. ${rule.actions.map(describeAction).join(", ")}.`;
+    setDraft({ ...structuredClone(rule), sourcePrompt });
+    setPlan(null);
+  };
+  const closeEditor = () => {
+    setDraft(null);
+    setPlan(null);
+  };
+  const tryPrompt = async () => {
+    if (!draft?.sourcePrompt.trim() || trying) return;
+    setTrying(true);
+    try {
+      const next = await call("ai_plan_automation", { prompt: draft.sourcePrompt.trim() });
+      setPlan(next);
+      if (next.supported) {
+        setDraft((current) => current ? {
+          ...current,
+          name: next.name,
+          instruction: next.instruction,
+          actions: next.actions,
+        } : current);
+      }
+    } catch (err) {
+      setPlan(null);
+      pushToast({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setTrying(false);
+    }
+  };
+  const valid = !!draft && !!plan?.supported && draft.actions.length > 0;
+
+  if (draft) {
+    return (
+      <div className="rounded-xl border border-hairline bg-bg1 p-4 shadow-sm">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[14px] font-semibold text-ink">
+              {settings.aiAutomationRules.some((r) => r.id === draft.id)
+                ? t("settings:ai.automation.editTitle")
+                : t("settings:ai.automation.newTitle")}
+            </div>
+            <p className="mt-0.5 text-[11.5px] text-ink-faint">
+              {t("settings:ai.automation.editorHint")}
+            </p>
+          </div>
+          <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10.5px] font-semibold text-accent">
+            AI
+          </span>
+        </div>
+        <div className="flex flex-col gap-3.5">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11.5px] font-medium text-ink-faint">
+              {t("settings:ai.automation.promptLabel")}
+            </span>
+            <textarea
+              className={`${inputCls} min-h-32 resize-y leading-relaxed`}
+              value={draft.sourcePrompt}
+              onChange={(e) => {
+                setDraft({ ...draft, sourcePrompt: e.target.value });
+                setPlan(null);
+              }}
+              placeholder={t("settings:ai.automation.promptPlaceholder")}
+              rows={5}
+              autoFocus
+            />
+            <span className="text-[10.5px] leading-relaxed text-ink-faint">
+              {t("settings:ai.automation.promptHint")}
+            </span>
+          </label>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={primaryBtnCls}
+              disabled={trying || !draft.sourcePrompt.trim()}
+              onClick={() => void tryPrompt()}
+            >
+              {trying ? t("settings:ai.automation.trying") : t("settings:ai.automation.try")}
+            </button>
+            <span className="text-[10.5px] text-ink-faint">
+              {t("settings:ai.automation.tryHint")}
+            </span>
+          </div>
+
+          {plan && (
+            <div className="rounded-xl border border-hairline bg-bg0 p-3.5">
+              <div className="flex items-start gap-2.5">
+                <span
+                  className="mt-1 size-2 shrink-0 rounded-full"
+                  style={{ background: plan.supported ? "var(--ok)" : "var(--danger)" }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold text-ink">
+                    {plan.supported
+                      ? t("settings:ai.automation.validated", { name: plan.name })
+                      : t("settings:ai.automation.notDoable")}
+                  </div>
+                  {plan.summary && (
+                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-faint">
+                      {plan.summary}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {plan.supported ? (
+                <div className="mt-3 flex flex-col gap-2.5 border-t border-hairline pt-3">
+                  <div>
+                    <div className="text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+                      {t("settings:ai.automation.understoodWhen")}
+                    </div>
+                    <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
+                      {plan.instruction}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+                      {t("settings:ai.automation.understoodActions")}
+                    </div>
+                    <div className="mt-1.5 flex flex-col gap-1.5">
+                      {plan.actions.map((action, index) => (
+                        <div key={`${action.kind}-${index}`} className="flex items-center gap-2 text-[12px] text-ink-muted">
+                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-bg2 text-[10px] font-semibold text-ink-faint">
+                            {index + 1}
+                          </span>
+                          <span>{describeAction(action)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <ul className="mt-3 flex list-disc flex-col gap-1 border-t border-hairline pt-3 pl-5 text-[11.5px] leading-relaxed text-danger">
+                  {plan.issues.map((issue, index) => <li key={`${issue}-${index}`}>{issue}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div className="mt-1 flex items-center gap-2 border-t border-hairline pt-3">
+            <button
+              type="button"
+              className={primaryBtnCls}
+              disabled={!valid}
+              onClick={() => {
+                const exists = settings.aiAutomationRules.some((r) => r.id === draft.id);
+                commitRules(exists
+                  ? settings.aiAutomationRules.map((r) => (r.id === draft.id ? draft : r))
+                  : [...settings.aiAutomationRules, draft]);
+                closeEditor();
+              }}
+            >
+              {t("settings:ai.automation.save")}
+            </button>
+            <button type="button" className={ghostBtnCls} onClick={closeEditor}>
+              {t("settings:ai.automation.cancel")}
+            </button>
+            {!plan?.supported && (
+              <span className="ml-auto text-[10.5px] text-ink-faint">
+                {t("settings:ai.automation.saveAfterTry")}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {settings.aiAutomationRules.map((rule) => (
+        <div key={rule.id} className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3">
+          <div className="flex items-start gap-3">
+            <Toggle
+              label={rule.name}
+              checked={rule.enabled}
+              onChange={(enabled) => commitRules(settings.aiAutomationRules.map((r) => r.id === rule.id ? { ...r, enabled } : r))}
+            />
+            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openRule(rule)}>
+              <span className="block truncate text-[13.5px] font-medium text-ink">{rule.name}</span>
+              <span className="mt-0.5 block line-clamp-2 text-[11.5px] leading-relaxed text-ink-faint">{rule.sourcePrompt || rule.instruction}</span>
+            </button>
+            <button type="button" className={ghostBtnCls} onClick={() => openRule(rule)}>
+              {t("settings:ai.automation.edit")}
+            </button>
+            <ConfirmButton
+              label={t("settings:ai.automation.delete")}
+              confirmLabel={t("settings:ai.automation.reallyDelete")}
+              onConfirm={() => commitRules(settings.aiAutomationRules.filter((r) => r.id !== rule.id))}
+            />
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-1.5 pl-[52px]">
+            {rule.actions.map((action, index) => (
+              <span key={`${action.kind}-${index}`} className="max-w-full truncate rounded-full border border-hairline bg-bg0 px-2 py-0.5 text-[10.5px] text-ink-muted">
+                {describeAction(action)}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+      {settings.aiAutomationRules.length === 0 && (
+        <div className="rounded-xl border border-dashed border-hairline bg-bg1 px-4 py-5 text-center">
+          <div className="text-[12.5px] font-medium text-ink-muted">{t("settings:ai.automation.emptyTitle")}</div>
+          <p className="mx-auto mt-1 max-w-md text-[11.5px] leading-relaxed text-ink-faint">{t("settings:ai.automation.emptyHint")}</p>
+        </div>
+      )}
+      <button
+        type="button"
+        className={`${primaryBtnCls} mt-0.5 self-start`}
+        onClick={() => setDraft({
+          id: `automation-${Date.now().toString(36)}`,
+          name: "",
+          sourcePrompt: "",
+          instruction: "",
+          enabled: true,
+          actions: [],
+        })}
+      >
+        {t("settings:ai.automation.add")}
+      </button>
+    </div>
+  );
+}
+
+function AiSection({
+  settings,
+  page,
+}: {
+  settings: Settings;
+  page: "models" | "automation";
+}) {
   const { t } = useTranslation();
   const { data: status } = useAiStatus();
   const pushToast = useUi((s) => s.pushToast);
@@ -640,6 +1154,8 @@ function AiSection({ settings }: { settings: Settings }) {
 
   return (
     <section className="flex flex-col gap-4">
+      {page === "models" ? (
+        <>
       <SectionLabel>{t("settings:section.ai")}</SectionLabel>
       <SettingRow
         label={t("settings:ai.statusLabel")}
@@ -807,7 +1323,9 @@ function AiSection({ settings }: { settings: Settings }) {
         onChange={(v) => commitField({ aiTierVoice: v })}
         tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
       />
-
+        </>
+      ) : (
+        <>
       <SectionLabel>{t("settings:ai.categorizeSection")}</SectionLabel>
       <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
         {t("settings:ai.categorizeIntro")}
@@ -824,26 +1342,30 @@ function AiSection({ settings }: { settings: Settings }) {
       </SettingRow>
       {settings.aiCategorize && (
         <>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11.5px] font-medium text-ink-faint">
-              {t("settings:ai.categoryPromptLabel")}
-            </span>
-            <textarea
-              value={categoryPrompt}
-              onChange={(e) => setCategoryPrompt(e.target.value)}
-              onBlur={() => {
-                if (categoryPrompt !== settings.aiCategoryPrompt)
-                  void updateSettings({ aiCategoryPrompt: categoryPrompt });
-              }}
-              rows={6}
-              spellCheck={false}
-              placeholder={t("settings:ai.categoryPromptPlaceholder")}
-              className={`${inputCls} w-full resize-y !text-[12px] leading-relaxed`}
-            />
-          </label>
-          <p className="-mt-1 text-[11.5px] text-ink-faint">
-            {t("settings:ai.categoryPromptHint")}
-          </p>
+          <AiAutomationsEditor settings={settings} />
+          <details className="group rounded-xl border border-hairline bg-bg1">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-[12.5px] font-medium text-ink-muted">
+              <span>{t("settings:ai.categoryPromptLabel")}</span>
+              <svg className="transition-transform group-open:rotate-180" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 9l6 6 6-6" /></svg>
+            </summary>
+            <div className="flex flex-col gap-2 border-t border-hairline px-3.5 py-3">
+              <textarea
+                value={categoryPrompt}
+                onChange={(e) => setCategoryPrompt(e.target.value)}
+                onBlur={() => {
+                  if (categoryPrompt !== settings.aiCategoryPrompt)
+                    void updateSettings({ aiCategoryPrompt: categoryPrompt });
+                }}
+                rows={6}
+                spellCheck={false}
+                placeholder={t("settings:ai.categoryPromptPlaceholder")}
+                className={`${inputCls} w-full resize-y !text-[12px] leading-relaxed`}
+              />
+              <p className="text-[11.5px] text-ink-faint">
+                {t("settings:ai.categoryPromptHint")}
+              </p>
+            </div>
+          </details>
           <ScenarioRouteRow
             label={t("settings:ai.routeCategorize")}
             hint={t("settings:ai.routeCategorizeHint")}
@@ -858,6 +1380,8 @@ function AiSection({ settings }: { settings: Settings }) {
           {resorting ? t("settings:ai.resorting") : t("settings:ai.resort")}
         </button>
       </SettingRow>
+        </>
+      )}
     </section>
   );
 }
@@ -875,6 +1399,7 @@ const EMBEDDING_MODELS: { id: string; label: string }[] = [
 
 /** Semantic search: local embedding backend, model picker, index progress. */
 function SemanticSearchSection({ settings }: { settings: Settings }) {
+  const { t } = useTranslation();
   const { data: status } = useEmbeddingStatus();
   const pushToast = useUi((s) => s.pushToast);
   const [reindexing, setReindexing] = useState(false);
@@ -898,7 +1423,7 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
 
   return (
     <section className="flex flex-col gap-4">
-      <SectionLabel>Semantic search</SectionLabel>
+      <SectionLabel>{t("settings:section.ragSearch")}</SectionLabel>
       <SettingRow
         label="Semantic search"
         hint="Runs a small model on-device to find mail by meaning, not just keywords. Fully offline."
@@ -1722,7 +2247,7 @@ function AccountsSection() {
             <Select
               className="!w-auto !py-1 !pr-8 !text-[12.5px]"
               value={accountThemes[String(a.id)] ?? "system"}
-              title={t("settings:accounts.theme")}
+              title={t("settings:accounts.themeHint")}
               onChange={(e) =>
                 void updateSettings({
                   accountThemes: {
@@ -1732,7 +2257,7 @@ function AccountsSection() {
                 })
               }
             >
-              <option value="system">{t("settings:theme.system")}</option>
+              <option value="system">{t("settings:accounts.themeInherit")}</option>
               <option value="snow">{t("settings:theme.snow")}</option>
               <option value="carbon">{t("settings:theme.carbon")}</option>
               <option value="holiday">{t("settings:theme.holiday")}</option>

@@ -1,5 +1,5 @@
 // Pure date/geometry helpers for the calendar surfaces (week grid, month
-// view, drag interactions, anchored popovers). No React, no stores — all of
+// view, drag interactions, anchored popovers). No React, no stores - all of
 // this is unit-tested in calendarGrid.test.ts.
 
 import type { CalendarEvent } from "../ipc/types";

@@ -2,7 +2,7 @@
 // Visual language matches the palette + help overlays: hairline borders,
 // bg1 surface, elev-2 shadow, accent only for focus/selection.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export function PanelShell({
@@ -11,6 +11,7 @@ export function PanelShell({
   children,
   width = 560,
   tabs,
+  sidebar,
   search,
 }: {
   title: string;
@@ -19,14 +20,16 @@ export function PanelShell({
   width?: number;
   /** Optional tab bar rendered below the header; stays fixed while the body scrolls. */
   tabs?: React.ReactNode;
+  /** Optional left navigation. When present, it and the body scroll independently. */
+  sidebar?: React.ReactNode;
   /** Optional search field rendered in the header row, right-aligned. */
   search?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="co-overlay flex items-start justify-center pt-[10vh]" onMouseDown={onClose}>
+    <div className="co-overlay flex items-start justify-center pt-[6vh]" onMouseDown={onClose}>
       <div
-        className="co-pop-in flex max-h-[78vh] flex-col overflow-hidden rounded-xl border border-hairline bg-bg1"
+        className="co-pop-in flex max-h-[86vh] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-2xl border border-hairline bg-bg1"
         style={{ boxShadow: "var(--elev-2)", width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -39,7 +42,20 @@ export function PanelShell({
           )}
         </header>
         {tabs && <div className="co-hairline-b flex shrink-0 gap-1 px-4">{tabs}</div>}
-        <div className="min-h-0 overflow-y-auto p-5">{children}</div>
+        {sidebar ? (
+          <div className="flex min-h-0 flex-1">
+            <aside className="co-scroll-none w-[204px] shrink-0 overflow-y-auto border-r border-hairline bg-bg0/55 p-3">
+              {sidebar}
+            </aside>
+            {/* Stable gutter keeps the content from shifting when its scrollbar
+                appears, and gives that single bar clean breathing room. */}
+            <div className="min-w-0 flex-1 overflow-y-auto p-7" style={{ scrollbarGutter: "stable" }}>
+              {children}
+            </div>
+          </div>
+        ) : (
+          <div className="min-h-0 overflow-y-auto p-5">{children}</div>
+        )}
       </div>
     </div>
   );
@@ -198,6 +214,101 @@ export function ConfirmButton({
   );
 }
 
+/** Token editor: each value renders as a removable pill with a text input to
+ *  add more. Commits a token on comma, semicolon, newline, Enter, or blur, and
+ *  splits pasted separated lists; Backspace on an empty input drops the last
+ *  chip. Values are de-duplicated case-insensitively. */
+export function ChipInput({
+  values,
+  onChange,
+  placeholder,
+  ariaLabel,
+  removeLabel,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+  ariaLabel?: string;
+  /** Accessible prefix for a chip's delete button, e.g. "Remove". */
+  removeLabel?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const add = (raw: string[]) => {
+    const next = [...values];
+    for (const token of raw) {
+      const v = token.trim();
+      if (v && !next.some((e) => e.toLowerCase() === v.toLowerCase())) next.push(v);
+    }
+    if (next.length !== values.length) onChange(next);
+  };
+
+  return (
+    <div
+      className="flex w-full flex-wrap items-center gap-1.5 rounded-lg border border-hairline bg-bg0 px-2 py-1.5 focus-within:border-accent/60"
+      onMouseDown={(e) => {
+        // A click on the field's own padding focuses the input; clicks that land
+        // on a chip or its delete button keep their native behaviour.
+        if (e.target === e.currentTarget) inputRef.current?.focus();
+      }}
+    >
+      {values.map((v, i) => (
+        <span
+          key={v}
+          className="inline-flex items-center gap-1 rounded-md bg-bg2 py-0.5 pr-1 pl-2 text-[12.5px] text-ink"
+        >
+          {v}
+          <button
+            type="button"
+            aria-label={removeLabel ? `${removeLabel} ${v}` : undefined}
+            onClick={() => onChange(values.filter((_, j) => j !== i))}
+            className="flex size-4 items-center justify-center rounded text-ink-faint hover:bg-bg3 hover:text-ink"
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        aria-label={ariaLabel}
+        className="min-w-[90px] flex-1 bg-transparent px-1 py-0.5 text-[13.5px] text-ink outline-none placeholder:text-ink-faint"
+        value={draft}
+        placeholder={values.length === 0 ? placeholder : ""}
+        spellCheck={false}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (/[,;\n]/.test(v)) {
+            const parts = v.split(/[,;\n]/);
+            const tail = parts.pop() ?? "";
+            add(parts);
+            setDraft(tail);
+          } else {
+            setDraft(v);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && draft.trim()) {
+            e.preventDefault();
+            add([draft]);
+            setDraft("");
+          } else if (e.key === "Backspace" && draft === "" && values.length > 0) {
+            onChange(values.slice(0, -1));
+          }
+        }}
+        onBlur={() => {
+          if (draft.trim()) {
+            add([draft]);
+            setDraft("");
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 export function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
@@ -212,8 +323,8 @@ export const inputCls =
 
 // A native <select> and an <input> with identical CSS still render at slightly
 // different heights (the browser gives selects their own box metrics). Stripping
-// the native appearance makes the box follow our padding/line-height exactly —
-// matching inputCls to the pixel — so we draw our own chevron instead.
+// the native appearance makes the box follow our padding/line-height exactly,
+// matching inputCls to the pixel, so we draw our own chevron instead.
 export const selectCls =
   "w-full cursor-pointer appearance-none rounded-lg border border-hairline bg-bg0 py-2 pr-9 pl-3 text-[13.5px] text-ink outline-none focus:border-accent/60";
 

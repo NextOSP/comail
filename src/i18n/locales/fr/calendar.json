@@ -29,9 +29,9 @@
     "no": "Non"
   },
   "rsvpSent": {
-    "accepted": "Accepté — réponse envoyée à l’organisateur",
-    "tentative": "Marqué provisoire — réponse envoyée à l’organisateur",
-    "declined": "Refusé — réponse envoyée à l’organisateur"
+    "accepted": "Accepté - réponse envoyée à l’organisateur",
+    "tentative": "Marqué provisoire - réponse envoyée à l’organisateur",
+    "declined": "Refusé - réponse envoyée à l’organisateur"
   },
   "create": {
     "title": "Créer un événement",
@@ -43,7 +43,7 @@
     "time": "Heure",
     "duration": "Durée",
     "attendees": "Participants",
-    "attendeesPlaceholder": "e-mails séparés par des virgules — chacun reçoit une invitation",
+    "attendeesPlaceholder": "e-mails séparés par des virgules - chacun reçoit une invitation",
     "location": "Lieu",
     "joinUrl": "Lien de réunion",
     "description": "Description",
@@ -55,8 +55,8 @@
   },
   "created": {
     "plain": "Événement ajouté à votre calendrier",
-    "withInvites_one": "Événement créé — invitation en file pour {{count}} participant",
-    "withInvites_other": "Événement créé — invitations en file pour {{count}} participants"
+    "withInvites_one": "Événement créé - invitation en file pour {{count}} participant",
+    "withInvites_other": "Événement créé - invitations en file pour {{count}} participants"
   },
   "edit": {
     "title": "Modifier l’événement",
@@ -65,16 +65,16 @@
   },
   "updated": {
     "plain": "Événement mis à jour",
-    "withInvites_one": "Événement mis à jour — mise à jour envoyée à {{count}} participant",
-    "withInvites_other": "Événement mis à jour — mises à jour envoyées à {{count}} participants"
+    "withInvites_one": "Événement mis à jour - mise à jour envoyée à {{count}} participant",
+    "withInvites_other": "Événement mis à jour - mises à jour envoyées à {{count}} participants"
   },
   "deleted": {
     "plain": "Événement supprimé",
-    "withInvites_one": "Événement annulé — annulation envoyée à {{count}} participant",
-    "withInvites_other": "Événement annulé — annulations envoyées à {{count}} participants"
+    "withInvites_one": "Événement annulé - annulation envoyée à {{count}} participant",
+    "withInvites_other": "Événement annulé - annulations envoyées à {{count}} participants"
   },
   "detail": {
-    "organizerHint": "Organisé par {{organizer}} — répondez ci-dessus",
+    "organizerHint": "Organisé par {{organizer}} - répondez ci-dessus",
     "edit": "Modifier",
     "delete": "Supprimer",
     "confirmDelete": "Supprimer cet événement ?",
@@ -96,5 +96,5 @@
   "reminderBody": "Commence à {{time}}",
   "newEventBody": "Nouvel évènement · {{when}}",
   "newEvents": "{{count}} nouveaux évènements dans votre agenda",
-  "syncConflict": "« {{summary}} » a changé sur le serveur — votre modification a été conservée en copie"
+  "syncConflict": "« {{summary}} » a changé sur le serveur - votre modification a été conservée en copie"
 }

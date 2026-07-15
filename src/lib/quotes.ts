@@ -26,8 +26,7 @@ export function splitQuotedTail(text: string): [string, string | null] {
 
 /** Attribute markers that begin the quoted tail in an HTML reply. These only
  *  survive if the body still carries class/id (our sanitizer strips them, so
- *  in practice the blockquote + reply-header heuristics below do the work) —
- *  kept as a cheap best-effort for bodies that do keep them. */
+ *  in practice the blockquote + reply-header heuristics below do the work) -  *  kept as a cheap best-effort for bodies that do keep them. */
 const HTML_QUOTE_MARKERS = [
   'class="gmail_quote', // Gmail
   "class='gmail_quote",
@@ -103,8 +102,8 @@ export function splitQuotedHtml(html: string): [string, string | null] {
   return [visible, html.slice(cut)];
 }
 
-/** Drop trailing empty markup — blank `<div>`/`<p>` spacers, `<br>` runs and
- *  `&nbsp;` — that many mail clients leave at the end of a body (and that a
+/** Drop trailing empty markup - blank `<div>`/`<p>` spacers, `<br>` runs and
+ *  `&nbsp;` - that many mail clients leave at the end of a body (and that a
  *  quote split can expose). Rendered in an auto-height iframe those reserve
  *  real vertical space, so a one-line reply can otherwise show a huge blank
  *  gap. Loops so nested empties (`<div><div><br></div></div>`) fully unwind. */

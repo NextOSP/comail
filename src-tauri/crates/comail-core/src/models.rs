@@ -170,10 +170,13 @@ pub struct MessageDetail {
     pub body_state: String,
     pub text_body: Option<String>,
     pub html_body: Option<String>,
+    /// Local-only note appended by an AI automation. It is displayed after the
+    /// immutable received body and is never written back to the IMAP message.
+    pub automation_note: Option<String>,
     pub attachments: Vec<AttachmentMeta>,
     pub list_unsubscribe: Option<String>,
     /// Transmitting party (Sender:, Return-Path or DKIM d=) when its domain
-    /// doesn't align with `from` — mailing lists, ESPs, spoofed From:.
+    /// doesn't align with `from` - mailing lists, ESPs, spoofed From:.
     /// Email address or bare domain; the UI shows it as "via <domain>".
     pub via: Option<String>,
 }
@@ -458,6 +461,26 @@ pub struct AiThreadSummary {
     pub proposed_reply: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiUsageDay {
+    pub date: String,
+    pub total_tokens: i64,
+    pub requests: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiUsageStats {
+    pub total_tokens: i64,
+    pub total_requests: i64,
+    pub today_tokens: i64,
+    pub yesterday_tokens: i64,
+    pub last_7_days_tokens: i64,
+    pub last_30_days_tokens: i64,
+    pub days: Vec<AiUsageDay>,
+}
+
 /// Exact unread badge counts for split tabs and sidebar rows.
 /// Map keys are stringified ids (JSON object keys must be strings).
 #[derive(Debug, Clone, Serialize)]
@@ -470,6 +493,46 @@ pub struct UnreadCounts {
     pub labels: std::collections::HashMap<String, i64>,
     /// "starred" | "snoozed" | "drafts" (drafts counts all drafts, not unread)
     pub views: std::collections::HashMap<String, i64>,
+}
+
+/// One deterministic action attached to an AI-matched automation. `value` is
+/// a route key, label id, or local annotation text depending on `kind`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAutomationAction {
+    pub kind: String,
+    #[serde(default)]
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAutomationRule {
+    pub id: String,
+    pub name: String,
+    /// The user's original natural-language request. `instruction` is the
+    /// planner's normalized match condition used at classification time.
+    #[serde(default)]
+    pub source_prompt: String,
+    pub instruction: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub actions: Vec<AiAutomationAction>,
+}
+
+/// Safe, structured interpretation of a natural-language automation request.
+/// The AI proposes this shape, then the core validates every action and target
+/// against the local allow-list before returning it to the UI.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AiAutomationPlan {
+    pub supported: bool,
+    pub name: String,
+    pub instruction: String,
+    pub actions: Vec<AiAutomationAction>,
+    pub summary: String,
+    pub issues: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -555,6 +618,10 @@ pub struct Settings {
     /// Empty uses a built-in default prompt.
     #[serde(default)]
     pub ai_category_prompt: String,
+    /// Compound workflows matched by the AI. The model only returns rule ids;
+    /// every mailbox mutation comes from this explicit, user-owned allow-list.
+    #[serde(default)]
+    pub ai_automation_rules: Vec<AiAutomationRule>,
     /// Which model tier the AI classifier uses: "instant" | "cheap" | "intelligent".
     #[serde(default = "default_tier_instant")]
     pub ai_tier_categorize: String,
@@ -610,7 +677,7 @@ pub struct SignatureDefaults {
 impl Settings {
     /// Fold a legacy plain-text `signatures` map into the rich `signature_list`
     /// on first read: one named signature per account, set as both the new-mail
-    /// and reply default. Idempotent — only runs while `signature_list` is empty
+    /// and reply default. Idempotent - only runs while `signature_list` is empty
     /// and legacy entries exist; clears `signatures` once folded so it never runs
     /// twice.
     pub fn migrate_signatures(&mut self) {
@@ -725,6 +792,7 @@ impl Default for Settings {
             auto_labels_enabled: true,
             ai_categorize: false,
             ai_category_prompt: String::new(),
+            ai_automation_rules: Vec::new(),
             ai_tier_categorize: default_tier_instant(),
             group_by_date: true,
             dock_badge_enabled: true,

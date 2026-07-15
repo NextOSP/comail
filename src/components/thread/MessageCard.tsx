@@ -102,7 +102,7 @@ export function MessageCard({
   const hasFile = message.attachments.some((a) => !a.isInline);
   const recipients = message.to.map(addressName).join(", ") || "-";
   // The backend sets `via` only when the transmitting party (Sender:,
-  // Return-Path or DKIM d=) does NOT align with the From: domain — mailing
+  // Return-Path or DKIM d=) does NOT align with the From: domain - mailing
   // lists, ESPs, send-on-behalf, and mail whose From: is spoofed.
   const viaDomain = message.via ? (message.via.split("@")[1] ?? message.via) : null;
 
@@ -133,7 +133,7 @@ export function MessageCard({
       ref={ref}
       className="co-fade-in overflow-hidden bg-bg1"
       style={{
-        // Square, uniform hairline — no left accent bar. The selected message
+        // Square, uniform hairline - no left accent bar. The selected message
         // (reply target) reads clearly via a solid accent border plus a soft
         // accent ring, so it's obvious which message a reply will go to.
         boxShadow: focused
@@ -204,6 +204,14 @@ export function MessageCard({
       <div className="px-5 pb-4 select-text">
         <InviteCard messageId={message.id} />
         <MessageBody message={message} />
+        {message.automationNote && (
+          <aside className="mt-4 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">
+            <div className="mb-1 text-[10.5px] font-semibold tracking-[0.1em] text-accent uppercase">
+              {t("thread:automationNote")}
+            </div>
+            <div className="whitespace-pre-wrap">{message.automationNote}</div>
+          </aside>
+        )}
       </div>
 
       {message.attachments.filter((a) => !a.isInline).length > 0 && (
@@ -397,7 +405,7 @@ function MessageDetails({ message, viaDomain }: { message: MessageDetail; viaDom
   );
 }
 
-/** Two overlapping squares — the standard copy affordance. */
+/** Two overlapping squares - the standard copy affordance. */
 function CopyIcon({ className = "" }: { className?: string }) {
   return (
     <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -556,7 +564,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
 <base target="_top">
 <style>
   :root { color-scheme: ${scheme}; }
-  /* height:auto defeats emails whose layout is sized to height:100% — against
+  /* height:auto defeats emails whose layout is sized to height:100% - against
      the iframe's short default height those collapse and scrollHeight can't
      measure the real content, leaving the body clipped with an inner scrollbar. */
   html, body { margin: 0; padding: 0; background: transparent; height: auto !important; min-height: 0 !important; }
@@ -580,7 +588,13 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
   a:hover { text-decoration-line: underline; }
   ::selection { background: color-mix(in srgb, ${accent} 24%, transparent); }
   h1, h2, h3, h4, h5, h6 { color: ${text}; line-height: 1.3; }
-  img { max-width: 100%; height: auto; }
+  /* max-width caps an overflowing image; height:auto keeps its aspect ratio
+     when that cap shrinks the width. Scope height:auto to imgs that declare a
+     width - an unconditional rule overrides a height-only signature logo's
+     height="65" attribute, dropping its sizing so it balloons to the image's
+     natural width. */
+  img { max-width: 100%; }
+  img[width] { height: auto; }
   hr { border: 0; height: 1px; background: color-mix(in srgb, ${text} 14%, transparent); margin: 1.25em 0; }
   code, kbd, samp { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 0.9em; background: color-mix(in srgb, ${text} 6%, transparent);
@@ -597,13 +611,13 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
 
   // Wide emails (fixed-width layout tables, long unbreakable tokens) overflow
   // the card and would otherwise show a horizontal scrollbar. Zoom the whole
-  // document down so it fits the available width instead — unlike a CSS
+  // document down so it fits the available width instead - unlike a CSS
   // transform, `zoom` reflows the layout, so the content actually shrinks and
   // no scrollbar appears.
   //
   // Computed ONCE per load from the *unzoomed* natural width, deliberately NOT
   // from the ResizeObserver: applying zoom rewraps text (e.g. a long instanceId
-  // token), which changes the natural width, which changes the zoom — a loop
+  // token), which changes the natural width, which changes the zoom - a loop
   // that never converges and spins the CPU until the tab hangs. Measuring the
   // true width once (zoom cleared first) also avoids the stale `scrollWidth/cur`
   // estimate that could over-shrink an email that already fit.
@@ -623,7 +637,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     zoomRef.current = zoom;
   };
 
-  // Height only — safe to run repeatedly from the ResizeObserver because it
+  // Height only - safe to run repeatedly from the ResizeObserver because it
   // never touches zoom or width, so it can't feed back into a reflow loop.
   // Measure from `body` only. documentElement.scrollHeight can never report
   // less than the iframe's own viewport height, so folding it into the max
@@ -665,19 +679,18 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     }
     // Keep the height in sync as images/fonts finish loading inside the
     // sandboxed doc (no scripts allowed there, so observe from out here).
-    // The observer runs `measure` (height only) — never `fitWidth` — so a late
+    // The observer runs `measure` (height only) - never `fitWidth` - so a late
     // reflow can't restart the zoom feedback loop.
     observerRef.current?.disconnect();
     observerRef.current = new ResizeObserver(measure);
     observerRef.current.observe(doc.body);
     doc.addEventListener("load", measure, true);
     // Clicking inside the email moves keyboard focus into this sandboxed
-    // iframe, so keydowns fire on its document — never the parent window that
+    // iframe, so keydowns fire on its document - never the parent window that
     // the keyboard registry listens on, so app shortcuts (Esc to go back, Cmd+K
     // palette, J/K, R…) stop working. Route the iframe's keydowns through the
     // registry directly. It applies its own guards (typing in a field or
-    // activating a focused link is left native), so we forward every key —
-    // except the native clipboard/selection shortcuts. Those must stay native
+    // activating a focused link is left native), so we forward every key -     // except the native clipboard/selection shortcuts. Those must stay native
     // so the user can select and copy text (e.g. an OTP code) out of the email;
     // forwarding Cmd/Ctrl+A would trigger the app's "select all" command and
     // Cmd/Ctrl+C/X could be swallowed before the webview copies.
@@ -713,11 +726,11 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
   // macOS WKWebView discards the sandboxed iframe's rasterized backing store
   // while the app is hidden (Cmd+H) or fully occluded; on reactivation the
   // frame stays blank until something invalidates it (selecting text repaints
-  // only the region it touches — hence the blank band above a selection). Force
+  // only the region it touches - hence the blank band above a selection). Force
   // the whole subframe to re-rasterize when the window becomes visible/focused:
   // compositing its <body> as a translucent layer for one frame (opacity != 1)
   // repaints the entire document, then we restore it. The change must span
-  // frames — a same-frame round-trip (e.g. display none→block) is coalesced by
+  // frames - a same-frame round-trip (e.g. display none→block) is coalesced by
   // WebKit to the same computed value and never repaints the stale surface.
   useEffect(() => {
     let raf1 = 0;

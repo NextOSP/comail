@@ -2,6 +2,13 @@ use crate::error::Result;
 use crate::models::Label;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+const DEFAULT_AUTO_LABELS: [(&str, &str, &str, i64); 4] = [
+    ("Marketing", "#e0708a", "ComailAutoMarketing", 1000),
+    ("News", "#5b9dd9", "ComailAutoNews", 1001),
+    ("Social", "#7bc47f", "ComailAutoSocial", 1002),
+    ("Pitch", "#c9a04e", "ComailAutoPitch", 1003),
+];
+
 fn from_row(row: &Row) -> rusqlite::Result<Label> {
     Ok(Label {
         id: row.get("id")?,
@@ -93,6 +100,29 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
     )?;
     conn.execute("DELETE FROM labels WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+/// Recreate any missing built-in auto categories. Existing categories and
+/// their user-defined order are left untouched. A conflicting user label with
+/// the same display name is also left untouched.
+pub fn restore_auto_defaults(conn: &Connection) -> Result<i64> {
+    let mut restored = 0;
+    for (name, color, keyword, position) in DEFAULT_AUTO_LABELS {
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM labels WHERE keyword = ?1 AND is_auto = 1)",
+            params![keyword],
+            |row| row.get::<_, i64>(0).map(|value| value != 0),
+        )?;
+        if exists {
+            continue;
+        }
+        restored += conn.execute(
+            "INSERT OR IGNORE INTO labels (name, color, keyword, position, is_auto)
+             VALUES (?1, ?2, ?3, ?4, 1)",
+            params![name, color, keyword, position],
+        )? as i64;
+    }
+    Ok(restored)
 }
 
 /// Label ids applied to any message in a thread.
@@ -238,6 +268,29 @@ mod tests {
         let manual = save(&c, None, "Temp", "#fff", 0).unwrap();
         delete(&c, manual.id).unwrap();
         assert!(get(&c, manual.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn restore_auto_defaults_recreates_only_missing_categories() {
+        let c = testutil::conn();
+        let social_id = c
+            .query_row(
+                "SELECT id FROM labels WHERE keyword = 'ComailAutoSocial'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        delete(&c, social_id).unwrap();
+
+        assert_eq!(restore_auto_defaults(&c).unwrap(), 1);
+        assert_eq!(restore_auto_defaults(&c).unwrap(), 0);
+        let auto = list(&c)
+            .unwrap()
+            .into_iter()
+            .filter(|label| label.is_auto)
+            .collect::<Vec<_>>();
+        assert_eq!(auto.len(), 4);
+        assert!(auto.iter().any(|label| label.keyword == "ComailAutoSocial"));
     }
 
     #[test]

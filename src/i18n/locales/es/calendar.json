@@ -29,9 +29,9 @@
     "no": "No"
   },
   "rsvpSent": {
-    "accepted": "Aceptado — respuesta enviada al organizador",
-    "tentative": "Marcado como provisional — respuesta enviada al organizador",
-    "declined": "Rechazado — respuesta enviada al organizador"
+    "accepted": "Aceptado - respuesta enviada al organizador",
+    "tentative": "Marcado como provisional - respuesta enviada al organizador",
+    "declined": "Rechazado - respuesta enviada al organizador"
   },
   "create": {
     "title": "Crear evento",
@@ -43,7 +43,7 @@
     "time": "Hora",
     "duration": "Duración",
     "attendees": "Asistentes",
-    "attendeesPlaceholder": "correos separados por comas — cada uno recibe una invitación",
+    "attendeesPlaceholder": "correos separados por comas - cada uno recibe una invitación",
     "location": "Ubicación",
     "joinUrl": "Enlace de la reunión",
     "description": "Descripción",
@@ -55,8 +55,8 @@
   },
   "created": {
     "plain": "Evento añadido a tu calendario",
-    "withInvites_one": "Evento creado — invitación en cola para {{count}} asistente",
-    "withInvites_other": "Evento creado — invitaciones en cola para {{count}} asistentes"
+    "withInvites_one": "Evento creado - invitación en cola para {{count}} asistente",
+    "withInvites_other": "Evento creado - invitaciones en cola para {{count}} asistentes"
   },
   "edit": {
     "title": "Editar evento",
@@ -65,16 +65,16 @@
   },
   "updated": {
     "plain": "Evento actualizado",
-    "withInvites_one": "Evento actualizado — actualización enviada a {{count}} asistente",
-    "withInvites_other": "Evento actualizado — actualizaciones enviadas a {{count}} asistentes"
+    "withInvites_one": "Evento actualizado - actualización enviada a {{count}} asistente",
+    "withInvites_other": "Evento actualizado - actualizaciones enviadas a {{count}} asistentes"
   },
   "deleted": {
     "plain": "Evento eliminado",
-    "withInvites_one": "Evento cancelado — cancelación enviada a {{count}} asistente",
-    "withInvites_other": "Evento cancelado — cancelaciones enviadas a {{count}} asistentes"
+    "withInvites_one": "Evento cancelado - cancelación enviada a {{count}} asistente",
+    "withInvites_other": "Evento cancelado - cancelaciones enviadas a {{count}} asistentes"
   },
   "detail": {
-    "organizerHint": "Organizado por {{organizer}} — responde arriba",
+    "organizerHint": "Organizado por {{organizer}} - responde arriba",
     "edit": "Editar",
     "delete": "Eliminar",
     "confirmDelete": "¿Eliminar este evento?",
@@ -96,5 +96,5 @@
   "reminderBody": "Empieza a las {{time}}",
   "newEventBody": "Nuevo evento · {{when}}",
   "newEvents": "{{count}} eventos nuevos en tu calendario",
-  "syncConflict": "«{{summary}}» cambió en el servidor — tu edición se guardó como copia"
+  "syncConflict": "«{{summary}}» cambió en el servidor - tu edición se guardó como copia"
 }

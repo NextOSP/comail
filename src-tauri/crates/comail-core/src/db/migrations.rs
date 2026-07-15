@@ -16,6 +16,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/012_sync_resilience.sql"),
     include_str!("migrations/013_fts_contentless_delete.sql"),
     include_str!("migrations/014_routing.sql"),
+    include_str!("migrations/015_ai_automation_annotations.sql"),
+    include_str!("migrations/016_ai_usage.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -196,5 +198,22 @@ mod tests {
         conn.execute("DELETE FROM messages_fts WHERE rowid = 1", [])
             .unwrap();
         assert_eq!(matches("rebuiltuniqueterm"), 0);
+    }
+
+    #[test]
+    fn migration_015_adds_local_automation_annotations() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        run_through(&mut conn, 14);
+        run(&mut conn).unwrap();
+        let columns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('messages')
+                 WHERE name IN ('local_subject_prefix', 'local_body_note')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 2);
     }
 }

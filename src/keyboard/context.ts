@@ -3,7 +3,8 @@
 
 import i18n from "../i18n";
 import { call } from "../ipc/commands";
-import type { ActionKind, ComposeMode, MessageDetail, Settings, View } from "../ipc/types";
+import type { ActionKind, ComposeMode, Label, MessageDetail, Settings, SplitRule, View } from "../ipc/types";
+import { inboxTabOrder } from "../lib/splitOrder";
 import { findCachedSummary, performThreadAction, undoLastAction } from "../queries/actions";
 import { queryClient } from "../queries/client";
 import type { ThreadDetail } from "../ipc/types";
@@ -103,31 +104,20 @@ export function advanceAfter(removed: number[]) {
   }
 }
 
-/** The inbox split tabs in display order: Important, Other, custom splits, then
- *  auto-label tabs (when enabled). Shared by tab cycling, direct jumps (Cmd+N),
- *  and the command palette. */
+/** Inbox tabs in the same arranged order used by the visible tab bar. Shared
+ * by tab cycling, direct jumps, and the command palette. */
 export function inboxTabs(): { splitId: number | null; labelId: number | null; name: string }[] {
-  const splits =
-    queryClient.getQueryData<Array<{ id: number; name: string; position: number }>>(["splits"]) ??
-    [];
-  const labels =
-    queryClient.getQueryData<Array<{ id: number; name: string; position: number; isAuto?: boolean }>>(
-      ["labels"],
-    ) ?? [];
+  const splits = queryClient.getQueryData<SplitRule[]>(["splits"]);
+  const labels = queryClient.getQueryData<Label[]>(["labels"]);
   const autoOn = queryClient.getQueryData<Settings>(["settings"])?.autoLabelsEnabled !== false;
-  return [
-    { splitId: SPLIT_IMPORTANT, labelId: null, name: i18n.t("inbox:split.important") },
-    { splitId: SPLIT_OTHER, labelId: null, name: i18n.t("inbox:split.other") },
-    ...[...splits]
-      .sort((a, b) => a.position - b.position)
-      .map((s) => ({ splitId: s.id, labelId: null, name: s.name })),
-    ...(autoOn
-      ? [...labels]
-          .filter((l) => l.isAuto)
-          .sort((a, b) => a.position - b.position)
-          .map((l) => ({ splitId: null, labelId: l.id, name: l.name }))
-      : []),
-  ];
+  return inboxTabOrder(splits, labels, autoOn).map((item) => {
+    if (item.kind === "important")
+      return { splitId: SPLIT_IMPORTANT, labelId: null, name: i18n.t("inbox:split.important") };
+    if (item.kind === "other")
+      return { splitId: SPLIT_OTHER, labelId: null, name: i18n.t("inbox:split.other") };
+    if (item.kind === "split") return { splitId: item.id, labelId: null, name: item.name };
+    return { splitId: null, labelId: item.id, name: item.name };
+  });
 }
 
 export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
@@ -344,8 +334,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     if (state.paletteOpen) return state.set({ paletteOpen: false });
     if (state.contextMenu) return state.set({ contextMenu: null });
     // Focus lives inside the preview's sandboxed iframe (bounced to the app by
-    // the iframe focus guard), so the modal's own onKeyDown can't see Esc —
-    // close it from the global stack instead.
+    // the iframe focus guard), so the modal's own onKeyDown can't see Esc -     // close it from the global stack instead.
     if (state.attachmentPreview) return state.set({ attachmentPreview: null });
     if (state.eventDetail) return state.set({ eventDetail: null });
     if (state.snoozeTarget) return state.set({ snoozeTarget: null });
@@ -404,6 +393,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         autoLabelsEnabled: true,
         aiCategorize: false,
         aiCategoryPrompt: "",
+        aiAutomationRules: [],
         aiTierCategorize: "instant",
         groupByDate: true,
         dockBadgeEnabled: true,

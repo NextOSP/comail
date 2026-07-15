@@ -5,7 +5,7 @@ import { addressName, hueOf, initials, primaryCorrespondent, relativeTime } from
 /**
  * Superhuman-style contact pane pinned to the right of the inbox list. Shows
  * the correspondent for the highlighted thread (avatar, name, email) and their
- * recent conversations. Purely presentational — the parent derives `thread` and
+ * recent conversations. Purely presentational - the parent derives `thread` and
  * `recent` so this re-renders instantly on J/K / hover without extra queries.
  */
 export function ContactPane({
@@ -25,7 +25,7 @@ export function ContactPane({
 
   const primary = thread ? primaryCorrespondent(thread.participants, selfEmails) : null;
 
-  // No selection (or a thread with no participants) — mainly first-paint/defensive,
+  // No selection (or a thread with no participants) - mainly first-paint/defensive,
   // since InboxScreen keeps a valid cursor whenever the list is non-empty.
   if (!thread || !primary) {
     return (

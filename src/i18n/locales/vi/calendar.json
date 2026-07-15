@@ -39,9 +39,9 @@
     "no": "Không"
   },
   "rsvpSent": {
-    "accepted": "Đã chấp nhận — đã gửi phản hồi cho người tổ chức",
-    "tentative": "Đã đánh dấu tạm thời — đã gửi phản hồi cho người tổ chức",
-    "declined": "Đã từ chối — đã gửi phản hồi cho người tổ chức"
+    "accepted": "Đã chấp nhận - đã gửi phản hồi cho người tổ chức",
+    "tentative": "Đã đánh dấu tạm thời - đã gửi phản hồi cho người tổ chức",
+    "declined": "Đã từ chối - đã gửi phản hồi cho người tổ chức"
   },
   "create": {
     "title": "Tạo sự kiện",
@@ -53,7 +53,7 @@
     "time": "Giờ",
     "duration": "Thời lượng",
     "attendees": "Người tham dự",
-    "attendeesPlaceholder": "email cách nhau bằng dấu phẩy — mỗi người nhận một lời mời",
+    "attendeesPlaceholder": "email cách nhau bằng dấu phẩy - mỗi người nhận một lời mời",
     "location": "Địa điểm",
     "joinUrl": "Liên kết cuộc họp",
     "description": "Mô tả",
@@ -65,8 +65,8 @@
   },
   "created": {
     "plain": "Đã thêm sự kiện vào lịch của bạn",
-    "withInvites_one": "Đã tạo sự kiện — lời mời đang chờ gửi tới {{count}} người tham dự",
-    "withInvites_other": "Đã tạo sự kiện — lời mời đang chờ gửi tới {{count}} người tham dự"
+    "withInvites_one": "Đã tạo sự kiện - lời mời đang chờ gửi tới {{count}} người tham dự",
+    "withInvites_other": "Đã tạo sự kiện - lời mời đang chờ gửi tới {{count}} người tham dự"
   },
   "edit": {
     "title": "Sửa sự kiện",
@@ -75,16 +75,16 @@
   },
   "updated": {
     "plain": "Đã cập nhật sự kiện",
-    "withInvites_one": "Đã cập nhật sự kiện — bản cập nhật đã gửi tới {{count}} người tham dự",
-    "withInvites_other": "Đã cập nhật sự kiện — bản cập nhật đã gửi tới {{count}} người tham dự"
+    "withInvites_one": "Đã cập nhật sự kiện - bản cập nhật đã gửi tới {{count}} người tham dự",
+    "withInvites_other": "Đã cập nhật sự kiện - bản cập nhật đã gửi tới {{count}} người tham dự"
   },
   "deleted": {
     "plain": "Đã xóa sự kiện",
-    "withInvites_one": "Đã hủy sự kiện — email hủy đã gửi tới {{count}} người tham dự",
-    "withInvites_other": "Đã hủy sự kiện — email hủy đã gửi tới {{count}} người tham dự"
+    "withInvites_one": "Đã hủy sự kiện - email hủy đã gửi tới {{count}} người tham dự",
+    "withInvites_other": "Đã hủy sự kiện - email hủy đã gửi tới {{count}} người tham dự"
   },
   "detail": {
-    "organizerHint": "Do {{organizer}} tổ chức — phản hồi ở trên",
+    "organizerHint": "Do {{organizer}} tổ chức - phản hồi ở trên",
     "edit": "Sửa",
     "delete": "Xóa",
     "confirmDelete": "Xóa sự kiện này?",
@@ -106,5 +106,5 @@
   "reminderBody": "Bắt đầu lúc {{time}}",
   "newEventBody": "Sự kiện mới · {{when}}",
   "newEvents": "{{count}} sự kiện mới trên lịch của bạn",
-  "syncConflict": "\"{{summary}}\" đã thay đổi trên máy chủ — chỉnh sửa của bạn được giữ lại thành bản sao"
+  "syncConflict": "\"{{summary}}\" đã thay đổi trên máy chủ - chỉnh sửa của bạn được giữ lại thành bản sao"
 }

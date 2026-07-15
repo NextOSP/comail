@@ -239,10 +239,10 @@ function useInboxEmpty(): boolean {
 /**
  * Ambient animated backdrop behind the inbox. Three slow-drifting colour blobs
  * (theme accent/info/star) whose softness is baked into their radial-gradient
- * alpha — motion is pure GPU transform, so unlike a blurred layer it doesn't
+ * alpha - motion is pure GPU transform, so unlike a blurred layer it doesn't
  * pin WebKitGTK's compositor. Sits at z-0 under the z-10 content and shows
  * through the translucent glass chrome and inbox-zero screen. Only mounted on
- * inbox-zero (and onboarding) — with mail still in the list the chrome sits on
+ * inbox-zero (and onboarding) - with mail still in the list the chrome sits on
  * plain opaque bg0.
  */
 function AppBackdrop() {
@@ -310,16 +310,15 @@ function ThreadOrderSync() {
 /** Applies the theme setting to <html data-theme> and follows the OS in system mode. */
 function useThemeSync() {
   const { data: settings } = useSettings();
-  const { data: accounts } = useAccounts();
   const theme = useUi((s) => s.theme);
   const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
   const accountThemes = settings?.accountThemes;
-  // The active account drives the theme. In the "All accounts" view there is no
-  // single account, so fall back to the global theme - unless there is exactly
-  // one account, in which case "All accounts" is effectively that account.
-  const effectiveAccountId =
-    accountFilter ?? (accounts?.length === 1 ? accounts[0].id : null);
+  // A per-account theme override only applies while the inbox is filtered to
+  // that one account. The "All accounts" view (no filter) always uses the
+  // global theme - even with a single account connected - so the Preferences
+  // theme control never looks dead.
+  const effectiveAccountId = accountFilter;
 
   useEffect(() => {
     if (settings?.theme && settings.theme !== useUi.getState().theme) {
@@ -335,10 +334,13 @@ function useThemeSync() {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     // The active account may override the global theme; "All accounts" and
-    // accounts with no override fall back to the global setting.
-    const chosen =
-      (effectiveAccountId != null ? accountThemes?.[String(effectiveAccountId)] : undefined) ??
-      theme;
+    // accounts with no override fall back to the global setting. A per-account
+    // value of "system" (the default the account picker shows) means "inherit
+    // the global theme", not a hard OS-follow override - otherwise the global
+    // theme control looks dead while an account silently pins the theme.
+    const override =
+      effectiveAccountId != null ? accountThemes?.[String(effectiveAccountId)] : undefined;
+    const chosen = override && override !== "system" ? override : theme;
     const apply = () => {
       const resolved = chosen === "system" ? (mq.matches ? "carbon" : "snow") : chosen;
       document.documentElement.dataset.theme = resolved;

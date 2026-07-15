@@ -140,7 +140,7 @@ export function SearchScreen() {
 
   // As-you-type operator completion: match the token being typed (the text
   // after the last space) against the known operators. The first match is the
-  // "active" suggestion — Tab or Enter completes to it.
+  // "active" suggestion - Tab or Enter completes to it.
   const opSuggestions = useMemo(() => {
     const tok = currentToken.toLowerCase();
     if (!tok) return [];
@@ -227,7 +227,7 @@ export function SearchScreen() {
                 }
                 if (e.key !== "Enter") return;
                 // Ask mode: Enter runs the question. Search mode with no
-                // highlight: nothing — never yank into an email while typing.
+                // highlight: nothing - never yank into an email while typing.
                 if (mode === "ask") {
                   e.preventDefault();
                   if (input.trim()) ask.run(input.trim());
@@ -312,7 +312,7 @@ export function SearchScreen() {
           </div>
         ) : (
           <div className="flex min-h-0 flex-1">
-            {/* Sources — left rail */}
+            {/* Sources - left rail */}
             <aside className="co-hairline-r flex w-[300px] shrink-0 flex-col gap-1 overflow-y-auto px-3 py-5">
               <span className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
                 Sources
@@ -334,7 +334,7 @@ export function SearchScreen() {
               )}
             </aside>
 
-            {/* Answer — main pane */}
+            {/* Answer - main pane */}
             <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
               <div className="mx-auto max-w-[760px]">
                 {ask.reasoning && (

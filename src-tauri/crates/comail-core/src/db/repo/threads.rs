@@ -34,7 +34,8 @@ fn parse_id_list(csv: &str) -> Vec<i64> {
 
 const SUMMARY_SELECT: &str = "
     SELECT t.id, t.account_id, a.email AS account_email,
-           (SELECT m.subject FROM messages m WHERE m.thread_id = t.id ORDER BY m.date DESC LIMIT 1) AS subject,
+           (SELECT COALESCE(m.local_subject_prefix, '') || m.subject
+              FROM messages m WHERE m.thread_id = t.id ORDER BY m.date DESC LIMIT 1) AS subject,
            t.snippet, t.participants_json, t.last_message_at, t.message_count,
            t.unread_count, t.starred_count, t.attachment_count,
            s.wake_at AS snoozed_until,

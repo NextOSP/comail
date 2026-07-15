@@ -63,7 +63,7 @@ export interface Label {
   /** IMAP keyword atom this label maps to on the server */
   keyword: string;
   position: number;
-  /** system auto-category (Marketing/News/Social/Pitch); local-only, not deletable */
+  /** System auto-category (Marketing/News/Social/Pitch); local-only and restorable. */
   isAuto?: boolean;
 }
 
@@ -111,6 +111,8 @@ export interface MessageDetail {
   bodyState: BodyState;
   textBody: string | null;
   htmlBody: string | null; // sanitized in Rust; safe to render in sandboxed iframe
+  /** Local-only note appended by an AI automation. */
+  automationNote: string | null;
   attachments: AttachmentMeta[];
   /** raw List-Unsubscribe header value, e.g. `"<https://x/unsub>, <mailto:u@x>"` */
   listUnsubscribe: string | null;
@@ -298,6 +300,43 @@ export interface SignatureDefaults {
 /** AI model tier a scenario routes to. */
 export type AiTier = "instant" | "cheap" | "intelligent";
 
+export type AiAutomationActionKind =
+  | "route_to"
+  | "add_label"
+  | "remove_label"
+  | "mark_read"
+  | "star"
+  | "archive"
+  | "trash"
+  | "subject_prefix"
+  | "body_note";
+
+/** A deterministic action executed only after the AI matches its parent rule.
+ * `value` is a route key, label id, or annotation text depending on `kind`. */
+export interface AiAutomationAction {
+  kind: AiAutomationActionKind;
+  value: string;
+}
+
+export interface AiAutomationRule {
+  id: string;
+  name: string;
+  /** Original natural-language request entered by the user. */
+  sourcePrompt: string;
+  instruction: string;
+  enabled: boolean;
+  actions: AiAutomationAction[];
+}
+
+export interface AiAutomationPlan {
+  supported: boolean;
+  name: string;
+  instruction: string;
+  actions: AiAutomationAction[];
+  summary: string;
+  issues: string[];
+}
+
 export interface Settings {
   theme: "snow" | "carbon" | "holiday" | "system";
   /** UI language: "system" follows the OS locale, otherwise a code like "en". */
@@ -332,6 +371,9 @@ export interface Settings {
   aiCategorize: boolean;
   /** Natural-language description of the categories for the AI classifier. */
   aiCategoryPrompt: string;
+  /** Compound AI-triggered workflows. The AI matches rules; configured actions
+   * are executed deterministically by the app. */
+  aiAutomationRules: AiAutomationRule[];
   /** Model tier the AI classifier uses. */
   aiTierCategorize: AiTier;
   /** Group the thread list under date headers (Today / Yesterday / …). */
@@ -361,6 +403,22 @@ export interface Settings {
   voiceLearnedAt: number;
   /** Minutes before a meeting to fire a desktop reminder; 0 disables. */
   meetingNotifyLeadMinutes: number;
+}
+
+export interface AiUsageDay {
+  date: string;
+  totalTokens: number;
+  requests: number;
+}
+
+export interface AiUsageStats {
+  totalTokens: number;
+  totalRequests: number;
+  todayTokens: number;
+  yesterdayTokens: number;
+  last7DaysTokens: number;
+  last30DaysTokens: number;
+  days: AiUsageDay[];
 }
 
 export interface CalendarEvent {
@@ -453,7 +511,7 @@ export interface AiIntent {
 
 /** One chronological beat of a thread, for the AI summary timeline. */
 export interface TimelineEntry {
-  /** Who acted — a person's name, or "You" for the account owner. */
+  /** Who acted - a person's name, or "You" for the account owner. */
   actor: string;
   /** A terse, past-tense description of what they did. */
   event: string;
@@ -670,12 +728,16 @@ export interface Commands {
   list_splits(args: Record<string, never>): Promise<SplitRule[]>;
   save_split(args: { split: Omit<SplitRule, "id"> & { id: number | null } }): Promise<SplitRule>;
   delete_split(args: { splitId: number }): Promise<void>;
+  /** Persist the shared top-to-bottom order of custom splits and auto-label tabs. */
+  reorder_tabs(args: { order: { kind: "split" | "label"; id: number }[] }): Promise<void>;
 
   list_labels(args: Record<string, never>): Promise<Label[]>;
   save_label(args: {
     label: Omit<Label, "id" | "keyword"> & { id: number | null };
   }): Promise<Label>;
   delete_label(args: { labelId: number }): Promise<void>;
+  /** Recreate missing Marketing, News, Social, and Pitch categories. */
+  restore_auto_labels(args: Record<string, never>): Promise<number>;
 
   sync_now(args: { accountId?: number | null }): Promise<void>;
   get_sync_status(args: Record<string, never>): Promise<SyncStatus[]>;
@@ -740,6 +802,8 @@ export interface Commands {
   ai_status(args: Record<string, never>): Promise<AiStatus>;
   /** Model ids from the endpoint's GET /models (OpenAI-compatible). */
   ai_list_models(args: Record<string, never>): Promise<string[]>;
+  ai_usage_stats(args: Record<string, never>): Promise<AiUsageStats>;
+  ai_plan_automation(args: { prompt: string }): Promise<AiAutomationPlan>;
   set_ai_key(args: { apiKey: string }): Promise<void>;
   /** Parse a natural-language palette query into an executable intent. */
   ai_command(args: { query: string }): Promise<AiIntent>;

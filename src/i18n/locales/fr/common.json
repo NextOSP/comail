@@ -77,7 +77,7 @@
     "try": "Essayez",
     "emptyHint": "Recherchez dans tous les comptes, dossiers et messages.",
     "noResults": "Aucun résultat pour « {{query}} »",
-    "toggleHint": "Basculer Recherche / Question — ⌘/Ctrl+J"
+    "toggleHint": "Basculer Recherche / Question - ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Raccourcis clavier",

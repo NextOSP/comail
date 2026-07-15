@@ -29,9 +29,9 @@
     "no": "不参加"
   },
   "rsvpSent": {
-    "accepted": "已接受 — 回复已发送给组织者",
-    "tentative": "已标记为待定 — 回复已发送给组织者",
-    "declined": "已拒绝 — 回复已发送给组织者"
+    "accepted": "已接受 - 回复已发送给组织者",
+    "tentative": "已标记为待定 - 回复已发送给组织者",
+    "declined": "已拒绝 - 回复已发送给组织者"
   },
   "create": {
     "title": "创建日程",
@@ -43,7 +43,7 @@
     "time": "时间",
     "duration": "时长",
     "attendees": "参与者",
-    "attendeesPlaceholder": "邮箱，用逗号分隔 — 每人都会收到邀请",
+    "attendeesPlaceholder": "邮箱，用逗号分隔 - 每人都会收到邀请",
     "location": "地点",
     "joinUrl": "会议链接",
     "description": "描述",
@@ -55,8 +55,8 @@
   },
   "created": {
     "plain": "日程已添加到你的日历",
-    "withInvites_one": "日程已创建 — 邀请已排队发送给 {{count}} 位参与者",
-    "withInvites_other": "日程已创建 — 邀请已排队发送给 {{count}} 位参与者"
+    "withInvites_one": "日程已创建 - 邀请已排队发送给 {{count}} 位参与者",
+    "withInvites_other": "日程已创建 - 邀请已排队发送给 {{count}} 位参与者"
   },
   "edit": {
     "title": "编辑日程",
@@ -65,16 +65,16 @@
   },
   "updated": {
     "plain": "日程已更新",
-    "withInvites_one": "日程已更新 — 更新已发送给 {{count}} 位参与者",
-    "withInvites_other": "日程已更新 — 更新已发送给 {{count}} 位参与者"
+    "withInvites_one": "日程已更新 - 更新已发送给 {{count}} 位参与者",
+    "withInvites_other": "日程已更新 - 更新已发送给 {{count}} 位参与者"
   },
   "deleted": {
     "plain": "日程已删除",
-    "withInvites_one": "日程已取消 — 取消通知已发送给 {{count}} 位参与者",
-    "withInvites_other": "日程已取消 — 取消通知已发送给 {{count}} 位参与者"
+    "withInvites_one": "日程已取消 - 取消通知已发送给 {{count}} 位参与者",
+    "withInvites_other": "日程已取消 - 取消通知已发送给 {{count}} 位参与者"
   },
   "detail": {
-    "organizerHint": "由 {{organizer}} 组织 — 请在上方回复",
+    "organizerHint": "由 {{organizer}} 组织 - 请在上方回复",
     "edit": "编辑",
     "delete": "删除",
     "confirmDelete": "删除此日程？",
@@ -96,5 +96,5 @@
   "reminderBody": "{{time}} 开始",
   "newEventBody": "新事件 · {{when}}",
   "newEvents": "日历中有 {{count}} 个新事件",
-  "syncConflict": "“{{summary}}”在服务器上已更改 — 你的编辑已保留为副本"
+  "syncConflict": "“{{summary}}”在服务器上已更改 - 你的编辑已保留为副本"
 }

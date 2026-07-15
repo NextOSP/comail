@@ -39,9 +39,9 @@
     "no": "No"
   },
   "rsvpSent": {
-    "accepted": "Accepted — reply sent to the organizer",
-    "tentative": "Marked tentative — reply sent to the organizer",
-    "declined": "Declined — reply sent to the organizer"
+    "accepted": "Accepted - reply sent to the organizer",
+    "tentative": "Marked tentative - reply sent to the organizer",
+    "declined": "Declined - reply sent to the organizer"
   },
   "create": {
     "title": "Create event",
@@ -59,7 +59,7 @@
     "time": "Time",
     "duration": "Duration",
     "attendees": "Attendees",
-    "attendeesPlaceholder": "emails, comma-separated — each gets an invite",
+    "attendeesPlaceholder": "emails, comma-separated - each gets an invite",
     "location": "Location",
     "joinUrl": "Meeting link",
     "teamsMeeting": "Teams meeting",
@@ -76,8 +76,8 @@
   },
   "created": {
     "plain": "Event added to your calendar",
-    "withInvites_one": "Event created — invite queued to {{count}} attendee",
-    "withInvites_other": "Event created — invites queued to {{count}} attendees"
+    "withInvites_one": "Event created - invite queued to {{count}} attendee",
+    "withInvites_other": "Event created - invites queued to {{count}} attendees"
   },
   "edit": {
     "title": "Edit event",
@@ -86,16 +86,16 @@
   },
   "updated": {
     "plain": "Event updated",
-    "withInvites_one": "Event updated — update emailed to {{count}} attendee",
-    "withInvites_other": "Event updated — updates emailed to {{count}} attendees"
+    "withInvites_one": "Event updated - update emailed to {{count}} attendee",
+    "withInvites_other": "Event updated - updates emailed to {{count}} attendees"
   },
   "deleted": {
     "plain": "Event deleted",
-    "withInvites_one": "Event cancelled — cancellation emailed to {{count}} attendee",
-    "withInvites_other": "Event cancelled — cancellations emailed to {{count}} attendees"
+    "withInvites_one": "Event cancelled - cancellation emailed to {{count}} attendee",
+    "withInvites_other": "Event cancelled - cancellations emailed to {{count}} attendees"
   },
   "detail": {
-    "organizerHint": "Organized by {{organizer}} — respond above",
+    "organizerHint": "Organized by {{organizer}} - respond above",
     "edit": "Edit",
     "delete": "Delete",
     "confirmDelete": "Delete this event?",
@@ -117,5 +117,5 @@
   "reminderBody": "Starts at {{time}}",
   "newEventBody": "New event · {{when}}",
   "newEvents": "{{count}} new events on your calendar",
-  "syncConflict": "“{{summary}}” changed on the server — your edit was kept as a copy"
+  "syncConflict": "“{{summary}}” changed on the server - your edit was kept as a copy"
 }

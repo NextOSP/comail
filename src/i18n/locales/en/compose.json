@@ -57,6 +57,7 @@
   "quickReply1": "Got it, thanks!",
   "quickReply2": "Sounds good, will do.",
   "quickReply3": "Thanks, I'll take a look.",
+  "quickRepliesLoading": "Generating suggested replies…",
   "signature": {
     "label": "Signature",
     "none": "No signature"

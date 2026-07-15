@@ -77,7 +77,7 @@
     "try": "Thử",
     "emptyHint": "Tìm trên mọi tài khoản, thư mục và tin nhắn.",
     "noResults": "Không có kết quả cho “{{query}}”",
-    "toggleHint": "Chuyển Tìm kiếm / Hỏi — ⌘/Ctrl+J"
+    "toggleHint": "Chuyển Tìm kiếm / Hỏi - ⌘/Ctrl+J"
   },
   "shortcutHelp": {
     "title": "Phím tắt",

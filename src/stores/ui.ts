@@ -24,6 +24,8 @@ export type SettingsTab =
   | "snippets"
   | "labels"
   | "ai"
+  | "ai_automation"
+  | "rag"
   | "accounts"
   | "sync";
 
@@ -96,7 +98,7 @@ interface UiState {
   selectedIndex: number;
   selectedThreadId: number | null;
   openThreadId: number | null;
-  /** message focused inside the conversation — the reply target (hover, click,
+  /** message focused inside the conversation - the reply target (hover, click,
    *  or N/P keyboard). */
   focusedMessageId: number | null;
   /** how focusedMessageId was last set; keyboard nav scrolls it into view,

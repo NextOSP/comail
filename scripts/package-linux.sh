@@ -4,7 +4,7 @@
 #
 # Why this exists: `pnpm tauri build` writes to src-tauri/target/release/bundle,
 # NOT to ./build. Without this step ./build/Comail.AppImage keeps pointing at a
-# stale binary — that's the "why does it run an old version?" trap. Run this
+# stale binary - that's the "why does it run an old version?" trap. Run this
 # right after `pnpm tauri build`.
 set -euo pipefail
 
@@ -15,7 +15,7 @@ dest="$root/build"
 deb="$(ls -t "$bundle"/deb/*.deb 2>/dev/null | head -1 || true)"
 appimage="$(ls -t "$bundle"/appimage/*.AppImage 2>/dev/null | head -1 || true)"
 if [[ -z "${deb}" || -z "${appimage}" ]]; then
-  echo "error: no bundles found in $bundle — run 'pnpm tauri build' first" >&2
+  echo "error: no bundles found in $bundle - run 'pnpm tauri build' first" >&2
   exit 1
 fi
 

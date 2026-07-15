@@ -7,7 +7,9 @@ import type {
   ActionResult,
   Address,
   AddPasswordAccountArgs,
+  AiAutomationPlan,
   AiStatus,
+  AiUsageStats,
   AttachmentMeta,
   AttachmentPreview,
   CalendarEvent,
@@ -57,6 +59,8 @@ interface MockMessage {
   isOutgoing: boolean;
   textBody: string;
   htmlBody: string | null;
+  localSubjectPrefix: string;
+  automationNote: string | null;
   attachments: AttachmentMeta[];
   listUnsubscribe: string | null;
   via: string | null;
@@ -70,6 +74,7 @@ interface MockThread {
   isStarred: boolean;
   snoozedUntil: number | null;
   labels: number[];
+  routedTab: string | null;
   messages: MockMessage[];
 }
 
@@ -177,6 +182,7 @@ function addThread(
     isStarred: opts.starred ?? false,
     snoozedUntil: opts.snoozedUntil ?? null,
     labels: [],
+    routedTab: null,
     messages: [],
   };
   for (const m of msgs) {
@@ -195,6 +201,8 @@ function addThread(
       isOutgoing: m.outgoing ?? false,
       textBody: m.body,
       htmlBody: m.html ?? null,
+      localSubjectPrefix: "",
+      automationNote: null,
       attachments: (m.attachments ?? []).map((a) => ({
         id: id(),
         filename: a.name,
@@ -882,6 +890,150 @@ function applyAutoLabels() {
 }
 applyAutoLabels();
 
+const MOCK_AUTOMATION_STOP_WORDS = new Set([
+  "about", "after", "before", "email", "from", "into", "matches", "message",
+  "that", "their", "then", "this", "when", "with", "without",
+]);
+
+/** Lightweight stand-in for the remote classifier so automation interactions
+ * remain testable in browser mock mode. Production uses the configured model. */
+function mockAutomationMatches(t: MockThread, name: string, instruction: string): boolean {
+  const haystack = [
+    t.subject,
+    threadSender(t).email,
+    ...t.messages.filter((m) => !m.isOutgoing).map((m) => m.textBody),
+  ].join(" ").toLowerCase();
+  const terms = `${name} ${instruction}`
+    .toLowerCase()
+    .match(/[a-z0-9]{4,}/g)
+    ?.filter((term) => !MOCK_AUTOMATION_STOP_WORDS.has(term)) ?? [];
+  return terms.some((term) => haystack.includes(term));
+}
+
+function applyMockAutomations() {
+  for (const t of threads) {
+    t.routedTab = null;
+    const incoming = [...t.messages].reverse().find((m) => !m.isOutgoing && !m.isDraft);
+    t.messages.forEach((m) => {
+      m.localSubjectPrefix = "";
+      m.automationNote = null;
+    });
+    if (!settings.aiCategorize) continue;
+    for (const rule of settings.aiAutomationRules.filter((r) => r.enabled)) {
+      if (!mockAutomationMatches(t, rule.name, rule.instruction)) continue;
+      for (const action of rule.actions) {
+        switch (action.kind) {
+          case "route_to":
+            t.routedTab = action.value;
+            t.labels = t.labels.filter((id) => !labels.find((label) => label.id === id)?.isAuto);
+            if (action.value.startsWith("label:")) {
+              const labelId = Number(action.value.slice("label:".length));
+              if (Number.isFinite(labelId)) t.labels.push(labelId);
+            }
+            break;
+          case "add_label": {
+            const labelId = Number(action.value);
+            if (Number.isFinite(labelId) && !t.labels.includes(labelId)) t.labels.push(labelId);
+            break;
+          }
+          case "remove_label":
+            t.labels = t.labels.filter((id) => id !== Number(action.value));
+            break;
+          case "mark_read":
+            t.messages.forEach((m) => (m.isRead = true));
+            break;
+          case "star":
+            t.isStarred = true;
+            break;
+          case "archive":
+            t.folder = "done";
+            break;
+          case "trash":
+            t.folder = "trash";
+            break;
+          case "subject_prefix":
+            if (incoming && action.value) incoming.localSubjectPrefix += action.value;
+            break;
+          case "body_note":
+            if (incoming && action.value.trim()) {
+              incoming.automationNote = [incoming.automationNote, action.value.trim()]
+                .filter(Boolean)
+                .join("\n\n");
+            }
+            break;
+        }
+      }
+    }
+  }
+}
+
+/** Browser-demo planner for the prompt-first automation editor. The desktop
+ * app uses the configured AI model and validates the same structured result. */
+function mockPlanAutomation(prompt: string): AiAutomationPlan {
+  const lower = prompt.toLowerCase();
+  const actions: Array<{ index: number; action: AiAutomationPlan["actions"][number] }> = [];
+  const issues: string[] = [];
+  const add = (index: number, kind: AiAutomationPlan["actions"][number]["kind"], value = "") => {
+    if (index >= 0 && !actions.some((item) => item.action.kind === kind && item.action.value === value))
+      actions.push({ index, action: { kind, value } });
+  };
+  const userLabels = labels.filter((label) => !label.isAuto);
+  const mentionedLabel = userLabels.find((label) => lower.includes(label.name.toLowerCase()));
+  if (/\b(remove|clear)\b[^.]*\blabel\b/.test(lower) && mentionedLabel)
+    add(lower.indexOf("remove"), "remove_label", String(mentionedLabel.id));
+  else if (/\b(add|apply|append)\b[^.]*\blabel\b/.test(lower) && mentionedLabel)
+    add(Math.max(lower.indexOf("add"), lower.indexOf("apply"), lower.indexOf("append")), "add_label", String(mentionedLabel.id));
+
+  if (/\b(move|route|put)\b[^.]*\bimportant\b/.test(lower))
+    add(lower.indexOf("important"), "route_to", "important");
+  else if (/\b(move|route|put)\b[^.]*\bother\b/.test(lower))
+    add(lower.indexOf("other"), "route_to", "other");
+  else {
+    const split = splits.find((item) => lower.includes(item.name.toLowerCase()));
+    const category = labels.find((label) => label.isAuto && lower.includes(label.name.toLowerCase()));
+    if (split && /\b(move|route|put)\b/.test(lower))
+      add(lower.indexOf(split.name.toLowerCase()), "route_to", `split:${split.id}`);
+    else if (category && /\b(move|route|put)\b/.test(lower))
+      add(lower.indexOf(category.name.toLowerCase()), "route_to", `label:${category.id}`);
+  }
+  if (/\bmark(?: it| them| email| mail)? as read\b|\bmark read\b/.test(lower))
+    add(lower.indexOf("mark"), "mark_read");
+  if (/\bstar\b/.test(lower)) add(lower.indexOf("star"), "star");
+  if (/\barchive\b/.test(lower)) add(lower.indexOf("archive"), "archive");
+  if (/\b(?:move|moving|send|put)\b[^.]*\btrash\b|\btrash (?:it|them|mail|email)\b/.test(lower))
+    add(lower.indexOf("trash"), "trash");
+
+  const prefix = /\[[^\]]+\]/.exec(prompt);
+  if (prefix && /subject/i.test(prompt)) add(prefix.index, "subject_prefix", `${prefix[0]} `);
+  const bodyNote = /(?:add|append)\s+["“]?(.+?)["”]?\s+to (?:the )?body/i.exec(prompt);
+  if (bodyNote) add(bodyNote.index, "body_note", bodyNote[1].trim());
+
+  if (/\b(forward|reply|send a reply|mark unread|create (?:a )?label|delete permanently)\b/.test(lower))
+    issues.push("One or more requested actions are not supported by AI automations.");
+  if (/\blabel\b/.test(lower) && !mentionedLabel && !/marketing|news|social|pitch/.test(lower))
+    issues.push("The prompt names a label that does not exist yet.");
+  if (actions.length === 0) issues.push("The prompt does not contain a supported action.");
+
+  actions.sort((a, b) => a.index - b.index);
+  const instruction = prompt
+    .split(/\b(?:then|and (?:add|apply|move|route|mark|star|archive|trash|append|prefix))\b/i)[0]
+    .replace(/^\s*when\s+/i, "")
+    .trim();
+  if (instruction.length < 5) issues.push("The prompt does not contain a clear email match condition.");
+  const topic = /\b(invoice|receipt|newsletter|promotion|social|pitch|meeting|travel)\b/i.exec(prompt)?.[1];
+  const name = `${topic ? topic[0].toUpperCase() + topic.slice(1) : "Mail"} automation`;
+  return {
+    supported: issues.length === 0,
+    name,
+    instruction,
+    actions: actions.map((item) => item.action),
+    summary: actions.length > 0
+      ? `Matches the described mail and runs ${actions.length} action${actions.length === 1 ? "" : "s"}.`
+      : "",
+    issues,
+  };
+}
+
 const folders: FolderInfo[] = [
   { id: 1, accountId: 1, imapName: "INBOX", delimiter: "/", role: "inbox" },
   { id: 2, accountId: 1, imapName: "Archive", delimiter: "/", role: "archive" },
@@ -934,6 +1086,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   autoLabelsEnabled: true,
   aiCategorize: false,
   aiCategoryPrompt: "",
+  aiAutomationRules: [],
   aiTierCategorize: "instant",
   groupByDate: true,
   dockBadgeEnabled: true,
@@ -1133,7 +1286,7 @@ function summarize(t: MockThread): ThreadSummary {
     id: t.id,
     accountId: t.accountId,
     accountEmail: acc?.email ?? "",
-    subject: t.subject,
+    subject: last ? `${last.localSubjectPrefix}${last.subject}` : t.subject,
     snippet: snippetOf(last?.textBody ?? ""),
     participants,
     lastMessageAt: last?.date ?? 0,
@@ -1154,7 +1307,7 @@ function toDetail(m: MockMessage): MessageDetail {
     from: m.from,
     to: m.to,
     cc: m.cc,
-    subject: m.subject,
+    subject: `${m.localSubjectPrefix}${m.subject}`,
     date: m.date,
     isRead: m.isRead,
     isStarred: m.isStarred,
@@ -1164,6 +1317,7 @@ function toDetail(m: MockMessage): MessageDetail {
     bodyState: "cached",
     textBody: m.textBody,
     htmlBody: m.htmlBody,
+    automationNote: m.automationNote,
     attachments: m.attachments,
     listUnsubscribe: m.listUnsubscribe,
     via: m.via,
@@ -1186,6 +1340,7 @@ function matchesSplitRule(t: MockThread, rule: SplitRule): boolean {
 }
 
 function matchesAnyCustomSplit(t: MockThread): boolean {
+  if (t.routedTab?.startsWith("split:")) return true;
   return splits.some((r) => matchesSplitRule(t, r));
 }
 
@@ -1199,9 +1354,12 @@ function matchesAnyCustomSplit(t: MockThread): boolean {
 function inSplit(t: MockThread, splitId: number | null | undefined): boolean {
   if (splitId == null) return true;
   if (splitId > 0) {
+    if (t.routedTab != null) return t.routedTab === `split:${splitId}`;
     const rule = splits.find((r) => r.id === splitId);
     return rule ? matchesSplitRule(t, rule) : false;
   }
+  if (t.routedTab === "important") return splitId === -1;
+  if (t.routedTab === "other") return splitId === -2;
   if (matchesAnyCustomSplit(t)) return false;
   const automated = isAutomatedSender(threadSender(t));
   return splitId === -1 ? !automated : automated;
@@ -1370,6 +1528,7 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
         isStarred: false,
         snoozedUntil: null,
         labels: [],
+        routedTab: null,
         messages: [],
       };
       threads.push(thread);
@@ -1389,6 +1548,8 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
       isOutgoing: true,
       textBody: args.bodyText,
       htmlBody: args.bodyHtml ?? null,
+      localSubjectPrefix: "",
+      automationNote: null,
       attachments: [],
       listUnsubscribe: null,
       via: null,
@@ -1786,6 +1947,18 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(undefined);
     }
 
+    case "reorder_tabs": {
+      const order = a.order as { kind: "split" | "label"; id: number }[];
+      order.forEach((ref, i) => {
+        const row =
+          ref.kind === "split"
+            ? splits.find((x) => x.id === ref.id)
+            : labels.find((x) => x.id === ref.id);
+        if (row) row.position = i;
+      });
+      return delay(undefined);
+    }
+
     case "unread_counts": {
       const accId = (a.accountId ?? null) as number | null;
       const pool = threads.filter((t) => accId == null || t.accountId === accId);
@@ -1796,7 +1969,7 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
       const splitsMap: Record<string, number> = {};
       for (const r of splits) {
-        splitsMap[String(r.id)] = unreadInbox.filter((t) => matchesSplitRule(t, r)).length;
+        splitsMap[String(r.id)] = unreadInbox.filter((t) => inSplit(t, r.id)).length;
       }
       const labelsMap: Record<string, number> = {};
       for (const l of labels) {
@@ -1816,11 +1989,14 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       });
     }
 
-    case "relabel_auto":
+    case "relabel_auto": {
+      applyAutoLabels();
+      return delay(threads.filter((t) => t.labels.some((id) => id >= 100)).length, 400);
+    }
     case "reroute_all": {
       applyAutoLabels();
-      const n = threads.filter((t) => t.labels.some((id) => id >= 100)).length;
-      return delay(n, 400);
+      applyMockAutomations();
+      return delay(threads.length, 400);
     }
 
     case "list_labels":
@@ -1853,6 +2029,23 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       if (i >= 0) labels.splice(i, 1);
       for (const t of threads) t.labels = t.labels.filter((x) => x !== a.labelId);
       return delay(undefined);
+    }
+
+    case "restore_auto_labels": {
+      const defaults: Label[] = [
+        { id: 101, name: "Marketing", color: "#e0708a", keyword: "ComailAutoMarketing", position: 1000, isAuto: true },
+        { id: 102, name: "News", color: "#5b9dd9", keyword: "ComailAutoNews", position: 1001, isAuto: true },
+        { id: 103, name: "Social", color: "#7bc47f", keyword: "ComailAutoSocial", position: 1002, isAuto: true },
+        { id: 104, name: "Pitch", color: "#c9a04e", keyword: "ComailAutoPitch", position: 1003, isAuto: true },
+      ];
+      let restored = 0;
+      for (const label of defaults) {
+        if (labels.some((existing) => existing.keyword === label.keyword && existing.isAuto)) continue;
+        labels.push({ ...label });
+        restored += 1;
+      }
+      applyAutoLabels();
+      return delay(restored, 250);
     }
 
     case "open_logs_dir":
@@ -2051,6 +2244,34 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         200,
       );
 
+    case "ai_usage_stats": {
+      const localDate = (date: Date) =>
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      const days = Array.from({ length: 91 }, (_, index) => {
+        const ago = 90 - index;
+        const date = new Date();
+        date.setHours(12, 0, 0, 0);
+        date.setDate(date.getDate() - ago);
+        const active = (ago * 17 + 11) % 9 > 1;
+        const totalTokens = active ? 900 + ((ago * 7919) % 18_000) : 0;
+        return { date: localDate(date), totalTokens, requests: active ? 1 + (ago % 6) : 0 };
+      });
+      const sumLast = (count: number) => days.slice(-count).reduce((n, day) => n + day.totalTokens, 0);
+      const out: AiUsageStats = {
+        totalTokens: 684_200 + sumLast(91),
+        totalRequests: 412 + days.reduce((n, day) => n + day.requests, 0),
+        todayTokens: sumLast(1),
+        yesterdayTokens: days[days.length - 2]?.totalTokens ?? 0,
+        last7DaysTokens: sumLast(7),
+        last30DaysTokens: sumLast(30),
+        days,
+      };
+      return delay(out, 100);
+    }
+
+    case "ai_plan_automation":
+      return delay(mockPlanAutomation(String(a.prompt ?? "")), 450);
+
     case "ai_command": {
       // Tiny offline stand-in for the intent parser.
       const q = String(a.query ?? "");
@@ -2107,7 +2328,7 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
           ? `Reply to ${lastIncoming.from.name ?? lastIncoming.from.email} with a decision on the open question.`
           : null,
         proposedReply: lastIncoming
-          ? `Thanks for the detail — this looks good to me. Let's go ahead with the plan as outlined; I'll follow up if anything changes on my end.`
+          ? `Thanks for the detail - this looks good to me. Let's go ahead with the plan as outlined; I'll follow up if anything changes on my end.`
           : null,
       };
       return delay(summary, 900);

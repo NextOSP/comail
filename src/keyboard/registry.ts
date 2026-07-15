@@ -102,8 +102,8 @@ function isEditable(el: EventTarget | null): boolean {
 }
 
 /** Run a keydown through the command registry. Exported so keystrokes that fire
- *  outside the main document — inside a sandboxed email iframe, which the window
- *  listener never sees — can be routed here with the real event. */
+ *  outside the main document - inside a sandboxed email iframe, which the window
+ *  listener never sees - can be routed here with the real event. */
 export function dispatchKeyboardEvent(e: KeyboardEvent) {
   const token = normalizeEvent(e);
   if (token === null) return;
@@ -182,8 +182,8 @@ export function installKeyboard() {
 // ---------------------------------------------------------------------------
 //
 // Email bodies (and attachment previews) render in sandboxed iframes marked
-// `data-app-iframe`. Clicking one moves keyboard focus into it. In WebKit —
-// which is what the app actually ships on (Tauri = WKWebView, also Safari) —
+// `data-app-iframe`. Clicking one moves keyboard focus into it. In WebKit,
+// which is what the app actually ships on (Tauri = WKWebView, also Safari),
 // keydowns fired inside a scriptless sandboxed iframe reach *no* listener at
 // all: not the iframe's own document, not the parent window. So every app
 // shortcut (Esc to go back, ⌘K palette, J/K, R…) silently dies the moment you

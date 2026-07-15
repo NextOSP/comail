@@ -208,6 +208,9 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   // Quick-reply chips: AI suggestions generated when a reply opens; the
   // static i18n chips show instantly and are swapped out when these arrive.
   const [quickReplies, setQuickReplies] = useState<string[] | null>(null);
+  // True while the AI is generating suggestions: shows a gradient shimmer in
+  // place of the chips so the work is visible instead of static placeholders.
+  const [quickRepliesLoading, setQuickRepliesLoading] = useState(false);
   useEffect(() => {
     if (state.mode !== "reply" && state.mode !== "reply_all") return;
     const threadId = state.replyTo?.threadId;
@@ -217,10 +220,13 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       try {
         const status = await call("ai_status", {});
         if (!status.configured || cancelled) return;
+        setQuickRepliesLoading(true);
         const suggestions = await call("ai_quick_replies", { threadId });
         if (!cancelled && suggestions.length > 0) setQuickReplies(suggestions);
       } catch {
-        // AI unavailable or slow: the static chips stay.
+        // AI unavailable or slow: fall back to the static chips.
+      } finally {
+        if (!cancelled) setQuickRepliesLoading(false);
       }
     })();
     return () => {
@@ -354,7 +360,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       }
       if (sending) return;
       setSending(true);
-      // Play the "whoosh" synchronously on the user's send gesture — webviews
+      // Play the "whoosh" synchronously on the user's send gesture - webviews
       // block audio started later from an async callback (no user activation).
       playSound("send");
       try {
@@ -864,30 +870,45 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             expandShortcut={expandShortcut}
           />
 
-          {(state.mode === "reply" || state.mode === "reply_all") && isHtmlEmpty(body) && (
-            <div className="flex flex-wrap gap-2 pb-3" data-testid="quick-replies">
-              {(
-                quickReplies ?? [
-                  t("compose:quickReply1"),
-                  t("compose:quickReply2"),
-                  t("compose:quickReply3"),
-                ]
-              ).map(
-                (s) => (
-                  <button
-                    key={s}
-                    className="rounded-full border border-hairline bg-bg0 px-3 py-1 text-[12.5px] text-ink-muted hover:border-hairline-strong hover:bg-bg2 hover:text-ink"
-                    onClick={() => {
-                      markDirty();
-                      bodyRef.current?.insertText(s);
-                    }}
-                  >
-                    {s}
-                  </button>
-                ),
-              )}
-            </div>
-          )}
+          {(state.mode === "reply" || state.mode === "reply_all") &&
+            (quickRepliesLoading || isHtmlEmpty(body)) && (
+              <div
+                className="flex flex-wrap items-center gap-2 pb-3"
+                data-testid="quick-replies"
+              >
+                {quickRepliesLoading ? (
+                  <>
+                    {["w-24", "w-36", "w-28"].map((w) => (
+                      <span
+                        key={w}
+                        aria-hidden
+                        className={`co-ai-shimmer inline-block h-[26px] rounded-full ${w}`}
+                      />
+                    ))}
+                    <span className="sr-only">{t("compose:quickRepliesLoading")}</span>
+                  </>
+                ) : (
+                  (
+                    quickReplies ?? [
+                      t("compose:quickReply1"),
+                      t("compose:quickReply2"),
+                      t("compose:quickReply3"),
+                    ]
+                  ).map((s) => (
+                    <button
+                      key={s}
+                      className="co-fade-in rounded-full border border-hairline bg-bg0 px-3 py-1 text-[12.5px] text-ink-muted hover:border-hairline-strong hover:bg-bg2 hover:text-ink"
+                      onClick={() => {
+                        markDirty();
+                        bodyRef.current?.insertText(s);
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
 
           {init.quote && !quoteRemoved && (
             <div className="pb-3">
