@@ -117,6 +117,23 @@ describe("splitQuotedHtml", () => {
     expect(quoted).toContain("Subject:");
   });
 
+  it("splits a Vietnamese Outlook header sent in decomposed (NFD) form", () => {
+    // Outlook (macOS/iOS) sends accented labels decomposed: "Từ"/"Đến"/"Chủ đề"
+    // as base letters + combining marks, which don't match our precomposed
+    // regex literals until the body is NFC-normalized.
+    const header =
+      "<p>Thanks.</p><hr>" +
+      "<div><font><b>Từ:</b> Alice &lt;a@x.com&gt;<br>" +
+      "<b>Đã gửi:</b> 09 July 2026<br>" +
+      "<b>Đến:</b> Bob &lt;b@x.com&gt;<br>" +
+      "<b>Chủ đề:</b> Re: hi</font></div>" +
+      "<div>Old message.</div>";
+    const html = header.normalize("NFD");
+    const [visible, quoted] = splitQuotedHtml(html);
+    expect(visible).toBe("<p>Thanks.</p>");
+    expect(quoted).toContain("Chủ đề:");
+  });
+
   it("ignores a stray 'From:' with no To/Subject header nearby", () => {
     const html = "<p>Quote from: the book, chapter two. My thoughts follow.</p>";
     const [visible, quoted] = splitQuotedHtml(html);

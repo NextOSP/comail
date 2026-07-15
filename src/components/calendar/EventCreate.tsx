@@ -119,6 +119,12 @@ function fromInputs(date: string, time: string): number {
   return new Date(`${date}T${time || "09:00"}`).getTime();
 }
 
+function formatDuration(ms: number): string {
+  const m = Math.round(ms / 60_000);
+  if (m < 60) return `${m}m`;
+  return m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 /** Does this natural-language text ask for an online / Teams meeting? */
 function wantsOnlineMeeting(text: string): boolean {
   const s = text.toLowerCase();
@@ -160,7 +166,7 @@ export function EventCreate() {
   const [summary, setSummary] = useState("");
   const [date, setDate] = useState(toDateInput(defaultStart));
   const [time, setTime] = useState(toTimeInput(defaultStart));
-  const [durationMin, setDurationMin] = useState(30);
+  const [endTime, setEndTime] = useState(toTimeInput(defaultStart + 30 * 60_000));
   const [allDay, setAllDay] = useState(false);
   const [attendeesRaw, setAttendeesRaw] = useState("");
   const [location, setLocation] = useState("");
@@ -178,10 +184,12 @@ export function EventCreate() {
     const start = p?.startsAt ?? defaultStart;
     setDate(toDateInput(start));
     setTime(toTimeInput(start));
-    setDurationMin(
-      p?.startsAt != null && p?.endsAt != null
-        ? Math.max(15, Math.round((p.endsAt - p.startsAt) / 60_000))
-        : 30,
+    setEndTime(
+      toTimeInput(
+        p?.startsAt != null && p?.endsAt != null && p.endsAt > p.startsAt
+          ? p.endsAt
+          : start + 30 * 60_000,
+      ),
     );
     setAllDay(p?.allDay ?? false);
     setAttendeesRaw((p?.attendees ?? []).map((a) => a.email).join(", "));
@@ -204,6 +212,20 @@ export function EventCreate() {
 
   const isMicrosoftAccount =
     accounts?.find((a) => a.id === accountId)?.provider === "microsoft";
+
+  // An end time at or before the start rolls over to the next day.
+  const endsFromInputs = (startsAt: number) => {
+    const e = fromInputs(date, endTime);
+    return e <= startsAt ? e + 24 * H_MS : e;
+  };
+
+  // Moving the start keeps the event length; the end field follows.
+  const changeStart = (next: string) => {
+    const oldStart = fromInputs(date, time);
+    const span = endsFromInputs(oldStart) - oldStart;
+    setTime(next);
+    setEndTime(toTimeInput(fromInputs(date, next) + span));
+  };
 
   // Mint a real Teams meeting via Graph and drop its join URL into the field.
   // Microsoft accounts only; first use may open the browser once for consent.
@@ -232,7 +254,7 @@ export function EventCreate() {
   // Button in the WHERE section: build a meeting from the current form values.
   const createTeamsMeeting = () => {
     const startsAt = allDay ? fromInputs(date, "00:00") : fromInputs(date, time);
-    const endsAt = allDay ? startsAt + 24 * H_MS : startsAt + durationMin * 60_000;
+    const endsAt = allDay ? startsAt + 24 * H_MS : endsFromInputs(startsAt);
     return fillTeamsMeeting(startsAt, endsAt, summary);
   };
 
@@ -264,9 +286,7 @@ export function EventCreate() {
         setDate(toDateInput(intent.startsAt));
         setTime(toTimeInput(intent.startsAt));
         setAllDay(intent.allDay === true);
-        if (intent.allDay !== true) {
-          setDurationMin(Math.max(15, Math.round((endsAt - intent.startsAt) / 60_000)));
-        }
+        if (intent.allDay !== true) setEndTime(toTimeInput(endsAt));
         if (intent.location) setLocation(intent.location);
         setQuick("");
         maybeAddMeeting(q, intent.summary ?? q, intent.startsAt, endsAt);
@@ -288,7 +308,7 @@ export function EventCreate() {
     setDate(toDateInput(startsAt));
     setTime(toTimeInput(startsAt));
     setAllDay(ad);
-    if (!ad) setDurationMin(Math.round((endsAt - startsAt) / 60_000));
+    if (!ad) setEndTime(toTimeInput(endsAt));
     setQuick("");
     maybeAddMeeting(text, s, startsAt, endsAt);
   };
@@ -300,7 +320,7 @@ export function EventCreate() {
   const save = () => {
     if (accountId == null || !summary.trim() || saving) return;
     const startsAt = allDay ? fromInputs(date, "00:00") : fromInputs(date, time);
-    const endsAt = allDay ? startsAt + 24 * H_MS : startsAt + durationMin * 60_000;
+    const endsAt = allDay ? startsAt + 24 * H_MS : endsFromInputs(startsAt);
     const attendees = parseAttendees(attendeesRaw);
     const args = {
       accountId,
@@ -333,11 +353,6 @@ export function EventCreate() {
       create.mutate(args, { onSuccess: () => done("created"), onError });
     }
   };
-
-  // Keep nonstandard durations (edited/dragged events) selectable as-is.
-  const durationOptions = [15, 30, 45, 60, 90, 120].includes(durationMin)
-    ? [15, 30, 45, 60, 90, 120]
-    : [...[15, 30, 45, 60, 90, 120], durationMin].sort((a, b) => a - b);
 
   const inputCls =
     "w-full rounded-md border border-hairline bg-bg0 px-2.5 py-1.5 text-[13px] text-ink outline-none transition focus:border-accent/60";
@@ -447,7 +462,7 @@ export function EventCreate() {
           <div>
             <SectionLabel>{t("calendar:create.section.when")}</SectionLabel>
             <div className="flex items-end gap-2">
-              <div className="w-44">
+              <div className="w-40">
                 <FieldLabel icon={ICON.date}>{t("calendar:create.date")}</FieldLabel>
                 <input
                   type="date"
@@ -458,29 +473,29 @@ export function EventCreate() {
               </div>
               {!allDay && (
                 <>
-                  <div className="w-28">
-                    <FieldLabel icon={ICON.time}>{t("calendar:create.time")}</FieldLabel>
+                  <div className="w-[6.5rem]">
+                    <FieldLabel icon={ICON.time}>{t("calendar:create.start")}</FieldLabel>
                     <input
                       type="time"
                       className={inputCls}
                       value={time}
-                      onChange={(e) => setTime(e.target.value)}
+                      onChange={(e) => changeStart(e.target.value)}
                     />
                   </div>
-                  <div className="w-28">
-                    <FieldLabel icon={ICON.duration}>{t("calendar:create.duration")}</FieldLabel>
-                    <select
+                  <div className="w-[6.5rem]">
+                    <FieldLabel icon={ICON.duration}>{t("calendar:create.end")}</FieldLabel>
+                    <input
+                      type="time"
                       className={inputCls}
-                      value={durationMin}
-                      onChange={(e) => setDurationMin(Number(e.target.value))}
-                    >
-                      {durationOptions.map((m) => (
-                        <option key={m} value={m}>
-                          {m < 60 ? `${m}m` : `${m / 60}h`}
-                        </option>
-                      ))}
-                    </select>
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                    />
                   </div>
+                  <span className="pb-2 text-[11.5px] whitespace-nowrap text-ink-faint">
+                    {formatDuration(
+                      endsFromInputs(fromInputs(date, time)) - fromInputs(date, time),
+                    )}
+                  </span>
                 </>
               )}
               <label className="ml-auto flex items-center gap-1.5 pb-2 text-[12px] text-ink-muted select-none">

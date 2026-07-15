@@ -83,6 +83,13 @@ function replyHeaderCut(html: string): number {
  *  [html, null] when no quote boundary is found, or when everything before the
  *  boundary is empty (a bare forward with no new text stays fully shown). */
 export function splitQuotedHtml(html: string): [string, string | null] {
+  // Outlook (esp. from macOS/iOS) sends Vietnamese and other accented text in
+  // decomposed form (NFD: "Từ" as U+0054 U+0075 + combining marks), while our
+  // reply-header labels ("Từ", "Đến", "Chủ đề") are precomposed (NFC) literals.
+  // Without normalizing, the labels never match and the quoted history is left
+  // fully expanded. NFC is idempotent for already-composed bodies and renders
+  // identically, so normalize once up front and slice from the composed string.
+  html = html.normalize("NFC");
   const lower = html.toLowerCase();
   let cut = -1;
   const take = (idx: number) => {

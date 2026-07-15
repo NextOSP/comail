@@ -444,6 +444,15 @@ textarea {
   padding: 6px 8px;
   min-width: 48px;
 }
+/* @-mention chip: an atomic, accent-tinted pill for a tagged colleague. */
+.co-mention {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 5px;
+  padding: 0 3px;
+  white-space: nowrap;
+  user-select: none;
+}
 
 /* --------------------------------------------------------------------------
    Ambient animated backdrop (shown only on the empty-inbox / onboarding states)

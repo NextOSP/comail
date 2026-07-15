@@ -32,7 +32,7 @@ just need an app password - no setup at all.
 - **Everything is a keystroke.** `J`/`K` to move, `E` to mark done, `H` to
   snooze, `C` to compose, `?` shows every shortcut. Your hands never leave the
   keyboard.
-- **A command palette for the rest.** `Cmd/Ctrl+K` finds any action by name -   even plain language like "archive everything from LinkedIn" works.
+- **A command palette for the rest.** `Cmd/Ctrl+K` finds any action by name - even plain language like "archive everything from LinkedIn" works.
 - **Split inbox.** Important mail and everything else land in separate tabs,
   plus your own rules - newsletters, receipts, alerts - so the inbox you look
   at is only the mail that matters.
@@ -60,15 +60,12 @@ just need an app password - no setup at all.
 
 - **Every account in one place**, each with its own color so a multi-account
   setup never blurs into one anonymous pile. Jump to any account with
-  `Ctrl+1`–`9`.
+  `Ctrl+1`-`9`.
 - **Conversations that read like conversations.** Threads stack up cleanly,
   replies happen inline right under the message, and snippets fill in the
   sentences you type every day.
 - **Attachments without the detour.** PDFs, Word, Excel, PowerPoint, CSVs, and
   images preview right in the app. Alt-click opens them externally.
-- **See who really sent it.** Expand any message to see the full details - and
-  a "via" line whenever a service sent mail on someone else's behalf, so
-  spoofed or on-behalf-of senders are obvious instead of hidden.
 - **One-key unsubscribe.** `Cmd+U` on any newsletter.
 - **Lives in the tray.** Keeps syncing after you close the window, shows an
   unread badge on the dock, and plays a short (optional) chime only for
@@ -91,13 +88,35 @@ just need an app password - no setup at all.
 
 ## AI on your terms
 
-All AI features are optional and work with any OpenAI-compatible provider - including a local one like LM Studio. Bring your own key, pick which model
+All AI features are optional and work with any OpenAI-compatible provider -
+including a local one like LM Studio. Bring your own key, pick which model
 handles which job, or use none of it.
 
 - **Summaries** of long threads on one key.
 - **Reply drafting in your voice**, learned from your own sent mail.
 - **Proofreading** before you send.
 - **Plain-language commands** and inbox Q&A with cited sources.
+
+### Automate the boring parts
+
+Describe a workflow the way you'd say it and let it run on every new email:
+
+- **Automations you write in plain language.** "When an email is an invoice from
+  a vendor, add the Finance label, move it to Important, and prefix the subject
+  with [INVOICE]." The AI only decides whether a message matches; Comail then
+  runs the exact actions you configured, so nothing surprising ever happens to
+  your mail. Before you save, it shows you what it understood and which actions
+  it will take.
+- **Real actions on a match.** Route to any tab, add or remove your labels, star,
+  mark read, archive, or trash. Re-run automations across mail you already have
+  whenever you tweak a rule.
+- **Local-only overlays.** An automation can add a subject prefix or a note to
+  the body that only you see. The original message on the server is never
+  touched, so nothing you do here can corrupt the real email.
+- **Sort the rest into categories.** Mail that no deterministic rule catches can
+  be read once by the model and filed into Marketing, News, Social, Pitch, or
+  categories you define yourself. Decisions are cached by sender, so it only
+  costs a look the first time you hear from someone.
 
 ![Comail asking a question across the inbox, with cited sources](docs/ask-ai.png)
 
@@ -138,6 +157,13 @@ Comail is built on Tauri 2 - a Rust core with a React front end. Setup, tests,
 architecture notes, and the release process live in
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), with contribution conventions in
 [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Say hello
+
+Got feedback, a bug, an idea, or just want to talk? Reach out at
+[hello@deanoss.com](mailto:hello@deanoss.com). Bug reports and feature requests
+are also welcome on the
+[issue tracker](https://github.com/NextOSP/comail/issues).
 
 ## License
 

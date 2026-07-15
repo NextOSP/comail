@@ -638,6 +638,22 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     [snippets],
   );
 
+  // A colleague picked from the body's "@" mention menu is pulled into the
+  // recipients so they actually receive the mail: the first mention seeds an
+  // empty To field, later ones (or replies with a To already set) go to Cc.
+  const addMention = (a: Address) => {
+    const email = a.email.toLowerCase();
+    const has = (list: Address[]) => list.some((v) => v.email.toLowerCase() === email);
+    if (has(to) || has(cc) || has(bcc)) return;
+    if (to.length === 0) {
+      setTo([a]);
+    } else {
+      setCc([...cc, a]);
+      setShowCc(true);
+    }
+    markDirty();
+  };
+
   const insertSnippet = (snipId: number) => {
     const snip = snippets?.find((s) => s.id === snipId);
     if (!snip) return;
@@ -868,6 +884,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             placeholder={t("compose:bodyPlaceholder", { mod: MOD_LABEL })}
             minHeightClass={inline ? "min-h-[140px]" : "min-h-[240px]"}
             expandShortcut={expandShortcut}
+            onMention={addMention}
           />
 
           {(state.mode === "reply" || state.mode === "reply_all") &&

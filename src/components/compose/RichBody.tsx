@@ -9,6 +9,10 @@ import {
 import { useTranslation } from "react-i18next";
 import { captureOutsideSelection } from "../../lib/selection";
 import { textToHtml } from "../../lib/richtext";
+import { activeMention } from "../../lib/mentions";
+import { addressName } from "../../lib/format";
+import { call } from "../../ipc/commands";
+import type { Address } from "../../ipc/types";
 
 export interface RichBodyHandle {
   focus(): void;
@@ -68,11 +72,13 @@ export const RichBody = forwardRef<
     minHeightClass: string;
     /** ";shortcut " typed inline: return the replacement text, or null. */
     expandShortcut?: (shortcut: string) => string | null;
+    /** A colleague picked from the "@" mention menu - add them as a recipient. */
+    onMention?: (a: Address) => void;
     /** Fired after the editor loses focus and its latest HTML is emitted. */
     onBlur?: () => void;
   }
 >(function RichBody(
-  { value, onChange, placeholder, minHeightClass, expandShortcut, onBlur },
+  { value, onChange, placeholder, minHeightClass, expandShortcut, onMention, onBlur },
   ref,
 ) {
   const { t } = useTranslation();
@@ -86,6 +92,19 @@ export const RichBody = forwardRef<
   const [active, setActive] = useState<Record<string, boolean>>({});
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  // "@" mention menu: the token being typed (with its caret anchor) plus the
+  // colleague matches and the highlighted row. Null when no mention is active.
+  const [mention, setMention] = useState<{
+    query: string;
+    startNode: Text;
+    startOffset: number;
+    left: number;
+    top: number;
+  } | null>(null);
+  const [hits, setHits] = useState<Address[]>([]);
+  const [mentionCursor, setMentionCursor] = useState(0);
+  // Open only once we actually have colleagues to show (a bare "@" matches none).
+  const mentionOpen = mention != null && hits.length > 0;
 
   const refreshEmpty = useCallback((el: HTMLDivElement) => {
     setEmpty(el.textContent?.trim() === "" && !el.querySelector("img"));
@@ -327,6 +346,128 @@ export const RichBody = forwardRef<
     return true;
   };
 
+  const closeMention = () => setMention(null);
+
+  /**
+   * Detect an "@name" the user is typing at the caret and open the colleague
+   * menu. Mirrors maybeExpandSnippet's caret walk (WebKit splits a line into
+   * adjacent text nodes around IME commits, so we read across preceding text
+   * siblings), then hands the leading text to `activeMention`.
+   */
+  const detectMention = () => {
+    const el = elRef.current;
+    const sel = document.getSelection();
+    if (!el || !sel || !sel.isCollapsed || sel.rangeCount === 0) return closeMention();
+
+    let node = sel.anchorNode;
+    let offset = sel.anchorOffset;
+    if (node && node.nodeType === Node.ELEMENT_NODE) {
+      const child = node.childNodes[offset - 1];
+      if (child && child.nodeType === Node.TEXT_NODE) {
+        node = child;
+        offset = child.textContent?.length ?? 0;
+      }
+    }
+    if (!node || node.nodeType !== Node.TEXT_NODE || !el.contains(node)) return closeMention();
+
+    const chain: Text[] = [node as Text];
+    let upto = (node.textContent ?? "").slice(0, offset);
+    for (
+      let prev = node.previousSibling;
+      prev?.nodeType === Node.TEXT_NODE && upto.length < 80;
+      prev = prev.previousSibling
+    ) {
+      chain.unshift(prev as Text);
+      upto = (prev.textContent ?? "") + upto;
+    }
+
+    const match = activeMention(upto);
+    if (!match) return closeMention();
+
+    // Map the "@" index back onto a (text node, offset) pair - it may sit in an
+    // earlier node than the caret's.
+    let idx = match.at;
+    let startNode: Text = node as Text;
+    for (const part of chain) {
+      const len = part === node ? offset : (part.textContent?.length ?? 0);
+      if (idx <= len) {
+        startNode = part;
+        break;
+      }
+      idx -= len;
+    }
+
+    // Anchor the menu just under the caret. A collapsed range can report an
+    // empty rect in WebKit; fall back to the editor's left edge / bottom.
+    const rects = sel.getRangeAt(0).getClientRects();
+    const r = rects[0] ?? sel.getRangeAt(0).getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const left = r.left || elRect.left;
+    const top = (r.bottom || elRect.bottom) + 2;
+    setMention({ query: match.query, startNode, startOffset: idx, left, top });
+  };
+
+  // Debounced colleague lookup for the active mention (same source and cadence
+  // as the recipient field's autocomplete).
+  useEffect(() => {
+    if (!mention) {
+      setHits([]);
+      return;
+    }
+    let cancelled = false;
+    const id = setTimeout(() => {
+      void call("list_contacts", { prefix: mention.query, limit: 6 }).then((res) => {
+        if (!cancelled) {
+          setHits(res);
+          setMentionCursor(0);
+        }
+      });
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [mention?.query]);
+
+  /** Replace the typed "@query" with an atomic mention chip and add the
+   *  colleague to the recipients. */
+  const insertMention = (a: Address) => {
+    const el = elRef.current;
+    const m = mention;
+    if (!el || !m) return;
+    const sel = document.getSelection();
+    if (!sel || sel.rangeCount === 0) {
+      closeMention();
+      return;
+    }
+    const caret = sel.getRangeAt(0);
+    const range = document.createRange();
+    range.setStart(m.startNode, m.startOffset);
+    range.setEnd(caret.endContainer, caret.endOffset);
+    range.deleteContents();
+
+    const chip = document.createElement("span");
+    chip.className = "co-mention";
+    chip.setAttribute("contenteditable", "false");
+    chip.setAttribute("data-email", a.email);
+    chip.textContent = `@${addressName(a)}`;
+    const space = document.createTextNode(" ");
+    const frag = document.createDocumentFragment();
+    frag.appendChild(chip);
+    frag.appendChild(space);
+    range.insertNode(frag);
+
+    const after = document.createRange();
+    after.setStartAfter(space);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+
+    closeMention();
+    onMention?.(a);
+    emit();
+  };
+
   const insertImageFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -522,6 +663,35 @@ export const RichBody = forwardRef<
           if (linkOpen) setLinkOpen(false);
         }}
         onKeyDown={(e) => {
+          // The "@" mention menu grabs navigation keys first (before the snippet
+          // Enter/Tab handling and the editor's own newline/caret moves).
+          if (mentionOpen && !(e.nativeEvent as KeyboardEvent).isComposing) {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setMentionCursor((c) => Math.min(hits.length - 1, c + 1));
+              return;
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setMentionCursor((c) => Math.max(0, c - 1));
+              return;
+            }
+            if (e.key === "Enter" || e.key === "Tab") {
+              e.preventDefault();
+              insertMention(hits[mentionCursor]);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeMention();
+              return;
+            }
+            // Moving the caret horizontally leaves the token: dismiss the menu
+            // but let the caret move (detectMention only re-runs on input).
+            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+              closeMention();
+            }
+          }
           // Enter or Tab commits a ";shortcut" sitting at the caret. Swallow the
           // key only when an expansion actually fired so normal newlines/tabs are
           // unaffected. Skipped mid-IME-composition (Enter confirms the compose).
@@ -538,14 +708,21 @@ export const RichBody = forwardRef<
           // Never rewrite the DOM mid-IME-composition (Vietnamese input):
           // WebKit would drop or duplicate the composed text. The
           // compositionend handler below re-runs the check.
-          if (!(e.nativeEvent as InputEvent).isComposing) maybeExpandSnippet();
+          if (!(e.nativeEvent as InputEvent).isComposing) {
+            maybeExpandSnippet();
+            detectMention();
+          }
           emit();
         }}
         onCompositionEnd={() => {
           maybeExpandSnippet();
+          detectMention();
           emit();
         }}
         onBlur={() => {
+          // The menu commits on mousedown (which preempts blur), so a real blur
+          // means focus left the editor - dismiss it.
+          closeMention();
           emit();
           onBlur?.();
         }}
@@ -575,6 +752,34 @@ export const RichBody = forwardRef<
           e.target.value = "";
         }}
       />
+
+      {/* "@" mention menu: floats at the caret (fixed, so the editor's scroll
+          container can't clip it). mousedown commits before the editor blurs. */}
+      {mentionOpen && mention && (
+        <div
+          className="fixed z-30 min-w-64 rounded-lg border border-hairline bg-bg1 p-1"
+          style={{ left: mention.left, top: mention.top, boxShadow: "var(--elev-2)" }}
+          data-testid="mention-menu"
+        >
+          {hits.map((s, i) => (
+            <button
+              key={s.email}
+              type="button"
+              className={`flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left ${
+                i === mentionCursor ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
+              }`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                insertMention(s);
+              }}
+              onMouseMove={() => setMentionCursor(i)}
+            >
+              <span className="text-[13px] text-ink">{addressName(s)}</span>
+              <span className="truncate text-[11.5px] text-ink-faint">{s.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
