@@ -1,0 +1,20 @@
+#!/bin/sh
+# Auto-format staged Rust so CI's `cargo fmt --all --check` never fails after
+# the fact. No-op when no .rs files are staged, so non-Rust commits stay fast.
+set -e
+
+staged_rs=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs')
+[ -z "$staged_rs" ] && exit 0
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "pre-commit: cargo not found, skipping rustfmt" >&2
+  exit 0
+fi
+
+echo "pre-commit: formatting staged Rust (cargo fmt --all)..."
+( cd src-tauri && cargo fmt --all )
+
+# Re-stage the Rust files in this commit so the formatted version is what lands.
+echo "$staged_rs" | while IFS= read -r f; do
+  [ -f "$f" ] && git add -- "$f"
+done

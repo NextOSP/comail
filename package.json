@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.51.0",
