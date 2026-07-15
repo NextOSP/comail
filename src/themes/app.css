@@ -255,6 +255,56 @@ textarea {
   background-size: 200% 100%;
   animation: co-shimmer 1.6s ease-in-out infinite;
 }
+/* Determinate progress fill: eased width changes, plus (while `.is-loading`) a
+   soft highlight that sweeps across the filled portion so it reads as actively
+   working. The sheen stops once the work completes. */
+.co-progress-fill {
+  position: relative;
+  overflow: hidden;
+  transition: width 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.co-progress-fill.is-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 20%,
+    color-mix(in srgb, white 45%, transparent) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: co-shimmer 1.5s ease-in-out infinite;
+}
+/* A busy accent button: a soft highlight sweeps across the fill while an async
+   action runs, reinforcing the inline spinner without shifting layout. */
+.co-btn-busy {
+  position: relative;
+  overflow: hidden;
+}
+.co-btn-busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 20%,
+    color-mix(in srgb, white 22%, transparent) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: co-shimmer 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .co-progress-fill.is-loading::after,
+  .co-btn-busy::after {
+    display: none;
+  }
+  .co-spinner {
+    animation: none;
+  }
+}
 
 /* Accent-tinted shimmer for AI work-in-progress (e.g. generating quick
  * replies): reads as "the AI is doing something" rather than a plain

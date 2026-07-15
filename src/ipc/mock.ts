@@ -1335,6 +1335,7 @@ function matchesSplitRule(t: MockThread, rule: SplitRule): boolean {
   const q = rule.query;
   if (q.senders?.some((s) => email.endsWith(s.toLowerCase()) || email === s.toLowerCase())) return true;
   if (q.subjectContains?.some((s) => t.subject.toLowerCase().includes(s.toLowerCase()))) return true;
+  if (q.labels?.some((id) => t.labels.includes(id))) return true;
   if (q.isAutomated && isAutomatedSender(sender)) return true;
   return false;
 }

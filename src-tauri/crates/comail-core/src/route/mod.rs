@@ -185,13 +185,52 @@ pub fn split_matches(
         let subs: Vec<&String> = subs.iter().filter(|s| !s.trim().is_empty()).collect();
         if !subs.is_empty() {
             has_any = true;
+            // Match the message's own subject (plus any local prefix an AI
+            // automation added), NOT threads.subject_norm. subject_norm is the
+            // *threading* key: it strips a leading `[TAG]` and Re:/Fwd:, so a
+            // rule like `subject has invoice` never sees "[INVOICE] ..." because
+            // normalization already removed the bracket that held the keyword.
+            //
+            // Fold both sides the way search does (lowercase, diacritics
+            // stripped) so accented or Unicode-variant keywords still hit: a raw
+            // byte `LIKE` misses "HĐĐT" for keyword "hddt" (Đ is U+0110) and
+            // "Hóa đơn" for "hoá đơn" (different tone placement / NFC-vs-NFD).
+            let subjects: Vec<String> = {
+                let mut stmt = conn.prepare(
+                    "SELECT COALESCE(m.local_subject_prefix, '') || COALESCE(m.subject, '')
+                     FROM messages m
+                     WHERE m.thread_id = ?1 AND m.is_draft = 0 AND m.is_outgoing = 0",
+                )?;
+                let rows = stmt
+                    .query_map(params![thread_id], |r| r.get(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                rows
+            };
+            let folded = crate::search::fold(&subjects.join("\n"));
+            let matched = subs
+                .iter()
+                .any(|s| folded.contains(&crate::search::fold(s)));
+            if !matched {
+                return Ok(false);
+            }
+        }
+    }
+
+    if let Some(labels) = &q.labels {
+        let labels: Vec<i64> = labels.iter().copied().filter(|id| *id > 0).collect();
+        if !labels.is_empty() {
+            has_any = true;
+            // Match when any inbound message in the thread carries one of the
+            // listed labels. Lets AI-tagged mail (e.g. an "INVOICE" label) route
+            // into a tab that no subject/sender keyword would catch. Runs on the
+            // reroute pass, after automations have applied their labels.
             let mut matched = false;
-            for s in subs {
-                let like = format!("%{}%", s.to_lowercase());
+            for lid in labels {
                 let hit: i64 = conn.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM threads t WHERE t.id = ?1
-                                    AND LOWER(t.subject_norm) LIKE ?2)",
-                    params![thread_id, like],
+                    "SELECT EXISTS (SELECT 1 FROM message_labels ml
+                                    JOIN messages m ON m.id = ml.message_id
+                                    WHERE m.thread_id = ?1 AND ml.label_id = ?2)",
+                    params![thread_id, lid],
                     |r| r.get(0),
                 )?;
                 if hit != 0 {
@@ -253,6 +292,30 @@ pub fn apply_tab(conn: &Connection, thread_id: i64, key: Option<&str>) -> Result
         }
     }
     Ok(())
+}
+
+/// Re-check only the user split rules for one thread and, if one now matches,
+/// route the thread to it. Unlike [`route_thread_deterministic`] it never falls
+/// through to the AI queue or heuristic, so a non-match leaves the thread's
+/// current tab untouched. Used after AI automations apply labels, so a
+/// label-based split (e.g. "has label INVOICE") takes effect immediately rather
+/// than only on the next full re-sort. `splits` must be position-ordered.
+pub fn reapply_splits_only(
+    conn: &Connection,
+    splits: &[SplitRule],
+    thread_id: i64,
+) -> Result<bool> {
+    for sp in splits {
+        if split_matches(conn, thread_id, &sp.query)? {
+            let key = sp
+                .target
+                .clone()
+                .unwrap_or_else(|| format!("split:{}", sp.id));
+            apply_tab(conn, thread_id, Some(&key))?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Resolve and store a thread's tab from rules, then either the AI queue (when
@@ -945,6 +1008,109 @@ mod tests {
             })
         )
         .unwrap());
+    }
+
+    #[test]
+    fn subject_match_is_accent_insensitive() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        // Real Vietnamese e-invoice subjects: composed diacritics and the Đ
+        // (U+0110) that a plain-ASCII keyword can't reach without folding.
+        let t = seed_auto_thread(&c, "billing@vendor.vn", "Hóa đơn điện tử HĐĐT #42", true);
+        let q = |kw: &str| SplitRuleQuery {
+            subject_contains: Some(vec![kw.into()]),
+            ..Default::default()
+        };
+        // Keyword typed without the correct tone placement still matches.
+        assert!(split_matches(&c, t, &q("hoá đơn")).unwrap());
+        // Plain-ASCII acronym matches the accented "HĐĐT".
+        assert!(split_matches(&c, t, &q("hddt")).unwrap());
+        // ASCII-folded free text matches too.
+        assert!(split_matches(&c, t, &q("hoa don")).unwrap());
+        // A genuine non-match still returns false.
+        assert!(!split_matches(&c, t, &q("receipt")).unwrap());
+
+        // Case is folded on both sides: an uppercase subject matches a
+        // lowercase keyword, and an uppercase keyword matches too.
+        let u = seed_auto_thread(&c, "billing@vendor.com", "Your INVOICE #7 is ready", true);
+        assert!(split_matches(&c, u, &q("invoice")).unwrap());
+        assert!(split_matches(&c, u, &q("INVOICE")).unwrap());
+        assert!(split_matches(&c, u, &q("Invoice")).unwrap());
+    }
+
+    #[test]
+    fn subject_match_sees_bracket_tags_and_local_prefix() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let q = |kw: &str| SplitRuleQuery {
+            subject_contains: Some(vec![kw.into()]),
+            ..Default::default()
+        };
+
+        // A real subject whose keyword lives inside a leading [TAG]. subject_norm
+        // strips the bracket for threading, so matching that column would miss it;
+        // matching the message subject catches it.
+        let tagged = seed_auto_thread(&c, "billing@vendor.com", "[INVOICE] Payment #7", true);
+        assert!(split_matches(&c, tagged, &q("invoice")).unwrap());
+
+        // A local subject prefix added by an AI automation (e.g. "[INVOICE]")
+        // also feeds the rule, so AI-tagged mail can route to the split on reroute.
+        let (prefixed, _m) =
+            testutil::seed_message(&c, "noreply@meta.com", "Biên lai quảng cáo", true);
+        c.execute(
+            "UPDATE messages SET local_subject_prefix = '[INVOICE]' WHERE thread_id = ?1",
+            params![prefixed],
+        )
+        .unwrap();
+        assert!(split_matches(&c, prefixed, &q("invoice")).unwrap());
+        // Without the prefix, this subject has no matching keyword.
+        assert!(!split_matches(&c, prefixed, &q("receipt")).unwrap());
+    }
+
+    #[test]
+    fn label_condition_matches_tagged_thread() {
+        use crate::db::repo::labels;
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (t, msg) =
+            testutil::seed_message(&c, "service@intl.paypal.com", "Your subscription", true);
+        let label = labels::save(&c, None, "INVOICE", "red", 0).unwrap();
+        let q = |ids: Vec<i64>| SplitRuleQuery {
+            labels: Some(ids),
+            ..Default::default()
+        };
+        // No match until the label is actually attached to the thread.
+        assert!(!split_matches(&c, t, &q(vec![label.id])).unwrap());
+        labels::add_to_message(&c, msg, label.id).unwrap();
+        assert!(split_matches(&c, t, &q(vec![label.id])).unwrap());
+        // A label the thread does not carry does not match.
+        assert!(!split_matches(&c, t, &q(vec![label.id + 999])).unwrap());
+    }
+
+    #[test]
+    fn reapply_splits_only_promotes_but_never_repends() {
+        use crate::db::repo::labels;
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (t, msg) = testutil::seed_message(&c, "a@b.c", "hello", false);
+        let label = labels::save(&c, None, "INVOICE", "red", 0).unwrap();
+        let rule = SplitRule {
+            id: 5,
+            name: "inv".into(),
+            position: 0,
+            query: SplitRuleQuery {
+                labels: Some(vec![label.id]),
+                ..Default::default()
+            },
+            target: None,
+        };
+        // Before the label exists: no split matches, so the tab is left as-is.
+        assert!(!reapply_splits_only(&c, std::slice::from_ref(&rule), t).unwrap());
+        assert_eq!(routed(&c, t), None);
+        // After labeling: the thread is promoted into the split.
+        labels::add_to_message(&c, msg, label.id).unwrap();
+        assert!(reapply_splits_only(&c, &[rule], t).unwrap());
+        assert_eq!(routed(&c, t).as_deref(), Some("split:5"));
     }
 
     #[test]

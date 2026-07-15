@@ -3420,6 +3420,14 @@ impl Core {
             })
             .await?;
 
+        // Threads that just gained a label may now satisfy a label-based split
+        // rule, so re-check their split routing once the labels are written.
+        let relabeled: Vec<i64> = action_plans
+            .iter()
+            .filter(|(_, actions)| actions.iter().any(|a| a.kind == "add_label"))
+            .map(|(tid, _)| *tid)
+            .collect();
+
         // Mailbox mutations reuse the normal optimistic + queued action path,
         // so IMAP state, retries, and UI refreshes behave exactly like a click.
         for (thread_id, actions) in action_plans {
@@ -3464,6 +3472,17 @@ impl Core {
                     );
                 }
             }
+        }
+        if !relabeled.is_empty() {
+            self.db
+                .write(move |conn| {
+                    let splits = repo::splits::list(conn)?;
+                    for tid in relabeled {
+                        route::reapply_splits_only(conn, &splits, tid)?;
+                    }
+                    Ok(())
+                })
+                .await?;
         }
         self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
         Ok(count)

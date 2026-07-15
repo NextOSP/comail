@@ -361,6 +361,11 @@ pub struct SplitRuleQuery {
     pub recipients: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject_contains: Option<Vec<String>>,
+    /// Match threads carrying any of these user (non-auto) label ids. Lets an
+    /// AI-applied label like "INVOICE" route mail into a tab even when the
+    /// subject holds no keyword.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<i64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_automated: Option<bool>,
     /// Match threads that have (true) or lack (false) an attachment.

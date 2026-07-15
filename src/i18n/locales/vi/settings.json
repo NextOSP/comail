@@ -196,6 +196,7 @@
     "describe": {
       "from": "từ {{senders}}",
       "subjectHas": "chủ đề có {{subjects}}",
+      "hasLabel": "nhãn {{labels}}",
       "automatedOnly": "chỉ thư tự động",
       "humanOnly": "chỉ thư người gửi",
       "nothing": "không khớp gì"
@@ -225,6 +226,8 @@
     "senderPlaceholder": "@github.com, boss@co.com",
     "subjectLabel": "Chủ đề chứa (cách nhau bằng dấu phẩy)",
     "subjectPlaceholder": "hóa đơn, biên nhận",
+    "labelLabel": "Có nhãn",
+    "labelHint": "Khớp thư mang bất kỳ nhãn nào trong số này, ví dụ nhãn INVOICE do tự động hóa AI gắn. Có hiệu lực ở lần phân loại lại kế tiếp.",
     "automatedLabel": "Thư tự động",
     "automated": {
       "any": "Bất kỳ",

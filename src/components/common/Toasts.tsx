@@ -94,7 +94,9 @@ export function Toasts() {
             {t.progress != null && (
               // Determinate fill growing along the bottom edge (update download).
               <span
-                className="absolute inset-x-0 bottom-0 h-0.5 bg-accent transition-[width] duration-200 ease-out"
+                className={`co-progress-fill absolute inset-x-0 bottom-0 h-0.5 bg-accent${
+                  t.progress < 1 ? " is-loading" : ""
+                }`}
                 aria-hidden
                 style={{ width: `${Math.min(100, Math.max(0, t.progress * 100))}%` }}
               />

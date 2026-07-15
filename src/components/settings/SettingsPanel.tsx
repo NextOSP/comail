@@ -40,6 +40,7 @@ import { LabelsSection } from "./LabelsPanel";
 import { SnippetsSection } from "./SnippetsPanel";
 import { SplitInboxSection } from "./SplitsPanel";
 import {
+  BusyLabel,
   ConfirmButton,
   ghostBtnCls,
   inputCls,
@@ -933,11 +934,15 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className={primaryBtnCls}
+              className={`${primaryBtnCls}${trying ? " co-btn-busy" : ""}`}
               disabled={trying || !draft.sourcePrompt.trim()}
               onClick={() => void tryPrompt()}
             >
-              {trying ? t("settings:ai.automation.trying") : t("settings:ai.automation.try")}
+              {trying ? (
+                <BusyLabel>{t("settings:ai.automation.trying")}</BusyLabel>
+              ) : (
+                t("settings:ai.automation.try")
+              )}
             </button>
             <span className="text-[10.5px] text-ink-faint">
               {t("settings:ai.automation.tryHint")}
@@ -945,7 +950,7 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
           </div>
 
           {plan && (
-            <div className="rounded-xl border border-hairline bg-bg0 p-3.5">
+            <div className="co-fade-in rounded-xl border border-hairline bg-bg0 p-3.5">
               <div className="flex items-start gap-2.5">
                 <span
                   className="mt-1 size-2 shrink-0 rounded-full"
@@ -1376,8 +1381,12 @@ function AiSection({
         </>
       )}
       <SettingRow label={t("settings:ai.resortLabel")} hint={t("settings:ai.resortHint")}>
-        <button className={primaryBtnCls} disabled={resorting} onClick={() => void resort()}>
-          {resorting ? t("settings:ai.resorting") : t("settings:ai.resort")}
+        <button
+          className={`${primaryBtnCls}${resorting ? " co-btn-busy" : ""}`}
+          disabled={resorting}
+          onClick={() => void resort()}
+        >
+          {resorting ? <BusyLabel>{t("settings:ai.resorting")}</BusyLabel> : t("settings:ai.resort")}
         </button>
       </SettingRow>
         </>
@@ -1467,12 +1476,14 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
             <div className="flex items-center gap-3">
               <div className="h-1.5 w-[160px] overflow-hidden rounded-full bg-[var(--bg4)]">
                 <div
-                  className="h-full rounded-full bg-[var(--accent)] transition-[width]"
+                  className={`co-progress-fill h-full rounded-full bg-[var(--accent)]${
+                    pct < 100 || (status?.pending ?? 0) > 0 || reindexing ? " is-loading" : ""
+                  }`}
                   style={{ width: `${pct}%` }}
                 />
               </div>
               <button className={ghostBtnCls} disabled={reindexing} onClick={() => void reindex()}>
-                Rebuild
+                {reindexing ? <BusyLabel>Rebuilding…</BusyLabel> : "Rebuild"}
               </button>
             </div>
           </SettingRow>
@@ -1522,8 +1533,18 @@ function VoiceSection({ settings }: { settings: Settings }) {
             : "Not learned yet - needs some sent mail."
         }
       >
-        <button className={primaryBtnCls} disabled={learn.isPending} onClick={runLearn}>
-          {learn.isPending ? "Learning…" : learned ? "Re-learn my voice" : "Learn my voice"}
+        <button
+          className={`${primaryBtnCls}${learn.isPending ? " co-btn-busy" : ""}`}
+          disabled={learn.isPending}
+          onClick={runLearn}
+        >
+          {learn.isPending ? (
+            <BusyLabel>Learning…</BusyLabel>
+          ) : learned ? (
+            "Re-learn my voice"
+          ) : (
+            "Learn my voice"
+          )}
         </button>
       </SettingRow>
       {(learned || profile) && (
@@ -1881,7 +1902,9 @@ function SyncSection() {
                     aria-valuenow={Math.min(background.done, background.total)}
                   >
                     <div
-                      className="h-full rounded-full bg-accent transition-[width] duration-200"
+                      className={`co-progress-fill h-full rounded-full bg-accent${
+                        percent < 100 ? " is-loading" : ""
+                      }`}
                       style={{ width: `${percent}%` }}
                     />
                   </div>

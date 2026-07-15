@@ -9,6 +9,7 @@ import { queryClient } from "../../queries/client";
 import { useLabels, useSplits } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import {
+  BusyLabel,
   ChipInput,
   ConfirmButton,
   FormField,
@@ -34,7 +35,11 @@ function invalidateSplitViews() {
   void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
 }
 
-function describeQuery(q: SplitRuleQuery, t: TFunction): string {
+function describeQuery(
+  q: SplitRuleQuery,
+  t: TFunction,
+  labels: { id: number; name: string }[] = [],
+): string {
   const parts: string[] = [];
   if (q.senders?.length)
     parts.push(t("settings:splits.describe.from", { senders: q.senders.join(", ") }));
@@ -42,6 +47,12 @@ function describeQuery(q: SplitRuleQuery, t: TFunction): string {
     parts.push(t("settings:splits.describe.to", { recipients: q.recipients.join(", ") }));
   if (q.subjectContains?.length)
     parts.push(t("settings:splits.describe.subjectHas", { subjects: q.subjectContains.join(", ") }));
+  if (q.labels?.length)
+    parts.push(
+      t("settings:splits.describe.hasLabel", {
+        labels: q.labels.map((id) => labels.find((l) => l.id === id)?.name ?? `#${id}`).join(", "),
+      }),
+    );
   if (q.isAutomated === true) parts.push(t("settings:splits.describe.automatedOnly"));
   if (q.isAutomated === false) parts.push(t("settings:splits.describe.humanOnly"));
   if (q.hasAttachment) parts.push(t("settings:splits.describe.hasAttachment"));
@@ -217,7 +228,11 @@ export function SplitInboxSection() {
               )}
               {hasAutoLabels && (
                 <button className={ghostBtnCls} disabled={relabeling} onClick={() => void relabel()}>
-                  {relabeling ? t("settings:splits.relabeling") : t("settings:splits.relabel")}
+                  {relabeling ? (
+                    <BusyLabel>{t("settings:splits.relabeling")}</BusyLabel>
+                  ) : (
+                    t("settings:splits.relabel")
+                  )}
                 </button>
               )}
               <button className={primaryBtnCls} onClick={() => setEditing("new")}>
@@ -281,7 +296,7 @@ export function SplitInboxSection() {
                   <span className="block truncate text-[13.5px] text-ink">{it.name}</span>
                   {it.kind === "split" && (
                     <span className="block truncate text-[11.5px] text-ink-faint">
-                      {describeQuery(it.rule.query, t)}
+                      {describeQuery(it.rule.query, t, labels ?? [])}
                       {it.rule.target ? ` → ${targetName(it.rule.target, labels ?? [], t)}` : ""}
                     </span>
                   )}
@@ -402,10 +417,12 @@ function SplitForm({
   const pushToast = useUi((s) => s.pushToast);
   const { data: labels } = useLabels();
   const autoLabels = (labels ?? []).filter((l) => l.isAuto);
+  const userLabels = (labels ?? []).filter((l) => !l.isAuto);
   const [name, setName] = useState(rule?.name ?? "");
   const [senders, setSenders] = useState<string[]>(rule?.query.senders ?? []);
   const [recipients, setRecipients] = useState<string[]>(rule?.query.recipients ?? []);
   const [subjects, setSubjects] = useState<string[]>(rule?.query.subjectContains ?? []);
+  const [labelIds, setLabelIds] = useState<number[]>(rule?.query.labels ?? []);
   const [automated, setAutomated] = useState<Automated>(
     rule?.query.isAutomated === true ? "automated" : rule?.query.isAutomated === false ? "human" : "any",
   );
@@ -418,6 +435,7 @@ function SplitForm({
     senders.length > 0 ||
     recipients.length > 0 ||
     subjects.length > 0 ||
+    labelIds.length > 0 ||
     automated !== "any" ||
     hasAttachment;
 
@@ -429,6 +447,9 @@ function SplitForm({
       if (senders.length > 0) query.senders = senders;
       if (recipients.length > 0) query.recipients = recipients;
       if (subjects.length > 0) query.subjectContains = subjects;
+      // Drop stale ids so a deleted label can't leave a dead condition behind.
+      const validLabelIds = labelIds.filter((id) => userLabels.some((l) => l.id === id));
+      if (validLabelIds.length > 0) query.labels = validLabelIds;
       if (automated !== "any") query.isAutomated = automated === "automated";
       if (hasAttachment) query.hasAttachment = true;
       await call("save_split", {
@@ -495,6 +516,37 @@ function SplitForm({
         onChange={setSubjects}
         placeholder={t("settings:splits.subjectPlaceholder")}
       />
+      {userLabels.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11.5px] font-medium text-ink-faint">
+            {t("settings:splits.labelLabel")}
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {userLabels.map((l) => {
+              const on = labelIds.includes(l.id);
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    setLabelIds((ids) =>
+                      ids.includes(l.id) ? ids.filter((x) => x !== l.id) : [...ids, l.id],
+                    )
+                  }
+                  className={`rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium transition-colors ${
+                    on ? "border-transparent" : "border-hairline text-ink-muted hover:bg-bg2"
+                  }`}
+                  style={on ? { background: `${l.color}22`, color: l.color } : undefined}
+                >
+                  {l.name}
+                </button>
+              );
+            })}
+          </div>
+          <span className="text-[11.5px] text-ink-faint">{t("settings:splits.labelHint")}</span>
+        </div>
+      )}
       {/* not a <label>: it would swallow the segmented buttons' accessible names */}
       <div className="flex flex-col gap-1">
         <span className="text-[11.5px] font-medium text-ink-faint">

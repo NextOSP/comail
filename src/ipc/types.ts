@@ -227,6 +227,8 @@ export interface SplitRuleQuery {
   recipients?: string[];
   /** substring match on subject */
   subjectContains?: string[];
+  /** match threads carrying any of these user label ids (e.g. an AI-applied "INVOICE") */
+  labels?: number[];
   /** automated mail: has List-Id / List-Unsubscribe / Precedence: bulk */
   isAutomated?: boolean;
   /** match threads that have (true) or lack (false) an attachment */

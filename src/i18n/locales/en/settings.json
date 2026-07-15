@@ -276,6 +276,7 @@
       "from": "from {{senders}}",
       "to": "to {{recipients}}",
       "subjectHas": "subject has {{subjects}}",
+      "hasLabel": "label {{labels}}",
       "automatedOnly": "automated only",
       "humanOnly": "from a person",
       "hasAttachment": "has attachment",
@@ -312,6 +313,8 @@
     "recipientPlaceholder": "sales@myco.com, @myco.com",
     "subjectLabel": "Subject contains",
     "subjectPlaceholder": "invoice, receipt",
+    "labelLabel": "Has label",
+    "labelHint": "Match mail carrying any of these labels, e.g. an INVOICE label an AI automation applied. Takes effect on the next re-sort.",
     "removeToken": "Remove",
     "automatedLabel": "Mail type",
     "automated": {
