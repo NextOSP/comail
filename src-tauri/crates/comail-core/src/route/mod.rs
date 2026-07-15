@@ -494,7 +494,10 @@ pub fn parse_automation_plan(out: &str) -> AiAutomationPlan {
         .filter(|(start, end)| start <= end)
         .and_then(|(start, end)| serde_json::from_str(&out[start..=end]).ok());
     parsed.unwrap_or_else(|| AiAutomationPlan {
-        issues: vec!["The AI response was not a valid automation plan. Refine the prompt and try again.".into()],
+        issues: vec![
+            "The AI response was not a valid automation plan. Refine the prompt and try again."
+                .into(),
+        ],
         ..AiAutomationPlan::default()
     })
 }
@@ -545,7 +548,9 @@ pub fn validate_automation_plan(
                         .value
                         .strip_prefix("label:")
                         .and_then(|id| id.parse::<i64>().ok())
-                        .is_some_and(|id| labels.iter().any(|label| label.id == id && label.is_auto))
+                        .is_some_and(|id| {
+                            labels.iter().any(|label| label.id == id && label.is_auto)
+                        })
             }
             "add_label" | "remove_label" => action
                 .value
@@ -1041,7 +1046,10 @@ mod tests {
         let invalid = validate_automation_plan(invalid, &labels, &splits);
         assert!(!invalid.supported);
         assert!(invalid.actions.is_empty());
-        assert!(invalid.issues.iter().any(|issue| issue.contains("add_label")));
+        assert!(invalid
+            .issues
+            .iter()
+            .any(|issue| issue.contains("add_label")));
     }
 
     #[test]
@@ -1054,11 +1062,8 @@ mod tests {
             position: 0,
             is_auto: false,
         }];
-        let prompt = automation_planner_prompt(
-            "Invoices should get the Finance label",
-            &labels,
-            &[],
-        );
+        let prompt =
+            automation_planner_prompt("Invoices should get the Finance label", &labels, &[]);
         assert!(prompt[0].content.contains("id: 7, name: Finance"));
         assert_eq!(prompt[1].content, "Invoices should get the Finance label");
     }

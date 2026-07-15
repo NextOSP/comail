@@ -46,7 +46,10 @@ fn record_usage(
         .and_then(|u| u.get("prompt_tokens").or_else(|| u.get("input_tokens")))
         .and_then(|v| v.as_i64());
     let reported_completion = usage
-        .and_then(|u| u.get("completion_tokens").or_else(|| u.get("output_tokens")))
+        .and_then(|u| {
+            u.get("completion_tokens")
+                .or_else(|| u.get("output_tokens"))
+        })
         .and_then(|v| v.as_i64());
     let prompt_tokens = reported_prompt
         .unwrap_or_else(|| approximate_tokens(&serde_json::to_string(request).unwrap_or_default()));
