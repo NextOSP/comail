@@ -5,11 +5,13 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import i18n from "../i18n";
 import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
+import { subscribeEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
 import type { Account, Address, MessageDetail, ThreadDetail } from "../ipc/types";
 import { addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
 import { normalizeSyncStatus } from "../lib/syncStatus";
+import { parsePartialAiSummary } from "../lib/summaryStream";
 import { findCachedSummary } from "../queries/actions";
 import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
@@ -288,18 +290,41 @@ async function summarizeThread(threadId: number) {
   const ui = useUi.getState();
   if (ui.aiSummaries[threadId]?.pending) return;
   ui.set({ aiSummaries: { ...ui.aiSummaries, [threadId]: { pending: true } } });
+  let raw = "";
+  let unsubscribe = () => {};
   try {
+    // Install the native listener before starting the command so even the first
+    // response chunk can reach the already-visible sidebar.
+    unsubscribe = await subscribeEvent("ai:summary:token", ({ threadId: id, delta }) => {
+      if (id !== threadId) return;
+      const entry = useUi.getState().aiSummaries[threadId];
+      if (!entry?.pending) return;
+      raw += delta;
+      const partial = parsePartialAiSummary(raw);
+      if (!partial) return;
+      const cur = useUi.getState().aiSummaries;
+      useUi.getState().set({
+        aiSummaries: { ...cur, [threadId]: { pending: true, summary: partial } },
+      });
+    });
     const summary = await call("ai_summarize", { threadId });
     const cur = useUi.getState().aiSummaries;
+    // Dismissing an in-flight summary is final; do not reopen it on completion.
+    if (!cur[threadId]) return;
     useUi.getState().set({ aiSummaries: { ...cur, [threadId]: { pending: false, summary } } });
   } catch (err) {
     const cur = { ...useUi.getState().aiSummaries };
+    const wasVisible = cur[threadId] != null;
     delete cur[threadId];
     useUi.getState().set({ aiSummaries: cur });
-    useUi.getState().pushToast({
-      kind: "error",
-      message: errorMessage(err),
-    });
+    if (wasVisible) {
+      useUi.getState().pushToast({
+        kind: "error",
+        message: errorMessage(err),
+      });
+    }
+  } finally {
+    unsubscribe();
   }
 }
 
@@ -870,7 +895,7 @@ export const ALL_COMMANDS: Command[] = [
     id: "ai-summarize",
     titleKey: "commands:title.aiSummarize",
     aliases: ["summary", "tldr", "summarize"],
-    keys: ["shift+j"],
+    keys: ["mod+j"],
     section: "AI",
     when: (ctx) => noPanel(ctx) && ctx.inConversation,
     run: (ctx) => {
@@ -1059,6 +1084,7 @@ export const ALL_COMMANDS: Command[] = [
         calendarScreen: false,
         searchOpen: true,
         searchQuery: `from:${s.email}`,
+        searchFocusList: true,
         openThreadId: null,
         focusedMessageId: null,
         selection: [],

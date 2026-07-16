@@ -40,6 +40,7 @@ const OPERATOR_SUGGESTIONS = [
 export function SearchScreen() {
   const { t } = useTranslation();
   const storedQuery = useUi((s) => s.searchQuery);
+  const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
   const openThread = useUi((s) => s.openThread);
   const selectThread = useUi((s) => s.selectThread);
@@ -57,9 +58,23 @@ export function SearchScreen() {
   // ⌘/Ctrl held: reveal each result's jump-to number (⌘/Ctrl+1..9 opens it).
   const modHeld = useModHeld();
 
+  // Focus management. A pushed query ("View all from this sender") should land
+  // on the results so triage keys (⌘A, x, #) work right away; a normal open
+  // focuses the query box for typing. Driven off the store flag so it works
+  // whether search was just opened or is already on screen when the query
+  // arrives, and the flag is always consumed so it can't leak to a later open.
+  const focusListReq = useUi((s) => s.searchFocusList);
+  const openedOnList = useRef(focusListReq);
+  const [pendingListFocus, setPendingListFocus] = useState(false);
   useEffect(() => {
-    inputRef.current?.focus();
+    if (!openedOnList.current) inputRef.current?.focus();
   }, []);
+  useEffect(() => {
+    if (!focusListReq) return;
+    useUi.getState().set({ searchFocusList: false });
+    setPendingListFocus(true);
+    inputRef.current?.blur();
+  }, [focusListReq]);
 
   // Adopt a one-shot mode request (palette "Ask AI" opens straight into Ask).
   const modeRequest = useUi((s) => s.searchModeRequest);
@@ -95,7 +110,7 @@ export function SearchScreen() {
     setInput((cur) => (cur === storedQuery ? cur : storedQuery));
   }, [storedQuery]);
 
-  const { data: results, isFetching } = useSearch(storedQuery);
+  const { data: results, isFetching } = useSearch(storedQuery, accountFilter);
 
   // Typing (or switching mode) disarms Enter so refining a query can't open a
   // stale row.
@@ -121,6 +136,16 @@ export function SearchScreen() {
   const labelMap = useMemo(() => new Map((labels ?? []).map((l) => [l.id, l])), [labels]);
 
   const rows = results ?? [];
+
+  // For a list-focused entry ("View all from sender"), put the cursor on the
+  // first result once it loads so there's a visible highlight and single-row
+  // keys (x, J/K, Enter) have a target. Waits for results, then clears itself.
+  useEffect(() => {
+    if (!pendingListFocus || rows.length === 0) return;
+    setPendingListFocus(false);
+    setEnterArmed(true);
+    selectThread(0, rows[0].id);
+  }, [rows, pendingListFocus, selectThread]);
 
   // Arrow keys from the input move the shared cursor through the results.
   const moveCursor = (delta: 1 | -1) => {
@@ -205,9 +230,11 @@ export function SearchScreen() {
                   return;
                 }
                 if (mode === "search" && rows.length > 0) {
-                  // Arrow keys move the highlight through the results; Enter
-                  // opens the highlighted one. Until you arrow in, Enter does
-                  // nothing so plain typing never jumps to an email.
+                  // Arrow keys move the highlight through the results. Enter
+                  // steps into the list: the first Enter highlights the top
+                  // result (moving focus out of the input), a second Enter
+                  // opens it. It never opens on the first press, so plain
+                  // typing can't yank into an email.
                   if (e.key === "ArrowDown") {
                     e.preventDefault();
                     moveCursor(1);
@@ -218,10 +245,15 @@ export function SearchScreen() {
                     moveCursor(-1);
                     return;
                   }
-                  if (e.key === "Enter" && enterArmed) {
+                  if (e.key === "Enter") {
                     e.preventDefault();
-                    const id = useUi.getState().selectedThreadId;
-                    if (id != null) openThread(id);
+                    if (enterArmed) {
+                      const id = useUi.getState().selectedThreadId;
+                      if (id != null) openThread(id);
+                    } else {
+                      // Highlight the first result (cursor was at -1).
+                      moveCursor(1);
+                    }
                     return;
                   }
                 }

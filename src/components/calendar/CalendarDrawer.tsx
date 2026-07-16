@@ -77,7 +77,7 @@ export function CalendarDrawer() {
   return (
     <aside
       data-testid="calendar-drawer"
-      className="co-fade-in fixed top-10 right-0 bottom-0 z-30 flex w-[360px] flex-col border-l border-hairline bg-bg1"
+      className="co-fade-in flex min-h-0 w-[360px] shrink-0 flex-col border-l border-hairline bg-bg1"
       style={{ boxShadow: "var(--elev-2)" }}
     >
       <header className="co-hairline-b flex shrink-0 items-center justify-between px-4 py-3">

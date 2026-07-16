@@ -764,6 +764,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                 }}
                 showCc={showCc}
                 autoFocusTo={state.mode === "new" || state.mode === "forward"}
+                suggestAccountId={aiSettings?.contactSuggestAllAccounts ? undefined : accountId}
               />
             </div>
             {!showCc && (
@@ -1101,15 +1102,17 @@ function RecipientRow(props: {
   setBcc: (v: Address[]) => void;
   showCc: boolean;
   autoFocusTo: boolean;
+  /** Scope contact autocomplete to this account; undefined shows all accounts. */
+  suggestAccountId?: number;
 }) {
   const { t } = useTranslation();
   return (
     <>
-      <RecipientField label={t("compose:to")} value={props.to} onChange={props.setTo} autoFocus={props.autoFocusTo} />
+      <RecipientField label={t("compose:to")} value={props.to} onChange={props.setTo} autoFocus={props.autoFocusTo} accountId={props.suggestAccountId} />
       {props.showCc && (
         <>
-          <RecipientField label={t("compose:cc")} value={props.cc} onChange={props.setCc} />
-          <RecipientField label={t("compose:bcc")} value={props.bcc} onChange={props.setBcc} />
+          <RecipientField label={t("compose:cc")} value={props.cc} onChange={props.setCc} accountId={props.suggestAccountId} />
+          <RecipientField label={t("compose:bcc")} value={props.bcc} onChange={props.setBcc} accountId={props.suggestAccountId} />
         </>
       )}
     </>

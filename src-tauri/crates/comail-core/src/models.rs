@@ -446,6 +446,25 @@ pub struct TimelineEntry {
     pub event: String,
 }
 
+/// A concrete dated item found in a thread that the user may choose to add to
+/// their calendar. ISO-8601 strings preserve any timezone stated by the mail.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AiCalendarSuggestion {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub start: String,
+    #[serde(default)]
+    pub end: Option<String>,
+    #[serde(default)]
+    pub all_day: bool,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
 /// A structured, sidebar-ready read of a whole thread: how it unfolded, what
 /// matters, what the user must do next, and a ready-to-send draft reply.
 /// (Distinct from [`ThreadSummary`], which is a thread-list *row*.)
@@ -464,6 +483,9 @@ pub struct AiThreadSummary {
     /// A short draft reply the user could send, or `None` if no reply is needed.
     #[serde(default)]
     pub proposed_reply: Option<String>,
+    /// A reliable, explicitly dated event/deadline the user may add after review.
+    #[serde(default)]
+    pub calendar_suggestion: Option<AiCalendarSuggestion>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -484,6 +506,28 @@ pub struct AiUsageStats {
     pub last_7_days_tokens: i64,
     pub last_30_days_tokens: i64,
     pub days: Vec<AiUsageDay>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailActivityDay {
+    pub date: String,
+    pub sent: i64,
+    pub received: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailStats {
+    pub total_sent: i64,
+    pub total_received: i64,
+    pub today_sent: i64,
+    pub today_received: i64,
+    pub last_7_days_sent: i64,
+    pub last_7_days_received: i64,
+    pub last_30_days_sent: i64,
+    pub last_30_days_received: i64,
+    pub days: Vec<EmailActivityDay>,
 }
 
 /// Exact unread badge counts for split tabs and sidebar rows.
@@ -633,12 +677,28 @@ pub struct Settings {
     /// Group the thread list under date headers (Today / Yesterday / …).
     #[serde(default = "default_true")]
     pub group_by_date: bool,
+    /// When true, compose "To" autocomplete suggests contacts from every account;
+    /// off (default) scopes suggestions to the account you're sending from.
+    #[serde(default)]
+    pub contact_suggest_all_accounts: bool,
     /// Show the unread count on the app icon (macOS Dock badge).
     #[serde(default = "default_true")]
     pub dock_badge_enabled: bool,
     /// Which count the badge shows: "inbox" (all unread) | "important".
     #[serde(default = "default_badge_source")]
     pub dock_badge_source: String,
+    /// Which incoming mail raises a desktop notification: "important" (mail that
+    /// lands in the Important tab, the default and historical behavior), "all"
+    /// (every incoming inbox message), or "tabs" (only the tabs named in
+    /// `notification_tabs`). The master `notifications_enabled` toggle gates all
+    /// three.
+    #[serde(default = "default_notification_scope")]
+    pub notification_scope: String,
+    /// Route keys whose mail notifies when `notification_scope` is "tabs":
+    /// "important", "other", "split:<id>", or "label:<id>" (the same keys stored
+    /// in `threads.routed_tab`).
+    #[serde(default)]
+    pub notification_tabs: Vec<String>,
     /// Legacy plain-text signature map, keyed by stringified account id.
     /// Superseded by `signature_list`/`signature_defaults`; retained only so old
     /// blobs deserialize and are folded in by `migrate_signatures`.
@@ -764,6 +824,9 @@ fn default_tier_cheap() -> String {
 fn default_badge_source() -> String {
     "inbox".into()
 }
+fn default_notification_scope() -> String {
+    "important".into()
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -800,8 +863,11 @@ impl Default for Settings {
             ai_automation_rules: Vec::new(),
             ai_tier_categorize: default_tier_instant(),
             group_by_date: true,
+            contact_suggest_all_accounts: false,
             dock_badge_enabled: true,
             dock_badge_source: default_badge_source(),
+            notification_scope: default_notification_scope(),
+            notification_tabs: Vec::new(),
             signatures: std::collections::HashMap::new(),
             signature_list: Vec::new(),
             signature_defaults: std::collections::HashMap::new(),

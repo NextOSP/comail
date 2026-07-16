@@ -145,19 +145,24 @@ export default function App() {
           )}
           {(!showIntro || cardReady) && <Onboarding />}
         </>
-      ) : screen === "compose" ? (
-        <Composer
-          key={`${composer!.mode}-${composer!.replyTo?.id ?? "new"}-${composer!.draftId ?? 0}`}
-          state={composer!}
-        />
-      ) : screen === "calendar" ? (
-        <CalendarScreen />
-      ) : screen === "conversation" ? (
-        <ConversationScreen threadId={openThreadId!} />
-      ) : screen === "search" ? (
-        <SearchScreen />
       ) : (
-        <InboxScreen />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {screen === "compose" ? (
+            <Composer
+              key={`${composer!.mode}-${composer!.replyTo?.id ?? "new"}-${composer!.draftId ?? 0}`}
+              state={composer!}
+            />
+          ) : screen === "calendar" ? (
+            <CalendarScreen />
+          ) : screen === "conversation" ? (
+            <ConversationScreen threadId={openThreadId!} />
+          ) : screen === "search" ? (
+            <SearchScreen />
+          ) : (
+            <InboxScreen />
+          )}
+          <CalendarDrawer />
+        </div>
       )}
       {screen !== "onboarding" && <Sidebar />}
       <CommandPalette />
@@ -166,7 +171,6 @@ export default function App() {
       <LabelPopover />
       <ThreadContextMenu />
       <SplitPopover />
-      {screen !== "onboarding" && <CalendarDrawer />}
       {screen !== "onboarding" && <EventCreate />}
       {screen !== "onboarding" && <EventDetailPopover />}
       <AttachmentPreviewModal />
@@ -289,7 +293,7 @@ function ThreadOrderSync() {
     labelFilter,
     folderFilter,
   );
-  const searchResults = useSearch(searchOpen ? searchQuery : "");
+  const searchResults = useSearch(searchOpen ? searchQuery : "", accountFilter);
 
   const ids = useMemo(() => {
     if (searchOpen && searchQuery.trim()) {

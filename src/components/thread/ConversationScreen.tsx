@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { AiCalendarSuggestion } from "../../ipc/types";
 import { performThreadAction } from "../../queries/actions";
 import { useThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 
-import { relativeTime } from "../../lib/format";
+import { MOD_LABEL, relativeTime } from "../../lib/format";
 import { Composer } from "../compose/Composer";
 import { MessageCard } from "./MessageCard";
 
@@ -247,7 +248,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
         <footer className="mt-2 flex items-center gap-2 text-[12px] text-ink-faint">
           <kbd className="co-kbd">↵</kbd> {t("thread:footer.replyAll")} · <kbd className="co-kbd">R</kbd> {t("thread:footer.reply")} ·{" "}
           <kbd className="co-kbd">F</kbd> {t("thread:footer.forward")} · <kbd className="co-kbd">E</kbd> {t("thread:footer.done")} ·{" "}
-          <kbd className="co-kbd">H</kbd> {t("thread:footer.snooze")} · <kbd className="co-kbd">⇧J</kbd> {t("thread:footer.summarize")} ·{" "}
+          <kbd className="co-kbd">H</kbd> {t("thread:footer.snooze")} · <kbd className="co-kbd">{MOD_LABEL}J</kbd> {t("thread:footer.summarize")} ·{" "}
           <kbd className="co-kbd">↑</kbd>
           <kbd className="co-kbd">↓</kbd> {t("thread:footer.message")} · <kbd className="co-kbd">J</kbd>
           <kbd className="co-kbd">K</kbd> {t("thread:footer.nextPrev")}
@@ -279,9 +280,35 @@ function SummarySection({ title, children }: { title: string; children: React.Re
   );
 }
 
+function calendarPrefill(suggestion: AiCalendarSuggestion) {
+  const startText =
+    suggestion.allDay && /^\d{4}-\d{2}-\d{2}$/.test(suggestion.start)
+      ? `${suggestion.start}T00:00:00`
+      : suggestion.start;
+  const startsAt = Date.parse(startText);
+  if (!Number.isFinite(startsAt)) return null;
+  const endText = suggestion.end
+    ? suggestion.allDay && /^\d{4}-\d{2}-\d{2}$/.test(suggestion.end)
+      ? `${suggestion.end}T00:00:00`
+      : suggestion.end
+    : null;
+  const parsedEnd = endText ? Date.parse(endText) : Number.NaN;
+  const endsAt = Number.isFinite(parsedEnd)
+    ? parsedEnd
+    : startsAt + (suggestion.allDay ? 86_400_000 : 30 * 60_000);
+  return {
+    summary: suggestion.title,
+    startsAt,
+    endsAt,
+    allDay: suggestion.allDay,
+    location: suggestion.location ?? undefined,
+    description: suggestion.description ?? undefined,
+  };
+}
+
 /**
  * The structured AI thread read, docked to the right of the conversation
- * (opened with Shift+J). Timeline, key points, the one next action, and a
+ * (opened with Cmd/Ctrl+J). Timeline, key points, the one next action, and a
  * proposed reply the user can drop straight into the composer.
  */
 function AiSummarySidebar({
@@ -291,7 +318,7 @@ function AiSummarySidebar({
   threadId: number;
   onUseReply: (text: string) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const entry = useUi((s) => s.aiSummaries[threadId]);
   const set = useUi((s) => s.set);
   if (!entry) return null;
@@ -303,6 +330,8 @@ function AiSummarySidebar({
   };
 
   const s = entry.summary;
+  const suggestedEvent = s?.calendarSuggestion ?? null;
+  const eventPrefill = suggestedEvent ? calendarPrefill(suggestedEvent) : null;
 
   return (
     <aside
@@ -315,6 +344,9 @@ function AiSummarySidebar({
             <path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2zM19 14l.9 2.6L22.5 17l-2.6.9L19 20l-.9-2.1L15.5 17l2.6-.4L19 14z" />
           </svg>
           {t("thread:aiSummary.title")}
+          {entry.pending && (
+            <span className="co-spinner ml-1 size-2.5 rounded-full border border-hairline-strong border-t-accent" />
+          )}
         </div>
         <button
           className="shrink-0 rounded-md px-1.5 py-0.5 text-[13px] text-ink-faint hover:bg-bg2 hover:text-ink"
@@ -325,7 +357,7 @@ function AiSummarySidebar({
         </button>
       </div>
 
-      {entry.pending ? (
+      {entry.pending && !s ? (
         <div className="flex items-center gap-2 px-4 py-4 text-[13px] text-ink-faint italic">
           <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
           {t("thread:aiSummary.pending")}
@@ -373,6 +405,30 @@ function AiSummarySidebar({
               >
                 {s.nextAction}
               </p>
+            </SummarySection>
+          )}
+
+          {suggestedEvent && eventPrefill && (
+            <SummarySection title={t("thread:aiSummary.calendarSuggestion")}>
+              <div className="rounded-lg border border-hairline bg-bg0 px-3 py-2.5">
+                <p className="text-[12.5px] font-medium text-ink">{suggestedEvent.title}</p>
+                <p className="mt-1 text-[11.5px] leading-snug text-ink-muted">
+                  {new Date(eventPrefill.startsAt).toLocaleString(i18n.language, {
+                    dateStyle: "medium",
+                    ...(suggestedEvent.allDay ? {} : { timeStyle: "short" as const }),
+                  })}
+                </p>
+                {suggestedEvent.location && (
+                  <p className="mt-0.5 text-[11.5px] text-ink-faint">{suggestedEvent.location}</p>
+                )}
+                <button
+                  type="button"
+                  className="mt-2 rounded-md border border-accent/50 px-2.5 py-1 text-[12px] font-medium text-accent hover:bg-accent/10"
+                  onClick={() => set({ eventCreate: { prefill: eventPrefill } })}
+                >
+                  + {t("thread:aiSummary.createEvent")}
+                </button>
+              </div>
             </SummarySection>
           )}
 

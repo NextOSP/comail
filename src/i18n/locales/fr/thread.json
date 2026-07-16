@@ -26,6 +26,8 @@
     "timeline": "Chronologie",
     "keyPoints": "Points clés",
     "nextAction": "Prochaine action",
+    "calendarSuggestion": "Événement suggéré",
+    "createEvent": "Créer l’événement",
     "proposedReply": "Réponse suggérée",
     "useReply": "Utiliser comme réponse"
   },

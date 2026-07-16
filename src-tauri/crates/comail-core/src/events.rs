@@ -71,6 +71,11 @@ pub enum CoreEvent {
     AskDone {
         request_id: String,
     },
+    /// One incremental raw JSON chunk of a structured thread summary.
+    AiSummaryDelta {
+        thread_id: i64,
+        delta: String,
+    },
     /// Calendar data changed (CalDAV pull or local mutation synced).
     CalendarUpdated {
         account_id: i64,

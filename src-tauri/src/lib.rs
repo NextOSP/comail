@@ -391,6 +391,7 @@ pub fn run() {
             commands::ai_status,
             commands::ai_list_models,
             commands::ai_usage_stats,
+            commands::email_stats,
             commands::ai_plan_automation,
             commands::set_ai_key,
             commands::ai_command,

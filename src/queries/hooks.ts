@@ -81,10 +81,10 @@ export function prefetchThread(threadId: number) {
   });
 }
 
-export function useSearch(query: string) {
+export function useSearch(query: string, accountId: number | null = null) {
   return useQuery({
-    queryKey: ["search", query],
-    queryFn: () => call("search", { args: { query, limit: 60 } }),
+    queryKey: ["search", query, accountId],
+    queryFn: () => call("search", { args: { query, accountId, limit: 60 } }),
     enabled: query.trim().length > 0,
     placeholderData: keepPreviousData,
     staleTime: 5_000,
@@ -268,6 +268,15 @@ export function useAiUsage() {
   return useQuery({
     queryKey: ["aiUsage"],
     queryFn: () => call("ai_usage_stats", {}),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useEmailStats() {
+  return useQuery({
+    queryKey: ["emailStats"],
+    queryFn: () => call("email_stats", {}),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });

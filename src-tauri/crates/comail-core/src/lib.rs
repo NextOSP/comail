@@ -39,7 +39,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-pub use crate::db::repo::notifications::NotificationOutboxItem;
+pub use crate::db::repo::notifications::{NotificationOutboxItem, RoutedTab};
 
 /// An AI feature, each routed to a configurable model tier.
 #[derive(Clone, Copy)]
@@ -1455,9 +1455,19 @@ impl Core {
         Ok(preview)
     }
 
-    pub async fn list_contacts(&self, prefix: String, limit: i64) -> Result<Vec<Address>> {
+    /// Compose "To" autocomplete. `account_id` Some scopes suggestions to the
+    /// sending account's own contacts; None returns contacts across all accounts
+    /// (the "show contacts from all accounts" setting).
+    pub async fn list_contacts(
+        &self,
+        prefix: String,
+        account_id: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<Address>> {
         self.db
-            .read(move |conn| repo::contacts::autocomplete(conn, &prefix, limit.clamp(1, 50)))
+            .read(move |conn| {
+                repo::contacts::autocomplete(conn, &prefix, account_id, limit.clamp(1, 50))
+            })
             .await
     }
 
@@ -1471,7 +1481,7 @@ impl Core {
     ) -> Result<Vec<ContactSuggestion>> {
         let text = search::parse(&query).text;
         self.db
-            .read(move |conn| repo::contacts::suggest(conn, &text, limit.clamp(1, 20)))
+            .read(move |conn| repo::contacts::suggest(conn, &text, None, limit.clamp(1, 20)))
             .await
     }
 
@@ -2431,6 +2441,10 @@ impl Core {
         self.db.read(|conn| repo::ai_usage::stats(conn)).await
     }
 
+    pub async fn email_stats(&self) -> Result<EmailStats> {
+        self.db.read(|conn| repo::email_stats::stats(conn)).await
+    }
+
     /// Translate a plain-language automation request into a validated action
     /// plan. This only previews behavior; it never executes mailbox actions.
     pub async fn ai_plan_automation(&self, prompt: String) -> Result<AiAutomationPlan> {
@@ -2501,7 +2515,14 @@ impl Core {
         let cfg = self.ai_config(Scenario::Summarize).await?;
         let detail = self.get_thread(thread_id).await?;
         let context = ai::thread_context(&detail.messages, 24_000);
-        ai::summarize_thread(&cfg, &detail.thread.subject, &context).await
+        let bus = self.bus.clone();
+        ai::summarize_thread_stream(&cfg, &detail.thread.subject, &context, move |delta| {
+            bus.emit(CoreEvent::AiSummaryDelta {
+                thread_id,
+                delta: delta.to_owned(),
+            });
+        })
+        .await
     }
 
     /// Up to 3 short one-tap reply suggestions grounded in the thread, shown
@@ -2676,8 +2697,16 @@ impl Core {
 
     // ---------- search ----------
 
-    pub async fn search(&self, query: String, limit: i64) -> Result<Vec<ThreadSummary>> {
-        let parsed = search::parse(&query);
+    pub async fn search(
+        &self,
+        query: String,
+        account_id: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<ThreadSummary>> {
+        let mut parsed = search::parse(&query);
+        // Scope every branch (lexical, semantic, operator filters) to the UI's
+        // active account when one is selected; None searches all accounts.
+        parsed.account_id = account_id;
         let limit = limit.clamp(1, 100);
         let t0 = std::time::Instant::now();
 
@@ -3518,6 +3547,23 @@ impl Core {
         let limit = limit.clamp(1, 100);
         self.db
             .read(move |conn| repo::notifications::list_due(conn, now, limit))
+            .await
+    }
+
+    /// Resolve which inbox tab a thread lands in, for notification-scope
+    /// filtering. `RoutedTab::Pending` means AI classification is still in
+    /// flight and the host should wait before deciding.
+    pub async fn notification_thread_tab(&self, thread_id: i64) -> Result<Option<RoutedTab>> {
+        self.db
+            .read(move |conn| repo::notifications::resolve_tab(conn, thread_id))
+            .await
+    }
+
+    /// Defer a pending notification's next dispatch without consuming a delivery
+    /// attempt, used while waiting for its thread's tab to resolve.
+    pub async fn defer_notification_delivery(&self, id: i64, not_before: i64) -> Result<bool> {
+        self.db
+            .write(move |conn| repo::notifications::defer(conn, id, not_before))
             .await
     }
 

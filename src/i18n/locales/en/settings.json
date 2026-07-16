@@ -2,6 +2,7 @@
   "title": "Settings",
   "section": {
     "preferences": "Preferences",
+    "stats": "Stats",
     "ai": "AI",
     "aiAutomation": "AI Automations",
     "ragSearch": "RAG Search",
@@ -73,6 +74,24 @@
     "reauthDone": "Reconnected {{email}}.",
     "reauthFailed": "Couldn't reconnect {{email}}: {{detail}}",
     "noAccounts": "No accounts connected."
+  },
+  "stats": {
+    "section": "Email activity",
+    "intro": "Sent and received message counts from your synced mail history. Drafts are not included.",
+    "totalSent": "Sent · all time",
+    "totalReceived": "Received · all time",
+    "todaySent": "Sent · today",
+    "todayReceived": "Received · today",
+    "last7Sent": "Sent · 7 days",
+    "last7Received": "Received · 7 days",
+    "last30Sent": "Sent · 30 days",
+    "last30Received": "Received · 30 days",
+    "activity": "Daily email activity",
+    "recent": "Last 12 months",
+    "all": "All",
+    "sent": "Sent",
+    "received": "Received",
+    "dayTitle": "{{date}}: {{sent}} sent, {{received}} received"
   },
   "ai": {
     "statusLabel": "Status",
@@ -365,6 +384,14 @@
     "label": "Desktop notifications",
     "hint": "Notify when new mail arrives while the window is unfocused."
   },
+  "notificationScope": {
+    "label": "Notify me about",
+    "hint": "Which incoming mail raises a notification. Spam and other non-inbox folders never notify.",
+    "important": "Important",
+    "all": "All mail",
+    "tabs": "Specific tabs",
+    "noTabs": "No inbox tabs configured yet."
+  },
   "sound": {
     "label": "Sound",
     "hint": "Play a sound on new mail and when sending."
@@ -386,6 +413,10 @@
   "groupByDate": {
     "label": "Group by date",
     "hint": "Show Today / Yesterday / … headers between conversations in the list."
+  },
+  "contactSuggestAllAccounts": {
+    "label": "Suggest contacts from all accounts",
+    "hint": "When composing, autocomplete recipients from every account's contacts. Off, suggestions are scoped to the account you're sending from."
   },
   "signature": {
     "section": "Signatures",

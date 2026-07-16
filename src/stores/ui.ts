@@ -20,6 +20,7 @@ export type PanelKind = "settings" | "snippets" | "splits" | "labels";
 
 export type SettingsTab =
   | "general"
+  | "stats"
   | "splits"
   | "snippets"
   | "labels"
@@ -181,6 +182,10 @@ interface UiState {
   searchOpen: boolean;
   /** open the search screen in this mode once (consumed by SearchScreen) */
   searchModeRequest: "search" | "ask" | null;
+  /** one-shot: land on the results (not the query box) so triage keys work
+   *  immediately. Set when a query is pushed in from elsewhere, e.g. the
+   *  palette's "View all from this sender". Consumed by SearchScreen. */
+  searchFocusList: boolean;
   searchQuery: string;
 
   theme: Settings["theme"];
@@ -261,6 +266,7 @@ export const useUi = create<UiState>((set, get) => ({
   aiSummaries: {},
   searchOpen: false,
   searchModeRequest: null,
+  searchFocusList: false,
   searchQuery: "",
   theme: "system",
   keySequence: "",

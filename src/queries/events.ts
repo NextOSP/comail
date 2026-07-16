@@ -25,6 +25,7 @@ async function refreshMailQueries() {
     queryClient.invalidateQueries({ queryKey: ["threads"] }),
     queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
     queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+    queryClient.invalidateQueries({ queryKey: ["emailStats"] }),
   ]);
 }
 
@@ -157,6 +158,7 @@ export function useBackendEvents() {
       onEvent("mail:new", () => {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
         void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+        void queryClient.invalidateQueries({ queryKey: ["emailStats"] });
         // calendar invites arrive by mail
         void queryClient.invalidateQueries({ queryKey: ["events"] });
         playSound("new-email");
@@ -191,6 +193,7 @@ export function useBackendEvents() {
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
         } else if (state === "done") {
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["emailStats"] });
         }
       }),
       onEvent("network:state", ({ online }) => {

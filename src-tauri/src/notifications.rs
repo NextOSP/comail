@@ -5,8 +5,8 @@
 //! tray-hidden windows and temporarily unmounted frontend listeners cannot lose
 //! notifications.
 
-use comail_core::{Core, NotificationOutboxItem};
-use std::time::Duration;
+use comail_core::{Core, NotificationOutboxItem, RoutedTab};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_notification::NotificationExt;
 use tokio::time::MissedTickBehavior;
@@ -14,6 +14,79 @@ use tokio::time::MissedTickBehavior;
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 const DISPATCH_BATCH: i64 = 16;
 const MAX_RETRY_DELAY_MS: i64 = 5 * 60 * 1_000;
+/// How long to hold a notification while its thread awaits AI routing before
+/// giving up and delivering anyway (better to over-notify than lose mail).
+const MAX_ROUTING_WAIT_MS: i64 = 30_000;
+/// How far out a still-routing notification is deferred between re-checks.
+const ROUTING_RECHECK_MS: i64 = 3_000;
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// What to do with one due notification once the user's scope is applied.
+enum Decision {
+    Deliver,
+    /// Wait for the thread's tab to resolve; re-check at this epoch-ms.
+    Defer(i64),
+    Suppress(&'static str),
+}
+
+/// Whether a resolved route key passes the configured notification scope.
+/// `"all"` lets everything through; `"tabs"` matches the selected route keys;
+/// any other value (including the default `"important"`) keeps the historical
+/// Important-only behavior.
+fn scope_allows(scope: &str, tabs: &[String], routed_key: &str) -> bool {
+    match scope {
+        "all" => true,
+        "tabs" => tabs.iter().any(|t| t == routed_key),
+        _ => routed_key == "important",
+    }
+}
+
+/// Decide one item's fate without claiming it, so a wait-for-routing deferral
+/// never consumes a delivery attempt.
+async fn delivery_decision(
+    core: &Core,
+    item: &NotificationOutboxItem,
+    scope: &str,
+    tabs: &[String],
+    now: i64,
+) -> Decision {
+    // "all" needs no tab lookup at all.
+    if scope == "all" {
+        return Decision::Deliver;
+    }
+    let Some(thread_id) = item.thread_id else {
+        // Nothing to scope against; fail open rather than drop it.
+        return Decision::Deliver;
+    };
+    match core.notification_thread_tab(thread_id).await {
+        Ok(Some(RoutedTab::Resolved(key))) => {
+            if scope_allows(scope, tabs, &key) {
+                Decision::Deliver
+            } else {
+                Decision::Suppress("out of notification scope")
+            }
+        }
+        Ok(Some(RoutedTab::Pending)) => {
+            if now - item.created_at < MAX_ROUTING_WAIT_MS {
+                Decision::Defer(now + ROUTING_RECHECK_MS)
+            } else {
+                Decision::Deliver
+            }
+        }
+        Ok(None) => Decision::Suppress("thread no longer present"),
+        Err(error) => {
+            tracing::warn!(outbox_id = item.id, %error, "notification tab lookup failed");
+            // Don't lose a notification over a transient read error.
+            Decision::Deliver
+        }
+    }
+}
 
 /// Start the single notification dispatcher for this app process.
 pub fn spawn_dispatcher(app: AppHandle, core: Core) {
@@ -32,13 +105,16 @@ pub fn spawn_dispatcher(app: AppHandle, core: Core) {
 }
 
 async fn dispatch_due<R: Runtime>(app: &AppHandle<R>, core: &Core) {
-    let notifications_enabled = match core.get_settings().await {
-        Ok(settings) => settings.notifications_enabled,
+    let settings = match core.get_settings().await {
+        Ok(settings) => settings,
         Err(error) => {
             tracing::warn!(%error, "notification dispatcher could not read settings");
             return;
         }
     };
+    let notifications_enabled = settings.notifications_enabled;
+    let scope = settings.notification_scope;
+    let tabs = settings.notification_tabs;
     let due = match core.due_notifications(DISPATCH_BATCH).await {
         Ok(due) => due,
         Err(error) => {
@@ -48,6 +124,41 @@ async fn dispatch_due<R: Runtime>(app: &AppHandle<R>, core: &Core) {
     };
 
     for item in due {
+        // Master switch off: claim and suppress so the row reaches a terminal
+        // state instead of being re-listed every cycle.
+        if !notifications_enabled {
+            if core
+                .claim_notification_delivery(item.id)
+                .await
+                .unwrap_or(false)
+            {
+                suppress(core, item.id, "notifications disabled").await;
+            }
+            continue;
+        }
+
+        // Apply the user's scope before claiming, so waiting for a thread's tab
+        // to resolve never consumes a delivery attempt.
+        match delivery_decision(core, &item, &scope, &tabs, now_ms()).await {
+            Decision::Deliver => {}
+            Decision::Defer(not_before) => {
+                if let Err(error) = core.defer_notification_delivery(item.id, not_before).await {
+                    tracing::warn!(outbox_id = item.id, %error, "notification defer failed");
+                }
+                continue;
+            }
+            Decision::Suppress(reason) => {
+                if core
+                    .claim_notification_delivery(item.id)
+                    .await
+                    .unwrap_or(false)
+                {
+                    suppress(core, item.id, reason).await;
+                }
+                continue;
+            }
+        }
+
         match core.claim_notification_delivery(item.id).await {
             Ok(true) => {}
             Ok(false) => continue,
@@ -55,11 +166,6 @@ async fn dispatch_due<R: Runtime>(app: &AppHandle<R>, core: &Core) {
                 tracing::warn!(outbox_id = item.id, %error, "notification claim failed");
                 continue;
             }
-        }
-
-        if !notifications_enabled {
-            suppress(core, item.id, "notifications disabled").await;
-            continue;
         }
 
         let (title, body) = notification_copy(&item);
@@ -170,6 +276,26 @@ mod tests {
             notification_copy(&item(None, None, "Subject")),
             ("Comail".to_owned(), "Subject".to_owned())
         );
+    }
+
+    #[test]
+    fn scope_gates_by_routed_tab() {
+        let tabs = vec!["important".to_owned(), "split:3".to_owned()];
+
+        // "all" ignores the tab entirely.
+        assert!(scope_allows("all", &[], "other"));
+        assert!(scope_allows("all", &[], "label:9"));
+
+        // "tabs" matches only the selected route keys.
+        assert!(scope_allows("tabs", &tabs, "important"));
+        assert!(scope_allows("tabs", &tabs, "split:3"));
+        assert!(!scope_allows("tabs", &tabs, "other"));
+        assert!(!scope_allows("tabs", &tabs, "split:4"));
+
+        // The default (and any unknown value) is Important-only.
+        assert!(scope_allows("important", &tabs, "important"));
+        assert!(!scope_allows("important", &tabs, "other"));
+        assert!(!scope_allows("", &tabs, "other"));
     }
 
     #[test]

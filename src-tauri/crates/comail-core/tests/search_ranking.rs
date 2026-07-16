@@ -64,17 +64,17 @@ fn suggest_matches_unaccented_input_ranked_by_affinity() {
     let noise = addr("Ben Porter", "ben@example.com");
     // The cleaner writes often; Ben once.
     for i in 0..10 {
-        repo::contacts::harvest(&conn, &cleaner, false, 1000 + i).unwrap();
+        repo::contacts::harvest(&conn, 1, &cleaner, false, 1000 + i).unwrap();
     }
-    repo::contacts::harvest(&conn, &noise, false, 2000).unwrap();
+    repo::contacts::harvest(&conn, 1, &noise, false, 2000).unwrap();
 
-    let hits = repo::contacts::suggest(&conn, "be don dep", 5).unwrap();
+    let hits = repo::contacts::suggest(&conn, "be don dep", None, 5).unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].email, "hello@begroup.vn");
     assert_eq!(hits[0].interactions, 10);
 
     // Single token: both match, the frequent contact first.
-    let hits = repo::contacts::suggest(&conn, "be", 5).unwrap();
+    let hits = repo::contacts::suggest(&conn, "be", None, 5).unwrap();
     assert_eq!(hits[0].email, "hello@begroup.vn");
     assert!(hits.iter().any(|c| c.email == "ben@example.com"));
 }
@@ -89,11 +89,11 @@ fn autocomplete_backfill_covers_pre_fold_rows() {
     )
     .unwrap();
     // Row predates the folded column; suggest can't see it until backfill.
-    assert!(repo::contacts::suggest(&conn, "tran duc", 5)
+    assert!(repo::contacts::suggest(&conn, "tran duc", None, 5)
         .unwrap()
         .is_empty());
     repo::contacts::backfill_folded(&conn).unwrap();
-    let hits = repo::contacts::suggest(&conn, "tran duc", 5).unwrap();
+    let hits = repo::contacts::suggest(&conn, "tran duc", None, 5).unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].email, "x@y.vn");
 }
@@ -139,9 +139,9 @@ fn frequent_sender_outranks_equal_match_from_stranger() {
     insert_message(&conn, 100, 10, "House cleaning offer", &stranger, 5_000);
     insert_message(&conn, 101, 20, "House cleaning offer", &friend, 5_000);
     for i in 0..20 {
-        repo::contacts::harvest(&conn, &friend, i % 2 == 0, 1000 + i).unwrap();
+        repo::contacts::harvest(&conn, 1, &friend, i % 2 == 0, 1000 + i).unwrap();
     }
-    repo::contacts::harvest(&conn, &stranger, false, 1000).unwrap();
+    repo::contacts::harvest(&conn, 1, &stranger, false, 1000).unwrap();
 
     let q = search::parse("house cleaning");
     let hits = repo::search::hybrid(&conn, &q, &[], 10).unwrap();

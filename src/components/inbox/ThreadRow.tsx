@@ -15,6 +15,7 @@ function ThreadRowImpl({
   onRowHover,
   onToggleCheck,
   onGutterDown,
+  onRowDown,
   leaving,
   jumpHint,
 }: {
@@ -32,6 +33,9 @@ function ThreadRowImpl({
   onToggleCheck: (id: number) => void;
   /** When provided, press-and-drag in the gutter starts a range sweep. */
   onGutterDown?: (id: number, e: MouseEvent) => void;
+  /** When provided, press-and-drag anywhere on the row starts a range sweep;
+   *  a no-move press stays a click (opens the thread). */
+  onRowDown?: (id: number, e: MouseEvent) => void;
   leaving?: boolean;
   /** jump-to number shown (in place of the timestamp) while ⌘/Ctrl is held */
   jumpHint?: string;
@@ -44,14 +48,17 @@ function ThreadRowImpl({
       className={`co-row flex h-full cursor-default items-center gap-3 pr-5 pl-4 ${leaving ? "co-row-leaving" : ""}`}
       data-selected={selected}
       data-checked={checked}
+      onMouseDown={onRowDown ? (e) => onRowDown(thread.id, e) : undefined}
       onClick={(e) => onRowClick(thread.id, e)}
       onContextMenu={onRowContextMenu ? (e) => onRowContextMenu(thread.id, e) : undefined}
       onMouseEnter={onRowHover ? () => onRowHover(thread.id) : undefined}
       onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
     >
-      {/* gutter: checkbox (selection) / unread dot / star */}
+      {/* gutter: checkbox (selection) / unread dot / star. self-stretch keeps the
+          hit target the full row height so clicking/drag-selecting doesn't
+          require landing on the tiny dot. */}
       <button
-        className="flex w-5 shrink-0 items-center justify-center"
+        className="flex w-5 shrink-0 items-center justify-center self-stretch"
         onMouseDown={
           onGutterDown
             ? (e) => {

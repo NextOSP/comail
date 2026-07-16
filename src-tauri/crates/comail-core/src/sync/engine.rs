@@ -1537,124 +1537,61 @@ async fn extend_history(
 /// replaying old mail as new-to-the-folder UIDs.
 const CHIME_RECENT_MS: i64 = 24 * 60 * 60 * 1000;
 
-fn notification_eligible(
+/// Base candidacy for surfacing a freshly arrived message: unread, incoming,
+/// newer than the notify watermark, and genuinely recent (so replayed old UIDs
+/// from a UIDVALIDITY reset or a server-side move stay silent). This is scope-
+/// agnostic on purpose - the *desktop-notification* scope (Important / all /
+/// specific tabs) is applied later by the host dispatcher, which can see the
+/// thread's resolved tab. Bulk/robot filtering lives in [`chime_worthy`].
+fn arrival_eligible(
     notify_min_uid: Option<u32>,
     uid: u32,
     is_read: bool,
     is_outgoing: bool,
-    is_automated: bool,
-    from_email: &str,
     arrival_ms: i64,
     now: i64,
 ) -> bool {
     notify_min_uid.is_some_and(|min_uid| uid >= min_uid)
         && !is_read
         && !is_outgoing
-        && !is_automated
-        && !crate::mime::robot_sender(from_email)
         && now - arrival_ms < CHIME_RECENT_MS
+}
+
+/// Whether a fresh arrival should ring the audible new-mail chime. The chime
+/// stays human-only regardless of the desktop-notification scope, so a
+/// newsletter/monitoring flood never rings the bell every minute.
+fn chime_worthy(is_automated: bool, from_email: &str) -> bool {
+    !is_automated && !crate::mime::robot_sender(from_email)
 }
 
 #[cfg(test)]
 mod notification_policy_tests {
-    use super::{notification_eligible, CHIME_RECENT_MS};
+    use super::{arrival_eligible, chime_worthy, CHIME_RECENT_MS};
 
-    fn eligible(
-        baseline: Option<u32>,
-        uid: u32,
-        read: bool,
-        outgoing: bool,
-        automated: bool,
-        sender: &str,
-        age_ms: i64,
-    ) -> bool {
+    fn eligible(baseline: Option<u32>, uid: u32, read: bool, outgoing: bool, age_ms: i64) -> bool {
         let now = 2 * CHIME_RECENT_MS;
-        notification_eligible(
-            baseline,
-            uid,
-            read,
-            outgoing,
-            automated,
-            sender,
-            now - age_ms,
-            now,
-        )
+        arrival_eligible(baseline, uid, read, outgoing, now - age_ms, now)
     }
 
     #[test]
-    fn only_live_human_unread_incoming_mail_is_eligible() {
-        assert!(eligible(
-            Some(100),
-            100,
-            false,
-            false,
-            false,
-            "alice@example.com",
-            1_000,
-        ));
-        assert!(!eligible(
-            None,
-            100,
-            false,
-            false,
-            false,
-            "alice@example.com",
-            1_000,
-        ));
-        assert!(!eligible(
-            Some(100),
-            99,
-            false,
-            false,
-            false,
-            "alice@example.com",
-            1_000,
-        ));
-        assert!(!eligible(
-            Some(100),
-            100,
-            true,
-            false,
-            false,
-            "alice@example.com",
-            1_000,
-        ));
-        assert!(!eligible(
-            Some(100),
-            100,
-            false,
-            true,
-            false,
-            "me@example.com",
-            1_000,
-        ));
-        assert!(!eligible(
-            Some(100),
-            100,
-            false,
-            false,
-            true,
-            "digest@example.com",
-            1_000,
-        ));
-        assert!(!eligible(
-            Some(100),
-            100,
-            false,
-            false,
-            false,
-            "notifications@example.com",
-            1_000,
-        ));
-        assert!(!eligible(
-            Some(100),
-            100,
-            false,
-            false,
-            false,
-            "alice@example.com",
-            CHIME_RECENT_MS,
-        ));
+    fn only_live_unread_incoming_mail_is_a_notification_candidate() {
+        // Automated/robot senders are still candidates here - scope filtering
+        // happens later in the host dispatcher, not at enqueue time.
+        assert!(eligible(Some(100), 100, false, false, 1_000));
+        // No baseline yet (initial catch-up), older UID, read, or outgoing all
+        // disqualify, as does mail that arrived outside the recency window.
+        assert!(!eligible(None, 100, false, false, 1_000));
+        assert!(!eligible(Some(100), 99, false, false, 1_000));
+        assert!(!eligible(Some(100), 100, true, false, 1_000));
+        assert!(!eligible(Some(100), 100, false, true, 1_000));
+        assert!(!eligible(Some(100), 100, false, false, CHIME_RECENT_MS));
+    }
+
+    #[test]
+    fn chime_stays_human_only() {
+        assert!(chime_worthy(false, "alice@example.com"));
+        assert!(!chime_worthy(true, "digest@example.com"));
+        assert!(!chime_worthy(false, "notifications@example.com"));
     }
 }
 
@@ -1684,6 +1621,9 @@ async fn store_headers(
             let ai_categorize = settings.ai_categorize;
             let mut thread_ids: Vec<i64> = Vec::new();
             let mut fresh_ids: Vec<i64> = Vec::new();
+            // Threads already enqueued for a desktop notification this batch, so
+            // a thread that gains several messages in one fetch notifies once.
+            let mut enqueued_threads: Vec<i64> = Vec::new();
             let mut max_uid: i64 = 0;
             let mut inserted = 0u32;
 
@@ -1810,44 +1750,48 @@ async fn store_headers(
                 let when = date_ms;
                 if is_outgoing {
                     for a in parsed.to.iter().chain(parsed.cc.iter()) {
-                        repo::contacts::harvest(&tx, a, true, when)?;
+                        repo::contacts::harvest(&tx, account_id, a, true, when)?;
                     }
                 } else if let Some(from) = &parsed.from {
-                    repo::contacts::harvest(&tx, from, false, when)?;
+                    repo::contacts::harvest(&tx, account_id, from, false, when)?;
                 }
 
                 if !thread_ids.contains(&thread_id) {
                     thread_ids.push(thread_id);
                 }
-                // Chime-worthy: unread + incoming (is_read folds in both),
-                // actually recent (so replayed old mail from UIDVALIDITY
-                // resets / server-side moves stays silent), and not automated
-                // bulk/robot mail - a monitoring/newsletter flood shouldn't
-                // ring the bell every minute.
+                // A fresh arrival (unread + incoming + recent, past the notify
+                // watermark) is a candidate for both the chime and a desktop
+                // notification.
                 let arrival_ms = fh.internal_date_ms.unwrap_or(date_ms);
-                if notification_eligible(
+                if arrival_eligible(
                     notify_min_uid,
                     fh.uid,
                     nm.is_read,
                     nm.is_outgoing,
-                    nm.is_automated,
-                    &from_email,
                     arrival_ms,
                     now_ms(),
-                ) && !fresh_ids.contains(&thread_id)
-                {
-                    tracing::info!(
-                        account_id,
-                        thread_id,
-                        from = %from_email,
-                        "receive: chime-worthy new mail",
-                    );
-                    fresh_ids.push(thread_id);
-                    // The native dispatcher consumes this durable row after
-                    // commit. It snapshots sender/subject now, so notification
-                    // delivery never depends on a frontend listener or thread
-                    // hydration succeeding later.
-                    repo::notifications::enqueue(&tx, msg_id)?;
+                ) {
+                    // Enqueue a durable outbox row (once per thread this batch).
+                    // The native dispatcher consumes it after commit and applies
+                    // the user's notification scope against the thread's resolved
+                    // tab - so bulk mail is enqueued too and filtered there, not
+                    // here. Snapshotting sender/subject now keeps delivery
+                    // independent of any later frontend or hydration step.
+                    if !enqueued_threads.contains(&thread_id) {
+                        enqueued_threads.push(thread_id);
+                        repo::notifications::enqueue(&tx, msg_id)?;
+                    }
+                    // The audible chime stays human-only regardless of scope.
+                    if chime_worthy(nm.is_automated, &from_email) && !fresh_ids.contains(&thread_id)
+                    {
+                        tracing::info!(
+                            account_id,
+                            thread_id,
+                            from = %from_email,
+                            "receive: chime-worthy new mail",
+                        );
+                        fresh_ids.push(thread_id);
+                    }
                 }
             }
 

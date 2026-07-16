@@ -114,6 +114,12 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
         CoreEvent::AskDone { request_id } => {
             let _ = app.emit("ai:ask:done", json!({ "requestId": request_id }));
         }
+        CoreEvent::AiSummaryDelta { thread_id, delta } => {
+            let _ = app.emit(
+                "ai:summary:token",
+                json!({ "threadId": thread_id, "delta": delta }),
+            );
+        }
         CoreEvent::CalendarUpdated { account_id } => {
             let _ = app.emit("calendar:updated", json!({ "accountId": account_id }));
         }

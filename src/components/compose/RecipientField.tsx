@@ -9,11 +9,14 @@ export function RecipientField({
   value,
   onChange,
   autoFocus,
+  accountId,
 }: {
   label: string;
   value: Address[];
   onChange: (v: Address[]) => void;
   autoFocus?: boolean;
+  /** Scope contact suggestions to this account; undefined shows all accounts. */
+  accountId?: number;
 }) {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -31,7 +34,7 @@ export function RecipientField({
     }
     let cancelled = false;
     const t = setTimeout(() => {
-      void call("list_contacts", { prefix: q, limit: 6 }).then((hits) => {
+      void call("list_contacts", { prefix: q, accountId, limit: 6 }).then((hits) => {
         if (!cancelled) {
           setSuggestions(hits.filter((h) => !value.some((v) => v.email === h.email)));
           setCursor(0);
@@ -42,7 +45,7 @@ export function RecipientField({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [input, value]);
+  }, [input, value, accountId]);
 
   const commit = (a: Address) => {
     if (!value.some((v) => v.email.toLowerCase() === a.email.toLowerCase())) {

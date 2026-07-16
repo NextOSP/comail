@@ -3,11 +3,22 @@ use crate::models::{Address, ContactSuggestion};
 use crate::search::fold;
 use rusqlite::{params, Connection};
 
-/// Record an address seen in mail headers. `sent` = we sent to them.
-pub fn harvest(conn: &Connection, addr: &Address, sent: bool, when_ms: i64) -> Result<()> {
+/// Record an address seen in mail headers on `account_id`'s mail. `sent` = we
+/// sent to them. Updates both the global `contacts` row (identity + global
+/// affinity used by search and sender_known) and the per-account
+/// `contact_accounts` row that scopes compose autocomplete to the sending
+/// account.
+pub fn harvest(
+    conn: &Connection,
+    account_id: i64,
+    addr: &Address,
+    sent: bool,
+    when_ms: i64,
+) -> Result<()> {
     if addr.email.is_empty() || !addr.email.contains('@') {
         return Ok(());
     }
+    let email = addr.email.to_lowercase();
     let name = addr.name.as_deref().unwrap_or("");
     let folded = fold(&format!("{} {}", name, addr.email));
     conn.execute(
@@ -21,14 +32,16 @@ pub fn harvest(conn: &Connection, addr: &Address, sent: bool, when_ms: i64) -> R
             send_count = contacts.send_count + ?4,
             recv_count = contacts.recv_count + ?5,
             last_interacted = MAX(COALESCE(contacts.last_interacted, 0), ?6)",
-        params![
-            addr.email.to_lowercase(),
-            name,
-            folded,
-            sent as i64,
-            (!sent) as i64,
-            when_ms
-        ],
+        params![email, name, folded, sent as i64, (!sent) as i64, when_ms],
+    )?;
+    conn.execute(
+        "INSERT INTO contact_accounts (contact_id, account_id, send_count, recv_count, last_interacted)
+         SELECT id, ?2, ?3, ?4, ?5 FROM contacts WHERE email = ?1
+         ON CONFLICT(contact_id, account_id) DO UPDATE SET
+            send_count = contact_accounts.send_count + ?3,
+            recv_count = contact_accounts.recv_count + ?4,
+            last_interacted = MAX(COALESCE(contact_accounts.last_interacted, 0), ?5)",
+        params![email, account_id, sent as i64, (!sent) as i64, when_ms],
     )?;
     Ok(())
 }
@@ -82,20 +95,44 @@ fn folded_clauses(query: &str, bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>) 
 }
 
 /// Contacts matching every query token (accent- and case-insensitive), ranked
-/// by interaction affinity - people you actually email float to the top.
-pub fn suggest(conn: &Connection, query: &str, limit: i64) -> Result<Vec<ContactSuggestion>> {
+/// by interaction affinity - people you actually email float to the top. When
+/// `account_id` is Some, only contacts that account has corresponded with are
+/// returned, ranked by that account's affinity; None searches all contacts.
+pub fn suggest(
+    conn: &Connection,
+    query: &str,
+    account_id: Option<i64>,
+    limit: i64,
+) -> Result<Vec<ContactSuggestion>> {
     let mut bind: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     let Some(where_sql) = folded_clauses(query, &mut bind) else {
         return Ok(Vec::new());
     };
-    bind.push(Box::new(limit));
-    let sql = format!(
-        "SELECT name, email, send_count * 3 + recv_count FROM contacts
-         WHERE {where_sql}
-         ORDER BY (send_count * 3 + recv_count) DESC, last_interacted DESC
-         LIMIT ?{}",
-        bind.len()
-    );
+    // `contact_accounts` has no name/email/folded columns, so the folded WHERE
+    // clause stays unambiguous; only the affinity columns get an alias.
+    let sql = if let Some(aid) = account_id {
+        bind.push(Box::new(aid));
+        let aid_ix = bind.len();
+        bind.push(Box::new(limit));
+        format!(
+            "SELECT c.name, c.email, ca.send_count * 3 + ca.recv_count
+             FROM contacts c
+             JOIN contact_accounts ca ON ca.contact_id = c.id AND ca.account_id = ?{aid_ix}
+             WHERE {where_sql}
+             ORDER BY (ca.send_count * 3 + ca.recv_count) DESC, ca.last_interacted DESC
+             LIMIT ?{}",
+            bind.len()
+        )
+    } else {
+        bind.push(Box::new(limit));
+        format!(
+            "SELECT name, email, send_count * 3 + recv_count FROM contacts
+             WHERE {where_sql}
+             ORDER BY (send_count * 3 + recv_count) DESC, last_interacted DESC
+             LIMIT ?{}",
+            bind.len()
+        )
+    };
     let mut stmt = conn.prepare(&sql)?;
     let params_ref: Vec<&dyn rusqlite::types::ToSql> = bind.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
@@ -110,8 +147,13 @@ pub fn suggest(conn: &Connection, query: &str, limit: i64) -> Result<Vec<Contact
     Ok(rows)
 }
 
-pub fn autocomplete(conn: &Connection, prefix: &str, limit: i64) -> Result<Vec<Address>> {
-    Ok(suggest(conn, prefix, limit)?
+pub fn autocomplete(
+    conn: &Connection,
+    prefix: &str,
+    account_id: Option<i64>,
+    limit: i64,
+) -> Result<Vec<Address>> {
+    Ok(suggest(conn, prefix, account_id, limit)?
         .into_iter()
         .map(|c| Address {
             name: c.name,
@@ -168,9 +210,10 @@ mod tests {
     #[test]
     fn harvest_counts_and_autocomplete() {
         let c = testutil::conn();
-        harvest(&c, &addr("alice@acme.com", Some("Alice")), true, 100).unwrap();
-        harvest(&c, &addr("alice@acme.com", None), true, 200).unwrap();
-        harvest(&c, &addr("bob@other.org", Some("Bob")), false, 150).unwrap();
+        testutil::seed_account(&c);
+        harvest(&c, 1, &addr("alice@acme.com", Some("Alice")), true, 100).unwrap();
+        harvest(&c, 1, &addr("alice@acme.com", None), true, 200).unwrap();
+        harvest(&c, 1, &addr("bob@other.org", Some("Bob")), false, 150).unwrap();
 
         let (send, recv): (i64, i64) = c
             .query_row(
@@ -181,12 +224,44 @@ mod tests {
             .unwrap();
         assert_eq!((send, recv), (2, 0));
 
-        let hits = autocomplete(&c, "ali", 10).unwrap();
+        let hits = autocomplete(&c, "ali", None, 10).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].email, "alice@acme.com");
         // harvested name survives even when a later sighting had none
         assert_eq!(hits[0].name.as_deref(), Some("Alice"));
 
-        assert!(autocomplete(&c, "zzz", 10).unwrap().is_empty());
+        assert!(autocomplete(&c, "zzz", None, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn autocomplete_scopes_to_account() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        c.execute(
+            "INSERT INTO accounts (id, email, provider, auth_kind, username,
+             imap_host, imap_port, smtp_host, smtp_port, created_at)
+             VALUES (2,'two@test.dev','imap','password','two','h',993,'h',587,0)",
+            [],
+        )
+        .unwrap();
+        // alice belongs to account 1, carol to account 2.
+        harvest(&c, 1, &addr("alice@acme.com", Some("Alice")), true, 100).unwrap();
+        harvest(&c, 2, &addr("carol@acme.com", Some("Carol")), true, 100).unwrap();
+
+        // Account-scoped: each account only sees its own contact.
+        let a1 = autocomplete(&c, "a", Some(1), 10).unwrap();
+        assert_eq!(
+            a1.iter().map(|h| h.email.as_str()).collect::<Vec<_>>(),
+            ["alice@acme.com"]
+        );
+        let a2 = autocomplete(&c, "a", Some(2), 10).unwrap();
+        assert_eq!(
+            a2.iter().map(|h| h.email.as_str()).collect::<Vec<_>>(),
+            ["carol@acme.com"]
+        );
+
+        // Global (view-all): both surface.
+        let all = autocomplete(&c, "a", None, 10).unwrap();
+        assert_eq!(all.len(), 2);
     }
 }

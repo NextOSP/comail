@@ -264,6 +264,14 @@
     "label": "Notificaciones de escritorio",
     "hint": "Notificar cuando llegue correo nuevo mientras la ventana no está enfocada."
   },
+  "notificationScope": {
+    "label": "Notificarme sobre",
+    "hint": "Qué correo entrante genera una notificación. El spam y otras carpetas fuera de la bandeja nunca notifican.",
+    "important": "Importante",
+    "all": "Todo el correo",
+    "tabs": "Pestañas específicas",
+    "noTabs": "Aún no hay pestañas de bandeja configuradas."
+  },
   "sound": {
     "label": "Sonido",
     "hint": "Reproducir un sonido al recibir correo nuevo y al enviar."

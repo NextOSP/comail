@@ -3,9 +3,21 @@
 
 import i18n from "../i18n";
 import { call } from "../ipc/commands";
-import type { ActionKind, ComposeMode, Label, MessageDetail, Settings, SplitRule, View } from "../ipc/types";
+import type {
+  ActionKind,
+  ComposeMode,
+  Label,
+  MessageDetail,
+  Settings,
+  SplitRule,
+  View,
+} from "../ipc/types";
 import { inboxTabOrder } from "../lib/splitOrder";
-import { findCachedSummary, performThreadAction, undoLastAction } from "../queries/actions";
+import {
+  findCachedSummary,
+  performThreadAction,
+  undoLastAction,
+} from "../queries/actions";
 import { queryClient } from "../queries/client";
 import type { ThreadDetail } from "../ipc/types";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../stores/ui";
@@ -36,7 +48,11 @@ export interface CommandCtx {
   hasTargets: boolean;
   /** threads an action applies to: multi-select > open thread > cursor */
   targets: number[];
-  act: (kind: ActionKind, params?: { wakeAt?: number; targetFolderId?: number }, label?: string) => void;
+  act: (
+    kind: ActionKind,
+    params?: { wakeAt?: number; targetFolderId?: number },
+    label?: string,
+  ) => void;
   toggleStar: () => void;
   toggleRead: () => void;
   undo: () => void;
@@ -106,16 +122,31 @@ export function advanceAfter(removed: number[]) {
 
 /** Inbox tabs in the same arranged order used by the visible tab bar. Shared
  * by tab cycling, direct jumps, and the command palette. */
-export function inboxTabs(): { splitId: number | null; labelId: number | null; name: string }[] {
+export function inboxTabs(): {
+  splitId: number | null;
+  labelId: number | null;
+  name: string;
+}[] {
   const splits = queryClient.getQueryData<SplitRule[]>(["splits"]);
   const labels = queryClient.getQueryData<Label[]>(["labels"]);
-  const autoOn = queryClient.getQueryData<Settings>(["settings"])?.autoLabelsEnabled !== false;
+  const autoOn =
+    queryClient.getQueryData<Settings>(["settings"])?.autoLabelsEnabled !==
+    false;
   return inboxTabOrder(splits, labels, autoOn).map((item) => {
     if (item.kind === "important")
-      return { splitId: SPLIT_IMPORTANT, labelId: null, name: i18n.t("inbox:split.important") };
+      return {
+        splitId: SPLIT_IMPORTANT,
+        labelId: null,
+        name: i18n.t("inbox:split.important"),
+      };
     if (item.kind === "other")
-      return { splitId: SPLIT_OTHER, labelId: null, name: i18n.t("inbox:split.other") };
-    if (item.kind === "split") return { splitId: item.id, labelId: null, name: item.name };
+      return {
+        splitId: SPLIT_OTHER,
+        labelId: null,
+        name: i18n.t("inbox:split.other"),
+      };
+    if (item.kind === "split")
+      return { splitId: item.id, labelId: null, name: item.name };
     return { splitId: null, labelId: item.id, name: item.name };
   });
 }
@@ -125,7 +156,9 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
   // The context menu acts on a specific row that may not be the cursor/selection,
   // so it passes the exact targets; everything else derives them from ui state.
   const targets =
-    targetsOverride && targetsOverride.length > 0 ? targetsOverride : currentTargets(ui);
+    targetsOverride && targetsOverride.length > 0
+      ? targetsOverride
+      : currentTargets(ui);
 
   const act: CommandCtx["act"] = (kind, params, labelOverride) => {
     if (targets.length === 0) return;
@@ -168,22 +201,33 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     if (last.type === "send") {
       state.dismissToast(last.toastId);
       try {
-        const { cancelled } = await call("cancel_send", { actionId: last.actionId });
+        const { cancelled } = await call("cancel_send", {
+          actionId: last.actionId,
+        });
         if (cancelled) {
           state.openComposer(last.reopen);
-          if (last.reopen.replyTo) state.openThread(last.reopen.replyTo.threadId);
+          if (last.reopen.replyTo)
+            state.openThread(last.reopen.replyTo.threadId);
         } else {
-          state.pushToast({ kind: "error", message: i18n.t("commands:undo.tooLate") });
+          state.pushToast({
+            kind: "error",
+            message: i18n.t("commands:undo.tooLate"),
+          });
         }
       } catch {
-        state.pushToast({ kind: "error", message: i18n.t("commands:undo.cancelFailed") });
+        state.pushToast({
+          kind: "error",
+          message: i18n.t("commands:undo.cancelFailed"),
+        });
       }
       return;
     }
     const undone = await undoLastAction();
     state.pushToast({
       kind: undone ? "info" : "error",
-      message: undone ? i18n.t("commands:undo.undone") : i18n.t("commands:undo.nothingToUndo"),
+      message: undone
+        ? i18n.t("commands:undo.undone")
+        : i18n.t("commands:undo.nothingToUndo"),
       durationMs: 2500,
     });
   };
@@ -194,7 +238,11 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     act(
       first?.isStarred ? "unstar" : "star",
       undefined,
-      i18n.t(first?.isStarred ? "commands:actionLabel.unstarred" : "commands:actionLabel.starred"),
+      i18n.t(
+        first?.isStarred
+          ? "commands:actionLabel.unstarred"
+          : "commands:actionLabel.starred",
+      ),
     );
   };
 
@@ -205,7 +253,11 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     act(
       unread ? "mark_read" : "mark_unread",
       undefined,
-      i18n.t(unread ? "commands:actionLabel.markedRead" : "commands:actionLabel.markedUnread"),
+      i18n.t(
+        unread
+          ? "commands:actionLabel.markedRead"
+          : "commands:actionLabel.markedUnread",
+      ),
     );
   };
 
@@ -221,7 +273,10 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     if (state.openThreadId != null) {
       // J/K inside a conversation move across threads
       const idx = order.indexOf(state.openThreadId);
-      const nextIdx = Math.min(order.length - 1, Math.max(0, (idx < 0 ? 0 : idx) + delta));
+      const nextIdx = Math.min(
+        order.length - 1,
+        Math.max(0, (idx < 0 ? 0 : idx) + delta),
+      );
       if (order[nextIdx] !== state.openThreadId) {
         state.set({
           openThreadId: order[nextIdx],
@@ -233,25 +288,38 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
       return;
     }
 
-    const cur = state.selectedThreadId != null ? order.indexOf(state.selectedThreadId) : -1;
-    const base = cur >= 0 ? cur : Math.min(state.selectedIndex, order.length - 1);
+    const cur =
+      state.selectedThreadId != null
+        ? order.indexOf(state.selectedThreadId)
+        : -1;
+    const base =
+      cur >= 0 ? cur : Math.min(state.selectedIndex, order.length - 1);
     const nextIdx = Math.min(order.length - 1, Math.max(0, base + delta));
     state.selectThread(nextIdx, order[nextIdx] ?? null);
   };
 
   const openSelected = () => {
     const state = useUi.getState();
-    const id = state.selectedThreadId ?? state.visibleThreadIds[state.selectedIndex] ?? null;
+    const id =
+      state.selectedThreadId ??
+      state.visibleThreadIds[state.selectedIndex] ??
+      null;
     if (id != null) state.openThread(id);
   };
 
   const nextMessage = (delta: number) => {
     const state = useUi.getState();
     if (state.openThreadId == null) return;
-    const detail = queryClient.getQueryData<ThreadDetail>(["thread", state.openThreadId]);
+    const detail = queryClient.getQueryData<ThreadDetail>([
+      "thread",
+      state.openThreadId,
+    ]);
     if (!detail || detail.messages.length === 0) return;
     const ids = detail.messages.map((m) => m.id);
-    const cur = state.focusedMessageId != null ? ids.indexOf(state.focusedMessageId) : ids.length - 1;
+    const cur =
+      state.focusedMessageId != null
+        ? ids.indexOf(state.focusedMessageId)
+        : ids.length - 1;
     const next = Math.min(ids.length - 1, Math.max(0, cur + delta));
     state.set({ focusedMessageId: ids[next], messageCursorSource: "keyboard" });
   };
@@ -263,9 +331,11 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     const cur = tabs.findIndex((tab) =>
       state.labelFilter != null
         ? tab.labelId === state.labelFilter
-        : tab.labelId == null && tab.splitId === (state.splitId ?? SPLIT_IMPORTANT),
+        : tab.labelId == null &&
+          tab.splitId === (state.splitId ?? SPLIT_IMPORTANT),
     );
-    const next = tabs[((cur < 0 ? 0 : cur) + delta + tabs.length) % tabs.length];
+    const next =
+      tabs[((cur < 0 ? 0 : cur) + delta + tabs.length) % tabs.length];
     state.set({
       splitId: next.splitId,
       labelFilter: next.labelId,
@@ -319,10 +389,17 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
           ? msgs.find((m) => m.id === state.focusedMessageId)
           : undefined;
       const replyTo: MessageDetail | undefined =
-        focused ?? [...msgs].reverse().find((m) => !m.isOutgoing) ?? msgs[msgs.length - 1];
+        focused ??
+        [...msgs].reverse().find((m) => !m.isOutgoing) ??
+        msgs[msgs.length - 1];
       if (!replyTo) return;
       const ui = useUi.getState();
-      ui.openComposer({ mode, replyTo, accountId: replyTo.accountId, prefillQuote });
+      ui.openComposer({
+        mode,
+        replyTo,
+        accountId: replyTo.accountId,
+        prefillQuote,
+      });
       // Replies live at the bottom of the thread, so make sure it's open.
       if (ui.openThreadId !== threadId) ui.openThread(threadId);
     })();
@@ -343,17 +420,21 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     if (state.helpOpen) return state.set({ helpOpen: false });
     if (state.eventCreate) return state.set({ eventCreate: null });
     if (state.availabilityOpen) return state.set({ availabilityOpen: false });
-    if (state.calendarDrawer) return state.set({ calendarDrawer: null, calendarFocusDay: null });
-    if (state.calendarScreen) return state.set({ calendarScreen: false, calendarFocusDay: null });
+    if (state.calendarDrawer)
+      return state.set({ calendarDrawer: null, calendarFocusDay: null });
+    if (state.calendarScreen)
+      return state.set({ calendarScreen: false, calendarFocusDay: null });
     if (state.addAccountOpen) return state.set({ addAccountOpen: false });
     if (state.panel) return state.set({ panel: null });
     if (state.composer) {
-      if (state.composerConfirmOpen) return state.set({ composerConfirmOpen: false });
+      if (state.composerConfirmOpen)
+        return state.set({ composerConfirmOpen: false });
       if (state.composerDirty) return state.set({ composerConfirmOpen: true });
       return state.closeComposer();
     }
     if (state.openThreadId != null) return state.openThread(null);
-    if (state.searchOpen) return state.set({ searchOpen: false, searchQuery: "" });
+    if (state.searchOpen)
+      return state.set({ searchOpen: false, searchQuery: "" });
     if (state.selection.length > 0) return state.clearSelection();
     // A user folder is a detour off the inbox; once nothing else is open, Esc
     // returns home to the default inbox rather than sitting on the folder.
@@ -388,6 +469,8 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         voiceLearnedAt: 0,
         meetingNotifyLeadMinutes: 10,
         notificationsEnabled: true,
+        notificationScope: "important",
+        notificationTabs: [],
         soundEnabled: true,
         autoAdvance: true,
         autoLabelsEnabled: true,
@@ -396,6 +479,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         aiAutomationRules: [],
         aiTierCategorize: "instant",
         groupByDate: true,
+        contactSuggestAllAccounts: false,
         dockBadgeEnabled: true,
         dockBadgeSource: "inbox",
         signatures: {},
@@ -417,7 +501,8 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     inSearch: ui.searchOpen,
     composerOpen: ui.composer != null,
     paletteOpen: ui.paletteOpen,
-    panelOpen: ui.panel != null || ui.addAccountOpen || ui.attachmentPreview != null,
+    panelOpen:
+      ui.panel != null || ui.addAccountOpen || ui.attachmentPreview != null,
     hasTargets: targets.length > 0,
     targets,
     act,

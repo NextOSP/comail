@@ -267,6 +267,14 @@
     "label": "Thông báo trên máy tính",
     "hint": "Thông báo khi có thư mới đến trong khi cửa sổ không được lấy nét."
   },
+  "notificationScope": {
+    "label": "Thông báo cho tôi về",
+    "hint": "Loại thư đến nào sẽ tạo thông báo. Thư rác và các thư mục ngoài hộp thư đến không bao giờ thông báo.",
+    "important": "Quan trọng",
+    "all": "Tất cả thư",
+    "tabs": "Tab cụ thể",
+    "noTabs": "Chưa có tab hộp thư nào được thiết lập."
+  },
   "sound": {
     "label": "Âm thanh",
     "hint": "Phát âm thanh khi có thư mới và khi gửi."

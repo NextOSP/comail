@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::models::{Address, ThreadSummary};
+use crate::models::{roles, Address, ThreadSummary};
 use crate::search::ParsedQuery;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
@@ -32,6 +32,19 @@ pub fn index_message(conn: &Connection, message_id: i64) -> Result<()> {
     Ok(())
 }
 
+/// True when the query carries a real matcher (full-text terms or an operator),
+/// as opposed to being empty or only account-scoped. Used to decide whether the
+/// default Trash/Spam exclusion should apply.
+fn has_positive_selector(q: &ParsedQuery) -> bool {
+    !q.fts.is_empty()
+        || q.from.is_some()
+        || q.to.is_some()
+        || q.in_folder.is_some()
+        || q.is_unread == Some(true)
+        || q.is_starred == Some(true)
+        || q.has_attachment == Some(true)
+}
+
 /// Append `from:`/`to:`/`in:`/`is:`/`has:` predicates over the `m` alias.
 /// Placeholders are `?n` keyed off the running `bind` length, so this composes
 /// with any binds already pushed by the caller.
@@ -40,6 +53,10 @@ fn append_operator_clauses(
     where_clauses: &mut Vec<String>,
     bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
 ) {
+    if let Some(account_id) = q.account_id {
+        bind.push(Box::new(account_id));
+        where_clauses.push(format!("m.account_id = ?{}", bind.len()));
+    }
     if let Some(from) = &q.from {
         bind.push(Box::new(format!("%{}%", from.to_lowercase())));
         where_clauses.push(format!(
@@ -56,6 +73,19 @@ fn append_operator_clauses(
         where_clauses.push(format!(
             "EXISTS (SELECT 1 FROM folders f WHERE f.id = m.folder_id AND f.role = ?{})",
             bind.len()
+        ));
+    } else if has_positive_selector(q) {
+        // No explicit `in:` scope: keep Trash and Spam out of results, the same
+        // way the inbox and folder views do. Without this, a `from:`/keyword
+        // search matches messages in every folder, so triaging a result (trash,
+        // spam) leaves it matching the query and it reappears on the next
+        // refetch. `in:trash` / `in:spam` set `in_folder` and opt back in.
+        // Gated on there being a real matcher so an empty query still returns
+        // nothing (rather than every non-trash thread) via the caller's guard.
+        where_clauses.push(format!(
+            "NOT EXISTS (SELECT 1 FROM folders f WHERE f.id = m.folder_id AND f.role IN ('{}','{}'))",
+            roles::TRASH,
+            roles::SPAM
         ));
     }
     if q.is_unread == Some(true) {
@@ -518,6 +548,43 @@ mod tests {
     }
 
     #[test]
+    fn trash_and_spam_are_hidden_unless_scoped() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        // A Trash folder to move the message into.
+        c.execute(
+            "INSERT INTO folders (id, account_id, imap_name, role) VALUES (5,1,'Trash','trash')",
+            [],
+        )
+        .unwrap();
+        let (thread_id, msg_id) =
+            testutil::seed_message(&c, "sender@test.dev", "Hello there", false);
+        let parse = crate::search::parse;
+        let ids = |q: &str| {
+            search(&c, &parse(q), 20)
+                .unwrap()
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>()
+        };
+
+        // In the inbox, a from: search finds it.
+        assert_eq!(ids("from:sender"), vec![thread_id]);
+
+        // Move it to Trash: the default search no longer returns it (so trashing
+        // a result actually removes it from the list)...
+        c.execute(
+            "UPDATE messages SET folder_id = 5 WHERE id = ?1",
+            params![msg_id],
+        )
+        .unwrap();
+        assert!(ids("from:sender").is_empty());
+
+        // ...but an explicit `in:trash` opts back in.
+        assert_eq!(ids("in:trash from:sender"), vec![thread_id]);
+    }
+
+    #[test]
     fn subject_and_body_operators_scope_the_column() {
         let c = testutil::conn();
         testutil::seed_account(&c);
@@ -543,6 +610,57 @@ mod tests {
         // ...and misses when the word lives in the other column.
         assert!(ids("subject:budgetnumbers").is_empty());
         assert!(ids("body:quarterlyplan").is_empty());
+    }
+
+    #[test]
+    fn account_id_scopes_results_to_one_account() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        // Account 1: a thread matching "sharedterm".
+        let (t1, m1) = testutil::seed_message(&c, "a@one.dev", "sharedterm alpha", false);
+        index_message(&c, m1).unwrap();
+
+        // Account 2 with its own inbox folder and a thread also matching "sharedterm".
+        c.execute(
+            "INSERT INTO accounts (id, email, provider, auth_kind, username,
+             imap_host, imap_port, smtp_host, smtp_port, created_at)
+             VALUES (2,'me2@test.dev','imap','password','me2','h',993,'h',587,0)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO folders (id, account_id, imap_name, role) VALUES (2,2,'INBOX','inbox')",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO threads (id, account_id, subject_norm, unread_count, last_message_at)
+             VALUES (99, 2, 'sharedterm beta', 1, 1000)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO messages (thread_id, account_id, folder_id, uid, message_id, subject,
+             from_addr, date, is_read, is_automated, is_draft, is_outgoing)
+             VALUES (99, 2, 2, 99, 'mid-99', 'sharedterm beta', 'b@two.dev', 1000, 0, 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+        let m2 = c.last_insert_rowid();
+        index_message(&c, m2).unwrap();
+
+        let ids = |account_id: Option<i64>| {
+            let mut q = crate::search::parse("sharedterm");
+            q.account_id = account_id;
+            let mut out = lexical_thread_ids(&c, &q, 20).unwrap();
+            out.sort();
+            out
+        };
+        // No scope: both accounts' threads match.
+        assert_eq!(ids(None), vec![t1, 99]);
+        // Scoped: only the selected account's thread.
+        assert_eq!(ids(Some(1)), vec![t1]);
+        assert_eq!(ids(Some(2)), vec![99]);
     }
 
     #[test]

@@ -3,7 +3,8 @@
 
 export type Provider = "imap" | "gmail" | "microsoft";
 export type AuthKind = "password" | "oauth2";
-export type SyncState = "idle" | "syncing" | "error" | "needs_reauth" | "offline";
+export type SyncState =
+  "idle" | "syncing" | "error" | "needs_reauth" | "offline";
 
 export interface Account {
   id: number;
@@ -263,7 +264,8 @@ export interface SyncStatus {
   background: SyncBackgroundProgress | null;
 }
 
-export type SyncBackgroundPhase = "headers" | "content" | "indexing" | "retrying";
+export type SyncBackgroundPhase =
+  "headers" | "content" | "indexing" | "retrying";
 
 export interface SyncBackgroundProgress {
   phase: SyncBackgroundPhase;
@@ -364,6 +366,13 @@ export interface Settings {
   msClientSecret: string;
   /** Desktop notification on new mail. */
   notificationsEnabled: boolean;
+  /** Which incoming mail raises a desktop notification: "important" (mail that
+   * lands in the Important tab, the default), "all" (every incoming message), or
+   * "tabs" (only the tabs listed in `notificationTabs`). */
+  notificationScope: "important" | "all" | "tabs";
+  /** Route keys whose mail notifies when `notificationScope` is "tabs":
+   * "important", "other", "split:<id>", or "label:<id>". */
+  notificationTabs: string[];
   soundEnabled: boolean;
   /** After archiving from a conversation, open the next thread (vs. back to list). */
   autoAdvance: boolean;
@@ -380,6 +389,9 @@ export interface Settings {
   aiTierCategorize: AiTier;
   /** Group the thread list under date headers (Today / Yesterday / …). */
   groupByDate: boolean;
+  /** When true, compose "To" autocomplete suggests contacts from every account;
+   * off (default) scopes suggestions to the account you're sending from. */
+  contactSuggestAllAccounts: boolean;
   /** Show the unread count on the app icon (macOS Dock badge). */
   dockBadgeEnabled: boolean;
   /** Which count the badge shows: "inbox" (all unread) | "important". */
@@ -421,6 +433,24 @@ export interface AiUsageStats {
   last7DaysTokens: number;
   last30DaysTokens: number;
   days: AiUsageDay[];
+}
+
+export interface EmailActivityDay {
+  date: string;
+  sent: number;
+  received: number;
+}
+
+export interface EmailStats {
+  totalSent: number;
+  totalReceived: number;
+  todaySent: number;
+  todayReceived: number;
+  last7DaysSent: number;
+  last7DaysReceived: number;
+  last30DaysSent: number;
+  last30DaysReceived: number;
+  days: EmailActivityDay[];
 }
 
 export interface CalendarEvent {
@@ -519,6 +549,17 @@ export interface TimelineEntry {
   event: string;
 }
 
+/** A concrete dated item found in a thread that the user may want to review
+ * and add to their calendar. Dates are ISO-8601 strings from the model. */
+export interface AiCalendarSuggestion {
+  title: string;
+  start: string;
+  end: string | null;
+  allDay: boolean;
+  location: string | null;
+  description: string | null;
+}
+
 /** Structured, sidebar-ready AI read of a whole thread (from `ai_summarize`). */
 export interface AiThreadSummary {
   timeline: TimelineEntry[];
@@ -527,10 +568,14 @@ export interface AiThreadSummary {
   nextAction: string | null;
   /** A ready-to-send draft reply, or null if no reply is warranted. */
   proposedReply: string | null;
+  /** Optional event/deadline suggestion; the user must review it before saving. */
+  calendarSuggestion: AiCalendarSuggestion | null;
 }
 
 export interface SearchArgs {
   query: string;
+  /** Scope results to one account; null/omitted searches all accounts. */
+  accountId?: number | null;
   limit?: number;
 }
 
@@ -652,6 +697,12 @@ export interface CalendarConflictEvent {
   summary: string | null;
 }
 
+/** One raw response chunk for an in-progress structured thread summary. */
+export interface AiSummaryTokenEvent {
+  threadId: number;
+  delta: string;
+}
+
 export interface EventMap {
   "sync:status": SyncStatusEvent;
   "sync:progress": SyncProgressEvent;
@@ -665,6 +716,7 @@ export interface EventMap {
   "ai:ask:token": AskTokenEvent;
   "ai:ask:reasoning": AskReasoningEvent;
   "ai:ask:done": AskDoneEvent;
+  "ai:summary:token": AiSummaryTokenEvent;
   "calendar:updated": CalendarUpdatedEvent;
   "calendar:new": CalendarNewEvent;
   "calendar:reminder": CalendarReminderEvent;
@@ -677,8 +729,12 @@ export interface EventMap {
 
 export interface Commands {
   list_accounts(args: Record<string, never>): Promise<Account[]>;
-  add_account_password(args: { args: AddPasswordAccountArgs }): Promise<Account>;
-  test_connection(args: { args: AddPasswordAccountArgs }): Promise<ConnectionTestResult>;
+  add_account_password(args: {
+    args: AddPasswordAccountArgs;
+  }): Promise<Account>;
+  test_connection(args: {
+    args: AddPasswordAccountArgs;
+  }): Promise<ConnectionTestResult>;
   remove_account(args: { accountId: number }): Promise<void>;
   start_oauth(args: { provider: Provider }): Promise<Account>;
   reauth_account(args: { accountId: number }): Promise<Account>;
@@ -704,7 +760,9 @@ export interface Commands {
   /** Brings the (possibly tray-hidden) main window forward and focuses it. */
   focus_main_window(args: Record<string, never>): Promise<void>;
   /** Converts the attachment to a safe in-app preview payload. */
-  preview_attachment(args: { attachmentId: number }): Promise<AttachmentPreview>;
+  preview_attachment(args: {
+    attachmentId: number;
+  }): Promise<AttachmentPreview>;
   list_folders(args: { accountId?: number | null }): Promise<FolderInfo[]>;
 
   perform_action(args: { args: PerformActionArgs }): Promise<ActionResult>;
@@ -715,23 +773,32 @@ export interface Commands {
   save_draft(args: { args: SaveDraftArgs }): Promise<{ draftId: number }>;
   delete_draft(args: { draftId: number }): Promise<void>;
   queue_send(args: { args: QueueSendArgs }): Promise<QueueSendResult>;
-  list_contacts(args: { prefix: string; limit?: number }): Promise<Address[]>;
-  suggest_contacts(args: { query: string; limit?: number }): Promise<ContactSuggestion[]>;
+  list_contacts(args: { prefix: string; accountId?: number; limit?: number }): Promise<Address[]>;
+  suggest_contacts(args: {
+    query: string;
+    limit?: number;
+  }): Promise<ContactSuggestion[]>;
 
   search(args: { args: SearchArgs }): Promise<ThreadSummary[]>;
   /** Fire-and-forget: pre-computes the semantic query embedding while typing. */
   warm_search_embedding(args: { query: string }): Promise<void>;
 
   list_snippets(args: Record<string, never>): Promise<Snippet[]>;
-  save_snippet(args: { snippet: Omit<Snippet, "id" | "usageCount"> & { id: number | null } }): Promise<Snippet>;
+  save_snippet(args: {
+    snippet: Omit<Snippet, "id" | "usageCount"> & { id: number | null };
+  }): Promise<Snippet>;
   delete_snippet(args: { snippetId: number }): Promise<void>;
   use_snippet(args: { snippetId: number }): Promise<void>;
 
   list_splits(args: Record<string, never>): Promise<SplitRule[]>;
-  save_split(args: { split: Omit<SplitRule, "id"> & { id: number | null } }): Promise<SplitRule>;
+  save_split(args: {
+    split: Omit<SplitRule, "id"> & { id: number | null };
+  }): Promise<SplitRule>;
   delete_split(args: { splitId: number }): Promise<void>;
   /** Persist the shared top-to-bottom order of custom splits and auto-label tabs. */
-  reorder_tabs(args: { order: { kind: "split" | "label"; id: number }[] }): Promise<void>;
+  reorder_tabs(args: {
+    order: { kind: "split" | "label"; id: number }[];
+  }): Promise<void>;
 
   list_labels(args: Record<string, never>): Promise<Label[]>;
   save_label(args: {
@@ -753,13 +820,18 @@ export interface Commands {
   get_settings(args: Record<string, never>): Promise<Settings>;
   set_settings(args: { settings: Settings }): Promise<void>;
 
-  list_events(args: { startMs: number; endMs: number }): Promise<CalendarEvent[]>;
+  list_events(args: {
+    startMs: number;
+    endMs: number;
+  }): Promise<CalendarEvent[]>;
   /** Invite events carried by one message (the thread invite card). */
   events_for_message(args: { messageId: number }): Promise<CalendarEvent[]>;
   /** Create a meeting; attendees get an emailed ICS invite. */
   create_event(args: { args: CreateEventArgs }): Promise<CalendarEvent>;
   /** Answer an invite; the organizer gets an emailed ICS reply. */
-  rsvp_event(args: { args: { eventId: number; response: RsvpResponse } }): Promise<CalendarEvent>;
+  rsvp_event(args: {
+    args: { eventId: number; response: RsvpResponse };
+  }): Promise<CalendarEvent>;
   /** Edit an event we organize; attendees get an updated ICS when notify. */
   update_event(args: { args: UpdateEventArgs }): Promise<CalendarEvent>;
   /** Delete an event; organized events email METHOD:CANCEL when notify. */
@@ -790,7 +862,10 @@ export interface Commands {
     endMs: number;
   }): Promise<{ joinUrl: string }>;
   list_calendars(args: { accountId?: number | null }): Promise<Calendar[]>;
-  set_calendar_enabled(args: { calendarId: number; enabled: boolean }): Promise<void>;
+  set_calendar_enabled(args: {
+    calendarId: number;
+    enabled: boolean;
+  }): Promise<void>;
   calendar_sync_now(args: { accountId?: number | null }): Promise<void>;
 
   /** Startup show (first-run intro) is done, or absent: release the deferred
@@ -799,12 +874,16 @@ export interface Commands {
   /** Fade (fadeMs, eval'd into the backdrop by Rust) and close (after
    *  delayMs) the intro's cinema backdrop window. Rust-side teardown: no
    *  webview capability or global-API wiring can break it. */
-  cinema_close(args: { delayMs: number | null; fadeMs: number | null }): Promise<void>;
+  cinema_close(args: {
+    delayMs: number | null;
+    fadeMs: number | null;
+  }): Promise<void>;
 
   ai_status(args: Record<string, never>): Promise<AiStatus>;
   /** Model ids from the endpoint's GET /models (OpenAI-compatible). */
   ai_list_models(args: Record<string, never>): Promise<string[]>;
   ai_usage_stats(args: Record<string, never>): Promise<AiUsageStats>;
+  email_stats(args: Record<string, never>): Promise<EmailStats>;
   ai_plan_automation(args: { prompt: string }): Promise<AiAutomationPlan>;
   set_ai_key(args: { apiKey: string }): Promise<void>;
   /** Parse a natural-language palette query into an executable intent. */

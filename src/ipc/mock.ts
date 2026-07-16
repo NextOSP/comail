@@ -16,6 +16,7 @@ import type {
   Commands,
   ConnectionTestResult,
   ContactSuggestion,
+  EmailStats,
   FolderInfo,
   Label,
   MessageDetail,
@@ -114,13 +115,25 @@ const ana: Address = { name: "Ana Moreau", email: "ana@northbeam.com" };
 const priya: Address = { name: "Priya Raman", email: "priya@northbeam.com" };
 const tom: Address = { name: "Tom Okafor", email: "tom@northbeam.com" };
 const mei: Address = { name: "Mei Nakamura", email: "mei@northbeam.com" };
-const jonas: Address = { name: "Jonas Wehrli", email: "jonas.wehrli@helvetic.io" };
-const sofia: Address = { name: "Sofia Lindqvist", email: "sofia@brightline.se" };
-const marcus: Address = { name: "Marcus Bell", email: "marcus.bell@atlaslegal.com" };
+const jonas: Address = {
+  name: "Jonas Wehrli",
+  email: "jonas.wehrli@helvetic.io",
+};
+const sofia: Address = {
+  name: "Sofia Lindqvist",
+  email: "sofia@brightline.se",
+};
+const marcus: Address = {
+  name: "Marcus Bell",
+  email: "marcus.bell@atlaslegal.com",
+};
 const elena: Address = { name: "Elena Petrova", email: "elena@quietloop.dev" };
 const dad: Address = { name: "Dad", email: "r.chen1958@gmail.com" };
 const lea: Address = { name: "Léa Fontaine", email: "lea.fontaine@ensci.fr" };
-const dmitri: Address = { name: "Dmitri Kovac", email: "dmitri@ferrous.systems" };
+const dmitri: Address = {
+  name: "Dmitri Kovac",
+  email: "dmitri@ferrous.systems",
+};
 
 // Automated senders
 const github: Address = { name: "GitHub", email: "notifications@github.com" };
@@ -128,28 +141,62 @@ const linear: Address = { name: "Linear", email: "notifications@linear.app" };
 const stripe: Address = { name: "Stripe", email: "notifications@stripe.com" };
 const vercel: Address = { name: "Vercel", email: "notifications@vercel.com" };
 const figma: Address = { name: "Figma", email: "no-reply@figma.com" };
-const substack: Address = { name: "The Pragmatic Engineer", email: "pragmaticengineer@substack.com" };
-const moneyStuff: Address = { name: "Matt Levine (Bloomberg)", email: "noreply@news.bloomberg.com" };
-const changelog: Address = { name: "Changelog News", email: "news@changelog.com" };
-const amazon: Address = { name: "Amazon.com", email: "shipment-tracking@amazon.com" };
+const substack: Address = {
+  name: "The Pragmatic Engineer",
+  email: "pragmaticengineer@substack.com",
+};
+const moneyStuff: Address = {
+  name: "Matt Levine (Bloomberg)",
+  email: "noreply@news.bloomberg.com",
+};
+const changelog: Address = {
+  name: "Changelog News",
+  email: "news@changelog.com",
+};
+const amazon: Address = {
+  name: "Amazon.com",
+  email: "shipment-tracking@amazon.com",
+};
 const calendly: Address = { name: "Calendly", email: "no-reply@calendly.com" };
-const notion: Address = { name: "Notion", email: "team@makernotes.notion.site" };
-const digitalocean: Address = { name: "DigitalOcean", email: "billing@digitalocean.com" };
-const cloudflare: Address = { name: "Cloudflare", email: "noreply@notify.cloudflare.com" };
-const tailscale: Address = { name: "Tailscale", email: "updates@tailscale.com" };
+const notion: Address = {
+  name: "Notion",
+  email: "team@makernotes.notion.site",
+};
+const digitalocean: Address = {
+  name: "DigitalOcean",
+  email: "billing@digitalocean.com",
+};
+const cloudflare: Address = {
+  name: "Cloudflare",
+  email: "noreply@notify.cloudflare.com",
+};
+const tailscale: Address = {
+  name: "Tailscale",
+  email: "updates@tailscale.com",
+};
 const railsconf: Address = { name: "RustConf", email: "hello@rustconf.com" };
-const hn: Address = { name: "Hacker Newsletter", email: "kale@hackernewsletter.com" };
+const hn: Address = {
+  name: "Hacker Newsletter",
+  email: "kale@hackernewsletter.com",
+};
 const meetup: Address = { name: "Meetup", email: "info@email.meetup.com" };
-const namecheap: Address = { name: "Namecheap", email: "renewals@namecheap.com" };
+const namecheap: Address = {
+  name: "Namecheap",
+  email: "renewals@namecheap.com",
+};
 const duolingo: Address = { name: "Duolingo", email: "hello@duolingo.com" };
 const spotify: Address = { name: "Spotify", email: "no-reply@spotify.com" };
 
-const AUTOMATED_LOCALPARTS = /^(no-?reply|notifications?|news(letter)?|updates?|billing|hello|info|team|digest|marketing|renewals|shipment-tracking|kale|pragmaticengineer)/i;
-const AUTOMATED_DOMAINS = /(substack\.com|news\.bloomberg\.com|email\.meetup\.com|notify\.cloudflare\.com|notion\.site)$/i;
+const AUTOMATED_LOCALPARTS =
+  /^(no-?reply|notifications?|news(letter)?|updates?|billing|hello|info|team|digest|marketing|renewals|shipment-tracking|kale|pragmaticengineer)/i;
+const AUTOMATED_DOMAINS =
+  /(substack\.com|news\.bloomberg\.com|email\.meetup\.com|notify\.cloudflare\.com|notion\.site)$/i;
 
 function isAutomatedSender(a: Address): boolean {
   const [local, domain] = a.email.toLowerCase().split("@");
-  return AUTOMATED_LOCALPARTS.test(local) || AUTOMATED_DOMAINS.test(domain ?? "");
+  return (
+    AUTOMATED_LOCALPARTS.test(local) || AUTOMATED_DOMAINS.test(domain ?? "")
+  );
 }
 
 const threads: MockThread[] = [];
@@ -172,7 +219,11 @@ function addThread(
   accountId: number,
   subject: string,
   msgs: MsgSpec[],
-  opts: { starred?: boolean; folder?: Folder; snoozedUntil?: number | null } = {},
+  opts: {
+    starred?: boolean;
+    folder?: Folder;
+    snoozedUntil?: number | null;
+  } = {},
 ): MockThread {
   const t: MockThread = {
     id: id(),
@@ -250,7 +301,9 @@ addThread(1, "Q3 roadmap review - final deck", [
     ago: 0.4 * H,
     unread: true,
     body: "Hey B.D.,\n\nAttached is the final deck for tomorrow's roadmap review. I folded in your notes on the sync-engine milestones and pushed the billing work to Q4.\n\nTwo things I'd still like your eyes on:\n\n1. Slide 7 - the headcount ask. Is two backend hires realistic, or should we frame it as one hire plus contractor budget?\n2. Slide 11 - I used your latency numbers from the March benchmark. Are those still current?\n\nIf you can get me comments by 6pm I'll lock it tonight.\n\nAna",
-    attachments: [{ name: "q3-roadmap-v4.pdf", mime: "application/pdf", size: 2_431_022 }],
+    attachments: [
+      { name: "q3-roadmap-v4.pdf", mime: "application/pdf", size: 2_431_022 },
+    ],
   },
 ]);
 
@@ -259,7 +312,9 @@ addThread(1, "Re: Sync engine - IDLE reconnect storm on flaky wifi", [
     from: tom,
     ago: 2 * D + 5 * H,
     body: "Seeing something odd in the logs from the beta cohort: when wifi drops for ~10s, some clients open 4-5 parallel IMAP connections on reconnect and the server starts throttling us.\n\nRepro: toggle the network off mid-IDLE, wait, toggle back.\n\nLogs attached. I think the backoff state isn't shared across folder watchers.",
-    attachments: [{ name: "idle-reconnect.log", mime: "text/plain", size: 88_213 }],
+    attachments: [
+      { name: "idle-reconnect.log", mime: "text/plain", size: 88_213 },
+    ],
   },
   {
     from: tom,
@@ -281,43 +336,58 @@ addThread(1, "Re: Sync engine - IDLE reconnect storm on flaky wifi", [
   },
 ]);
 
-addThread(1, "Offer letter - senior backend engineer (Rina Sato)", [
-  {
-    from: priya,
-    ago: 5 * H,
-    unread: true,
-    body: "B.D.,\n\nRina accepted verbally this morning. Legal needs your sign-off on the equity band before we send the letter - she's asking for the top of band 4 which is 0.35%.\n\nGiven her Postgres replication work at her last gig I think she's worth it, but it does set a precedent for the other backend req.\n\nCan you approve by EOD? Letter template is in the drive.\n\nPriya",
-  },
-], { starred: true });
+addThread(
+  1,
+  "Offer letter - senior backend engineer (Rina Sato)",
+  [
+    {
+      from: priya,
+      ago: 5 * H,
+      unread: true,
+      body: "B.D.,\n\nRina accepted verbally this morning. Legal needs your sign-off on the equity band before we send the letter - she's asking for the top of band 4 which is 0.35%.\n\nGiven her Postgres replication work at her last gig I think she's worth it, but it does set a precedent for the other backend req.\n\nCan you approve by EOD? Letter template is in the drive.\n\nPriya",
+    },
+  ],
+  { starred: true },
+);
 
-addThread(1, "Customer escalation: Meridian Health - export stuck at 91%", [
-  {
-    from: mei,
-    ago: 1 * D + 8 * H,
-    body: "Meridian's compliance export has been stuck at 91% for two days. They have an audit Friday. Support ticket #4821.\n\nFrom the worker logs it looks like one mailbox has a 4GB mbox with a malformed MIME boundary and the parser is spinning.\n\nWho owns the exporter these days?",
-  },
-  {
-    from: SELF[1],
-    ago: 1 * D + 6 * H,
-    outgoing: true,
-    to: [mei],
-    cc: [tom],
-    body: "That's ours. Tom, can you add a boundary sanity check + skip-and-log for malformed parts? We should never spin on bad input.\n\nMei - tell them Friday is safe. If the fix isn't in by Thursday noon we'll run their export manually from a patched worker.",
-  },
-  {
-    from: mei,
-    ago: 26 * H,
-    body: "Told them, they're relieved. They also asked (again) about SSO - putting it in the notes for the Q3 call.",
-  },
-], { starred: true });
+addThread(
+  1,
+  "Customer escalation: Meridian Health - export stuck at 91%",
+  [
+    {
+      from: mei,
+      ago: 1 * D + 8 * H,
+      body: "Meridian's compliance export has been stuck at 91% for two days. They have an audit Friday. Support ticket #4821.\n\nFrom the worker logs it looks like one mailbox has a 4GB mbox with a malformed MIME boundary and the parser is spinning.\n\nWho owns the exporter these days?",
+    },
+    {
+      from: SELF[1],
+      ago: 1 * D + 6 * H,
+      outgoing: true,
+      to: [mei],
+      cc: [tom],
+      body: "That's ours. Tom, can you add a boundary sanity check + skip-and-log for malformed parts? We should never spin on bad input.\n\nMei - tell them Friday is safe. If the fix isn't in by Thursday noon we'll run their export manually from a patched worker.",
+    },
+    {
+      from: mei,
+      ago: 26 * H,
+      body: "Told them, they're relieved. They also asked (again) about SSO - putting it in the notes for the Q3 call.",
+    },
+  ],
+  { starred: true },
+);
 
-addThread(1, "Board update draft - June", [
-  {
-    from: ana,
-    ago: 3 * D + 2 * H,
-    body: "Draft of the June board update is here: https://docs.northbeam.com/board/2026-06\n\nRevenue section is done. Can you write the eng section? Keep it to ~150 words - wins, misses, and the reliability numbers. Deadline Thursday.",
-  },
-], {});
+addThread(
+  1,
+  "Board update draft - June",
+  [
+    {
+      from: ana,
+      ago: 3 * D + 2 * H,
+      body: "Draft of the June board update is here: https://docs.northbeam.com/board/2026-06\n\nRevenue section is done. Can you write the eng section? Keep it to ~150 words - wins, misses, and the reliability numbers. Deadline Thursday.",
+    },
+  ],
+  {},
+);
 
 addThread(1, "Re: Dinner Thursday?", [
   {
@@ -339,22 +409,33 @@ addThread(1, "Re: Dinner Thursday?", [
   },
 ]);
 
-addThread(1, "Pen test report - action items (3 high, 7 medium)", [
-  {
-    from: marcus,
-    ago: 5 * D + 4 * H,
-    body: "Full report attached. The three highs:\n\nH-1: OAuth state parameter not bound to session (CSRF on account linking)\nH-2: Draft attachments readable via predictable IDs before send\nH-3: Rate limiting absent on the password reset endpoint\n\nWe need written remediation timelines for the SOC 2 evidence folder within two weeks. Mediums can wait for the quarterly cycle.\n\nMarcus Bell\nAtlas Legal & Compliance",
-    attachments: [{ name: "northbeam-pentest-2026H1.pdf", mime: "application/pdf", size: 5_113_400 }],
-  },
-  {
-    from: SELF[1],
-    ago: 4 * D + 20 * H,
-    outgoing: true,
-    to: [marcus],
-    cc: [ana],
-    body: "Thanks Marcus. H-1 and H-3 are patched in staging already; H-2 needs a storage-layer change, ETA next Friday. Written timeline doc to follow Monday.",
-  },
-], { starred: true });
+addThread(
+  1,
+  "Pen test report - action items (3 high, 7 medium)",
+  [
+    {
+      from: marcus,
+      ago: 5 * D + 4 * H,
+      body: "Full report attached. The three highs:\n\nH-1: OAuth state parameter not bound to session (CSRF on account linking)\nH-2: Draft attachments readable via predictable IDs before send\nH-3: Rate limiting absent on the password reset endpoint\n\nWe need written remediation timelines for the SOC 2 evidence folder within two weeks. Mediums can wait for the quarterly cycle.\n\nMarcus Bell\nAtlas Legal & Compliance",
+      attachments: [
+        {
+          name: "northbeam-pentest-2026H1.pdf",
+          mime: "application/pdf",
+          size: 5_113_400,
+        },
+      ],
+    },
+    {
+      from: SELF[1],
+      ago: 4 * D + 20 * H,
+      outgoing: true,
+      to: [marcus],
+      cc: [ana],
+      body: "Thanks Marcus. H-1 and H-3 are patched in staging already; H-2 needs a storage-layer change, ETA next Friday. Written timeline doc to follow Monday.",
+    },
+  ],
+  { starred: true },
+);
 
 addThread(1, "Interview loop feedback needed - candidate #219", [
   {
@@ -373,26 +454,31 @@ addThread(1, "Hallway room double-booked every Tuesday", [
   },
 ]);
 
-addThread(1, "Re: Quietloop acquisition - technical due diligence", [
-  {
-    from: elena,
-    ago: 2 * D + 1 * H,
-    body: "Hi B.D.,\n\nFollowing up on the call - here's the data room access for the sync-engine due diligence. Codebase snapshot, architecture docs, and the load test results are all in there.\n\nOne correction from the call: our IDLE fan-out is per-folder, not per-account, so the numbers you saw are worst-case.\n\nHappy to walk your team through the CRDT layer whenever.\n\nElena",
-  },
-  {
-    from: SELF[1],
-    ago: 1 * D + 20 * H,
-    outgoing: true,
-    to: [elena],
-    body: "Got access, thanks. The CRDT walkthrough would be useful - Tuesday or Wednesday afternoon next week? I'll bring Tom.",
-  },
-  {
-    from: elena,
-    ago: 7 * H,
-    unread: true,
-    body: "Wednesday 2pm works. Calendar invite sent. I'll have our merge-conflict corpus ready - some of the edge cases are genuinely cursed and you should see them before you price this.",
-  },
-], { starred: true });
+addThread(
+  1,
+  "Re: Quietloop acquisition - technical due diligence",
+  [
+    {
+      from: elena,
+      ago: 2 * D + 1 * H,
+      body: "Hi B.D.,\n\nFollowing up on the call - here's the data room access for the sync-engine due diligence. Codebase snapshot, architecture docs, and the load test results are all in there.\n\nOne correction from the call: our IDLE fan-out is per-folder, not per-account, so the numbers you saw are worst-case.\n\nHappy to walk your team through the CRDT layer whenever.\n\nElena",
+    },
+    {
+      from: SELF[1],
+      ago: 1 * D + 20 * H,
+      outgoing: true,
+      to: [elena],
+      body: "Got access, thanks. The CRDT walkthrough would be useful - Tuesday or Wednesday afternoon next week? I'll bring Tom.",
+    },
+    {
+      from: elena,
+      ago: 7 * H,
+      unread: true,
+      body: "Wednesday 2pm works. Calendar invite sent. I'll have our merge-conflict corpus ready - some of the edge cases are genuinely cursed and you should see them before you price this.",
+    },
+  ],
+  { starred: true },
+);
 
 addThread(1, "Expense report rejected: 'Team dinner - Berlin'", [
   {
@@ -433,37 +519,49 @@ addThread(1, "Your invoice from Hetzner (2026-06)", [
   },
 ]);
 
-addThread(1, "[northbeam/sync-engine] PR #612: Per-account reconnect gate (opened)", [
-  {
-    from: github,
-    ago: 2 * H,
-    unread: true,
-    body: "tom-okafor opened pull request #612 in northbeam/sync-engine\n\nPer-account reconnect gate\n\nAdds a fair semaphore per account guarding IMAP reconnects, with 0-3s jitter. Fixes the reconnect storm reported in #598.\n\n+214 −38, 6 files changed\n\nView it on GitHub: https://github.com/northbeam/sync-engine/pull/612",
-  },
-]);
+addThread(
+  1,
+  "[northbeam/sync-engine] PR #612: Per-account reconnect gate (opened)",
+  [
+    {
+      from: github,
+      ago: 2 * H,
+      unread: true,
+      body: "tom-okafor opened pull request #612 in northbeam/sync-engine\n\nPer-account reconnect gate\n\nAdds a fair semaphore per account guarding IMAP reconnects, with 0-3s jitter. Fixes the reconnect storm reported in #598.\n\n+214 −38, 6 files changed\n\nView it on GitHub: https://github.com/northbeam/sync-engine/pull/612",
+    },
+  ],
+);
 
-addThread(1, "[northbeam/sync-engine] Issue #598: Reconnect storm after network blip", [
-  {
-    from: github,
-    ago: 2 * D + 4 * H,
-    body: "mei-nakamura commented on issue #598\n\n> Adding server-side evidence: Fastmail throttled us 11 times last week, all within 30s of a client reconnect burst.\n\nReply to this email directly or view it on GitHub.",
-  },
-  {
-    from: github,
-    ago: 1 * H,
-    unread: true,
-    body: "tom-okafor closed issue #598 as completed via #612.\n\nReply to this email directly or view it on GitHub.",
-  },
-]);
+addThread(
+  1,
+  "[northbeam/sync-engine] Issue #598: Reconnect storm after network blip",
+  [
+    {
+      from: github,
+      ago: 2 * D + 4 * H,
+      body: "mei-nakamura commented on issue #598\n\n> Adding server-side evidence: Fastmail throttled us 11 times last week, all within 30s of a client reconnect burst.\n\nReply to this email directly or view it on GitHub.",
+    },
+    {
+      from: github,
+      ago: 1 * H,
+      unread: true,
+      body: "tom-okafor closed issue #598 as completed via #612.\n\nReply to this email directly or view it on GitHub.",
+    },
+  ],
+);
 
-addThread(1, "LIN-482: Snooze wake-ups fire twice when laptop sleeps past wake time", [
-  {
-    from: linear,
-    ago: 11 * H,
-    unread: true,
-    body: "Mei Nakamura assigned LIN-482 to you.\n\nSnooze wake-ups fire twice when laptop sleeps past wake time\n\nPriority: High · Cycle 14\n\nWhen the machine sleeps through a snooze wake time, the catch-up scan re-fires notifications that the pre-sleep tick already delivered.\n\nView in Linear: https://linear.app/northbeam/issue/LIN-482",
-  },
-]);
+addThread(
+  1,
+  "LIN-482: Snooze wake-ups fire twice when laptop sleeps past wake time",
+  [
+    {
+      from: linear,
+      ago: 11 * H,
+      unread: true,
+      body: "Mei Nakamura assigned LIN-482 to you.\n\nSnooze wake-ups fire twice when laptop sleeps past wake time\n\nPriority: High · Cycle 14\n\nWhen the machine sleeps through a snooze wake time, the catch-up scan re-fires notifications that the pre-sleep tick already delivered.\n\nView in Linear: https://linear.app/northbeam/issue/LIN-482",
+    },
+  ],
+);
 
 addThread(1, "Your Stripe invoice payment failed", [
   {
@@ -533,7 +631,8 @@ addThread(1, "Money Stuff: The Index Fund Owns You Now", [
     ago: 7 * H,
     unread: true,
     via: "bounce@sailthru.com",
-    listUnsubscribe: "<mailto:unsubscribe@news.bloomberg.com?subject=unsubscribe-moneystuff>",
+    listUnsubscribe:
+      "<mailto:unsubscribe@news.bloomberg.com?subject=unsubscribe-moneystuff>",
     body: "Money Stuff\nBy Matt Levine\n\nThe Index Fund Owns You Now\n\nOne thing that I say a lot around here is that the essential trade of modern finance is that you give your money to someone else and they do something with it...\n\nAlso: crypto custody, again; an ETF for everything; people are worried about bond market liquidity.",
   },
 ]);
@@ -572,59 +671,89 @@ addThread(1, "Berlin Systems Meetup - Thursday: 'Taming IMAP in 2026'", [
 ]);
 
 // A couple of non-inbox fixtures for account 1
-addThread(1, "Re: Conference travel budget", [
-  {
-    from: ana,
-    ago: 12 * D + 3 * H,
-    body: "Approved - book the flights before prices jump. Keep it under €900 total if you can.",
-  },
-], { folder: "done" });
+addThread(
+  1,
+  "Re: Conference travel budget",
+  [
+    {
+      from: ana,
+      ago: 12 * D + 3 * H,
+      body: "Approved - book the flights before prices jump. Keep it under €900 total if you can.",
+    },
+  ],
+  { folder: "done" },
+);
 
-addThread(1, "Welcome to Northbeam - IT onboarding", [
-  {
-    from: { name: "Northbeam IT", email: "it@northbeam.com" },
-    ago: 13 * D + 6 * H,
-    body: "Your accounts are ready. VPN config attached. Ping #it-help with any issues.",
-  },
-], { folder: "done" });
+addThread(
+  1,
+  "Welcome to Northbeam - IT onboarding",
+  [
+    {
+      from: { name: "Northbeam IT", email: "it@northbeam.com" },
+      ago: 13 * D + 6 * H,
+      body: "Your accounts are ready. VPN config attached. Ping #it-help with any issues.",
+    },
+  ],
+  { folder: "done" },
+);
 
-addThread(1, "You've won a $500 Amazon gift card (claim within 24h)", [
-  {
-    from: { name: "Rewards Center", email: "claim@prize-notify.xyz" },
-    ago: 2 * D + 2 * H,
-    body: "Congratulations! Your email was selected. Click here to claim your $500 gift card before it expires.",
-  },
-], { folder: "spam" });
+addThread(
+  1,
+  "You've won a $500 Amazon gift card (claim within 24h)",
+  [
+    {
+      from: { name: "Rewards Center", email: "claim@prize-notify.xyz" },
+      ago: 2 * D + 2 * H,
+      body: "Congratulations! Your email was selected. Click here to claim your $500 gift card before it expires.",
+    },
+  ],
+  { folder: "spam" },
+);
 
-addThread(1, "Old draft: notes to self", [
-  {
-    from: SELF[1],
-    ago: 6 * D + 1 * H,
-    outgoing: true,
-    to: [SELF[1]],
-    body: "- ask Marcus about the H-2 storage change\n- benchmark idea: mbox parse throughput vs. buffer size\n- book Lisbon flights",
-  },
-], { folder: "drafts" });
+addThread(
+  1,
+  "Old draft: notes to self",
+  [
+    {
+      from: SELF[1],
+      ago: 6 * D + 1 * H,
+      outgoing: true,
+      to: [SELF[1]],
+      body: "- ask Marcus about the H-2 storage change\n- benchmark idea: mbox parse throughput vs. buffer size\n- book Lisbon flights",
+    },
+  ],
+  { folder: "drafts" },
+);
 // mark that message as a draft
 threads[threads.length - 1].messages[0].isDraft = true;
 
-addThread(1, "Fwd: Updated W-8BEN forms", [
-  {
-    from: SELF[1],
-    ago: 7 * D + 8 * H,
-    outgoing: true,
-    to: [marcus],
-    body: "Marcus - forwarding the updated forms from finance. Let me know if the treaty section looks right now.",
-  },
-], { folder: "sent" });
+addThread(
+  1,
+  "Fwd: Updated W-8BEN forms",
+  [
+    {
+      from: SELF[1],
+      ago: 7 * D + 8 * H,
+      outgoing: true,
+      to: [marcus],
+      body: "Marcus - forwarding the updated forms from finance. Let me know if the treaty section looks right now.",
+    },
+  ],
+  { folder: "sent" },
+);
 
-addThread(1, "Waiting on Meridian SSO requirements", [
-  {
-    from: mei,
-    ago: 4 * D + 4 * H,
-    body: "Meridian's IT team said they'd send their SSO requirements doc 'within a week'. Snoozing-worthy - nothing to do until it lands.",
-  },
-], { snoozedUntil: NOW + 3 * D });
+addThread(
+  1,
+  "Waiting on Meridian SSO requirements",
+  [
+    {
+      from: mei,
+      ago: 4 * D + 4 * H,
+      body: "Meridian's IT team said they'd send their SSO requirements doc 'within a week'. Snoozing-worthy - nothing to do until it lands.",
+    },
+  ],
+  { snoozedUntil: NOW + 3 * D },
+);
 
 // --- Account 2: personal (bd.chen.dev@gmail.com) -----------------------------
 
@@ -659,20 +788,25 @@ addThread(2, "Dad - the greenhouse project", [
   },
 ]);
 
-addThread(2, "Your quietloop.dev PR was merged 🎉", [
-  {
-    from: elena,
-    ago: 3 * D + 8 * H,
-    body: "Merged your fix for the tombstone GC race - nice catch, that one's been haunting us since 0.9.\n\nAdded you to CONTRIBUTORS. If you ever want a tour of the uglier parts of the merge layer, say the word.\n\nElena",
-  },
-  {
-    from: SELF[2],
-    ago: 3 * D + 6 * H,
-    outgoing: true,
-    to: [elena],
-    body: "Ha - small world, we may be meeting in a very different context soon. Yes to the tour regardless.",
-  },
-], { starred: true });
+addThread(
+  2,
+  "Your quietloop.dev PR was merged 🎉",
+  [
+    {
+      from: elena,
+      ago: 3 * D + 8 * H,
+      body: "Merged your fix for the tombstone GC race - nice catch, that one's been haunting us since 0.9.\n\nAdded you to CONTRIBUTORS. If you ever want a tour of the uglier parts of the merge layer, say the word.\n\nElena",
+    },
+    {
+      from: SELF[2],
+      ago: 3 * D + 6 * H,
+      outgoing: true,
+      to: [elena],
+      body: "Ha - small world, we may be meeting in a very different context soon. Yes to the tour regardless.",
+    },
+  ],
+  { starred: true },
+);
 
 addThread(2, "Léa: atelier photos + September dates", [
   {
@@ -691,7 +825,9 @@ addThread(2, "Ferrous Systems training - invoice + materials", [
     from: dmitri,
     ago: 6 * D + 9 * H,
     body: "Invoice for the async internals training attached, and the materials repo is now public: https://github.com/ferrous-systems/async-internals\n\nYou asked about the waker vtable diagram - slide 40, and yes you can reuse it with attribution.\n\nDmitri",
-    attachments: [{ name: "invoice-2688.pdf", mime: "application/pdf", size: 182_330 }],
+    attachments: [
+      { name: "invoice-2688.pdf", mime: "application/pdf", size: 182_330 },
+    ],
   },
 ]);
 
@@ -744,54 +880,79 @@ addThread(2, "Hacker Newsletter #741", [
   },
 ]);
 
-addThread(2, "Reminder: dentist appointment July 15", [
-  {
-    from: { name: "Praxis Dr. Weber", email: "no-reply@doctolib.de" },
-    ago: 8 * D + 1 * H,
-    body: "This is a reminder of your appointment:\n\nTuesday, July 15, 11:30\nPraxis Dr. Weber, Torstraße 112\n\nPlease reply CANCEL at least 24h ahead if you cannot attend.",
-  },
-], { snoozedUntil: NOW + 4 * D });
+addThread(
+  2,
+  "Reminder: dentist appointment July 15",
+  [
+    {
+      from: { name: "Praxis Dr. Weber", email: "no-reply@doctolib.de" },
+      ago: 8 * D + 1 * H,
+      body: "This is a reminder of your appointment:\n\nTuesday, July 15, 11:30\nPraxis Dr. Weber, Torstraße 112\n\nPlease reply CANCEL at least 24h ahead if you cannot attend.",
+    },
+  ],
+  { snoozedUntil: NOW + 4 * D },
+);
 
-addThread(2, "Re: telescope - is it still available?", [
-  {
-    from: { name: "Kleinanzeigen User Markus", email: "m.brenner82@web.de" },
-    ago: 11 * D + 5 * H,
-    body: "Hi, is the Dobsonian still available? Could pick it up Saturday in Pankow. Would you take 240?",
-  },
-  {
-    from: SELF[2],
-    ago: 11 * D + 2 * H,
-    outgoing: true,
-    to: [{ name: "Kleinanzeigen User Markus", email: "m.brenner82@web.de" }],
-    body: "Still available. 260 and it's yours, includes both eyepieces. Saturday after 2pm works.",
-  },
-], { folder: "done" });
+addThread(
+  2,
+  "Re: telescope - is it still available?",
+  [
+    {
+      from: { name: "Kleinanzeigen User Markus", email: "m.brenner82@web.de" },
+      ago: 11 * D + 5 * H,
+      body: "Hi, is the Dobsonian still available? Could pick it up Saturday in Pankow. Would you take 240?",
+    },
+    {
+      from: SELF[2],
+      ago: 11 * D + 2 * H,
+      outgoing: true,
+      to: [{ name: "Kleinanzeigen User Markus", email: "m.brenner82@web.de" }],
+      body: "Still available. 260 and it's yours, includes both eyepieces. Saturday after 2pm works.",
+    },
+  ],
+  { folder: "done" },
+);
 
-addThread(2, "Photos from Oma's 90th", [
-  {
-    from: { name: "Tante Ines", email: "ines.chen@gmx.de" },
-    ago: 12 * D + 7 * H,
-    body: "Finally uploaded all the photos from the party: https://photos.app/oma90\n\nThe one of you and Oma arguing about card games is my favorite.",
-  },
-], { folder: "done", starred: true });
+addThread(
+  2,
+  "Photos from Oma's 90th",
+  [
+    {
+      from: { name: "Tante Ines", email: "ines.chen@gmx.de" },
+      ago: 12 * D + 7 * H,
+      body: "Finally uploaded all the photos from the party: https://photos.app/oma90\n\nThe one of you and Oma arguing about card games is my favorite.",
+    },
+  ],
+  { folder: "done", starred: true },
+);
 
-addThread(2, "URGENT: Your account will be suspended", [
-  {
-    from: { name: "Apple Support", email: "security@appleid-verify.top" },
-    ago: 3 * D + 1 * H,
-    body: "Dear customer, unusual sign-in activity detected. Verify your Apple ID within 24 hours or your account will be permanently suspended. Click: http://appleid-verify.top/confirm",
-  },
-], { folder: "spam" });
+addThread(
+  2,
+  "URGENT: Your account will be suspended",
+  [
+    {
+      from: { name: "Apple Support", email: "security@appleid-verify.top" },
+      ago: 3 * D + 1 * H,
+      body: "Dear customer, unusual sign-in activity detected. Verify your Apple ID within 24 hours or your account will be permanently suspended. Click: http://appleid-verify.top/confirm",
+    },
+  ],
+  { folder: "spam" },
+);
 
-addThread(2, "Trip idea: Dolomites hut-to-hut", [
-  {
-    from: SELF[2],
-    ago: 5 * D + 3 * H,
-    outgoing: true,
-    to: [sofia],
-    body: "Random idea for late September: Alta Via 1, hut to hut, 6 days. You in? Huts book out by early August so answer fast.",
-  },
-], { folder: "sent" });
+addThread(
+  2,
+  "Trip idea: Dolomites hut-to-hut",
+  [
+    {
+      from: SELF[2],
+      ago: 5 * D + 3 * H,
+      outgoing: true,
+      to: [sofia],
+      body: "Random idea for late September: Alta Via 1, hut to hut, 6 days. You in? Huts book out by early August so answer fast.",
+    },
+  ],
+  { folder: "sent" },
+);
 
 // ---------------------------------------------------------------------------
 
@@ -801,7 +962,8 @@ const snippets: Snippet[] = [
     name: "Intro reply",
     shortcut: "intro",
     subject: null,
-    bodyText: "Thanks for the intro! Moving you to BCC to spare your inbox.\n\n",
+    bodyText:
+      "Thanks for the intro! Moving you to BCC to spare your inbox.\n\n",
     usageCount: 14,
   },
   {
@@ -809,7 +971,8 @@ const snippets: Snippet[] = [
     name: "Scheduling",
     shortcut: "sched",
     subject: null,
-    bodyText: "Happy to find time - here are a few slots that work on my end (CET):\n\n- Tue 10:00–10:30\n- Wed 14:00–15:00\n- Thu 09:30–10:00\n\nIf none work, grab anything here: https://cal.com/bdchen",
+    bodyText:
+      "Happy to find time - here are a few slots that work on my end (CET):\n\n- Tue 10:00–10:30\n- Wed 14:00–15:00\n- Thu 09:30–10:00\n\nIf none work, grab anything here: https://cal.com/bdchen",
     usageCount: 31,
   },
   {
@@ -817,7 +980,8 @@ const snippets: Snippet[] = [
     name: "Bug report ask",
     shortcut: "repro",
     subject: null,
-    bodyText: "Thanks for the report. To pin this down, could you send:\n\n1. App version (About screen)\n2. Rough time it happened (with timezone)\n3. The log file from Settings → Diagnostics → Export\n",
+    bodyText:
+      "Thanks for the report. To pin this down, could you send:\n\n1. App version (About screen)\n2. Rough time it happened (with timezone)\n3. The log file from Settings → Diagnostics → Export\n",
     usageCount: 8,
   },
   {
@@ -825,7 +989,8 @@ const snippets: Snippet[] = [
     name: "Polite decline",
     shortcut: "no",
     subject: null,
-    bodyText: "Thanks for thinking of me - I have to pass on this one, my plate is full through the quarter. Good luck with it!",
+    bodyText:
+      "Thanks for thinking of me - I have to pass on this one, my plate is full through the quarter. Good luck with it!",
     usageCount: 5,
   },
 ];
@@ -841,19 +1006,67 @@ const splits: SplitRule[] = [
     id: 2,
     name: "News",
     position: 1,
-    query: { isAutomated: true, senders: ["@substack.com", "@news.bloomberg.com", "@changelog.com", "@hackernewsletter.com"] },
+    query: {
+      isAutomated: true,
+      senders: [
+        "@substack.com",
+        "@news.bloomberg.com",
+        "@changelog.com",
+        "@hackernewsletter.com",
+      ],
+    },
   },
 ];
 
 const labels: Label[] = [
   { id: 1, name: "Work", color: "#2563eb", keyword: "Work", position: 0 },
-  { id: 2, name: "Personal", color: "#16a34a", keyword: "Personal", position: 1 },
-  { id: 3, name: "Follow up", color: "#d97706", keyword: "Follow_up", position: 2 },
+  {
+    id: 2,
+    name: "Personal",
+    color: "#16a34a",
+    keyword: "Personal",
+    position: 1,
+  },
+  {
+    id: 3,
+    name: "Follow up",
+    color: "#d97706",
+    keyword: "Follow_up",
+    position: 2,
+  },
   // System auto-categories (007 migration seeds)
-  { id: 101, name: "Marketing", color: "#e0708a", keyword: "ComailAutoMarketing", position: 1000, isAuto: true },
-  { id: 102, name: "News", color: "#5b9dd9", keyword: "ComailAutoNews", position: 1001, isAuto: true },
-  { id: 103, name: "Social", color: "#7bc47f", keyword: "ComailAutoSocial", position: 1002, isAuto: true },
-  { id: 104, name: "Pitch", color: "#c9a04e", keyword: "ComailAutoPitch", position: 1003, isAuto: true },
+  {
+    id: 101,
+    name: "Marketing",
+    color: "#e0708a",
+    keyword: "ComailAutoMarketing",
+    position: 1000,
+    isAuto: true,
+  },
+  {
+    id: 102,
+    name: "News",
+    color: "#5b9dd9",
+    keyword: "ComailAutoNews",
+    position: 1001,
+    isAuto: true,
+  },
+  {
+    id: 103,
+    name: "Social",
+    color: "#7bc47f",
+    keyword: "ComailAutoSocial",
+    position: 1002,
+    isAuto: true,
+  },
+  {
+    id: 104,
+    name: "Pitch",
+    color: "#c9a04e",
+    keyword: "ComailAutoPitch",
+    position: 1003,
+    isAuto: true,
+  },
 ];
 
 // Seed a few labels onto existing fixtures so chips + filtering demo out of the box.
@@ -867,16 +1080,29 @@ function autoLabelOf(t: MockThread): number | null {
   const email = sender.email.toLowerCase();
   const domain = email.split("@")[1] ?? "";
   const subject = t.subject.toLowerCase();
-  if (/(linkedin\.com|facebookmail\.com|twitter\.com|x\.com|redditmail\.com|discord)/.test(domain))
+  if (
+    /(linkedin\.com|facebookmail\.com|twitter\.com|x\.com|redditmail\.com|discord)/.test(
+      domain,
+    )
+  )
     return 103;
-  if (/substack\.com|beehiiv\.com|bloomberg\.com|changelog\.com|hackernewsletter\.com/.test(domain) ||
-      /^(news|newsletter|digest|weekly)/.test(email))
+  if (
+    /substack\.com|beehiiv\.com|bloomberg\.com|changelog\.com|hackernewsletter\.com/.test(
+      domain,
+    ) ||
+    /^(news|newsletter|digest|weekly)/.test(email)
+  )
     return 102;
-  if (isAutomatedSender(sender) &&
-      (/(% off|sale|last chance|free shipping|discount)/.test(subject) ||
-       /^(marketing|promo|offers|deals)/.test(email)))
+  if (
+    isAutomatedSender(sender) &&
+    (/(% off|sale|last chance|free shipping|discount)/.test(subject) ||
+      /^(marketing|promo|offers|deals)/.test(email))
+  )
     return 101;
-  if (!isAutomatedSender(sender) && /(quick call|partnership|sponsor|demo|collab)/.test(subject))
+  if (
+    !isAutomatedSender(sender) &&
+    /(quick call|partnership|sponsor|demo|collab)/.test(subject)
+  )
     return 104;
   return null;
 }
@@ -891,29 +1117,51 @@ function applyAutoLabels() {
 applyAutoLabels();
 
 const MOCK_AUTOMATION_STOP_WORDS = new Set([
-  "about", "after", "before", "email", "from", "into", "matches", "message",
-  "that", "their", "then", "this", "when", "with", "without",
+  "about",
+  "after",
+  "before",
+  "email",
+  "from",
+  "into",
+  "matches",
+  "message",
+  "that",
+  "their",
+  "then",
+  "this",
+  "when",
+  "with",
+  "without",
 ]);
 
 /** Lightweight stand-in for the remote classifier so automation interactions
  * remain testable in browser mock mode. Production uses the configured model. */
-function mockAutomationMatches(t: MockThread, name: string, instruction: string): boolean {
+function mockAutomationMatches(
+  t: MockThread,
+  name: string,
+  instruction: string,
+): boolean {
   const haystack = [
     t.subject,
     threadSender(t).email,
     ...t.messages.filter((m) => !m.isOutgoing).map((m) => m.textBody),
-  ].join(" ").toLowerCase();
-  const terms = `${name} ${instruction}`
-    .toLowerCase()
-    .match(/[a-z0-9]{4,}/g)
-    ?.filter((term) => !MOCK_AUTOMATION_STOP_WORDS.has(term)) ?? [];
+  ]
+    .join(" ")
+    .toLowerCase();
+  const terms =
+    `${name} ${instruction}`
+      .toLowerCase()
+      .match(/[a-z0-9]{4,}/g)
+      ?.filter((term) => !MOCK_AUTOMATION_STOP_WORDS.has(term)) ?? [];
   return terms.some((term) => haystack.includes(term));
 }
 
 function applyMockAutomations() {
   for (const t of threads) {
     t.routedTab = null;
-    const incoming = [...t.messages].reverse().find((m) => !m.isOutgoing && !m.isDraft);
+    const incoming = [...t.messages]
+      .reverse()
+      .find((m) => !m.isOutgoing && !m.isDraft);
     t.messages.forEach((m) => {
       m.localSubjectPrefix = "";
       m.automationNote = null;
@@ -925,7 +1173,9 @@ function applyMockAutomations() {
         switch (action.kind) {
           case "route_to":
             t.routedTab = action.value;
-            t.labels = t.labels.filter((id) => !labels.find((label) => label.id === id)?.isAuto);
+            t.labels = t.labels.filter(
+              (id) => !labels.find((label) => label.id === id)?.isAuto,
+            );
             if (action.value.startsWith("label:")) {
               const labelId = Number(action.value.slice("label:".length));
               if (Number.isFinite(labelId)) t.labels.push(labelId);
@@ -933,7 +1183,8 @@ function applyMockAutomations() {
             break;
           case "add_label": {
             const labelId = Number(action.value);
-            if (Number.isFinite(labelId) && !t.labels.includes(labelId)) t.labels.push(labelId);
+            if (Number.isFinite(labelId) && !t.labels.includes(labelId))
+              t.labels.push(labelId);
             break;
           }
           case "remove_label":
@@ -952,11 +1203,15 @@ function applyMockAutomations() {
             t.folder = "trash";
             break;
           case "subject_prefix":
-            if (incoming && action.value) incoming.localSubjectPrefix += action.value;
+            if (incoming && action.value)
+              incoming.localSubjectPrefix += action.value;
             break;
           case "body_note":
             if (incoming && action.value.trim()) {
-              incoming.automationNote = [incoming.automationNote, action.value.trim()]
+              incoming.automationNote = [
+                incoming.automationNote,
+                action.value.trim(),
+              ]
                 .filter(Boolean)
                 .join("\n\n");
             }
@@ -971,65 +1226,124 @@ function applyMockAutomations() {
  * app uses the configured AI model and validates the same structured result. */
 function mockPlanAutomation(prompt: string): AiAutomationPlan {
   const lower = prompt.toLowerCase();
-  const actions: Array<{ index: number; action: AiAutomationPlan["actions"][number] }> = [];
+  const actions: Array<{
+    index: number;
+    action: AiAutomationPlan["actions"][number];
+  }> = [];
   const issues: string[] = [];
-  const add = (index: number, kind: AiAutomationPlan["actions"][number]["kind"], value = "") => {
-    if (index >= 0 && !actions.some((item) => item.action.kind === kind && item.action.value === value))
+  const add = (
+    index: number,
+    kind: AiAutomationPlan["actions"][number]["kind"],
+    value = "",
+  ) => {
+    if (
+      index >= 0 &&
+      !actions.some(
+        (item) => item.action.kind === kind && item.action.value === value,
+      )
+    )
       actions.push({ index, action: { kind, value } });
   };
   const userLabels = labels.filter((label) => !label.isAuto);
-  const mentionedLabel = userLabels.find((label) => lower.includes(label.name.toLowerCase()));
+  const mentionedLabel = userLabels.find((label) =>
+    lower.includes(label.name.toLowerCase()),
+  );
   if (/\b(remove|clear)\b[^.]*\blabel\b/.test(lower) && mentionedLabel)
     add(lower.indexOf("remove"), "remove_label", String(mentionedLabel.id));
   else if (/\b(add|apply|append)\b[^.]*\blabel\b/.test(lower) && mentionedLabel)
-    add(Math.max(lower.indexOf("add"), lower.indexOf("apply"), lower.indexOf("append")), "add_label", String(mentionedLabel.id));
+    add(
+      Math.max(
+        lower.indexOf("add"),
+        lower.indexOf("apply"),
+        lower.indexOf("append"),
+      ),
+      "add_label",
+      String(mentionedLabel.id),
+    );
 
   if (/\b(move|route|put)\b[^.]*\bimportant\b/.test(lower))
     add(lower.indexOf("important"), "route_to", "important");
   else if (/\b(move|route|put)\b[^.]*\bother\b/.test(lower))
     add(lower.indexOf("other"), "route_to", "other");
   else {
-    const split = splits.find((item) => lower.includes(item.name.toLowerCase()));
-    const category = labels.find((label) => label.isAuto && lower.includes(label.name.toLowerCase()));
+    const split = splits.find((item) =>
+      lower.includes(item.name.toLowerCase()),
+    );
+    const category = labels.find(
+      (label) => label.isAuto && lower.includes(label.name.toLowerCase()),
+    );
     if (split && /\b(move|route|put)\b/.test(lower))
-      add(lower.indexOf(split.name.toLowerCase()), "route_to", `split:${split.id}`);
+      add(
+        lower.indexOf(split.name.toLowerCase()),
+        "route_to",
+        `split:${split.id}`,
+      );
     else if (category && /\b(move|route|put)\b/.test(lower))
-      add(lower.indexOf(category.name.toLowerCase()), "route_to", `label:${category.id}`);
+      add(
+        lower.indexOf(category.name.toLowerCase()),
+        "route_to",
+        `label:${category.id}`,
+      );
   }
   if (/\bmark(?: it| them| email| mail)? as read\b|\bmark read\b/.test(lower))
     add(lower.indexOf("mark"), "mark_read");
   if (/\bstar\b/.test(lower)) add(lower.indexOf("star"), "star");
   if (/\barchive\b/.test(lower)) add(lower.indexOf("archive"), "archive");
-  if (/\b(?:move|moving|send|put)\b[^.]*\btrash\b|\btrash (?:it|them|mail|email)\b/.test(lower))
+  if (
+    /\b(?:move|moving|send|put)\b[^.]*\btrash\b|\btrash (?:it|them|mail|email)\b/.test(
+      lower,
+    )
+  )
     add(lower.indexOf("trash"), "trash");
 
   const prefix = /\[[^\]]+\]/.exec(prompt);
-  if (prefix && /subject/i.test(prompt)) add(prefix.index, "subject_prefix", `${prefix[0]} `);
-  const bodyNote = /(?:add|append)\s+["“]?(.+?)["”]?\s+to (?:the )?body/i.exec(prompt);
+  if (prefix && /subject/i.test(prompt))
+    add(prefix.index, "subject_prefix", `${prefix[0]} `);
+  const bodyNote = /(?:add|append)\s+["“]?(.+?)["”]?\s+to (?:the )?body/i.exec(
+    prompt,
+  );
   if (bodyNote) add(bodyNote.index, "body_note", bodyNote[1].trim());
 
-  if (/\b(forward|reply|send a reply|mark unread|create (?:a )?label|delete permanently)\b/.test(lower))
-    issues.push("One or more requested actions are not supported by AI automations.");
-  if (/\blabel\b/.test(lower) && !mentionedLabel && !/marketing|news|social|pitch/.test(lower))
+  if (
+    /\b(forward|reply|send a reply|mark unread|create (?:a )?label|delete permanently)\b/.test(
+      lower,
+    )
+  )
+    issues.push(
+      "One or more requested actions are not supported by AI automations.",
+    );
+  if (
+    /\blabel\b/.test(lower) &&
+    !mentionedLabel &&
+    !/marketing|news|social|pitch/.test(lower)
+  )
     issues.push("The prompt names a label that does not exist yet.");
-  if (actions.length === 0) issues.push("The prompt does not contain a supported action.");
+  if (actions.length === 0)
+    issues.push("The prompt does not contain a supported action.");
 
   actions.sort((a, b) => a.index - b.index);
   const instruction = prompt
-    .split(/\b(?:then|and (?:add|apply|move|route|mark|star|archive|trash|append|prefix))\b/i)[0]
+    .split(
+      /\b(?:then|and (?:add|apply|move|route|mark|star|archive|trash|append|prefix))\b/i,
+    )[0]
     .replace(/^\s*when\s+/i, "")
     .trim();
-  if (instruction.length < 5) issues.push("The prompt does not contain a clear email match condition.");
-  const topic = /\b(invoice|receipt|newsletter|promotion|social|pitch|meeting|travel)\b/i.exec(prompt)?.[1];
+  if (instruction.length < 5)
+    issues.push("The prompt does not contain a clear email match condition.");
+  const topic =
+    /\b(invoice|receipt|newsletter|promotion|social|pitch|meeting|travel)\b/i.exec(
+      prompt,
+    )?.[1];
   const name = `${topic ? topic[0].toUpperCase() + topic.slice(1) : "Mail"} automation`;
   return {
     supported: issues.length === 0,
     name,
     instruction,
     actions: actions.map((item) => item.action),
-    summary: actions.length > 0
-      ? `Matches the described mail and runs ${actions.length} action${actions.length === 1 ? "" : "s"}.`
-      : "",
+    summary:
+      actions.length > 0
+        ? `Matches the described mail and runs ${actions.length} action${actions.length === 1 ? "" : "s"}.`
+        : "",
     issues,
   };
 }
@@ -1042,16 +1356,64 @@ const folders: FolderInfo[] = [
   { id: 5, accountId: 1, imapName: "Trash", delimiter: "/", role: "trash" },
   { id: 6, accountId: 1, imapName: "Spam", delimiter: "/", role: "spam" },
   { id: 7, accountId: 2, imapName: "INBOX", delimiter: "/", role: "inbox" },
-  { id: 8, accountId: 2, imapName: "[Gmail]/All Mail", delimiter: "/", role: "archive" },
-  { id: 9, accountId: 2, imapName: "[Gmail]/Sent Mail", delimiter: "/", role: "sent" },
-  { id: 10, accountId: 2, imapName: "[Gmail]/Drafts", delimiter: "/", role: "drafts" },
-  { id: 11, accountId: 2, imapName: "[Gmail]/Trash", delimiter: "/", role: "trash" },
-  { id: 12, accountId: 2, imapName: "[Gmail]/Spam", delimiter: "/", role: "spam" },
+  {
+    id: 8,
+    accountId: 2,
+    imapName: "[Gmail]/All Mail",
+    delimiter: "/",
+    role: "archive",
+  },
+  {
+    id: 9,
+    accountId: 2,
+    imapName: "[Gmail]/Sent Mail",
+    delimiter: "/",
+    role: "sent",
+  },
+  {
+    id: 10,
+    accountId: 2,
+    imapName: "[Gmail]/Drafts",
+    delimiter: "/",
+    role: "drafts",
+  },
+  {
+    id: 11,
+    accountId: 2,
+    imapName: "[Gmail]/Trash",
+    delimiter: "/",
+    role: "trash",
+  },
+  {
+    id: 12,
+    accountId: 2,
+    imapName: "[Gmail]/Spam",
+    delimiter: "/",
+    role: "spam",
+  },
   // User-created folders, incl. a nested tree (no role -> shown in the sidebar).
   { id: 13, accountId: 1, imapName: "Filter out", delimiter: "/", role: null },
-  { id: 14, accountId: 1, imapName: "Filter out/AIRBNB", delimiter: "/", role: null },
-  { id: 15, accountId: 1, imapName: "Filter out/TopCV", delimiter: "/", role: null },
-  { id: 16, accountId: 1, imapName: "Filter out/Workflow", delimiter: "/", role: null },
+  {
+    id: 14,
+    accountId: 1,
+    imapName: "Filter out/AIRBNB",
+    delimiter: "/",
+    role: null,
+  },
+  {
+    id: 15,
+    accountId: 1,
+    imapName: "Filter out/TopCV",
+    delimiter: "/",
+    role: null,
+  },
+  {
+    id: 16,
+    accountId: 1,
+    imapName: "Filter out/Workflow",
+    delimiter: "/",
+    role: null,
+  },
   { id: 17, accountId: 1, imapName: "Later", delimiter: "/", role: null },
   { id: 18, accountId: 2, imapName: "Receipts", delimiter: "/", role: null },
 ];
@@ -1081,6 +1443,8 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   voiceLearnedAt: 0,
   meetingNotifyLeadMinutes: 10,
   notificationsEnabled: true,
+  notificationScope: "important",
+  notificationTabs: [],
   soundEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
@@ -1089,6 +1453,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   aiAutomationRules: [],
   aiTierCategorize: "instant",
   groupByDate: true,
+  contactSuggestAllAccounts: false,
   dockBadgeEnabled: true,
   dockBadgeSource: "inbox",
   signatures: {},
@@ -1100,7 +1465,11 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
 let settings: Settings = (() => {
   try {
     const raw = localStorage.getItem("comail:mock-settings");
-    if (raw) return { ...DEFAULT_MOCK_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+    if (raw)
+      return {
+        ...DEFAULT_MOCK_SETTINGS,
+        ...(JSON.parse(raw) as Partial<Settings>),
+      };
   } catch {
     /* ignore */
   }
@@ -1119,121 +1488,127 @@ const startOfToday = (() => {
 
 type EventSeed = Omit<
   CalendarEvent,
-  "description" | "attendees" | "joinUrl" | "rsvpStatus" | "isLocal" | "calendarId" | "rrule"
+  | "description"
+  | "attendees"
+  | "joinUrl"
+  | "rsvpStatus"
+  | "isLocal"
+  | "calendarId"
+  | "rrule"
 > &
   Partial<CalendarEvent>;
 
 const calendarEvents: CalendarEvent[] = (
   [
-  {
-    id: id(),
-    accountId: 1,
-    messageId: null,
-    summary: "Team standup",
-    location: "Fishbowl",
-    organizer: "mei@northbeam.com",
-    startsAt: startOfToday + 9.5 * H,
-    endsAt: startOfToday + 9.75 * H,
-    allDay: false,
-    status: "CONFIRMED",
-    method: "REQUEST",
-  },
-  {
-    id: id(),
-    accountId: 1,
-    messageId: null,
-    summary: "CRDT walkthrough - Quietloop data room",
-    location: "Google Meet",
-    organizer: "elena@quietloop.dev",
-    joinUrl: "https://meet.google.com/abc-defg-hij",
-    attendees: [
-      { email: "bd@northbeam.com", name: "Dean", partstat: "NEEDS-ACTION" },
-      { email: "elena@quietloop.dev", name: "Elena", partstat: "ACCEPTED" },
-    ],
-    startsAt: startOfToday + 14 * H,
-    endsAt: startOfToday + 15 * H,
-    allDay: false,
-    status: "CONFIRMED",
-    method: "REQUEST",
-  },
-  {
-    id: id(),
-    accountId: 1,
-    messageId: null,
-    summary: "Backend hiring sync",
-    location: null,
-    organizer: "priya@northbeam.com",
-    startsAt: startOfToday + 16 * H,
-    endsAt: startOfToday + 16.5 * H,
-    allDay: false,
-    status: "CANCELLED",
-    method: "CANCEL",
-  },
-  {
-    id: id(),
-    accountId: 1,
-    messageId: null,
-    summary: "Infra summit - Berlin",
-    location: "CityCube Berlin",
-    organizer: null,
-    startsAt: startOfToday,
-    endsAt: startOfToday + D,
-    allDay: true,
-    status: "CONFIRMED",
-    method: "REQUEST",
-  },
-  {
-    id: id(),
-    accountId: 1,
-    messageId: null,
-    summary: "1:1 with Tom - reconnect gate pairing",
-    location: "Hallway room",
-    organizer: "tom@northbeam.com",
-    startsAt: startOfToday + D + 9.5 * H,
-    endsAt: startOfToday + D + 10.5 * H,
-    allDay: false,
-    status: "CONFIRMED",
-    method: "REQUEST",
-  },
-  {
-    id: id(),
-    accountId: 1,
-    messageId: null,
-    summary: "Dinner at Nino's",
-    location: "Nino's, near Hauptbahnhof",
-    organizer: "jonas.wehrli@helvetic.io",
-    startsAt: startOfToday + 2 * D + 19 * H,
-    endsAt: startOfToday + 2 * D + 21.5 * H,
-    allDay: false,
-    status: "CONFIRMED",
-    method: "REQUEST",
-  },
-  {
-    id: id(),
-    accountId: 2,
-    messageId: null,
-    summary: "Dentist - Praxis Dr. Weber",
-    location: "Torstraße 112",
-    organizer: null,
-    startsAt: startOfToday + 4 * D + 11.5 * H,
-    endsAt: startOfToday + 4 * D + 12 * H,
-    allDay: false,
-    status: "CONFIRMED",
-    method: "REQUEST",
-  },
-  {
-    id: id(),
-    accountId: 1,
-    messageId: null,
-    summary: "Pentest remediation deadline (H-2)",
-    location: null,
-    organizer: "marcus.bell@atlaslegal.com",
-    startsAt: startOfToday + 6 * D,
-    endsAt: startOfToday + 7 * D,
-    allDay: true,
-    status: "CONFIRMED",
-    method: "REQUEST",
-  },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Team standup",
+      location: "Fishbowl",
+      organizer: "mei@northbeam.com",
+      startsAt: startOfToday + 9.5 * H,
+      endsAt: startOfToday + 9.75 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "CRDT walkthrough - Quietloop data room",
+      location: "Google Meet",
+      organizer: "elena@quietloop.dev",
+      joinUrl: "https://meet.google.com/abc-defg-hij",
+      attendees: [
+        { email: "bd@northbeam.com", name: "Dean", partstat: "NEEDS-ACTION" },
+        { email: "elena@quietloop.dev", name: "Elena", partstat: "ACCEPTED" },
+      ],
+      startsAt: startOfToday + 14 * H,
+      endsAt: startOfToday + 15 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Backend hiring sync",
+      location: null,
+      organizer: "priya@northbeam.com",
+      startsAt: startOfToday + 16 * H,
+      endsAt: startOfToday + 16.5 * H,
+      allDay: false,
+      status: "CANCELLED",
+      method: "CANCEL",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Infra summit - Berlin",
+      location: "CityCube Berlin",
+      organizer: null,
+      startsAt: startOfToday,
+      endsAt: startOfToday + D,
+      allDay: true,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "1:1 with Tom - reconnect gate pairing",
+      location: "Hallway room",
+      organizer: "tom@northbeam.com",
+      startsAt: startOfToday + D + 9.5 * H,
+      endsAt: startOfToday + D + 10.5 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Dinner at Nino's",
+      location: "Nino's, near Hauptbahnhof",
+      organizer: "jonas.wehrli@helvetic.io",
+      startsAt: startOfToday + 2 * D + 19 * H,
+      endsAt: startOfToday + 2 * D + 21.5 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 2,
+      messageId: null,
+      summary: "Dentist - Praxis Dr. Weber",
+      location: "Torstraße 112",
+      organizer: null,
+      startsAt: startOfToday + 4 * D + 11.5 * H,
+      endsAt: startOfToday + 4 * D + 12 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Pentest remediation deadline (H-2)",
+      location: null,
+      organizer: "marcus.bell@atlaslegal.com",
+      startsAt: startOfToday + 6 * D,
+      endsAt: startOfToday + 7 * D,
+      allDay: true,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
   ] satisfies EventSeed[]
 ).map((e) => ({
   description: null,
@@ -1252,10 +1627,16 @@ const mockCalendars: Calendar[] = [];
 // Attach the CRDT walkthrough invite to Elena's "Calendar invite sent"
 // message so the thread invite card (RSVP) renders in mock mode.
 {
-  const invite = calendarEvents.find((e) => e.summary?.startsWith("CRDT walkthrough"));
+  const invite = calendarEvents.find((e) =>
+    e.summary?.startsWith("CRDT walkthrough"),
+  );
   const msg = threads
     .flatMap((t) => t.messages)
-    .find((m) => m.from.email === elena.email && m.textBody.includes("Calendar invite sent"));
+    .find(
+      (m) =>
+        m.from.email === elena.email &&
+        m.textBody.includes("Calendar invite sent"),
+    );
   if (invite && msg) invite.messageId = msg.id;
 }
 
@@ -1326,15 +1707,26 @@ function toDetail(m: MockMessage): MessageDetail {
 
 function threadSender(t: MockThread): Address {
   const incoming = t.messages.filter((m) => !m.isOutgoing);
-  return (incoming[incoming.length - 1] ?? t.messages[t.messages.length - 1]).from;
+  return (incoming[incoming.length - 1] ?? t.messages[t.messages.length - 1])
+    .from;
 }
 
 function matchesSplitRule(t: MockThread, rule: SplitRule): boolean {
   const sender = threadSender(t);
   const email = sender.email.toLowerCase();
   const q = rule.query;
-  if (q.senders?.some((s) => email.endsWith(s.toLowerCase()) || email === s.toLowerCase())) return true;
-  if (q.subjectContains?.some((s) => t.subject.toLowerCase().includes(s.toLowerCase()))) return true;
+  if (
+    q.senders?.some(
+      (s) => email.endsWith(s.toLowerCase()) || email === s.toLowerCase(),
+    )
+  )
+    return true;
+  if (
+    q.subjectContains?.some((s) =>
+      t.subject.toLowerCase().includes(s.toLowerCase()),
+    )
+  )
+    return true;
   if (q.labels?.some((id) => t.labels.includes(id))) return true;
   if (q.isAutomated && isAutomatedSender(sender)) return true;
   return false;
@@ -1376,7 +1768,11 @@ function inView(t: MockThread, view: View): boolean {
     case "snoozed":
       return snoozed && t.folder !== "trash" && t.folder !== "spam";
     case "sent":
-      return t.messages.some((m) => m.isOutgoing && !m.isDraft) && t.folder !== "trash" && t.folder !== "spam";
+      return (
+        t.messages.some((m) => m.isOutgoing && !m.isDraft) &&
+        t.folder !== "trash" &&
+        t.folder !== "spam"
+      );
     case "drafts":
       return t.messages.some((m) => m.isDraft) && t.folder !== "trash";
     case "done":
@@ -1438,7 +1834,9 @@ function performAction(args: PerformActionArgs): ActionResult {
         t.messages.forEach((m) => (m.isRead = true));
         break;
       case "mark_unread": {
-        const lastIn = [...t.messages].reverse().find((m) => !m.isOutgoing) ?? t.messages[t.messages.length - 1];
+        const lastIn =
+          [...t.messages].reverse().find((m) => !m.isOutgoing) ??
+          t.messages[t.messages.length - 1];
         if (lastIn) lastIn.isRead = false;
         break;
       }
@@ -1477,7 +1875,10 @@ function performAction(args: PerformActionArgs): ActionResult {
         t.folder = "done";
         break;
       case "add_label":
-        if (args.params?.labelId != null && !t.labels.includes(args.params.labelId)) {
+        if (
+          args.params?.labelId != null &&
+          !t.labels.includes(args.params.labelId)
+        ) {
           t.labels = [...t.labels, args.params.labelId];
         }
         break;
@@ -1518,7 +1919,9 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
   if (!msg) {
     // Locate the thread (reply/forward attach to the original thread)
     if (args.inReplyToMessageId != null) {
-      thread = threads.find((t) => t.messages.some((m) => m.id === args.inReplyToMessageId));
+      thread = threads.find((t) =>
+        t.messages.some((m) => m.id === args.inReplyToMessageId),
+      );
     }
     if (!thread) {
       thread = {
@@ -1565,7 +1968,8 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
     msg.textBody = args.bodyText;
     msg.htmlBody = args.bodyHtml ?? null;
     msg.date = Date.now();
-    if (thread && thread.folder === "drafts") thread.subject = args.subject || thread.subject;
+    if (thread && thread.folder === "drafts")
+      thread.subject = args.subject || thread.subject;
   }
   // Staged files replace the draft's attachment set on every save.
   msg.attachments = (args.attachments ?? []).map((a) => ({
@@ -1626,8 +2030,16 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
     else if (lower.startsWith("in:")) {
       const v = lower.slice(3);
       const map: Record<string, View> = {
-        inbox: "inbox", starred: "starred", snoozed: "snoozed", sent: "sent",
-        drafts: "drafts", done: "done", archive: "done", trash: "trash", spam: "spam", all: "all",
+        inbox: "inbox",
+        starred: "starred",
+        snoozed: "snoozed",
+        sent: "sent",
+        drafts: "drafts",
+        done: "done",
+        archive: "done",
+        trash: "trash",
+        spam: "spam",
+        all: "all",
       };
       viewFilter = map[v] ?? null;
     } else terms.push(foldText(lower));
@@ -1638,7 +2050,9 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
   const exact: ThreadSummary[] = [];
   const loose: ThreadSummary[] = [];
   const sorted = [...threads].sort(
-    (a, b) => (b.messages[b.messages.length - 1]?.date ?? 0) - (a.messages[a.messages.length - 1]?.date ?? 0),
+    (a, b) =>
+      (b.messages[b.messages.length - 1]?.date ?? 0) -
+      (a.messages[a.messages.length - 1]?.date ?? 0),
   );
   for (const t of sorted) {
     if (exact.length >= limit) break;
@@ -1665,7 +2079,8 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
         ].join("\n"),
       );
       if (!terms.every((term) => folded.includes(term))) {
-        if (loose.length < limit && terms.some((term) => folded.includes(term))) loose.push(s);
+        if (loose.length < limit && terms.some((term) => folded.includes(term)))
+          loose.push(s);
         continue;
       }
     }
@@ -1678,13 +2093,17 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
 // Contacts
 // ---------------------------------------------------------------------------
 
-function allContacts(): Address[] {
+function allContacts(accountId?: number): Address[] {
   const seen = new Map<string, Address>();
   for (const t of threads) {
+    if (accountId != null && t.accountId !== accountId) continue;
     for (const m of t.messages) {
       for (const a of [m.from, ...m.to, ...m.cc]) {
         const k = a.email.toLowerCase();
-        if (!seen.has(k) && !accounts.some((acc) => acc.email.toLowerCase() === k)) {
+        if (
+          !seen.has(k) &&
+          !accounts.some((acc) => acc.email.toLowerCase() === k)
+        ) {
           seen.set(k, a);
         } else if (seen.has(k) && a.name && !seen.get(k)!.name) {
           seen.set(k, a);
@@ -1736,7 +2155,10 @@ function suggestContacts(query: string, limit: number): ContactSuggestion[] {
 
 type CmdName = keyof Commands;
 
-export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> {
+export async function mockInvoke(
+  cmd: CmdName,
+  args: unknown,
+): Promise<unknown> {
   const a = (args ?? {}) as Record<string, unknown>;
   switch (cmd) {
     case "list_accounts":
@@ -1745,10 +2167,19 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "test_connection": {
       const t = (a.args ?? {}) as AddPasswordAccountArgs;
       if (!t.imapHost || !t.password) {
-        return delay<ConnectionTestResult>({ ok: false, error: "Missing host or password" }, 500);
+        return delay<ConnectionTestResult>(
+          { ok: false, error: "Missing host or password" },
+          500,
+        );
       }
       if (/fail/i.test(t.password)) {
-        return delay<ConnectionTestResult>({ ok: false, error: "IMAP authentication failed (AUTHENTICATIONFAILED)" }, 700);
+        return delay<ConnectionTestResult>(
+          {
+            ok: false,
+            error: "IMAP authentication failed (AUTHENTICATIONFAILED)",
+          },
+          700,
+        );
       }
       return delay<ConnectionTestResult>({ ok: true, error: null }, 700);
     }
@@ -1777,7 +2208,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "start_oauth":
       await delay(null, 600);
-      throw new Error("OAuth sign-in isn't available in this build yet - use IMAP/SMTP for now.");
+      throw new Error(
+        "OAuth sign-in isn't available in this build yet - use IMAP/SMTP for now.",
+      );
 
     case "cancel_oauth":
       return delay(undefined);
@@ -1790,7 +2223,8 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       const folderId = a.folderId as number | null | undefined;
       const cursor = (a.cursor as number | null | undefined) ?? 0;
       const limit = (a.limit as number | undefined) ?? 30;
-      const folder = folderId == null ? null : folders.find((f) => f.id === folderId);
+      const folder =
+        folderId == null ? null : folders.find((f) => f.id === folderId);
       const matched = threads
         .filter((t) => inView(t, view))
         .filter((t) => (view === "inbox" ? inSplit(t, splitId) : true))
@@ -1804,7 +2238,11 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
             : t.accountId === folder.accountId && t.id % 5 === folder.id % 5,
         )
         .map(summarize)
-        .sort((x, y) => (view === "snoozed" ? (x.snoozedUntil ?? 0) - (y.snoozedUntil ?? 0) : y.lastMessageAt - x.lastMessageAt));
+        .sort((x, y) =>
+          view === "snoozed"
+            ? (x.snoozedUntil ?? 0) - (y.snoozedUntil ?? 0)
+            : y.lastMessageAt - x.lastMessageAt,
+        );
       const page = matched.slice(cursor, cursor + limit);
       const next = cursor + limit < matched.length ? cursor + limit : null;
       return delay<ThreadPage>({ threads: page, nextCursor: next });
@@ -1837,7 +2275,11 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(mockPreview(a.attachmentId as number));
 
     case "list_folders":
-      return delay(folders.filter((f) => (a.accountId == null ? true : f.accountId === a.accountId)));
+      return delay(
+        folders.filter((f) =>
+          a.accountId == null ? true : f.accountId === a.accountId,
+        ),
+      );
 
     case "perform_action":
       return delay(performAction(a.args as PerformActionArgs));
@@ -1849,7 +2291,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     }
 
     case "cancel_send": {
-      const p = [...pendingSends.values()].find((x) => x.actionId === a.actionId);
+      const p = [...pendingSends.values()].find(
+        (x) => x.actionId === a.actionId,
+      );
       if (p) {
         clearTimeout(p.timer);
         pendingSends.delete(p.draftId);
@@ -1867,12 +2311,16 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "queue_send": {
       const q = a.args as QueueSendArgs;
-      const dispatchAt = q.sendAt ?? Date.now() + settings.undoSendSeconds * 1000;
+      const dispatchAt =
+        q.sendAt ?? Date.now() + settings.undoSendSeconds * 1000;
       const actionId = id();
-      const timer = setTimeout(() => {
-        dispatchSend(q.draftId);
-        pendingSends.delete(q.draftId);
-      }, Math.max(0, dispatchAt - Date.now()));
+      const timer = setTimeout(
+        () => {
+          dispatchSend(q.draftId);
+          pendingSends.delete(q.draftId);
+        },
+        Math.max(0, dispatchAt - Date.now()),
+      );
       pendingSends.set(q.draftId, { actionId, draftId: q.draftId, timer });
       return delay<QueueSendResult>({ actionId, dispatchAt });
     }
@@ -1880,19 +2328,34 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "list_contacts": {
       const prefix = ((a.prefix as string) ?? "").toLowerCase();
       const limit = (a.limit as number | undefined) ?? 8;
-      const hits = allContacts().filter(
-        (c) => c.email.toLowerCase().includes(prefix) || (c.name ?? "").toLowerCase().includes(prefix),
+      const hits = allContacts(a.accountId as number | undefined).filter(
+        (c) =>
+          c.email.toLowerCase().includes(prefix) ||
+          (c.name ?? "").toLowerCase().includes(prefix),
       );
       hits.sort((x, y) => {
-        const xs = x.email.toLowerCase().startsWith(prefix) || (x.name ?? "").toLowerCase().startsWith(prefix) ? 0 : 1;
-        const ys = y.email.toLowerCase().startsWith(prefix) || (y.name ?? "").toLowerCase().startsWith(prefix) ? 0 : 1;
+        const xs =
+          x.email.toLowerCase().startsWith(prefix) ||
+          (x.name ?? "").toLowerCase().startsWith(prefix)
+            ? 0
+            : 1;
+        const ys =
+          y.email.toLowerCase().startsWith(prefix) ||
+          (y.name ?? "").toLowerCase().startsWith(prefix)
+            ? 0
+            : 1;
         return xs - ys;
       });
       return delay(hits.slice(0, limit));
     }
 
     case "suggest_contacts":
-      return delay(suggestContacts((a.query as string) ?? "", (a.limit as number | undefined) ?? 4));
+      return delay(
+        suggestContacts(
+          (a.query as string) ?? "",
+          (a.limit as number | undefined) ?? 4,
+        ),
+      );
 
     case "search":
       return delay(searchThreads(a.args as SearchArgs), 60);
@@ -1904,11 +2367,17 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(snippets.map((s) => ({ ...s })));
 
     case "save_snippet": {
-      const s = a.snippet as Omit<Snippet, "id" | "usageCount"> & { id: number | null };
+      const s = a.snippet as Omit<Snippet, "id" | "usageCount"> & {
+        id: number | null;
+      };
       if (s.id != null) {
         const ex = snippets.find((x) => x.id === s.id);
         if (ex) Object.assign(ex, s);
-        return delay({ ...(snippets.find((x) => x.id === s.id) ?? s), id: s.id, usageCount: 0 });
+        return delay({
+          ...(snippets.find((x) => x.id === s.id) ?? s),
+          id: s.id,
+          usageCount: 0,
+        });
       }
       const created: Snippet = { ...s, id: id(), usageCount: 0 };
       snippets.push(created);
@@ -1962,7 +2431,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "unread_counts": {
       const accId = (a.accountId ?? null) as number | null;
-      const pool = threads.filter((t) => accId == null || t.accountId === accId);
+      const pool = threads.filter(
+        (t) => accId == null || t.accountId === accId,
+      );
       const isUnread = (t: MockThread) =>
         t.messages.some((m) => !m.isRead && !m.isOutgoing);
       const inInbox = (t: MockThread) => inView(t, "inbox");
@@ -1970,11 +2441,15 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
       const splitsMap: Record<string, number> = {};
       for (const r of splits) {
-        splitsMap[String(r.id)] = unreadInbox.filter((t) => inSplit(t, r.id)).length;
+        splitsMap[String(r.id)] = unreadInbox.filter((t) =>
+          inSplit(t, r.id),
+        ).length;
       }
       const labelsMap: Record<string, number> = {};
       for (const l of labels) {
-        labelsMap[String(l.id)] = unreadInbox.filter((t) => t.labels.includes(l.id)).length;
+        labelsMap[String(l.id)] = unreadInbox.filter((t) =>
+          t.labels.includes(l.id),
+        ).length;
       }
       return delay({
         inbox: unreadInbox.length,
@@ -1983,8 +2458,10 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         splits: splitsMap,
         labels: labelsMap,
         views: {
-          starred: pool.filter((t) => inView(t, "starred") && isUnread(t)).length,
-          snoozed: pool.filter((t) => inView(t, "snoozed") && isUnread(t)).length,
+          starred: pool.filter((t) => inView(t, "starred") && isUnread(t))
+            .length,
+          snoozed: pool.filter((t) => inView(t, "snoozed") && isUnread(t))
+            .length,
           drafts: pool.filter((t) => inView(t, "drafts")).length,
         },
       });
@@ -1992,7 +2469,10 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "relabel_auto": {
       applyAutoLabels();
-      return delay(threads.filter((t) => t.labels.some((id) => id >= 100)).length, 400);
+      return delay(
+        threads.filter((t) => t.labels.some((id) => id >= 100)).length,
+        400,
+      );
     }
     case "reroute_all": {
       applyAutoLabels();
@@ -2004,7 +2484,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(labels.map((l) => ({ ...l })));
 
     case "save_label": {
-      const l = a.label as Omit<Label, "id" | "keyword"> & { id: number | null };
+      const l = a.label as Omit<Label, "id" | "keyword"> & {
+        id: number | null;
+      };
       if (l.id != null) {
         const ex = labels.find((x) => x.id === l.id);
         if (ex) {
@@ -2019,7 +2501,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         name: l.name,
         color: l.color,
         position: l.position,
-        keyword: l.name.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "Label",
+        keyword:
+          l.name.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") ||
+          "Label",
       };
       labels.push(created);
       return delay({ ...created });
@@ -2028,20 +2512,54 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "delete_label": {
       const i = labels.findIndex((x) => x.id === a.labelId);
       if (i >= 0) labels.splice(i, 1);
-      for (const t of threads) t.labels = t.labels.filter((x) => x !== a.labelId);
+      for (const t of threads)
+        t.labels = t.labels.filter((x) => x !== a.labelId);
       return delay(undefined);
     }
 
     case "restore_auto_labels": {
       const defaults: Label[] = [
-        { id: 101, name: "Marketing", color: "#e0708a", keyword: "ComailAutoMarketing", position: 1000, isAuto: true },
-        { id: 102, name: "News", color: "#5b9dd9", keyword: "ComailAutoNews", position: 1001, isAuto: true },
-        { id: 103, name: "Social", color: "#7bc47f", keyword: "ComailAutoSocial", position: 1002, isAuto: true },
-        { id: 104, name: "Pitch", color: "#c9a04e", keyword: "ComailAutoPitch", position: 1003, isAuto: true },
+        {
+          id: 101,
+          name: "Marketing",
+          color: "#e0708a",
+          keyword: "ComailAutoMarketing",
+          position: 1000,
+          isAuto: true,
+        },
+        {
+          id: 102,
+          name: "News",
+          color: "#5b9dd9",
+          keyword: "ComailAutoNews",
+          position: 1001,
+          isAuto: true,
+        },
+        {
+          id: 103,
+          name: "Social",
+          color: "#7bc47f",
+          keyword: "ComailAutoSocial",
+          position: 1002,
+          isAuto: true,
+        },
+        {
+          id: 104,
+          name: "Pitch",
+          color: "#c9a04e",
+          keyword: "ComailAutoPitch",
+          position: 1003,
+          isAuto: true,
+        },
       ];
       let restored = 0;
       for (const label of defaults) {
-        if (labels.some((existing) => existing.keyword === label.keyword && existing.isAuto)) continue;
+        if (
+          labels.some(
+            (existing) => existing.keyword === label.keyword && existing.isAuto,
+          )
+        )
+          continue;
         labels.push({ ...label });
         restored += 1;
       }
@@ -2059,14 +2577,17 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(undefined, 300);
 
     case "get_sync_status":
-      return delay<SyncStatus[]>(accounts.map((x) => ({
-        accountId: x.id,
-        state: x.syncState,
-        foregroundPhase: x.syncState === "syncing" ? "inbox" : "idle",
-        background: x.id === 1
-          ? { phase: "content", done: 12_637, total: 16_280, failed: 0 }
-          : null,
-      })));
+      return delay<SyncStatus[]>(
+        accounts.map((x) => ({
+          accountId: x.id,
+          state: x.syncState,
+          foregroundPhase: x.syncState === "syncing" ? "inbox" : "idle",
+          background:
+            x.id === 1
+              ? { phase: "content", done: 12_637, total: 16_280, failed: 0 }
+              : null,
+        })),
+      );
 
     case "get_settings":
       return delay({ ...settings });
@@ -2085,7 +2606,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       const startMs = (a.startMs as number) ?? 0;
       const endMs = (a.endMs as number) ?? Number.MAX_SAFE_INTEGER;
       const hits = calendarEvents
-        .filter((ev) => ev.startsAt < endMs && (ev.endsAt ?? ev.startsAt) > startMs)
+        .filter(
+          (ev) => ev.startsAt < endMs && (ev.endsAt ?? ev.startsAt) > startMs,
+        )
         .sort((x, y) => x.startsAt - y.startsAt)
         .map((ev) => ({ ...ev }));
       return delay(hits, 60);
@@ -2107,7 +2630,8 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         messageId: null,
         summary: args.summary,
         location: args.location ?? null,
-        organizer: accounts.find((acc) => acc.id === args.accountId)?.email ?? null,
+        organizer:
+          accounts.find((acc) => acc.id === args.accountId)?.email ?? null,
         description: args.description ?? null,
         attendees: (args.attendees ?? []).map((at) => ({
           email: at.email,
@@ -2130,11 +2654,18 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     }
 
     case "rsvp_event": {
-      const { eventId, response } = a.args as { eventId: number; response: string };
+      const { eventId, response } = a.args as {
+        eventId: number;
+        response: string;
+      };
       const ev = calendarEvents.find((e) => e.id === eventId);
       if (!ev) throw new Error("event not found");
       ev.rsvpStatus =
-        response === "accepted" ? "ACCEPTED" : response === "tentative" ? "TENTATIVE" : "DECLINED";
+        response === "accepted"
+          ? "ACCEPTED"
+          : response === "tentative"
+            ? "TENTATIVE"
+            : "DECLINED";
       return delay({ ...ev }, 120);
     }
 
@@ -2142,7 +2673,8 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       const args = a.args as import("./types").UpdateEventArgs;
       const ev = calendarEvents.find((e) => e.id === args.eventId);
       if (!ev) throw new Error("event not found");
-      if (!ev.isLocal) throw new Error("only events you organize can be edited");
+      if (!ev.isLocal)
+        throw new Error("only events you organize can be edited");
       ev.summary = args.summary;
       ev.description = args.description ?? null;
       ev.location = args.location ?? null;
@@ -2154,8 +2686,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         email: at.email,
         name: at.name ?? null,
         partstat:
-          ev.attendees.find((old) => old.email.toLowerCase() === at.email.toLowerCase())
-            ?.partstat ?? "NEEDS-ACTION",
+          ev.attendees.find(
+            (old) => old.email.toLowerCase() === at.email.toLowerCase(),
+          )?.partstat ?? "NEEDS-ACTION",
       }));
       return delay({ ...ev }, 120);
     }
@@ -2188,13 +2721,17 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         lastSyncedAt: Date.now(),
       };
       mockCalendars.push(cal);
-      return delay([...mockCalendars.filter((c) => c.accountId === args.accountId)], 400);
+      return delay(
+        [...mockCalendars.filter((c) => c.accountId === args.accountId)],
+        400,
+      );
     }
 
     case "disconnect_calendar": {
       const accountId = a.accountId as number;
       for (let i = mockCalendars.length - 1; i >= 0; i--) {
-        if (mockCalendars[i].accountId === accountId) mockCalendars.splice(i, 1);
+        if (mockCalendars[i].accountId === accountId)
+          mockCalendars.splice(i, 1);
       }
       return delay(undefined, 100);
     }
@@ -2209,9 +2746,10 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "list_calendars": {
       const accountId = a.accountId as number | null | undefined;
-      const hits = accountId == null
-        ? [...mockCalendars]
-        : mockCalendars.filter((c) => c.accountId === accountId);
+      const hits =
+        accountId == null
+          ? [...mockCalendars]
+          : mockCalendars.filter((c) => c.accountId === accountId);
       return delay(hits, 40);
     }
 
@@ -2232,7 +2770,11 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "ai_status":
       return delay<AiStatus>(
-        { configured: true, model: settings.aiModel || "mock/gpt", baseUrl: settings.aiBaseUrl },
+        {
+          configured: true,
+          model: settings.aiModel || "mock/gpt",
+          baseUrl: settings.aiBaseUrl,
+        },
         80,
       );
 
@@ -2241,7 +2783,12 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
 
     case "ai_list_models":
       return delay(
-        ["anthropic/claude-sonnet", "mock/gpt", "openai/gpt-4o-mini", "openai/gpt-4o"],
+        [
+          "anthropic/claude-sonnet",
+          "mock/gpt",
+          "openai/gpt-4o-mini",
+          "openai/gpt-4o",
+        ],
         200,
       );
 
@@ -2255,9 +2802,14 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         date.setDate(date.getDate() - ago);
         const active = (ago * 17 + 11) % 9 > 1;
         const totalTokens = active ? 900 + ((ago * 7919) % 18_000) : 0;
-        return { date: localDate(date), totalTokens, requests: active ? 1 + (ago % 6) : 0 };
+        return {
+          date: localDate(date),
+          totalTokens,
+          requests: active ? 1 + (ago % 6) : 0,
+        };
       });
-      const sumLast = (count: number) => days.slice(-count).reduce((n, day) => n + day.totalTokens, 0);
+      const sumLast = (count: number) =>
+        days.slice(-count).reduce((n, day) => n + day.totalTokens, 0);
       const out: AiUsageStats = {
         totalTokens: 684_200 + sumLast(91),
         totalRequests: 412 + days.reduce((n, day) => n + day.requests, 0),
@@ -2270,6 +2822,38 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       return delay(out, 100);
     }
 
+    case "email_stats": {
+      const localDate = (date: Date) =>
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      const days = Array.from({ length: 365 }, (_, index) => {
+        const ago = 364 - index;
+        const date = new Date();
+        date.setHours(12, 0, 0, 0);
+        date.setDate(date.getDate() - ago);
+        const weekday = date.getDay();
+        const active = weekday !== 0 && (ago * 13 + 5) % 11 > 1;
+        return {
+          date: localDate(date),
+          sent: active ? (ago * 7 + 3) % 6 : 0,
+          received: active ? 2 + ((ago * 17 + 9) % 18) : 0,
+        };
+      });
+      const sum = (count: number, key: "sent" | "received") =>
+        days.slice(-count).reduce((total, day) => total + day[key], 0);
+      const out: EmailStats = {
+        totalSent: 1_284 + sum(365, "sent"),
+        totalReceived: 8_946 + sum(365, "received"),
+        todaySent: sum(1, "sent"),
+        todayReceived: sum(1, "received"),
+        last7DaysSent: sum(7, "sent"),
+        last7DaysReceived: sum(7, "received"),
+        last30DaysSent: sum(30, "sent"),
+        last30DaysReceived: sum(30, "received"),
+        days,
+      };
+      return delay(out, 100);
+    }
+
     case "ai_plan_automation":
       return delay(mockPlanAutomation(String(a.prompt ?? "")), 450);
 
@@ -2277,8 +2861,17 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       // Tiny offline stand-in for the intent parser.
       const q = String(a.query ?? "");
       const none = {
-        kind: "none", summary: null, location: null, startsAt: null, endsAt: null,
-        allDay: null, to: null, subject: null, body: null, query: null, view: null,
+        kind: "none",
+        summary: null,
+        location: null,
+        startsAt: null,
+        endsAt: null,
+        allDay: null,
+        to: null,
+        subject: null,
+        body: null,
+        query: null,
+        view: null,
       };
       const time = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(q);
       if (/meeting|event|schedule|lunch|dinner|call with/i.test(q)) {
@@ -2291,17 +2884,29 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         } else {
           d.setHours(d.getHours() + 1, 0, 0, 0);
         }
-        const summary = q.replace(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i, "").trim() || "Meeting";
-        return delay({
-          ...none,
-          kind: "create_event",
-          summary,
-          startsAt: d.getTime(),
-          endsAt: d.getTime() + 60 * 60_000,
-        }, 500);
+        const summary =
+          q.replace(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i, "").trim() ||
+          "Meeting";
+        return delay(
+          {
+            ...none,
+            kind: "create_event",
+            summary,
+            startsAt: d.getTime(),
+            endsAt: d.getTime() + 60 * 60_000,
+          },
+          500,
+        );
       }
       if (/^(email|write|mail)\b/i.test(q)) {
-        return delay({ ...none, kind: "compose", subject: q.replace(/^(email|write|mail)\s*/i, "") }, 500);
+        return delay(
+          {
+            ...none,
+            kind: "compose",
+            subject: q.replace(/^(email|write|mail)\s*/i, ""),
+          },
+          500,
+        );
       }
       return delay({ ...none, kind: "search", query: q }, 500);
     }
@@ -2311,7 +2916,10 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       if (!t) throw new Error(`Thread ${a.threadId} not found`);
       const msgs = t.messages.filter((m) => !m.isDraft);
       const firstLine = (s: string) =>
-        (s.split("\n").find((l) => l.trim()) ?? "").trim().replace(/\s+/g, " ").slice(0, 90);
+        (s.split("\n").find((l) => l.trim()) ?? "")
+          .trim()
+          .replace(/\s+/g, " ")
+          .slice(0, 90);
       const timeline = msgs.slice(0, 6).map((m) => ({
         actor: m.isOutgoing ? "You" : (m.from.name ?? m.from.email),
         event: firstLine(m.textBody) || "(no text)",
@@ -2331,6 +2939,7 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         proposedReply: lastIncoming
           ? `Thanks for the detail - this looks good to me. Let's go ahead with the plan as outlined; I'll follow up if anything changes on my end.`
           : null,
+        calendarSuggestion: null,
       };
       return delay(summary, 900);
     }
@@ -2354,7 +2963,9 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
       const instruction = (a.instruction as string) ?? "";
       const senderName = (a.senderName as string | null) ?? "me";
       const t = threads.find((x) => x.id === a.threadId);
-      const greeting = t ? `Hi ${(threadSender(t).name ?? threadSender(t).email).split(" ")[0]},` : "Hi,";
+      const greeting = t
+        ? `Hi ${(threadSender(t).name ?? threadSender(t).email).split(" ")[0]},`
+        : "Hi,";
       // With a signature to append, the mock ends on a bare closing (mirrors the
       // real prompt, which tells the model to skip its own sign-off).
       const signOff = a.hasSignature ? "Best," : `Best,\n${senderName}`;
@@ -2381,7 +2992,10 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
     case "ai_signature": {
       const name = ((a.name as string) ?? "").trim();
       const email = ((a.email as string) ?? "").trim();
-      return delay(`Best,\n${name || "Your name"}${email ? `\n${email}` : ""}`, 900);
+      return delay(
+        `Best,\n${name || "Your name"}${email ? `\n${email}` : ""}`,
+        900,
+      );
     }
 
     case "ai_ask": {
@@ -2430,7 +3044,11 @@ export async function mockInvoke(cmd: CmdName, args: unknown): Promise<unknown> 
         "- Warm but brief; 1–2 short paragraphs\n" +
         "- Rarely uses exclamation marks; no emoji\n" +
         "- Often opens with a quick thanks";
-      settings = { ...settings, voiceProfile: profile, voiceLearnedAt: Date.now() };
+      settings = {
+        ...settings,
+        voiceProfile: profile,
+        voiceLearnedAt: Date.now(),
+      };
       return delay(profile, 900);
     }
 
@@ -2475,7 +3093,14 @@ function mockPreview(attachmentId: number): AttachmentPreview {
           ],
           truncated: false,
         },
-        { name: "Raw", rows: [["id", "value"], ["1", "42"]], truncated: true },
+        {
+          name: "Raw",
+          rows: [
+            ["id", "value"],
+            ["1", "42"],
+          ],
+          truncated: true,
+        },
       ],
     };
   }
@@ -2494,7 +3119,10 @@ function mockPreview(attachmentId: number): AttachmentPreview {
       ],
     };
   }
-  if (["txt", "log", "json", "xml", "ics", "eml"].includes(ext) || meta?.mimeType?.startsWith("text/")) {
+  if (
+    ["txt", "log", "json", "xml", "ics", "eml"].includes(ext) ||
+    meta?.mimeType?.startsWith("text/")
+  ) {
     return {
       kind: "text",
       text: `Mock preview of ${meta?.filename ?? `attachment ${attachmentId}`}.\n\n${"reconnect: idle timeout, retrying\n".repeat(12)}`,

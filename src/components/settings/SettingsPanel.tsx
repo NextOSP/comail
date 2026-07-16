@@ -1,7 +1,11 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import i18n, { setLanguage, SUPPORTED_LANGUAGES, SYSTEM_LANGUAGE } from "../../i18n";
+import i18n, {
+  setLanguage,
+  SUPPORTED_LANGUAGES,
+  SYSTEM_LANGUAGE,
+} from "../../i18n";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { appVersion, checkForUpdate } from "../../ipc/updater";
@@ -19,6 +23,7 @@ import type {
   SyncStatus,
 } from "../../ipc/types";
 import { normalizeSyncStatus } from "../../lib/syncStatus";
+import { inboxTabOrder } from "../../lib/splitOrder";
 import { textToHtml } from "../../lib/richtext";
 import { RichBody } from "../compose/RichBody";
 import { queryClient } from "../../queries/client";
@@ -27,6 +32,7 @@ import {
   useAiModels,
   useAiStatus,
   useAiUsage,
+  useEmailStats,
   useEmbeddingStatus,
   useLabels,
   useLearnVoice,
@@ -87,6 +93,8 @@ const DEFAULT_SETTINGS: Settings = {
   voiceLearnedAt: 0,
   meetingNotifyLeadMinutes: 10,
   notificationsEnabled: true,
+  notificationScope: "important",
+  notificationTabs: [],
   soundEnabled: true,
   autoAdvance: true,
   autoLabelsEnabled: true,
@@ -95,6 +103,7 @@ const DEFAULT_SETTINGS: Settings = {
   aiAutomationRules: [],
   aiTierCategorize: "instant",
   groupByDate: true,
+  contactSuggestAllAccounts: false,
   dockBadgeEnabled: true,
   dockBadgeSource: "inbox",
   signatures: {},
@@ -105,7 +114,8 @@ const DEFAULT_SETTINGS: Settings = {
 
 /** Optimistic settings write: cache first, backend follows, rollback on error. */
 async function updateSettings(patch: Partial<Settings>) {
-  const cur = queryClient.getQueryData<Settings>(["settings"]) ?? DEFAULT_SETTINGS;
+  const cur =
+    queryClient.getQueryData<Settings>(["settings"]) ?? DEFAULT_SETTINGS;
   const next: Settings = { ...cur, ...patch };
   queryClient.setQueryData(["settings"], next);
   if (patch.theme) useUi.getState().set({ theme: patch.theme });
@@ -114,7 +124,9 @@ async function updateSettings(patch: Partial<Settings>) {
   } catch (err) {
     useUi.getState().pushToast({
       kind: "error",
-      message: i18n.t("settings:toast.settingsSaveFailed", { detail: errorMessage(err) }),
+      message: i18n.t("settings:toast.settingsSaveFailed", {
+        detail: errorMessage(err),
+      }),
     });
     void queryClient.invalidateQueries({ queryKey: ["settings"] });
   }
@@ -125,7 +137,14 @@ function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
     general: (
       <>
         <path d="M4 7h6M14 7h6M4 17h9M17 17h3" />
-        <circle cx="12" cy="7" r="2" /><circle cx="15" cy="17" r="2" />
+        <circle cx="12" cy="7" r="2" />
+        <circle cx="15" cy="17" r="2" />
+      </>
+    ),
+    stats: (
+      <>
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20V7" />
+        <path d="M2 20h22" />
       </>
     ),
     splits: (
@@ -137,12 +156,14 @@ function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
     ),
     snippets: (
       <>
-        <path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5M9 12h6M9 16h6" />
+        <path d="M6 3h9l4 4v14H6z" />
+        <path d="M14 3v5h5M9 12h6M9 16h6" />
       </>
     ),
     labels: (
       <>
-        <path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9z" /><circle cx="8" cy="8" r="1.5" />
+        <path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9z" />
+        <circle cx="8" cy="8" r="1.5" />
       </>
     ),
     ai: (
@@ -154,30 +175,47 @@ function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
     ai_automation: (
       <>
         <path d="M5 4v5M5 15v5M19 4v5M19 15v5M5 12h14" />
-        <circle cx="5" cy="12" r="3" /><circle cx="19" cy="12" r="3" />
+        <circle cx="5" cy="12" r="3" />
+        <circle cx="19" cy="12" r="3" />
       </>
     ),
     rag: (
       <>
-        <ellipse cx="10" cy="6" rx="6" ry="3" /><path d="M4 6v7c0 1.7 2.7 3 6 3 1 0 2-.1 2.8-.4M16 6v4" />
-        <circle cx="17" cy="16" r="4" /><path d="M20 19l2 2" />
+        <ellipse cx="10" cy="6" rx="6" ry="3" />
+        <path d="M4 6v7c0 1.7 2.7 3 6 3 1 0 2-.1 2.8-.4M16 6v4" />
+        <circle cx="17" cy="16" r="4" />
+        <path d="M20 19l2 2" />
       </>
     ),
     accounts: (
       <>
-        <circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
-        <circle cx="17" cy="9" r="2.5" /><path d="M15.5 15.5A5 5 0 0 1 21 20" />
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+        <circle cx="17" cy="9" r="2.5" />
+        <path d="M15.5 15.5A5 5 0 0 1 21 20" />
       </>
     ),
     sync: (
       <>
-        <path d="M20 7h-5V2" /><path d="M19 7a8 8 0 0 0-13.5-2L4 7" />
-        <path d="M4 17h5v5" /><path d="M5 17a8 8 0 0 0 13.5 2L20 17" />
+        <path d="M20 7h-5V2" />
+        <path d="M19 7a8 8 0 0 0-13.5-2L4 7" />
+        <path d="M4 17h5v5" />
+        <path d="M5 17a8 8 0 0 0 13.5 2L20 17" />
       </>
     ),
   };
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       {paths[tab]}
     </svg>
   );
@@ -189,11 +227,14 @@ export function SettingsPanel() {
   const requestedTab = useUi((s) => s.settingsTab);
   const set = useUi((s) => s.set);
   const { data: settings } = useSettings();
+  const { data: splits } = useSplits();
+  const { data: labels } = useLabels();
   const [tab, setTab] = useState<SettingsTab>("general");
   const [query, setQuery] = useState("");
 
   const TAB_KEYS: SettingsTab[] = [
     "general",
+    "stats",
     "splits",
     "snippets",
     "labels",
@@ -220,6 +261,28 @@ export function SettingsPanel() {
   if (!open) return null;
   const s = settings ?? DEFAULT_SETTINGS;
 
+  // The inbox tabs a "specific tabs" notification scope can pick from, keyed by
+  // the same route keys the backend stores in `threads.routed_tab`.
+  const notifyTabOptions = inboxTabOrder(
+    splits,
+    labels,
+    s.autoLabelsEnabled !== false,
+  ).map((item) => {
+    if (item.kind === "important")
+      return { key: "important", name: t("inbox:split.important") };
+    if (item.kind === "other")
+      return { key: "other", name: t("inbox:split.other") };
+    if (item.kind === "split")
+      return { key: `split:${item.id}`, name: item.name };
+    return { key: `label:${item.id}`, name: item.name };
+  });
+  const toggleNotifyTab = (key: string, on: boolean) => {
+    const next = on
+      ? [...s.notificationTabs, key]
+      : s.notificationTabs.filter((k) => k !== key);
+    void updateSettings({ notificationTabs: next });
+  };
+
   // Jump to a tab and drop out of search mode.
   const goTab = (next: SettingsTab) => {
     setTab(next);
@@ -228,6 +291,7 @@ export function SettingsPanel() {
 
   const TAB_LABELS: Record<SettingsTab, string> = {
     general: t("settings:section.preferences"),
+    stats: t("settings:section.stats"),
     splits: t("settings:section.splitInbox"),
     snippets: t("settings:section.snippets"),
     labels: t("settings:section.labels"),
@@ -239,7 +303,7 @@ export function SettingsPanel() {
   };
 
   const TAB_GROUPS: { label: string; tabs: SettingsTab[] }[] = [
-    { label: t("settings:navigation.general"), tabs: ["general"] },
+    { label: t("settings:navigation.general"), tabs: ["general", "stats"] },
     {
       label: t("settings:navigation.organization"),
       tabs: ["splits", "snippets", "labels"],
@@ -254,35 +318,138 @@ export function SettingsPanel() {
   // Flat index of every setting, so search can jump straight to its tab.
   // `label` is localized (matches localized queries); `keywords` add English synonyms.
   const INDEX: { tab: SettingsTab; label: string; keywords: string }[] = [
-    { tab: "general", label: t("settings:theme.label"), keywords: "appearance dark light snow carbon color" },
-    { tab: "general", label: t("settings:language.label"), keywords: "locale translation" },
-    { tab: "general", label: t("settings:undoSend.label"), keywords: "undo send delay cancel" },
-    { tab: "general", label: t("settings:loadRemoteImages.label"), keywords: "images privacy tracking pixels remote" },
-    { tab: "general", label: t("settings:notifications.label"), keywords: "notify alerts desktop" },
-    { tab: "general", label: t("settings:dockBadge.label"), keywords: "dock badge unread count icon red important" },
-    { tab: "general", label: t("settings:autoAdvance.label"), keywords: "auto advance next thread cursor" },
-    { tab: "general", label: t("settings:groupByDate.label"), keywords: "group date today yesterday timeline headers sections" },
-    { tab: "splits", label: t("settings:autoLabels.label"), keywords: "auto labels categorize" },
-    { tab: "splits", label: t("settings:section.splitInbox"), keywords: "split inbox tabs rules important other sender subject" },
-    { tab: "snippets", label: t("settings:snippets.title"), keywords: "snippets templates canned responses shortcuts" },
-    { tab: "labels", label: t("settings:labels.title"), keywords: "labels tags colors folders" },
-    { tab: "ai", label: t("settings:section.ai"), keywords: "ai provider model api key openai anthropic openrouter" },
-    { tab: "ai_automation", label: t("settings:section.aiAutomation"), keywords: "ai automation rules sort actions labels trash subject" },
-    { tab: "rag", label: t("settings:section.ragSearch"), keywords: "rag semantic search embeddings vector meaning offline reindex" },
-    { tab: "ai", label: "Writing voice", keywords: "voice draft style learn tone" },
-    { tab: "accounts", label: t("settings:section.accounts"), keywords: "accounts add remove gmail microsoft imap oauth" },
-    { tab: "accounts", label: t("settings:signature.section"), keywords: "signature sign-off footer" },
-    { tab: "accounts", label: t("settings:section.oauthApps"), keywords: "oauth client id secret google microsoft app credentials" },
-    { tab: "sync", label: t("settings:section.sync"), keywords: "sync synchronize refresh check mail inbox status progress" },
-    { tab: "sync", label: t("settings:sync.background"), keywords: "background cache caching history headers content indexing failed retry" },
-    { tab: "general", label: t("settings:about.section"), keywords: "about version update upgrade release check" },
+    {
+      tab: "stats",
+      label: t("settings:section.stats"),
+      keywords: "statistics analytics activity sent received email heatmap volume",
+    },
+    {
+      tab: "general",
+      label: t("settings:theme.label"),
+      keywords: "appearance dark light snow carbon color",
+    },
+    {
+      tab: "general",
+      label: t("settings:language.label"),
+      keywords: "locale translation",
+    },
+    {
+      tab: "general",
+      label: t("settings:undoSend.label"),
+      keywords: "undo send delay cancel",
+    },
+    {
+      tab: "general",
+      label: t("settings:loadRemoteImages.label"),
+      keywords: "images privacy tracking pixels remote",
+    },
+    {
+      tab: "general",
+      label: t("settings:notifications.label"),
+      keywords:
+        "notify alerts desktop scope important all tabs split inbox spam",
+    },
+    {
+      tab: "general",
+      label: t("settings:dockBadge.label"),
+      keywords: "dock badge unread count icon red important",
+    },
+    {
+      tab: "general",
+      label: t("settings:autoAdvance.label"),
+      keywords: "auto advance next thread cursor",
+    },
+    {
+      tab: "general",
+      label: t("settings:groupByDate.label"),
+      keywords: "group date today yesterday timeline headers sections",
+    },
+    {
+      tab: "general",
+      label: t("settings:contactSuggestAllAccounts.label"),
+      keywords: "contacts autocomplete suggestions recipients to account domain all",
+    },
+    {
+      tab: "splits",
+      label: t("settings:autoLabels.label"),
+      keywords: "auto labels categorize",
+    },
+    {
+      tab: "splits",
+      label: t("settings:section.splitInbox"),
+      keywords: "split inbox tabs rules important other sender subject",
+    },
+    {
+      tab: "snippets",
+      label: t("settings:snippets.title"),
+      keywords: "snippets templates canned responses shortcuts",
+    },
+    {
+      tab: "labels",
+      label: t("settings:labels.title"),
+      keywords: "labels tags colors folders",
+    },
+    {
+      tab: "ai",
+      label: t("settings:section.ai"),
+      keywords: "ai provider model api key openai anthropic openrouter",
+    },
+    {
+      tab: "ai_automation",
+      label: t("settings:section.aiAutomation"),
+      keywords: "ai automation rules sort actions labels trash subject",
+    },
+    {
+      tab: "rag",
+      label: t("settings:section.ragSearch"),
+      keywords: "rag semantic search embeddings vector meaning offline reindex",
+    },
+    {
+      tab: "ai",
+      label: "Writing voice",
+      keywords: "voice draft style learn tone",
+    },
+    {
+      tab: "accounts",
+      label: t("settings:section.accounts"),
+      keywords: "accounts add remove gmail microsoft imap oauth",
+    },
+    {
+      tab: "accounts",
+      label: t("settings:signature.section"),
+      keywords: "signature sign-off footer",
+    },
+    {
+      tab: "accounts",
+      label: t("settings:section.oauthApps"),
+      keywords: "oauth client id secret google microsoft app credentials",
+    },
+    {
+      tab: "sync",
+      label: t("settings:section.sync"),
+      keywords: "sync synchronize refresh check mail inbox status progress",
+    },
+    {
+      tab: "sync",
+      label: t("settings:sync.background"),
+      keywords:
+        "background cache caching history headers content indexing failed retry",
+    },
+    {
+      tab: "general",
+      label: t("settings:about.section"),
+      keywords: "about version update upgrade release check",
+    },
   ];
 
   const q = query.trim();
   const results =
     q === ""
       ? []
-      : INDEX.map((e) => ({ e, score: commandScore(`${e.label} ${e.keywords}`, q) }))
+      : INDEX.map((e) => ({
+          e,
+          score: commandScore(`${e.label} ${e.keywords}`, q),
+        }))
           .filter((r) => r.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((r) => r.e);
@@ -292,7 +459,9 @@ export function SettingsPanel() {
       {TAB_GROUPS.map((group, groupIndex) => (
         <section
           key={group.label}
-          className={groupIndex === 0 ? "pb-2" : "border-t border-hairline py-2"}
+          className={
+            groupIndex === 0 ? "pb-2" : "border-t border-hairline py-2"
+          }
         >
           <h3 className="mb-1 px-3 text-[10px] font-semibold tracking-[0.13em] text-ink-faint uppercase">
             {group.label}
@@ -310,9 +479,13 @@ export function SettingsPanel() {
                     : "text-ink-muted hover:bg-bg2 hover:text-ink"
                 }`}
               >
-                <span className={`flex size-6 shrink-0 items-center justify-center rounded-md ${
-                  tab === k && q === "" ? "bg-accent/10" : "bg-bg1 group-hover:bg-bg0"
-                }`}>
+                <span
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-md ${
+                    tab === k && q === ""
+                      ? "bg-accent/10"
+                      : "bg-bg1 group-hover:bg-bg0"
+                  }`}
+                >
                   <SettingsNavIcon tab={k} />
                 </span>
                 <span className="truncate">{TAB_LABELS[k]}</span>
@@ -337,7 +510,13 @@ export function SettingsPanel() {
 
   if (q !== "") {
     return (
-      <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} sidebar={sideNav} search={search} width={940}>
+      <PanelShell
+        title={t("settings:title")}
+        onClose={() => set({ panel: null })}
+        sidebar={sideNav}
+        search={search}
+        width={940}
+      >
         {results.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-ink-faint">
             {t("settings:search.noResults", { query: q })}
@@ -363,11 +542,20 @@ export function SettingsPanel() {
   }
 
   return (
-    <PanelShell title={t("settings:title")} onClose={() => set({ panel: null })} sidebar={sideNav} search={search} width={940}>
+    <PanelShell
+      title={t("settings:title")}
+      onClose={() => set({ panel: null })}
+      sidebar={sideNav}
+      search={search}
+      width={940}
+    >
       <div className="flex flex-col gap-7">
         {tab === "general" && (
           <section className="flex flex-col gap-4">
-            <SettingRow label={t("settings:theme.label")} hint={t("settings:theme.hint")}>
+            <SettingRow
+              label={t("settings:theme.label")}
+              hint={t("settings:theme.hint")}
+            >
               <Segmented
                 value={s.theme}
                 options={[
@@ -379,7 +567,10 @@ export function SettingsPanel() {
                 onChange={(theme) => void updateSettings({ theme })}
               />
             </SettingRow>
-            <SettingRow label={t("settings:language.label")} hint={t("settings:language.hint")}>
+            <SettingRow
+              label={t("settings:language.label")}
+              hint={t("settings:language.hint")}
+            >
               <Select
                 value={s.language}
                 onChange={(e) => {
@@ -388,7 +579,9 @@ export function SettingsPanel() {
                 }}
                 className="!w-[200px]"
               >
-                <option value={SYSTEM_LANGUAGE}>{t("settings:language.system")}</option>
+                <option value={SYSTEM_LANGUAGE}>
+                  {t("settings:language.system")}
+                </option>
                 {SUPPORTED_LANGUAGES.map((code) => (
                   <option key={code} value={code}>
                     {LANGUAGE_NAMES[code] ?? code}
@@ -396,14 +589,19 @@ export function SettingsPanel() {
                 ))}
               </Select>
             </SettingRow>
-            <SettingRow label={t("settings:undoSend.label")} hint={t("settings:undoSend.hint")}>
+            <SettingRow
+              label={t("settings:undoSend.label")}
+              hint={t("settings:undoSend.hint")}
+            >
               <Segmented
                 value={s.undoSendSeconds}
                 options={[5, 10, 20, 30].map((n) => ({
                   value: n,
                   label: t("settings:undoSend.seconds", { n }),
                 }))}
-                onChange={(undoSendSeconds) => void updateSettings({ undoSendSeconds })}
+                onChange={(undoSendSeconds) =>
+                  void updateSettings({ undoSendSeconds })
+                }
               />
             </SettingRow>
             <SettingRow
@@ -413,7 +611,9 @@ export function SettingsPanel() {
               <Toggle
                 label={t("settings:loadRemoteImages.label")}
                 checked={s.loadRemoteImages}
-                onChange={(loadRemoteImages) => void updateSettings({ loadRemoteImages })}
+                onChange={(loadRemoteImages) =>
+                  void updateSettings({ loadRemoteImages })
+                }
               />
             </SettingRow>
             <SettingRow
@@ -423,21 +623,87 @@ export function SettingsPanel() {
               <Toggle
                 label={t("settings:notifications.label")}
                 checked={s.notificationsEnabled}
-                onChange={(notificationsEnabled) => void updateSettings({ notificationsEnabled })}
+                onChange={(notificationsEnabled) =>
+                  void updateSettings({ notificationsEnabled })
+                }
               />
             </SettingRow>
-            <SettingRow label={t("settings:sound.label")} hint={t("settings:sound.hint")}>
+            {s.notificationsEnabled && (
+              <SettingRow
+                label={t("settings:notificationScope.label")}
+                hint={t("settings:notificationScope.hint")}
+              >
+                <div className="flex flex-col items-end gap-2">
+                  <Segmented
+                    value={s.notificationScope}
+                    options={[
+                      {
+                        value: "important" as const,
+                        label: t("settings:notificationScope.important"),
+                      },
+                      {
+                        value: "all" as const,
+                        label: t("settings:notificationScope.all"),
+                      },
+                      {
+                        value: "tabs" as const,
+                        label: t("settings:notificationScope.tabs"),
+                      },
+                    ]}
+                    onChange={(notificationScope) =>
+                      void updateSettings({ notificationScope })
+                    }
+                  />
+                  {s.notificationScope === "tabs" && (
+                    <div className="flex flex-col items-end gap-1.5 pt-1">
+                      {notifyTabOptions.map((opt) => (
+                        <label
+                          key={opt.key}
+                          className="flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-muted select-none"
+                        >
+                          <span>{opt.name}</span>
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-accent"
+                            checked={s.notificationTabs.includes(opt.key)}
+                            onChange={(e) =>
+                              toggleNotifyTab(opt.key, e.target.checked)
+                            }
+                          />
+                        </label>
+                      ))}
+                      {notifyTabOptions.length === 0 && (
+                        <span className="text-[12px] text-ink-muted">
+                          {t("settings:notificationScope.noTabs")}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </SettingRow>
+            )}
+            <SettingRow
+              label={t("settings:sound.label")}
+              hint={t("settings:sound.hint")}
+            >
               <Toggle
                 label={t("settings:sound.label")}
                 checked={s.soundEnabled}
-                onChange={(soundEnabled) => void updateSettings({ soundEnabled })}
+                onChange={(soundEnabled) =>
+                  void updateSettings({ soundEnabled })
+                }
               />
             </SettingRow>
-            <SettingRow label={t("settings:dockBadge.label")} hint={t("settings:dockBadge.hint")}>
+            <SettingRow
+              label={t("settings:dockBadge.label")}
+              hint={t("settings:dockBadge.hint")}
+            >
               <Toggle
                 label={t("settings:dockBadge.label")}
                 checked={s.dockBadgeEnabled}
-                onChange={(dockBadgeEnabled) => void updateSettings({ dockBadgeEnabled })}
+                onChange={(dockBadgeEnabled) =>
+                  void updateSettings({ dockBadgeEnabled })
+                }
               />
             </SettingRow>
             {s.dockBadgeEnabled && (
@@ -448,13 +714,18 @@ export function SettingsPanel() {
                 <Segmented
                   value={s.dockBadgeSource}
                   options={[
-                    { value: "inbox" as const, label: t("settings:dockBadgeSource.all") },
+                    {
+                      value: "inbox" as const,
+                      label: t("settings:dockBadgeSource.all"),
+                    },
                     {
                       value: "important" as const,
                       label: t("settings:dockBadgeSource.important"),
                     },
                   ]}
-                  onChange={(dockBadgeSource) => void updateSettings({ dockBadgeSource })}
+                  onChange={(dockBadgeSource) =>
+                    void updateSettings({ dockBadgeSource })
+                  }
                 />
               </SettingRow>
             )}
@@ -479,6 +750,18 @@ export function SettingsPanel() {
               />
             </SettingRow>
             <SettingRow
+              label={t("settings:contactSuggestAllAccounts.label")}
+              hint={t("settings:contactSuggestAllAccounts.hint")}
+            >
+              <Toggle
+                label={t("settings:contactSuggestAllAccounts.label")}
+                checked={s.contactSuggestAllAccounts}
+                onChange={(contactSuggestAllAccounts) =>
+                  void updateSettings({ contactSuggestAllAccounts })
+                }
+              />
+            </SettingRow>
+            <SettingRow
               label={t("settings:meetingReminder.label")}
               hint={t("settings:meetingReminder.hint")}
             >
@@ -486,7 +769,9 @@ export function SettingsPanel() {
                 className="!w-[180px]"
                 value={s.meetingNotifyLeadMinutes}
                 onChange={(e) =>
-                  void updateSettings({ meetingNotifyLeadMinutes: Number(e.target.value) })
+                  void updateSettings({
+                    meetingNotifyLeadMinutes: Number(e.target.value),
+                  })
                 }
               >
                 <option value={0}>{t("settings:meetingReminder.off")}</option>
@@ -501,6 +786,8 @@ export function SettingsPanel() {
           </section>
         )}
 
+        {tab === "stats" && <EmailStatsDashboard />}
+
         {tab === "splits" && (
           <>
             <SettingRow
@@ -510,7 +797,9 @@ export function SettingsPanel() {
               <Toggle
                 label={t("settings:autoLabels.label")}
                 checked={s.autoLabelsEnabled}
-                onChange={(autoLabelsEnabled) => void updateSettings({ autoLabelsEnabled })}
+                onChange={(autoLabelsEnabled) =>
+                  void updateSettings({ autoLabelsEnabled })
+                }
               />
             </SettingRow>
             <SplitInboxSection />
@@ -529,7 +818,9 @@ export function SettingsPanel() {
           </>
         )}
 
-        {tab === "ai_automation" && <AiSection settings={s} page="automation" />}
+        {tab === "ai_automation" && (
+          <AiSection settings={s} page="automation" />
+        )}
 
         {tab === "rag" && <SemanticSearchSection settings={s} />}
 
@@ -549,20 +840,88 @@ export function SettingsPanel() {
 }
 
 /** Known OpenAI-compatible providers; picking one fills the base URL. */
-const AI_PROVIDER_PRESETS: { id: string; label: string; baseUrl: string; defaultModel?: string }[] = [
-  { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-5.6-luna" },
-  { id: "anthropic", label: "Anthropic (Claude)", baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-sonnet-5" },
-  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5.6-luna" },
-  { id: "lmstudio", label: "LM Studio (local)", baseUrl: "http://localhost:1234/v1" },
-  { id: "ollama", label: "Ollama (local)", baseUrl: "http://localhost:11434/v1" },
-  { id: "minimax", label: "MiniMax", baseUrl: "https://api.minimax.io/v1", defaultModel: "MiniMax-M3" },
-  { id: "kimi", label: "Kimi (Moonshot)", baseUrl: "https://api.moonshot.ai/v1", defaultModel: "kimi-k2.6" },
-  { id: "zai", label: "Z.ai (GLM)", baseUrl: "https://api.z.ai/api/paas/v4", defaultModel: "glm-5.2" },
-  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-v4-flash" },
-  { id: "gemini", label: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-flash-latest" },
-  { id: "mistral", label: "Mistral", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-large-latest" },
-  { id: "qwen", label: "Alibaba Qwen (multilingual)", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", defaultModel: "qwen-plus" },
-  { id: "groq", label: "Groq", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "openai/gpt-oss-120b" },
+const AI_PROVIDER_PRESETS: {
+  id: string;
+  label: string;
+  baseUrl: string;
+  defaultModel?: string;
+}[] = [
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    defaultModel: "openai/gpt-5.6-luna",
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic (Claude)",
+    baseUrl: "https://api.anthropic.com/v1",
+    defaultModel: "claude-sonnet-5",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    defaultModel: "gpt-5.6-luna",
+  },
+  {
+    id: "lmstudio",
+    label: "LM Studio (local)",
+    baseUrl: "http://localhost:1234/v1",
+  },
+  {
+    id: "ollama",
+    label: "Ollama (local)",
+    baseUrl: "http://localhost:11434/v1",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    baseUrl: "https://api.minimax.io/v1",
+    defaultModel: "MiniMax-M3",
+  },
+  {
+    id: "kimi",
+    label: "Kimi (Moonshot)",
+    baseUrl: "https://api.moonshot.ai/v1",
+    defaultModel: "kimi-k2.6",
+  },
+  {
+    id: "zai",
+    label: "Z.ai (GLM)",
+    baseUrl: "https://api.z.ai/api/paas/v4",
+    defaultModel: "glm-5.2",
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    defaultModel: "deepseek-v4-flash",
+  },
+  {
+    id: "gemini",
+    label: "Google Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    defaultModel: "gemini-flash-latest",
+  },
+  {
+    id: "mistral",
+    label: "Mistral",
+    baseUrl: "https://api.mistral.ai/v1",
+    defaultModel: "mistral-large-latest",
+  },
+  {
+    id: "qwen",
+    label: "Alibaba Qwen (multilingual)",
+    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen-plus",
+  },
+  {
+    id: "groq",
+    label: "Groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    defaultModel: "openai/gpt-oss-120b",
+  },
 ];
 
 /** Version readout plus a manual "check for updates" against GitHub Releases. */
@@ -584,13 +943,19 @@ function AboutSection() {
       if (update) {
         pushToast({
           kind: "info",
-          message: t("settings:about.updateAvailable", { version: update.version }),
+          message: t("settings:about.updateAvailable", {
+            version: update.version,
+          }),
           actionLabel: t("settings:about.restartInstall"),
           onAction: () => install(update),
           durationMs: 30000,
         });
       } else {
-        pushToast({ kind: "info", message: t("settings:about.upToDate"), durationMs: 3000 });
+        pushToast({
+          kind: "info",
+          message: t("settings:about.upToDate"),
+          durationMs: 3000,
+        });
       }
     } catch (err) {
       pushToast({ kind: "error", message: errorMessage(err) });
@@ -610,15 +975,29 @@ function AboutSection() {
   return (
     <section className="mt-3 flex flex-col gap-4 border-t border-hairline pt-5">
       <SectionLabel>{t("settings:about.section")}</SectionLabel>
-      <SettingRow label={t("settings:about.version")} hint={t("settings:about.versionHint")}>
+      <SettingRow
+        label={t("settings:about.version")}
+        hint={t("settings:about.versionHint")}
+      >
         <div className="flex items-center gap-3">
-          <span className="text-[13px] tabular-nums text-ink-muted">{version || "…"}</span>
-          <button className={ghostBtnCls} onClick={() => void onCheck()} disabled={checking}>
-            {checking ? t("settings:about.checking") : t("settings:about.checkUpdates")}
+          <span className="text-[13px] tabular-nums text-ink-muted">
+            {version || "…"}
+          </span>
+          <button
+            className={ghostBtnCls}
+            onClick={() => void onCheck()}
+            disabled={checking}
+          >
+            {checking
+              ? t("settings:about.checking")
+              : t("settings:about.checkUpdates")}
           </button>
         </div>
       </SettingRow>
-      <SettingRow label={t("settings:about.logs")} hint={t("settings:about.logsHint")}>
+      <SettingRow
+        label={t("settings:about.logs")}
+        hint={t("settings:about.logsHint")}
+      >
         <button className={ghostBtnCls} onClick={() => void onOpenLogs()}>
           {t("settings:about.openLogs")}
         </button>
@@ -699,11 +1078,191 @@ function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function formatTokenCount(value: number): string {
+function formatMetricCount(value: number): string {
   return new Intl.NumberFormat(i18n.language, {
     notation: value >= 10_000 ? "compact" : "standard",
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+/** Sent/received totals and a daily activity grid over the last year. */
+function EmailStatsDashboard() {
+  const { t } = useTranslation();
+  const { data: stats } = useEmailStats();
+  const [metric, setMetric] = useState<"all" | "sent" | "received">("all");
+  const dayByDate = new Map((stats?.days ?? []).map((day) => [day.date, day]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(start.getDate() - start.getDay() - 51 * 7);
+  const heatmapDays: Date[] = [];
+  for (
+    const cursor = new Date(start);
+    cursor <= today;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
+    heatmapDays.push(new Date(cursor));
+  }
+  const countFor = (sent: number, received: number) =>
+    metric === "sent" ? sent : metric === "received" ? received : sent + received;
+  const maxCount = Math.max(
+    1,
+    ...Array.from(dayByDate.values(), (day) =>
+      countFor(day.sent, day.received),
+    ),
+  );
+  const heatColor =
+    metric === "sent"
+      ? "var(--ok)"
+      : metric === "received"
+        ? "var(--info)"
+        : "var(--accent)";
+  const summaries = [
+    { label: t("settings:stats.totalSent"), value: stats?.totalSent ?? 0 },
+    {
+      label: t("settings:stats.totalReceived"),
+      value: stats?.totalReceived ?? 0,
+    },
+    { label: t("settings:stats.todaySent"), value: stats?.todaySent ?? 0 },
+    {
+      label: t("settings:stats.todayReceived"),
+      value: stats?.todayReceived ?? 0,
+    },
+    {
+      label: t("settings:stats.last7Sent"),
+      value: stats?.last7DaysSent ?? 0,
+    },
+    {
+      label: t("settings:stats.last7Received"),
+      value: stats?.last7DaysReceived ?? 0,
+    },
+    {
+      label: t("settings:stats.last30Sent"),
+      value: stats?.last30DaysSent ?? 0,
+    },
+    {
+      label: t("settings:stats.last30Received"),
+      value: stats?.last30DaysReceived ?? 0,
+    },
+  ];
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <SectionLabel>{t("settings:stats.section")}</SectionLabel>
+        <p className="mt-1 text-[11.5px] leading-relaxed text-ink-faint">
+          {t("settings:stats.intro")}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        {summaries.map((summary) => (
+          <div
+            key={summary.label}
+            className="rounded-xl border border-hairline bg-bg1 px-3 py-2.5"
+          >
+            <div className="truncate text-[10.5px] font-medium text-ink-faint">
+              {summary.label}
+            </div>
+            <div
+              className="mt-1 truncate text-[18px] font-semibold tabular-nums tracking-tight text-ink"
+              title={summary.value.toLocaleString(i18n.language)}
+            >
+              {formatMetricCount(summary.value)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[12px] font-medium text-ink-muted">
+              {t("settings:stats.activity")}
+            </div>
+            <div className="mt-0.5 text-[10.5px] text-ink-faint">
+              {t("settings:stats.recent")}
+            </div>
+          </div>
+          <Segmented
+            value={metric}
+            options={[
+              { value: "all", label: t("settings:stats.all") },
+              { value: "sent", label: t("settings:stats.sent") },
+              { value: "received", label: t("settings:stats.received") },
+            ]}
+            onChange={setMetric}
+          />
+        </div>
+        <div className="flex items-stretch gap-2">
+          <div className="grid shrink-0 grid-rows-7 items-center gap-[3px] text-[9px] leading-[10px] text-ink-faint">
+            <span />
+            <span>{t("settings:ai.usage.monday")}</span>
+            <span />
+            <span>{t("settings:ai.usage.wednesday")}</span>
+            <span />
+            <span>{t("settings:ai.usage.friday")}</span>
+            <span />
+          </div>
+          <div
+            className="grid flex-1 gap-[3px]"
+            style={{
+              gridAutoFlow: "column",
+              gridTemplateRows: "repeat(7, auto)",
+              gridAutoColumns: "minmax(0, 1fr)",
+            }}
+            aria-label={t("settings:stats.activity")}
+          >
+            {heatmapDays.map((date) => {
+              const key = localDateKey(date);
+              const day = dayByDate.get(key);
+              const sent = day?.sent ?? 0;
+              const received = day?.received ?? 0;
+              const count = countFor(sent, received);
+              const ratio = count / maxCount;
+              const opacity =
+                count === 0 ? undefined : 0.18 + Math.ceil(ratio * 4) * 0.17;
+              const title = t("settings:stats.dayTitle", {
+                date: date.toLocaleDateString(i18n.language, {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                }),
+                sent: sent.toLocaleString(i18n.language),
+                received: received.toLocaleString(i18n.language),
+              });
+              return (
+                <span
+                  key={key}
+                  className="aspect-square w-full rounded-[2px] bg-bg3 ring-1 ring-inset ring-black/[0.035]"
+                  style={
+                    count > 0
+                      ? { background: heatColor, opacity }
+                      : undefined
+                  }
+                  title={title}
+                  aria-label={title}
+                />
+              );
+            })}
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-end gap-1 text-[9.5px] text-ink-faint">
+          <span>{t("settings:ai.usage.less")}</span>
+          {[0, 0.35, 0.52, 0.69, 0.86].map((opacity, index) => (
+            <span
+              key={opacity}
+              className="size-2.5 rounded-[2px] bg-bg3"
+              style={
+                index === 0 ? undefined : { background: heatColor, opacity }
+              }
+            />
+          ))}
+          <span>{t("settings:ai.usage.more")}</span>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 /** Token totals and a GitHub-style daily activity grid for recent AI requests. */
@@ -718,16 +1277,29 @@ function AiUsageDashboard() {
   // of a narrow 13-week strip stranded on the left of a wide panel.
   start.setDate(start.getDate() - start.getDay() - 51 * 7);
   const heatmapDays: Date[] = [];
-  for (const cursor = new Date(start); cursor <= today; cursor.setDate(cursor.getDate() + 1)) {
+  for (
+    const cursor = new Date(start);
+    cursor <= today;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
     heatmapDays.push(new Date(cursor));
   }
-  const maxTokens = Math.max(1, ...Array.from(dayByDate.values(), (day) => day.totalTokens));
+  const maxTokens = Math.max(
+    1,
+    ...Array.from(dayByDate.values(), (day) => day.totalTokens),
+  );
   const summaries = [
     { label: t("settings:ai.usage.total"), value: usage?.totalTokens ?? 0 },
     { label: t("settings:ai.usage.today"), value: usage?.todayTokens ?? 0 },
-    { label: t("settings:ai.usage.yesterday"), value: usage?.yesterdayTokens ?? 0 },
+    {
+      label: t("settings:ai.usage.yesterday"),
+      value: usage?.yesterdayTokens ?? 0,
+    },
     { label: t("settings:ai.usage.last7"), value: usage?.last7DaysTokens ?? 0 },
-    { label: t("settings:ai.usage.last30"), value: usage?.last30DaysTokens ?? 0 },
+    {
+      label: t("settings:ai.usage.last30"),
+      value: usage?.last30DaysTokens ?? 0,
+    },
   ];
 
   return (
@@ -740,19 +1312,26 @@ function AiUsageDashboard() {
           </p>
         </div>
         <span className="shrink-0 text-[11.5px] tabular-nums text-ink-faint">
-          {t("settings:ai.usage.requests", { count: usage?.totalRequests ?? 0 })}
+          {t("settings:ai.usage.requests", {
+            count: usage?.totalRequests ?? 0,
+          })}
         </span>
       </div>
 
       <div className="grid grid-cols-5 gap-2">
         {summaries.map((summary) => (
-          <div key={summary.label} className="rounded-xl border border-hairline bg-bg1 px-3 py-2.5">
-            <div className="truncate text-[10.5px] font-medium text-ink-faint">{summary.label}</div>
+          <div
+            key={summary.label}
+            className="rounded-xl border border-hairline bg-bg1 px-3 py-2.5"
+          >
+            <div className="truncate text-[10.5px] font-medium text-ink-faint">
+              {summary.label}
+            </div>
             <div
               className="mt-1 truncate text-[18px] font-semibold tabular-nums tracking-tight text-ink"
               title={(summary.value ?? 0).toLocaleString(i18n.language)}
             >
-              {formatTokenCount(summary.value)}
+              {formatMetricCount(summary.value)}
             </div>
           </div>
         ))}
@@ -791,7 +1370,8 @@ function AiUsageDashboard() {
               const day = dayByDate.get(key);
               const tokens = day?.totalTokens ?? 0;
               const ratio = tokens / maxTokens;
-              const opacity = tokens === 0 ? undefined : 0.18 + Math.ceil(ratio * 4) * 0.17;
+              const opacity =
+                tokens === 0 ? undefined : 0.18 + Math.ceil(ratio * 4) * 0.17;
               const title = t("settings:ai.usage.dayTitle", {
                 date: date.toLocaleDateString(i18n.language, {
                   year: "numeric",
@@ -805,7 +1385,11 @@ function AiUsageDashboard() {
                 <span
                   key={key}
                   className="aspect-square w-full rounded-[2px] bg-bg3 ring-1 ring-inset ring-black/[0.035]"
-                  style={tokens > 0 ? { background: "var(--accent)", opacity } : undefined}
+                  style={
+                    tokens > 0
+                      ? { background: "var(--accent)", opacity }
+                      : undefined
+                  }
                   title={title}
                   aria-label={title}
                 />
@@ -819,7 +1403,11 @@ function AiUsageDashboard() {
             <span
               key={opacity}
               className="size-2.5 rounded-[2px] bg-bg3"
-              style={index === 0 ? undefined : { background: "var(--accent)", opacity }}
+              style={
+                index === 0
+                  ? undefined
+                  : { background: "var(--accent)", opacity }
+              }
             />
           ))}
           <span>{t("settings:ai.usage.more")}</span>
@@ -838,21 +1426,29 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
   const [plan, setPlan] = useState<AiAutomationPlan | null>(null);
   const [trying, setTrying] = useState(false);
 
-  const commitRules = (rules: AiAutomationRule[]) => void updateSettings({ aiAutomationRules: rules });
+  const commitRules = (rules: AiAutomationRule[]) =>
+    void updateSettings({ aiAutomationRules: rules });
   const targetName = (value: string) => {
     if (value === "important") return t("inbox:split.important");
     if (value === "other") return t("inbox:split.other");
     if (value.startsWith("split:"))
-      return splits?.find((s) => s.id === Number(value.slice(6)))?.name ?? value;
+      return (
+        splits?.find((s) => s.id === Number(value.slice(6)))?.name ?? value
+      );
     if (value.startsWith("label:"))
-      return labels?.find((l) => l.id === Number(value.slice(6)))?.name ?? value;
+      return (
+        labels?.find((l) => l.id === Number(value.slice(6)))?.name ?? value
+      );
     return value;
   };
   const describeAction = (action: AiAutomationAction) => {
     const base = t(`settings:ai.actions.${action.kind}`);
-    if (action.kind === "route_to") return `${base}: ${targetName(action.value)}`;
+    if (action.kind === "route_to")
+      return `${base}: ${targetName(action.value)}`;
     if (action.kind === "add_label" || action.kind === "remove_label") {
-      const name = labels?.find((l) => l.id === Number(action.value))?.name ?? action.value;
+      const name =
+        labels?.find((l) => l.id === Number(action.value))?.name ??
+        action.value;
       return `${base}: ${name}`;
     }
     if (action.kind === "subject_prefix" || action.kind === "body_note")
@@ -860,7 +1456,8 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
     return base;
   };
   const openRule = (rule: AiAutomationRule) => {
-    const sourcePrompt = rule.sourcePrompt?.trim() ||
+    const sourcePrompt =
+      rule.sourcePrompt?.trim() ||
       `${rule.instruction}. ${rule.actions.map(describeAction).join(", ")}.`;
     setDraft({ ...structuredClone(rule), sourcePrompt });
     setPlan(null);
@@ -873,15 +1470,21 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
     if (!draft?.sourcePrompt.trim() || trying) return;
     setTrying(true);
     try {
-      const next = await call("ai_plan_automation", { prompt: draft.sourcePrompt.trim() });
+      const next = await call("ai_plan_automation", {
+        prompt: draft.sourcePrompt.trim(),
+      });
       setPlan(next);
       if (next.supported) {
-        setDraft((current) => current ? {
-          ...current,
-          name: next.name,
-          instruction: next.instruction,
-          actions: next.actions,
-        } : current);
+        setDraft((current) =>
+          current
+            ? {
+                ...current,
+                name: next.name,
+                instruction: next.instruction,
+                actions: next.actions,
+              }
+            : current,
+        );
       }
     } catch (err) {
       setPlan(null);
@@ -954,12 +1557,16 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
               <div className="flex items-start gap-2.5">
                 <span
                   className="mt-1 size-2 shrink-0 rounded-full"
-                  style={{ background: plan.supported ? "var(--ok)" : "var(--danger)" }}
+                  style={{
+                    background: plan.supported ? "var(--ok)" : "var(--danger)",
+                  }}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-semibold text-ink">
                     {plan.supported
-                      ? t("settings:ai.automation.validated", { name: plan.name })
+                      ? t("settings:ai.automation.validated", {
+                          name: plan.name,
+                        })
                       : t("settings:ai.automation.notDoable")}
                   </div>
                   {plan.summary && (
@@ -986,7 +1593,10 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
                     </div>
                     <div className="mt-1.5 flex flex-col gap-1.5">
                       {plan.actions.map((action, index) => (
-                        <div key={`${action.kind}-${index}`} className="flex items-center gap-2 text-[12px] text-ink-muted">
+                        <div
+                          key={`${action.kind}-${index}`}
+                          className="flex items-center gap-2 text-[12px] text-ink-muted"
+                        >
                           <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-bg2 text-[10px] font-semibold text-ink-faint">
                             {index + 1}
                           </span>
@@ -998,7 +1608,9 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
                 </div>
               ) : (
                 <ul className="mt-3 flex list-disc flex-col gap-1 border-t border-hairline pt-3 pl-5 text-[11.5px] leading-relaxed text-danger">
-                  {plan.issues.map((issue, index) => <li key={`${issue}-${index}`}>{issue}</li>)}
+                  {plan.issues.map((issue, index) => (
+                    <li key={`${issue}-${index}`}>{issue}</li>
+                  ))}
                 </ul>
               )}
             </div>
@@ -1010,10 +1622,16 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
               className={primaryBtnCls}
               disabled={!valid}
               onClick={() => {
-                const exists = settings.aiAutomationRules.some((r) => r.id === draft.id);
-                commitRules(exists
-                  ? settings.aiAutomationRules.map((r) => (r.id === draft.id ? draft : r))
-                  : [...settings.aiAutomationRules, draft]);
+                const exists = settings.aiAutomationRules.some(
+                  (r) => r.id === draft.id,
+                );
+                commitRules(
+                  exists
+                    ? settings.aiAutomationRules.map((r) =>
+                        r.id === draft.id ? draft : r,
+                      )
+                    : [...settings.aiAutomationRules, draft],
+                );
                 closeEditor();
               }}
             >
@@ -1036,29 +1654,57 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
   return (
     <div className="flex flex-col gap-2.5">
       {settings.aiAutomationRules.map((rule) => (
-        <div key={rule.id} className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3">
+        <div
+          key={rule.id}
+          className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3"
+        >
           <div className="flex items-start gap-3">
             <Toggle
               label={rule.name}
               checked={rule.enabled}
-              onChange={(enabled) => commitRules(settings.aiAutomationRules.map((r) => r.id === rule.id ? { ...r, enabled } : r))}
+              onChange={(enabled) =>
+                commitRules(
+                  settings.aiAutomationRules.map((r) =>
+                    r.id === rule.id ? { ...r, enabled } : r,
+                  ),
+                )
+              }
             />
-            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openRule(rule)}>
-              <span className="block truncate text-[13.5px] font-medium text-ink">{rule.name}</span>
-              <span className="mt-0.5 block line-clamp-2 text-[11.5px] leading-relaxed text-ink-faint">{rule.sourcePrompt || rule.instruction}</span>
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left"
+              onClick={() => openRule(rule)}
+            >
+              <span className="block truncate text-[13.5px] font-medium text-ink">
+                {rule.name}
+              </span>
+              <span className="mt-0.5 block line-clamp-2 text-[11.5px] leading-relaxed text-ink-faint">
+                {rule.sourcePrompt || rule.instruction}
+              </span>
             </button>
-            <button type="button" className={ghostBtnCls} onClick={() => openRule(rule)}>
+            <button
+              type="button"
+              className={ghostBtnCls}
+              onClick={() => openRule(rule)}
+            >
               {t("settings:ai.automation.edit")}
             </button>
             <ConfirmButton
               label={t("settings:ai.automation.delete")}
               confirmLabel={t("settings:ai.automation.reallyDelete")}
-              onConfirm={() => commitRules(settings.aiAutomationRules.filter((r) => r.id !== rule.id))}
+              onConfirm={() =>
+                commitRules(
+                  settings.aiAutomationRules.filter((r) => r.id !== rule.id),
+                )
+              }
             />
           </div>
           <div className="mt-2.5 flex flex-wrap gap-1.5 pl-[52px]">
             {rule.actions.map((action, index) => (
-              <span key={`${action.kind}-${index}`} className="max-w-full truncate rounded-full border border-hairline bg-bg0 px-2 py-0.5 text-[10.5px] text-ink-muted">
+              <span
+                key={`${action.kind}-${index}`}
+                className="max-w-full truncate rounded-full border border-hairline bg-bg0 px-2 py-0.5 text-[10.5px] text-ink-muted"
+              >
                 {describeAction(action)}
               </span>
             ))}
@@ -1067,21 +1713,27 @@ function AiAutomationsEditor({ settings }: { settings: Settings }) {
       ))}
       {settings.aiAutomationRules.length === 0 && (
         <div className="rounded-xl border border-dashed border-hairline bg-bg1 px-4 py-5 text-center">
-          <div className="text-[12.5px] font-medium text-ink-muted">{t("settings:ai.automation.emptyTitle")}</div>
-          <p className="mx-auto mt-1 max-w-md text-[11.5px] leading-relaxed text-ink-faint">{t("settings:ai.automation.emptyHint")}</p>
+          <div className="text-[12.5px] font-medium text-ink-muted">
+            {t("settings:ai.automation.emptyTitle")}
+          </div>
+          <p className="mx-auto mt-1 max-w-md text-[11.5px] leading-relaxed text-ink-faint">
+            {t("settings:ai.automation.emptyHint")}
+          </p>
         </div>
       )}
       <button
         type="button"
         className={`${primaryBtnCls} mt-0.5 self-start`}
-        onClick={() => setDraft({
-          id: `automation-${Date.now().toString(36)}`,
-          name: "",
-          sourcePrompt: "",
-          instruction: "",
-          enabled: true,
-          actions: [],
-        })}
+        onClick={() =>
+          setDraft({
+            id: `automation-${Date.now().toString(36)}`,
+            name: "",
+            sourcePrompt: "",
+            instruction: "",
+            enabled: true,
+            actions: [],
+          })
+        }
       >
         {t("settings:ai.automation.add")}
       </button>
@@ -1104,7 +1756,9 @@ function AiSection({
   const [baseUrl, setBaseUrl] = useState(settings.aiBaseUrl);
   const [model, setModel] = useState(settings.aiModel);
   const [forceCustom, setForceCustom] = useState(false);
-  const [categoryPrompt, setCategoryPrompt] = useState(settings.aiCategoryPrompt);
+  const [categoryPrompt, setCategoryPrompt] = useState(
+    settings.aiCategoryPrompt,
+  );
   const [resorting, setResorting] = useState(false);
   const baseUrlRef = useRef<HTMLInputElement>(null);
   const { data: models } = useAiModels(settings.aiBaseUrl);
@@ -1112,14 +1766,21 @@ function AiSection({
   // Follow external settings refreshes (initial load, other writers).
   useEffect(() => setBaseUrl(settings.aiBaseUrl), [settings.aiBaseUrl]);
   useEffect(() => setModel(settings.aiModel), [settings.aiModel]);
-  useEffect(() => setCategoryPrompt(settings.aiCategoryPrompt), [settings.aiCategoryPrompt]);
+  useEffect(
+    () => setCategoryPrompt(settings.aiCategoryPrompt),
+    [settings.aiCategoryPrompt],
+  );
 
   const resort = async () => {
     if (resorting) return;
     setResorting(true);
     try {
       const n = await call("reroute_all", {});
-      pushToast({ kind: "info", message: t("settings:ai.resorted", { count: n }), durationMs: 2500 });
+      pushToast({
+        kind: "info",
+        message: t("settings:ai.resorted", { count: n }),
+        durationMs: 2500,
+      });
       void queryClient.invalidateQueries({ queryKey: ["threads"] });
       void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
       void queryClient.invalidateQueries({ queryKey: ["labels"] });
@@ -1136,7 +1797,9 @@ function AiSection({
       await call("set_ai_key", { apiKey: apiKey.trim() });
       pushToast({
         kind: "info",
-        message: apiKey.trim() ? t("settings:ai.keySaved") : t("settings:ai.keyCleared"),
+        message: apiKey.trim()
+          ? t("settings:ai.keySaved")
+          : t("settings:ai.keyCleared"),
         durationMs: 2500,
       });
       setApiKey("");
@@ -1161,234 +1824,275 @@ function AiSection({
     <section className="flex flex-col gap-4">
       {page === "models" ? (
         <>
-      <SectionLabel>{t("settings:section.ai")}</SectionLabel>
-      <SettingRow
-        label={t("settings:ai.statusLabel")}
-        hint={t("settings:ai.statusHint")}
-      >
-        <span className="flex items-center gap-2 text-[12.5px] text-ink-muted">
-          <span
-            className="size-2 rounded-full"
-            style={{ background: status?.configured ? "var(--ok)" : "var(--bg4)" }}
-          />
-          {status
-            ? status.configured
-              ? t("settings:ai.configured", { model: status.model })
-              : t("settings:ai.notConfigured")
-            : t("settings:ai.loading")}
-        </span>
-      </SettingRow>
-      <SettingRow label={t("settings:ai.apiKeyLabel")} hint={t("settings:ai.apiKeyHint")}>
-        <div className="flex items-center gap-2">
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void saveKey();
-            }}
-            placeholder={t("settings:ai.apiKeyPlaceholder")}
-            autoComplete="off"
-            className={`${inputCls} !w-[220px]`}
-          />
-          <button className={primaryBtnCls} disabled={savingKey} onClick={() => void saveKey()}>
-            {t("settings:ai.save")}
-          </button>
-        </div>
-      </SettingRow>
-      <SettingRow label={t("settings:ai.providerLabel")} hint={t("settings:ai.providerHint")}>
-        <Select
-          value={
-            forceCustom
-              ? "custom"
-              : (AI_PROVIDER_PRESETS.find((p) => p.baseUrl === settings.aiBaseUrl)?.id ?? "custom")
-          }
-          onChange={(e) => {
-            if (e.target.value === "custom") {
-              // Keep whatever URL is set and hand focus to the field below.
-              setForceCustom(true);
-              baseUrlRef.current?.focus();
-              baseUrlRef.current?.select();
-              return;
-            }
-            const preset = AI_PROVIDER_PRESETS.find((p) => p.id === e.target.value);
-            if (!preset) return;
-            setForceCustom(false);
-            void updateSettings({
-              aiBaseUrl: preset.baseUrl,
-              ...(preset.defaultModel ? { aiModel: preset.defaultModel } : {}),
-            });
-          }}
-          className="!w-[280px]"
-        >
-          {AI_PROVIDER_PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-          <option value="custom">{t("settings:ai.customProvider")}</option>
-        </Select>
-      </SettingRow>
-      <SettingRow label={t("settings:ai.baseUrlLabel")} hint={t("settings:ai.baseUrlHint")}>
-        <input
-          ref={baseUrlRef}
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          onBlur={() => commitField({ aiBaseUrl: baseUrl.trim() })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitField({ aiBaseUrl: baseUrl.trim() });
-          }}
-          placeholder={t("settings:ai.baseUrlPlaceholder")}
-          spellCheck={false}
-          className={`${inputCls} !w-[280px]`}
-        />
-      </SettingRow>
-      <SettingRow
-        label={t("settings:ai.modelLabel")}
-        hint={
-          models && models.length > 0
-            ? t("settings:ai.modelsAvailable", { n: models.length })
-            : t("settings:ai.modelHintEmpty")
-        }
-      >
-        <input
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          onBlur={() => commitField({ aiModel: model.trim() })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitField({ aiModel: model.trim() });
-          }}
-          placeholder={t("settings:ai.modelPlaceholder")}
-          spellCheck={false}
-          list="ai-model-options"
-          className={`${inputCls} !w-[280px]`}
-        />
-        <datalist id="ai-model-options">
-          {(models ?? []).map((id) => (
-            <option key={id} value={id} />
-          ))}
-        </datalist>
-      </SettingRow>
-
-      <SectionLabel>{t("settings:ai.tiersSection")}</SectionLabel>
-      <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
-        {t("settings:ai.tiersIntro")}
-      </p>
-      <TierModelField
-        label={t("settings:ai.tier.instant")}
-        hint={t("settings:ai.tierInstantHint")}
-        value={settings.aiModelInstant}
-        placeholder={t("settings:ai.tierFallback")}
-        onCommit={(v) => commitField({ aiModelInstant: v })}
-      />
-      <TierModelField
-        label={t("settings:ai.tier.cheap")}
-        hint={t("settings:ai.tierCheapHint")}
-        value={settings.aiModelCheap}
-        placeholder={t("settings:ai.tierFallback")}
-        onCommit={(v) => commitField({ aiModelCheap: v })}
-      />
-      <TierModelField
-        label={t("settings:ai.tier.intelligent")}
-        hint={t("settings:ai.tierIntelligentHint")}
-        value={settings.aiModelIntelligent}
-        placeholder={t("settings:ai.tierFallback")}
-        onCommit={(v) => commitField({ aiModelIntelligent: v })}
-      />
-
-      <SectionLabel>{t("settings:ai.routingSection")}</SectionLabel>
-      <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
-        {t("settings:ai.routingIntro")}
-      </p>
-      <ScenarioRouteRow
-        label={t("settings:ai.routeAsk")}
-        hint={t("settings:ai.routeAskHint")}
-        value={settings.aiTierAsk}
-        onChange={(v) => commitField({ aiTierAsk: v })}
-        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-      />
-      <ScenarioRouteRow
-        label={t("settings:ai.routeDraft")}
-        hint={t("settings:ai.routeDraftHint")}
-        value={settings.aiTierDraft}
-        onChange={(v) => commitField({ aiTierDraft: v })}
-        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-      />
-      <ScenarioRouteRow
-        label={t("settings:ai.routeSummarize")}
-        hint={t("settings:ai.routeSummarizeHint")}
-        value={settings.aiTierSummarize}
-        onChange={(v) => commitField({ aiTierSummarize: v })}
-        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-      />
-      <ScenarioRouteRow
-        label={t("settings:ai.routeVoice")}
-        hint={t("settings:ai.routeVoiceHint")}
-        value={settings.aiTierVoice}
-        onChange={(v) => commitField({ aiTierVoice: v })}
-        tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-      />
-        </>
-      ) : (
-        <>
-      <SectionLabel>{t("settings:ai.categorizeSection")}</SectionLabel>
-      <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
-        {t("settings:ai.categorizeIntro")}
-      </p>
-      <SettingRow
-        label={t("settings:ai.categorizeLabel")}
-        hint={t("settings:ai.categorizeHint")}
-      >
-        <Toggle
-          label={t("settings:ai.categorizeLabel")}
-          checked={settings.aiCategorize}
-          onChange={(aiCategorize) => void updateSettings({ aiCategorize })}
-        />
-      </SettingRow>
-      {settings.aiCategorize && (
-        <>
-          <AiAutomationsEditor settings={settings} />
-          <details className="group rounded-xl border border-hairline bg-bg1">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-[12.5px] font-medium text-ink-muted">
-              <span>{t("settings:ai.categoryPromptLabel")}</span>
-              <svg className="transition-transform group-open:rotate-180" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 9l6 6 6-6" /></svg>
-            </summary>
-            <div className="flex flex-col gap-2 border-t border-hairline px-3.5 py-3">
-              <textarea
-                value={categoryPrompt}
-                onChange={(e) => setCategoryPrompt(e.target.value)}
-                onBlur={() => {
-                  if (categoryPrompt !== settings.aiCategoryPrompt)
-                    void updateSettings({ aiCategoryPrompt: categoryPrompt });
+          <SectionLabel>{t("settings:section.ai")}</SectionLabel>
+          <SettingRow
+            label={t("settings:ai.statusLabel")}
+            hint={t("settings:ai.statusHint")}
+          >
+            <span className="flex items-center gap-2 text-[12.5px] text-ink-muted">
+              <span
+                className="size-2 rounded-full"
+                style={{
+                  background: status?.configured ? "var(--ok)" : "var(--bg4)",
                 }}
-                rows={6}
-                spellCheck={false}
-                placeholder={t("settings:ai.categoryPromptPlaceholder")}
-                className={`${inputCls} w-full resize-y !text-[12px] leading-relaxed`}
               />
-              <p className="text-[11.5px] text-ink-faint">
-                {t("settings:ai.categoryPromptHint")}
-              </p>
+              {status
+                ? status.configured
+                  ? t("settings:ai.configured", { model: status.model })
+                  : t("settings:ai.notConfigured")
+                : t("settings:ai.loading")}
+            </span>
+          </SettingRow>
+          <SettingRow
+            label={t("settings:ai.apiKeyLabel")}
+            hint={t("settings:ai.apiKeyHint")}
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveKey();
+                }}
+                placeholder={t("settings:ai.apiKeyPlaceholder")}
+                autoComplete="off"
+                className={`${inputCls} !w-[220px]`}
+              />
+              <button
+                className={primaryBtnCls}
+                disabled={savingKey}
+                onClick={() => void saveKey()}
+              >
+                {t("settings:ai.save")}
+              </button>
             </div>
-          </details>
+          </SettingRow>
+          <SettingRow
+            label={t("settings:ai.providerLabel")}
+            hint={t("settings:ai.providerHint")}
+          >
+            <Select
+              value={
+                forceCustom
+                  ? "custom"
+                  : (AI_PROVIDER_PRESETS.find(
+                      (p) => p.baseUrl === settings.aiBaseUrl,
+                    )?.id ?? "custom")
+              }
+              onChange={(e) => {
+                if (e.target.value === "custom") {
+                  // Keep whatever URL is set and hand focus to the field below.
+                  setForceCustom(true);
+                  baseUrlRef.current?.focus();
+                  baseUrlRef.current?.select();
+                  return;
+                }
+                const preset = AI_PROVIDER_PRESETS.find(
+                  (p) => p.id === e.target.value,
+                );
+                if (!preset) return;
+                setForceCustom(false);
+                void updateSettings({
+                  aiBaseUrl: preset.baseUrl,
+                  ...(preset.defaultModel
+                    ? { aiModel: preset.defaultModel }
+                    : {}),
+                });
+              }}
+              className="!w-[280px]"
+            >
+              {AI_PROVIDER_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+              <option value="custom">{t("settings:ai.customProvider")}</option>
+            </Select>
+          </SettingRow>
+          <SettingRow
+            label={t("settings:ai.baseUrlLabel")}
+            hint={t("settings:ai.baseUrlHint")}
+          >
+            <input
+              ref={baseUrlRef}
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              onBlur={() => commitField({ aiBaseUrl: baseUrl.trim() })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter")
+                  commitField({ aiBaseUrl: baseUrl.trim() });
+              }}
+              placeholder={t("settings:ai.baseUrlPlaceholder")}
+              spellCheck={false}
+              className={`${inputCls} !w-[280px]`}
+            />
+          </SettingRow>
+          <SettingRow
+            label={t("settings:ai.modelLabel")}
+            hint={
+              models && models.length > 0
+                ? t("settings:ai.modelsAvailable", { n: models.length })
+                : t("settings:ai.modelHintEmpty")
+            }
+          >
+            <input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              onBlur={() => commitField({ aiModel: model.trim() })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitField({ aiModel: model.trim() });
+              }}
+              placeholder={t("settings:ai.modelPlaceholder")}
+              spellCheck={false}
+              list="ai-model-options"
+              className={`${inputCls} !w-[280px]`}
+            />
+            <datalist id="ai-model-options">
+              {(models ?? []).map((id) => (
+                <option key={id} value={id} />
+              ))}
+            </datalist>
+          </SettingRow>
+
+          <SectionLabel>{t("settings:ai.tiersSection")}</SectionLabel>
+          <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
+            {t("settings:ai.tiersIntro")}
+          </p>
+          <TierModelField
+            label={t("settings:ai.tier.instant")}
+            hint={t("settings:ai.tierInstantHint")}
+            value={settings.aiModelInstant}
+            placeholder={t("settings:ai.tierFallback")}
+            onCommit={(v) => commitField({ aiModelInstant: v })}
+          />
+          <TierModelField
+            label={t("settings:ai.tier.cheap")}
+            hint={t("settings:ai.tierCheapHint")}
+            value={settings.aiModelCheap}
+            placeholder={t("settings:ai.tierFallback")}
+            onCommit={(v) => commitField({ aiModelCheap: v })}
+          />
+          <TierModelField
+            label={t("settings:ai.tier.intelligent")}
+            hint={t("settings:ai.tierIntelligentHint")}
+            value={settings.aiModelIntelligent}
+            placeholder={t("settings:ai.tierFallback")}
+            onCommit={(v) => commitField({ aiModelIntelligent: v })}
+          />
+
+          <SectionLabel>{t("settings:ai.routingSection")}</SectionLabel>
+          <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
+            {t("settings:ai.routingIntro")}
+          </p>
           <ScenarioRouteRow
-            label={t("settings:ai.routeCategorize")}
-            hint={t("settings:ai.routeCategorizeHint")}
-            value={settings.aiTierCategorize}
-            onChange={(v) => commitField({ aiTierCategorize: v })}
+            label={t("settings:ai.routeAsk")}
+            hint={t("settings:ai.routeAskHint")}
+            value={settings.aiTierAsk}
+            onChange={(v) => commitField({ aiTierAsk: v })}
+            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+          />
+          <ScenarioRouteRow
+            label={t("settings:ai.routeDraft")}
+            hint={t("settings:ai.routeDraftHint")}
+            value={settings.aiTierDraft}
+            onChange={(v) => commitField({ aiTierDraft: v })}
+            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+          />
+          <ScenarioRouteRow
+            label={t("settings:ai.routeSummarize")}
+            hint={t("settings:ai.routeSummarizeHint")}
+            value={settings.aiTierSummarize}
+            onChange={(v) => commitField({ aiTierSummarize: v })}
+            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+          />
+          <ScenarioRouteRow
+            label={t("settings:ai.routeVoice")}
+            hint={t("settings:ai.routeVoiceHint")}
+            value={settings.aiTierVoice}
+            onChange={(v) => commitField({ aiTierVoice: v })}
             tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
           />
         </>
-      )}
-      <SettingRow label={t("settings:ai.resortLabel")} hint={t("settings:ai.resortHint")}>
-        <button
-          className={`${primaryBtnCls}${resorting ? " co-btn-busy" : ""}`}
-          disabled={resorting}
-          onClick={() => void resort()}
-        >
-          {resorting ? <BusyLabel>{t("settings:ai.resorting")}</BusyLabel> : t("settings:ai.resort")}
-        </button>
-      </SettingRow>
+      ) : (
+        <>
+          <SectionLabel>{t("settings:ai.categorizeSection")}</SectionLabel>
+          <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
+            {t("settings:ai.categorizeIntro")}
+          </p>
+          <SettingRow
+            label={t("settings:ai.categorizeLabel")}
+            hint={t("settings:ai.categorizeHint")}
+          >
+            <Toggle
+              label={t("settings:ai.categorizeLabel")}
+              checked={settings.aiCategorize}
+              onChange={(aiCategorize) => void updateSettings({ aiCategorize })}
+            />
+          </SettingRow>
+          {settings.aiCategorize && (
+            <>
+              <AiAutomationsEditor settings={settings} />
+              <details className="group rounded-xl border border-hairline bg-bg1">
+                <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-[12.5px] font-medium text-ink-muted">
+                  <span>{t("settings:ai.categoryPromptLabel")}</span>
+                  <svg
+                    className="transition-transform group-open:rotate-180"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </summary>
+                <div className="flex flex-col gap-2 border-t border-hairline px-3.5 py-3">
+                  <textarea
+                    value={categoryPrompt}
+                    onChange={(e) => setCategoryPrompt(e.target.value)}
+                    onBlur={() => {
+                      if (categoryPrompt !== settings.aiCategoryPrompt)
+                        void updateSettings({
+                          aiCategoryPrompt: categoryPrompt,
+                        });
+                    }}
+                    rows={6}
+                    spellCheck={false}
+                    placeholder={t("settings:ai.categoryPromptPlaceholder")}
+                    className={`${inputCls} w-full resize-y !text-[12px] leading-relaxed`}
+                  />
+                  <p className="text-[11.5px] text-ink-faint">
+                    {t("settings:ai.categoryPromptHint")}
+                  </p>
+                </div>
+              </details>
+              <ScenarioRouteRow
+                label={t("settings:ai.routeCategorize")}
+                hint={t("settings:ai.routeCategorizeHint")}
+                value={settings.aiTierCategorize}
+                onChange={(v) => commitField({ aiTierCategorize: v })}
+                tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+              />
+            </>
+          )}
+          <SettingRow
+            label={t("settings:ai.resortLabel")}
+            hint={t("settings:ai.resortHint")}
+          >
+            <button
+              className={`${primaryBtnCls}${resorting ? " co-btn-busy" : ""}`}
+              disabled={resorting}
+              onClick={() => void resort()}
+            >
+              {resorting ? (
+                <BusyLabel>{t("settings:ai.resorting")}</BusyLabel>
+              ) : (
+                t("settings:ai.resort")
+              )}
+            </button>
+          </SettingRow>
         </>
       )}
     </section>
@@ -1415,13 +2119,19 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
 
   const on = settings.embeddingBackend === "local";
   const pct =
-    status && status.total > 0 ? Math.round((status.embedded / status.total) * 100) : 0;
+    status && status.total > 0
+      ? Math.round((status.embedded / status.total) * 100)
+      : 0;
 
   const reindex = async () => {
     setReindexing(true);
     try {
       const n = await call("semantic_reindex", {});
-      pushToast({ kind: "info", message: `Re-indexing ${n} messages…`, durationMs: 2500 });
+      pushToast({
+        kind: "info",
+        message: `Re-indexing ${n} messages…`,
+        durationMs: 2500,
+      });
       void queryClient.invalidateQueries({ queryKey: ["embeddingStatus"] });
     } catch (err) {
       pushToast({ kind: "error", message: errorMessage(err) });
@@ -1444,16 +2154,23 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
             { value: "off", label: "Off" },
           ]}
           onChange={(embeddingBackend) =>
-            void updateSettings({ embeddingBackend: embeddingBackend as "local" | "off" })
+            void updateSettings({
+              embeddingBackend: embeddingBackend as "local" | "off",
+            })
           }
         />
       </SettingRow>
       {on && (
         <>
-          <SettingRow label="Model" hint="Larger models are more accurate but slower to index.">
+          <SettingRow
+            label="Model"
+            hint="Larger models are more accurate but slower to index."
+          >
             <Select
               value={settings.embeddingModel}
-              onChange={(e) => void updateSettings({ embeddingModel: e.target.value })}
+              onChange={(e) =>
+                void updateSettings({ embeddingModel: e.target.value })
+              }
               className="!w-[280px]"
             >
               {EMBEDDING_MODELS.map((m) => (
@@ -1477,12 +2194,18 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
               <div className="h-1.5 w-[160px] overflow-hidden rounded-full bg-[var(--bg4)]">
                 <div
                   className={`co-progress-fill h-full rounded-full bg-[var(--accent)]${
-                    pct < 100 || (status?.pending ?? 0) > 0 || reindexing ? " is-loading" : ""
+                    pct < 100 || (status?.pending ?? 0) > 0 || reindexing
+                      ? " is-loading"
+                      : ""
                   }`}
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <button className={ghostBtnCls} disabled={reindexing} onClick={() => void reindex()}>
+              <button
+                className={ghostBtnCls}
+                disabled={reindexing}
+                onClick={() => void reindex()}
+              >
                 {reindexing ? <BusyLabel>Rebuilding…</BusyLabel> : "Rebuild"}
               </button>
             </div>
@@ -1506,7 +2229,11 @@ function VoiceSection({ settings }: { settings: Settings }) {
     learn.mutate(undefined, {
       onSuccess: (p) => {
         setProfile(p);
-        pushToast({ kind: "info", message: "Learned your writing voice", durationMs: 2500 });
+        pushToast({
+          kind: "info",
+          message: "Learned your writing voice",
+          durationMs: 2500,
+        });
       },
       onError: (e) => pushToast({ kind: "error", message: errorMessage(e) }),
     });
@@ -1552,7 +2279,8 @@ function VoiceSection({ settings }: { settings: Settings }) {
           value={profile}
           onChange={(e) => setProfile(e.target.value)}
           onBlur={() => {
-            if (profile !== settings.voiceProfile) void updateSettings({ voiceProfile: profile });
+            if (profile !== settings.voiceProfile)
+              void updateSettings({ voiceProfile: profile });
           }}
           rows={5}
           spellCheck={false}
@@ -1574,7 +2302,8 @@ function OAuthField({
   secret,
 }: {
   settings: Settings;
-  field: "googleClientId" | "googleClientSecret" | "msClientId" | "msClientSecret";
+  field:
+    "googleClientId" | "googleClientSecret" | "msClientId" | "msClientSecret";
   label: string;
   hint?: string;
   placeholder: string;
@@ -1608,7 +2337,8 @@ function OAuthField({
 }
 
 /** Full setup guide on GitHub; packaged builds ship no docs folder. */
-const OAUTH_DOCS_URL = "https://github.com/NextOSP/comail/blob/master/docs/oauth-setup.md";
+const OAUTH_DOCS_URL =
+  "https://github.com/NextOSP/comail/blob/master/docs/oauth-setup.md";
 
 /** In-app setup walkthrough; packaged builds have no docs folder. */
 function OAuthGuide() {
@@ -1679,7 +2409,10 @@ function OAuthSection({ settings }: { settings: Settings }) {
     <section className="flex flex-col gap-4">
       <SectionLabel>{t("settings:section.oauthApps")}</SectionLabel>
       <p className="text-[12.5px] leading-relaxed text-ink-faint">
-        <Trans i18nKey="settings:oauth.description" components={{ b: <b />, code: <code /> }} />
+        <Trans
+          i18nKey="settings:oauth.description"
+          components={{ b: <b />, code: <code /> }}
+        />
       </p>
       <OAuthGuide />
       <OAuthField
@@ -1761,11 +2494,17 @@ function SyncSection() {
         .map(normalizeSyncStatus)
         .filter((status): status is SyncStatus => status != null);
       replaceSyncStatuses(statuses);
-      pushToast({ kind: "info", message: t("settings:sync.syncComplete", { email }) });
+      pushToast({
+        kind: "info",
+        message: t("settings:sync.syncComplete", { email }),
+      });
     } catch (error) {
       pushToast({
         kind: "error",
-        message: t("settings:sync.syncFailed", { email, detail: errorMessage(error) }),
+        message: t("settings:sync.syncFailed", {
+          email,
+          detail: errorMessage(error),
+        }),
       });
     } finally {
       setBusyAccountId(null);
@@ -1787,11 +2526,17 @@ function SyncSection() {
         .filter((status): status is SyncStatus => status != null);
       replaceSyncStatuses(statuses);
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      pushToast({ kind: "info", message: t("settings:sync.reauthDone", { email }) });
+      pushToast({
+        kind: "info",
+        message: t("settings:sync.reauthDone", { email }),
+      });
     } catch (error) {
       const message = errorMessage(error);
       if (!message.includes("sign-in cancelled")) {
-        pushToast({ kind: "error", message: t("settings:sync.reauthFailed", { email, detail: message }) });
+        pushToast({
+          kind: "error",
+          message: t("settings:sync.reauthFailed", { email, detail: message }),
+        });
       }
     } finally {
       setReauthAccountId(null);
@@ -1830,7 +2575,10 @@ function SyncSection() {
         const background = status.background;
         const percent =
           background && background.total > 0
-            ? Math.min(100, Math.max(0, (background.done / background.total) * 100))
+            ? Math.min(
+                100,
+                Math.max(0, (background.done / background.total) * 100),
+              )
             : 0;
 
         return (
@@ -1844,18 +2592,25 @@ function SyncSection() {
                 style={{ background: SYNC_DOT[status.state] }}
               />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13.5px] font-medium text-ink">{account.email}</div>
+                <div className="truncate text-[13.5px] font-medium text-ink">
+                  {account.email}
+                </div>
                 <div className="text-[11.5px] text-ink-faint">
                   {t(`settings:accounts.provider.${account.provider}`)} ·{" "}
                   {t(`common:syncState.${status.state}`)}
                 </div>
               </div>
-              {status.state === "needs_reauth" && account.provider !== "imap" ? (
+              {status.state === "needs_reauth" &&
+              account.provider !== "imap" ? (
                 <button
                   type="button"
                   className={primaryBtnCls}
-                  disabled={reauthAccountId != null && reauthAccountId !== account.id}
-                  aria-label={t("settings:sync.reauthAccount", { email: account.email })}
+                  disabled={
+                    reauthAccountId != null && reauthAccountId !== account.id
+                  }
+                  aria-label={t("settings:sync.reauthAccount", {
+                    email: account.email,
+                  })}
                   onClick={() => void reauth(account.id, account.email)}
                 >
                   {reauthAccountId === account.id
@@ -1866,8 +2621,12 @@ function SyncSection() {
                 <button
                   type="button"
                   className={primaryBtnCls}
-                  disabled={busyAccountId != null || status.foregroundPhase === "inbox"}
-                  aria-label={t("settings:sync.syncNowAccount", { email: account.email })}
+                  disabled={
+                    busyAccountId != null || status.foregroundPhase === "inbox"
+                  }
+                  aria-label={t("settings:sync.syncNowAccount", {
+                    email: account.email,
+                  })}
                   onClick={() => void syncNow(account.id, account.email)}
                 >
                   {busy || status.foregroundPhase === "inbox"
@@ -1878,14 +2637,20 @@ function SyncSection() {
             </div>
 
             <div className="mt-4 grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-hairline pt-3 text-[12.5px]">
-              <span className="text-ink-faint">{t("settings:sync.foreground")}</span>
+              <span className="text-ink-faint">
+                {t("settings:sync.foreground")}
+              </span>
               <span className="text-ink">{foreground}</span>
 
-              <span className="text-ink-faint">{t("settings:sync.background")}</span>
+              <span className="text-ink-faint">
+                {t("settings:sync.background")}
+              </span>
               {background ? (
                 <div className="min-w-0">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-ink">{phaseLabel(background.phase)}</span>
+                    <span className="text-ink">
+                      {phaseLabel(background.phase)}
+                    </span>
                     <span className="shrink-0 tabular-nums text-ink-muted">
                       {t("settings:sync.progress", {
                         done: background.done.toLocaleString(),
@@ -1975,7 +2740,10 @@ function AccountSignatures({
       name: t("settings:signature.newName"),
       html: "",
     };
-    writeSignatures([...settings.signatureList, sig], settings.signatureDefaults);
+    writeSignatures(
+      [...settings.signatureList, sig],
+      settings.signatureDefaults,
+    );
   };
 
   const deleteSignature = (id: string) => {
@@ -2119,7 +2887,10 @@ function SignatureEditor({
   const generate = async () => {
     setGenerating(true);
     try {
-      const text = await call("ai_signature", { name: displayName || email, email });
+      const text = await call("ai_signature", {
+        name: displayName || email,
+        email,
+      });
       const nextHtml = textToHtml(text.trim());
       setHtml(nextHtml);
       commit({ html: nextHtml });
@@ -2137,7 +2908,9 @@ function SignatureEditor({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onBlur={() => name.trim() && name !== sig.name && commit({ name: name.trim() })}
+          onBlur={() =>
+            name.trim() && name !== sig.name && commit({ name: name.trim() })
+          }
           placeholder={t("settings:signature.newName")}
           className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-ink outline-none placeholder:text-ink-faint"
         />
@@ -2148,10 +2921,18 @@ function SignatureEditor({
           title={t("settings:signature.aiHint")}
           className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
             <path d="M12 2l1.9 4.9L19 8.8l-4.1 1.9L12 16l-1.9-5.3L6 8.8l5.1-1.9zM19 14l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z" />
           </svg>
-          {generating ? t("settings:signature.aiGenerating") : t("settings:signature.ai")}
+          {generating
+            ? t("settings:signature.aiGenerating")
+            : t("settings:signature.ai")}
         </button>
         <ConfirmButton
           label={t("settings:signature.delete")}
@@ -2185,11 +2966,16 @@ function AccountsSection() {
   const removeAccount = async (accountId: number, email: string) => {
     try {
       await call("remove_account", { accountId });
-      pushToast({ kind: "info", message: t("settings:accounts.removed", { email }) });
+      pushToast({
+        kind: "info",
+        message: t("settings:accounts.removed", { email }),
+      });
     } catch (err) {
       pushToast({
         kind: "error",
-        message: t("settings:accounts.removeFailed", { detail: errorMessage(err) }),
+        message: t("settings:accounts.removeFailed", {
+          detail: errorMessage(err),
+        }),
       });
     } finally {
       void queryClient.invalidateQueries({ queryKey: ["accounts"] });
@@ -2205,7 +2991,8 @@ function AccountsSection() {
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
       pushToast({ kind: "info", message: t("settings:accounts.connected") });
     } catch (err) {
-      const message = err instanceof Error ? err.message : t("errors:oauthFailed");
+      const message =
+        err instanceof Error ? err.message : t("errors:oauthFailed");
       if (!message.includes("sign-in cancelled")) {
         pushToast(
           message.includes("no OAuth app configured")
@@ -2236,11 +3023,17 @@ function AccountsSection() {
     try {
       await call("reauth_account", { accountId });
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      pushToast({ kind: "info", message: t("settings:sync.reauthDone", { email }) });
+      pushToast({
+        kind: "info",
+        message: t("settings:sync.reauthDone", { email }),
+      });
     } catch (err) {
       const message = errorMessage(err);
       if (!message.includes("sign-in cancelled")) {
-        pushToast({ kind: "error", message: t("settings:sync.reauthFailed", { email, detail: message }) });
+        pushToast({
+          kind: "error",
+          message: t("settings:sync.reauthFailed", { email, detail: message }),
+        });
       }
     } finally {
       setReauthId(null);
@@ -2264,7 +3057,9 @@ function AccountsSection() {
             <span className="min-w-0 flex-1 truncate">
               <span className="text-[13px] text-ink">{a.email}</span>
               {a.displayName && (
-                <span className="ml-2 text-[11.5px] text-ink-faint">{a.displayName}</span>
+                <span className="ml-2 text-[11.5px] text-ink-faint">
+                  {a.displayName}
+                </span>
               )}
             </span>
             <Select
@@ -2280,7 +3075,9 @@ function AccountsSection() {
                 })
               }
             >
-              <option value="system">{t("settings:accounts.themeInherit")}</option>
+              <option value="system">
+                {t("settings:accounts.themeInherit")}
+              </option>
               <option value="snow">{t("settings:theme.snow")}</option>
               <option value="carbon">{t("settings:theme.carbon")}</option>
               <option value="holiday">{t("settings:theme.holiday")}</option>
@@ -2295,7 +3092,9 @@ function AccountsSection() {
                 disabled={reauthId != null && reauthId !== a.id}
                 onClick={() => void reauth(a.id, a.email)}
               >
-                {reauthId === a.id ? t("settings:sync.reauthWaiting") : t("settings:sync.reauth")}
+                {reauthId === a.id
+                  ? t("settings:sync.reauthWaiting")
+                  : t("settings:sync.reauth")}
               </button>
             )}
             <ConfirmButton
@@ -2306,18 +3105,25 @@ function AccountsSection() {
           </div>
         ))}
         {(accounts ?? []).length === 0 && (
-          <p className="py-1 text-[12.5px] text-ink-faint">{t("settings:accounts.empty")}</p>
+          <p className="py-1 text-[12.5px] text-ink-faint">
+            {t("settings:accounts.empty")}
+          </p>
         )}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button className={ghostBtnCls} onClick={() => set({ addAccountOpen: true })}>
+        <button
+          className={ghostBtnCls}
+          onClick={() => set({ addAccountOpen: true })}
+        >
           {t("settings:accounts.addImap")}
         </button>
         <button
           className={ghostBtnCls}
           disabled={oauthBusy != null && oauthBusy !== "gmail"}
-          onClick={() => (oauthBusy === "gmail" ? cancelOauth() : void oauth("gmail"))}
+          onClick={() =>
+            oauthBusy === "gmail" ? cancelOauth() : void oauth("gmail")
+          }
         >
           {oauthBusy === "gmail"
             ? t("settings:accounts.cancelWaiting", {
@@ -2328,7 +3134,9 @@ function AccountsSection() {
         <button
           className={ghostBtnCls}
           disabled={oauthBusy != null && oauthBusy !== "microsoft"}
-          onClick={() => (oauthBusy === "microsoft" ? cancelOauth() : void oauth("microsoft"))}
+          onClick={() =>
+            oauthBusy === "microsoft" ? cancelOauth() : void oauth("microsoft")
+          }
         >
           {oauthBusy === "microsoft"
             ? t("settings:accounts.cancelWaiting", {

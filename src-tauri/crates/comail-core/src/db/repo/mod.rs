@@ -5,6 +5,7 @@ pub mod caldav;
 pub mod calendar;
 pub mod contacts;
 pub mod counts;
+pub mod email_stats;
 pub mod embeddings;
 pub mod folders;
 pub mod labels;

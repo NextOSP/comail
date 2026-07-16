@@ -189,10 +189,12 @@ export function ThreadList({
     [],
   );
 
-  // Press-and-drag in the checkbox gutter sweeps a contiguous range.
-  // Virtualization unmounts off-screen rows, so the hovered index is derived
-  // from pointer Y against the scroll container rather than per-row events.
-  const onGutterDown = useCallback((id: number, _e: ReactMouseEvent) => {
+  // Press-and-drag sweeps a contiguous range. The gutter and the row body both
+  // start one; they differ only in what a no-move press means (see the two
+  // callers below). Virtualization unmounts off-screen rows, so the hovered
+  // index is derived from pointer Y against the scroll container rather than
+  // per-row events.
+  const beginSweep = useCallback((id: number, toggleOnTap: boolean) => {
     const el = scrollRef.current;
     dragRef.current = { startId: id, base: useUi.getState().selection, moved: false };
     useUi.getState().set({ selectAnchorId: id });
@@ -227,19 +229,53 @@ export function ThreadList({
       el?.classList.remove("select-none");
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      // A press with no movement is a plain checkbox click: toggle one row.
-      if (drag && !drag.moved) useUi.getState().toggleSelect(drag.startId);
+      if (drag?.moved) {
+        // A real sweep happened: swallow the trailing click so releasing back on
+        // the start row doesn't also open it. Self-removes if no click follows.
+        const swallow = (ev: MouseEvent) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          window.removeEventListener("click", swallow, true);
+        };
+        window.addEventListener("click", swallow, true);
+        setTimeout(() => window.removeEventListener("click", swallow, true), 0);
+      } else if (toggleOnTap && drag) {
+        // A press with no movement in the gutter is a plain checkbox click.
+        useUi.getState().toggleSelect(drag.startId);
+      }
     };
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, []);
 
+  // Gutter press: sweep, or toggle this one row on a no-move tap.
+  const onGutterDown = useCallback((id: number) => beginSweep(id, true), [beginSweep]);
+
+  // Row-body press: drag over subjects/names to sweep a range. Modifier presses
+  // fall through to the click handler (Shift range / Cmd toggle), and a no-move
+  // press stays a plain click that opens the thread.
+  const onRowDown = useCallback(
+    (id: number, e: ReactMouseEvent) => {
+      if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey) return;
+      beginSweep(id, false);
+    },
+    [beginSweep],
+  );
+
   useEffect(() => {
     const prev = rowsRef.current;
+    const prevIds = new Set(prev.map((t) => t.id));
     const nextIds = new Set(threads.map((t) => t.id));
     const removed = prev.filter((t) => !nextIds.has(t.id));
-    if (removed.length > 0 && removed.length <= 6 && prev.length > 0) {
+    const gained = threads.some((t) => !prevIds.has(t.id));
+    // Play the brief leave animation for a pure removal - a triage action (on
+    // one row or a whole multi-selection) that drops rows and adds none. Skip
+    // it when the list also gains rows: that is a wholesale swap (view/tab
+    // switch, refetch, new mail) that should replace in place rather than fly
+    // every changed row out. The count cap is a backstop so a large filter
+    // narrow can't animate dozens of rows at once.
+    if (removed.length > 0 && !gained && removed.length <= 25 && prev.length > 0) {
       setLeavingIds(new Set(removed.map((r) => r.id)));
       const timer = setTimeout(() => {
         setLeavingIds(new Set());
@@ -332,6 +368,7 @@ export function ThreadList({
                   onRowHover={handleRowHover}
                   onToggleCheck={handleToggleCheck}
                   onGutterDown={onGutterDown}
+                  onRowDown={onRowDown}
                   jumpHint={jumpNumbers?.get(th.id)}
                 />
               </div>

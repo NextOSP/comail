@@ -224,12 +224,12 @@ async fn full_sync_triage_and_search() {
     })
     .await;
 
-    let hits = core.search("quarterly".into(), 10).await.unwrap();
+    let hits = core.search("quarterly".into(), None, 10).await.unwrap();
     assert!(
         hits.iter().any(|t| t.id == alice_id),
         "FTS search should find the quarterly thread"
     );
-    let hits = core.search("from:stripe".into(), 10).await.unwrap();
+    let hits = core.search("from:stripe".into(), None, 10).await.unwrap();
     assert_eq!(hits.len(), 1, "from: operator");
 
     // 6. Archive Bob's thread: optimistic local move + remote replay.
@@ -298,7 +298,7 @@ async fn full_sync_triage_and_search() {
     .unwrap();
 
     // 9. Contacts were harvested for autocomplete.
-    let contacts = core.list_contacts("ali".into(), 5).await.unwrap();
+    let contacts = core.list_contacts("ali".into(), None, 5).await.unwrap();
     assert!(contacts.iter().any(|c| c.email == "alice@example.com"));
 
     // 9b. Attachment: parsed during body sync and extractable to disk.
@@ -326,7 +326,10 @@ async fn full_sync_triage_and_search() {
         content, "MOCKUP NOTES - review by Friday",
         "attachment content"
     );
-    let eve_hits = core.search("has:attachment".into(), 10).await.unwrap();
+    let eve_hits = core
+        .search("has:attachment".into(), None, 10)
+        .await
+        .unwrap();
     assert!(
         eve_hits.iter().any(|t| t.id == eve_id),
         "has:attachment finds it"

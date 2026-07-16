@@ -366,6 +366,7 @@ mod tests {
         assert!(!sender_known(&c, "bd@agency.io"));
         crate::db::repo::contacts::harvest(
             &c,
+            1,
             &crate::models::Address {
                 name: None,
                 email: "bd@agency.io".into(),

@@ -27,6 +27,8 @@
     "timeline": "Timeline",
     "keyPoints": "Key points",
     "nextAction": "Next action",
+    "calendarSuggestion": "Suggested event",
+    "createEvent": "Create event",
     "proposedReply": "Suggested reply",
     "useReply": "Use as reply"
   },

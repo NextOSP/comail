@@ -70,6 +70,61 @@ pub fn enqueue_at(conn: &Connection, message_id: i64, created_at: i64) -> Result
     .ok_or_else(|| CoreError::NotFound(format!("message {message_id}")))
 }
 
+/// How a thread currently routes, for notification-scope filtering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoutedTab {
+    /// AI classification is still in flight; the caller should wait and re-check.
+    Pending,
+    /// Resolved route key: "important" | "other" | "split:<id>" | "label:<id>".
+    Resolved(String),
+}
+
+/// Resolve which inbox tab a thread lands in, mirroring the list view's
+/// Important/Other fallback for threads that carry no explicit `routed_tab`.
+/// Returns `None` when the thread no longer exists.
+pub fn resolve_tab(conn: &Connection, thread_id: i64) -> Result<Option<RoutedTab>> {
+    let routed: Option<Option<String>> = conn
+        .query_row(
+            "SELECT routed_tab FROM threads WHERE id = ?1",
+            params![thread_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(routed) = routed else {
+        return Ok(None);
+    };
+    Ok(Some(match routed.as_deref() {
+        Some("pending") => RoutedTab::Pending,
+        Some(key) => RoutedTab::Resolved(key.to_owned()),
+        // Unrouted (legacy threads): a thread whose incoming mail is entirely
+        // automated shows under Other, otherwise Important - the same split the
+        // thread list applies to a null `routed_tab`.
+        None => {
+            let all_automated: bool = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM messages
+                     WHERE thread_id = ?1 AND is_draft = 0 AND is_outgoing = 0
+                       AND is_automated = 1)
+                 AND NOT EXISTS (SELECT 1 FROM messages
+                     WHERE thread_id = ?1 AND is_draft = 0 AND is_outgoing = 0
+                       AND is_automated = 0)",
+                params![thread_id],
+                |r| r.get(0),
+            )?;
+            RoutedTab::Resolved(if all_automated { "other" } else { "important" }.to_owned())
+        }
+    }))
+}
+
+/// Push a pending item's next dispatch out without consuming a delivery attempt.
+/// Used to wait for a thread's tab to resolve before applying scope filtering.
+pub fn defer(conn: &Connection, id: i64, not_before: i64) -> Result<bool> {
+    Ok(conn.execute(
+        "UPDATE notification_outbox SET not_before = ?2
+         WHERE id = ?1 AND state = 'pending'",
+        params![id, not_before],
+    )? > 0)
+}
+
 pub fn get(conn: &Connection, id: i64) -> Result<Option<NotificationOutboxItem>> {
     let mut stmt = conn.prepare("SELECT * FROM notification_outbox WHERE id = ?1")?;
     Ok(stmt.query_row(params![id], from_row).optional()?)
@@ -197,6 +252,71 @@ mod tests {
         assert_eq!(row.attempts, 3);
         assert_eq!(row.delivered_at, Some(61));
         assert!(list_due(&c, i64::MAX, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn resolve_tab_uses_routed_value_then_heuristic() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+
+        // Explicit routed_tab wins verbatim.
+        let (human_thread, _) = testutil::seed_message(&c, "alice@test.dev", "Hi", false);
+        c.execute(
+            "UPDATE threads SET routed_tab = 'split:7' WHERE id = ?1",
+            params![human_thread],
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_tab(&c, human_thread).unwrap(),
+            Some(RoutedTab::Resolved("split:7".to_owned()))
+        );
+
+        // A pending thread reports Pending so the dispatcher can wait.
+        c.execute(
+            "UPDATE threads SET routed_tab = 'pending' WHERE id = ?1",
+            params![human_thread],
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_tab(&c, human_thread).unwrap(),
+            Some(RoutedTab::Pending)
+        );
+
+        // Null routed_tab falls back to Important for human mail...
+        c.execute(
+            "UPDATE threads SET routed_tab = NULL WHERE id = ?1",
+            params![human_thread],
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_tab(&c, human_thread).unwrap(),
+            Some(RoutedTab::Resolved("important".to_owned()))
+        );
+
+        // ...and Other for all-automated mail.
+        let (auto_thread, _) = testutil::seed_message(&c, "news@test.dev", "Digest", true);
+        assert_eq!(
+            resolve_tab(&c, auto_thread).unwrap(),
+            Some(RoutedTab::Resolved("other".to_owned()))
+        );
+
+        assert_eq!(resolve_tab(&c, 9999).unwrap(), None);
+    }
+
+    #[test]
+    fn defer_pushes_out_pending_dispatch_only() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (_, message_id) = testutil::seed_message(&c, "a@test.dev", "One", false);
+        let id = enqueue_at(&c, message_id, 10).unwrap();
+
+        assert!(defer(&c, id, 500).unwrap());
+        assert!(list_due(&c, 499, 10).unwrap().is_empty());
+        assert_eq!(list_due(&c, 500, 10).unwrap()[0].attempts, 0);
+
+        // A claimed (in-flight) row is never rewound by defer.
+        assert!(try_claim(&c, id, 500).unwrap());
+        assert!(!defer(&c, id, 900).unwrap());
     }
 
     #[test]

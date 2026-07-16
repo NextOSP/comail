@@ -247,11 +247,12 @@ pub async fn preview_attachment(
 pub async fn list_contacts(
     state: State<'_, AppState>,
     prefix: String,
+    account_id: Option<i64>,
     limit: Option<i64>,
 ) -> CmdResult<Vec<Address>> {
     state
         .core
-        .list_contacts(prefix, limit.unwrap_or(8))
+        .list_contacts(prefix, account_id, limit.unwrap_or(8))
         .await
         .map_err(err)
 }
@@ -484,6 +485,11 @@ pub async fn ai_usage_stats(state: State<'_, AppState>) -> CmdResult<AiUsageStat
 }
 
 #[tauri::command]
+pub async fn email_stats(state: State<'_, AppState>) -> CmdResult<EmailStats> {
+    state.core.email_stats().await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn ai_plan_automation(
     state: State<'_, AppState>,
     prompt: String,
@@ -582,6 +588,7 @@ pub async fn semantic_reindex(state: State<'_, AppState>) -> CmdResult<i64> {
 #[serde(rename_all = "camelCase")]
 pub struct SearchArgs {
     pub query: String,
+    pub account_id: Option<i64>,
     pub limit: Option<i64>,
 }
 
@@ -589,7 +596,7 @@ pub struct SearchArgs {
 pub async fn search(state: State<'_, AppState>, args: SearchArgs) -> CmdResult<Vec<ThreadSummary>> {
     state
         .core
-        .search(args.query, args.limit.unwrap_or(50))
+        .search(args.query, args.account_id, args.limit.unwrap_or(50))
         .await
         .map_err(err)
 }

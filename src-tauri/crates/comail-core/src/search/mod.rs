@@ -31,6 +31,10 @@ pub struct ParsedQuery {
     pub is_unread: Option<bool>,
     pub is_starred: Option<bool>,
     pub has_attachment: Option<bool>,
+    /// Scope results to a single account. `None` searches every account. Not
+    /// parsed from the query string - set by the caller from the UI's active
+    /// account selection.
+    pub account_id: Option<i64>,
 }
 
 /// A raw query token: a bare word or a `"quoted phrase"`. A phrase can be

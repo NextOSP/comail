@@ -690,14 +690,28 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     // the keyboard registry listens on, so app shortcuts (Esc to go back, Cmd+K
     // palette, J/K, R…) stop working. Route the iframe's keydowns through the
     // registry directly. It applies its own guards (typing in a field or
-    // activating a focused link is left native), so we forward every key -     // except the native clipboard/selection shortcuts. Those must stay native
-    // so the user can select and copy text (e.g. an OTP code) out of the email;
-    // forwarding Cmd/Ctrl+A would trigger the app's "select all" command and
-    // Cmd/Ctrl+C/X could be swallowed before the webview copies.
+    // activating a focused link is left native), so we forward every key -
+    // except the native clipboard/selection shortcuts, which must stay native
+    // so the user can select and copy text (e.g. an OTP code) out of the email.
     doc.addEventListener("keydown", (e) => {
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (mod && (key === "a" || key === "c" || key === "x" || key === "v")) return;
+      // Cmd/Ctrl+C: the Edit-menu Copy works, but WKWebView won't run the
+      // default copy for a selection inside this sandboxed subframe on the bare
+      // keystroke, so it silently does nothing. Do the copy ourselves from the
+      // selection (allow-same-origin lets us read it) - same path as the
+      // recipient-pill copy, which is known to work in this webview.
+      if (mod && key === "c") {
+        const text = doc.getSelection()?.toString();
+        if (text) {
+          e.preventDefault();
+          void navigator.clipboard.writeText(text).catch(() => {});
+        }
+        return;
+      }
+      // Leave the remaining native selection/clipboard shortcuts alone; routing
+      // Cmd/Ctrl+A through the registry would fire the app's "select all".
+      if (mod && (key === "a" || key === "x" || key === "v")) return;
       dispatchKeyboardEvent(e);
     });
     // The sandboxed iframe runs no scripts, so links can't reach a browser on

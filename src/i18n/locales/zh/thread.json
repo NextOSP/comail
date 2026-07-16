@@ -26,6 +26,8 @@
     "timeline": "时间线",
     "keyPoints": "要点",
     "nextAction": "下一步",
+    "calendarSuggestion": "建议事件",
+    "createEvent": "创建事件",
     "proposedReply": "建议回复",
     "useReply": "用作回复"
   },
