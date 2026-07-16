@@ -179,6 +179,15 @@ pub struct MessageDetail {
     /// doesn't align with `from` - mailing lists, ESPs, spoofed From:.
     /// Email address or bare domain; the UI shows it as "via <domain>".
     pub via: Option<String>,
+    /// Delivery state for a local draft that has been queued to send:
+    /// `"queued"` while its send is still in flight, `"failed"` once a dispatch
+    /// attempt errored (e.g. the account needs re-authentication, or SMTP
+    /// rejected it). `None` for received mail and for drafts never sent. Lets the
+    /// UI keep a failed send visible with an error instead of it silently
+    /// reverting to a plain draft.
+    pub send_state: Option<String>,
+    /// The last delivery error when `send_state` is `"failed"`.
+    pub send_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

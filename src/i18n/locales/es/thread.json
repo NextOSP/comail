@@ -33,6 +33,9 @@
   },
   "draftBadge": "Borrador",
   "sendingBadge": "Enviando…",
+  "sendFailedBadge": "No se pudo enviar",
+  "sendFailedTitle": "Mensaje no enviado",
+  "sendFailedHint": "Este mensaje aún no se ha enviado y seguirá reintentándose automáticamente. Si sigue fallando, vuelve a iniciar sesión en la cuenta.",
   "msgTo": "para",
   "msgCc": "cc",
   "details": {

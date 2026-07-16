@@ -19,6 +19,12 @@ import { queryClient } from "./client";
 
 let notifyPermission: boolean | null = null;
 
+// Sends that auth-paused and already have a "sign in again" warning on screen,
+// keyed by action id -> toast id. A stuck send retries every sync cycle, so this
+// collapses the repeats into one persistent toast that clears when the send
+// finally goes through, fails, or is cancelled.
+const pausedSendToasts = new Map<number, number>();
+
 /** Mark mail-derived queries stale and refetch the ones currently on screen. */
 async function refreshMailQueries() {
   await Promise.all([
@@ -176,14 +182,24 @@ export function useBackendEvents() {
       }),
       onEvent("action:state", ({ actionId, state, error }) => {
         const ui = useUi.getState();
-        // Clear the send's undo state once it reaches a terminal state, so the
-        // "Sending…" badge doesn't linger after the send finished or failed.
+        // Clear the send's undo state once it reaches a terminal (or paused)
+        // state, so the "Sending…" badge doesn't linger after the send finished,
+        // failed, or stalled waiting on re-authentication.
         if (
-          (state === "done" || state === "failed") &&
+          (state === "done" || state === "failed" || state === "paused") &&
           ui.lastUndo?.type === "send" &&
           ui.lastUndo.actionId === actionId
         ) {
           ui.set({ lastUndo: null });
+        }
+        // Once a paused send resolves (sent, gave up, or was cancelled), drop its
+        // lingering "sign in again" toast.
+        if (state === "done" || state === "failed" || state === "cancelled") {
+          const toastId = pausedSendToasts.get(actionId);
+          if (toastId != null) {
+            ui.dismissToast(toastId);
+            pausedSendToasts.delete(actionId);
+          }
         }
         if (state === "failed") {
           ui.pushToast({
@@ -191,6 +207,26 @@ export function useBackendEvents() {
             message: error ? `Couldn't send: ${error}` : "Sending failed",
           });
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["thread"] });
+        } else if (state === "paused") {
+          // The send couldn't authenticate: it's parked in the outbox, not sent.
+          // Warn once (retries keep the same action id) with a persistent,
+          // actionable toast instead of leaving the message to vanish silently.
+          if (!pausedSendToasts.has(actionId)) {
+            const toastId = ui.pushToast({
+              kind: "error",
+              message: error
+                ? `Couldn't send: ${error}. Sign in to your account again.`
+                : "Couldn't send: sign in to your account again.",
+              durationMs: 60 * 60 * 1000,
+              actionLabel: "Account settings",
+              onAction: () =>
+                useUi.getState().set({ panel: "settings", settingsTab: "accounts" }),
+            });
+            pausedSendToasts.set(actionId, toastId);
+          }
+          void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["thread"] });
         } else if (state === "done") {
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
           void queryClient.invalidateQueries({ queryKey: ["emailStats"] });

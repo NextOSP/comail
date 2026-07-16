@@ -78,6 +78,19 @@ pub async fn execute_due(
                     account_id, action_id, kind = %action.kind, error = %e,
                     "action needs auth; pausing (check mail-host auth / SMTP AUTH enabled)",
                 );
+                // A queued send that can't authenticate would otherwise sit in the
+                // outbox indefinitely with the composer already closed: the message
+                // just vanishes with no warning (only a needs-reauth dot buried in
+                // Settings). Tell the UI so it can surface that the mail wasn't sent
+                // and point the user at re-authentication. Other action kinds stay
+                // quiet; the account's needs_reauth state already covers them.
+                if action.kind == "send" {
+                    ctx.bus.emit(CoreEvent::ActionState {
+                        action_id,
+                        state: "paused".into(),
+                        error: Some(e.to_string()),
+                    });
+                }
                 let msg = "authentication required".to_string();
                 ctx.db
                     .write(move |conn| {

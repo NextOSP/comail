@@ -86,10 +86,20 @@ export function MessageCard({
   const ref = useRef<HTMLDivElement>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const lastUndo = useUi((s) => s.lastUndo);
+  // A send that errored (e.g. the account needs re-auth) keeps the draft visible
+  // with a persistent "Couldn't send" state instead of reverting to a plain draft.
+  const sendFailed = message.isDraft && message.sendState === "failed";
   // Draft queued in the undo-send window reads "Sending…", not "Draft".
   const isSendPending =
-    message.isDraft && lastUndo?.type === "send" && lastUndo.reopen.draftId === message.id;
-  const draftBadge = isSendPending ? t("thread:sendingBadge") : t("thread:draftBadge");
+    message.isDraft &&
+    !sendFailed &&
+    lastUndo?.type === "send" &&
+    lastUndo.reopen.draftId === message.id;
+  const draftBadge = sendFailed
+    ? t("thread:sendFailedBadge")
+    : isSendPending
+      ? t("thread:sendingBadge")
+      : t("thread:draftBadge");
 
   useEffect(() => {
     // Only follow the keyboard cursor into view; pointer selection (hover/click)
@@ -180,9 +190,14 @@ export function MessageCard({
             </button>
             {message.isDraft && (
               <span
-                className={`rounded bg-bg2 px-1.5 text-[10.5px] font-semibold tracking-wide uppercase ${
-                  isSendPending ? "text-accent" : "text-ink-faint"
+                className={`rounded px-1.5 text-[10.5px] font-semibold tracking-wide uppercase ${
+                  sendFailed
+                    ? "bg-danger/15 text-danger"
+                    : isSendPending
+                      ? "bg-bg2 text-accent"
+                      : "bg-bg2 text-ink-faint"
                 }`}
+                title={sendFailed ? (message.sendError ?? undefined) : undefined}
               >
                 {draftBadge}
               </span>
@@ -202,6 +217,17 @@ export function MessageCard({
       {detailsOpen && <MessageDetails message={message} viaDomain={viaDomain} />}
 
       <div className="px-5 pb-4 select-text">
+        {sendFailed && (
+          <aside className="mb-4 rounded-lg border border-danger/30 bg-danger/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">
+            <div className="mb-1 text-[10.5px] font-semibold tracking-[0.1em] text-danger uppercase">
+              {t("thread:sendFailedTitle")}
+            </div>
+            <div>{t("thread:sendFailedHint")}</div>
+            {message.sendError && (
+              <div className="mt-1 text-[12px] text-ink-faint">{message.sendError}</div>
+            )}
+          </aside>
+        )}
         <InviteCard messageId={message.id} />
         <MessageBody message={message} />
         {message.automationNote && (
@@ -698,14 +724,20 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
       const key = e.key.toLowerCase();
       // Cmd/Ctrl+C: the Edit-menu Copy works, but WKWebView won't run the
       // default copy for a selection inside this sandboxed subframe on the bare
-      // keystroke, so it silently does nothing. Do the copy ourselves from the
-      // selection (allow-same-origin lets us read it) - same path as the
-      // recipient-pill copy, which is known to work in this webview.
+      // keystroke, so it silently does nothing. navigator.clipboard can't help
+      // here either: with focus inside the subframe WebKit rejects the parent
+      // document's async clipboard write as "not focused". execCommand("copy")
+      // on the iframe's own document is the path that works - it runs
+      // synchronously in the document that holds both the focus and the
+      // selection, and the keydown counts as its user gesture.
       if (mod && key === "c") {
         const text = doc.getSelection()?.toString();
         if (text) {
           e.preventDefault();
-          void navigator.clipboard.writeText(text).catch(() => {});
+          if (!doc.execCommand("copy")) {
+            // Last resort if the legacy command is ever disabled.
+            void navigator.clipboard.writeText(text).catch(() => {});
+          }
         }
         return;
       }

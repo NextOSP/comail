@@ -495,6 +495,14 @@ textarea {
   overflow: hidden;
   pointer-events: none;
   contain: strict;
+  /* Windows/WebView2 (ANGLE/D3D): promote the clip container to its own
+     compositing layer. Without this, the `overflow: hidden` clip on the
+     animated (composited) blobs is applied against the non-composited document
+     root, so Chromium repaints the whole root every frame and the backdrop
+     flickers. `contain: strict` gives paint containment but not GPU promotion.
+     macOS's Core Animation compositor tolerates the old path; WebView2 does not. */
+  transform: translateZ(0);
+  isolation: isolate;
 }
 .co-blob {
   position: absolute;
@@ -506,6 +514,10 @@ textarea {
   opacity: 0.6;
   will-change: transform;
   transform: translateZ(0);
+  /* Keep each blob on a stable back face so WebView2 never flashes an empty
+     frame mid-transform (a second Windows-only flicker source). */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 :root[data-theme="carbon"] .co-blob {
   opacity: 0.42;

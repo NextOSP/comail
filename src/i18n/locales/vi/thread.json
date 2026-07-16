@@ -33,6 +33,9 @@
   },
   "draftBadge": "Bản nháp",
   "sendingBadge": "Đang gửi…",
+  "sendFailedBadge": "Không gửi được",
+  "sendFailedTitle": "Thư chưa được gửi",
+  "sendFailedHint": "Thư này chưa được gửi và sẽ tự động thử lại. Nếu vẫn thất bại, hãy đăng nhập lại tài khoản.",
   "msgTo": "đến",
   "msgCc": "cc",
   "details": {

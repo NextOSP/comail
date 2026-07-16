@@ -787,8 +787,28 @@ fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
         attachments: Vec::new(),
         list_unsubscribe: row.get("list_unsubscribe")?,
         via: row.get("sender_addr")?,
+        send_state: row.get("send_state")?,
+        send_error: row.get("send_error")?,
     })
 }
+
+/// Correlated-subquery columns that annotate a draft with the state of its
+/// queued send action, so a stuck/failed send stays visible with its error
+/// instead of looking like an ordinary draft. `NULL` for anything without an
+/// active send action. Kept as a shared fragment so `detail` and
+/// `list_for_thread` expose the same columns `detail_from_row` reads.
+const SEND_STATE_COLS: &str = "
+    (SELECT CASE WHEN pa.state = 'failed' OR pa.last_error IS NOT NULL
+                 THEN 'failed' ELSE 'queued' END
+     FROM pending_actions pa
+     WHERE pa.message_id = m.id AND pa.kind = 'send'
+       AND pa.state IN ('pending', 'inflight', 'failed')
+     ORDER BY pa.id DESC LIMIT 1) AS send_state,
+    (SELECT pa.last_error
+     FROM pending_actions pa
+     WHERE pa.message_id = m.id AND pa.kind = 'send'
+       AND pa.state IN ('pending', 'inflight', 'failed')
+     ORDER BY pa.id DESC LIMIT 1) AS send_error";
 
 fn attachment_meta_from_row(
     row: &rusqlite::Row,
@@ -809,11 +829,12 @@ fn attachment_meta_from_row(
 }
 
 pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
-    let mut stmt = conn.prepare(
-        "SELECT m.*, b.text_body, b.html_body
+    let sql = format!(
+        "SELECT m.*, b.text_body, b.html_body, {SEND_STATE_COLS}
          FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
-         WHERE m.id = ?1",
-    )?;
+         WHERE m.id = ?1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let mut detail = stmt
         .query_row(params![id], detail_from_row)
         .optional()?
@@ -830,12 +851,13 @@ pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
 }
 
 pub fn list_for_thread(conn: &Connection, thread_id: i64) -> Result<Vec<MessageDetail>> {
-    let mut stmt = conn.prepare(
-        "SELECT m.*, b.text_body, b.html_body
+    let sql = format!(
+        "SELECT m.*, b.text_body, b.html_body, {SEND_STATE_COLS}
          FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
          WHERE m.thread_id = ?1
-         ORDER BY m.date ASC",
-    )?;
+         ORDER BY m.date ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let mut out = stmt
         .query_map(params![thread_id], detail_from_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;

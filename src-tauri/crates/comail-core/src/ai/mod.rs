@@ -1458,6 +1458,8 @@ mod tests {
             attachments: vec![],
             list_unsubscribe: None,
             via: None,
+            send_state: None,
+            send_error: None,
         }
     }
 

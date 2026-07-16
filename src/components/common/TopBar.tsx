@@ -73,6 +73,18 @@ export function TopBar() {
 
       <button
         className="rounded-md p-1.5 text-ink-faint hover:bg-bg2 hover:text-ink"
+        title={t("common:topbar.composeWithShortcut", { shortcut: displayShortcut("c") })}
+        aria-label={t("common:topbar.compose")}
+        onClick={() => useUi.getState().openComposer({ mode: "new" })}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+        </svg>
+      </button>
+
+      <button
+        className="rounded-md p-1.5 text-ink-faint hover:bg-bg2 hover:text-ink"
         title={calendarScreen ? t("common:topbar.mail") : t("common:topbar.calendar")}
         aria-label={calendarScreen ? t("common:topbar.mail") : t("common:topbar.calendar")}
         onClick={() => {

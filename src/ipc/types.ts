@@ -119,6 +119,12 @@ export interface MessageDetail {
   listUnsubscribe: string | null;
   /** Email from the Sender: header; shown as "via <domain>" when it differs from `from`. */
   via: string | null;
+  /** Delivery state of a queued draft: "queued" while its send is in flight,
+   *  "failed" once a dispatch attempt errored (e.g. account needs re-auth).
+   *  null/undefined for received mail and drafts that were never sent. */
+  sendState?: "queued" | "failed" | null;
+  /** The last delivery error when `sendState` is "failed". */
+  sendError?: string | null;
 }
 
 export interface ThreadDetail {
@@ -635,7 +641,7 @@ export interface MailUpdatedEvent {
 
 export interface ActionStateEvent {
   actionId: number;
-  state: "pending" | "inflight" | "done" | "failed" | "cancelled";
+  state: "pending" | "inflight" | "done" | "failed" | "cancelled" | "paused";
   error: string | null;
 }
 

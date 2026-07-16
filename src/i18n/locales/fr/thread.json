@@ -33,6 +33,9 @@
   },
   "draftBadge": "Brouillon",
   "sendingBadge": "Envoi…",
+  "sendFailedBadge": "Échec de l'envoi",
+  "sendFailedTitle": "Message non envoyé",
+  "sendFailedHint": "Ce message n'a pas encore été envoyé et sera réessayé automatiquement. Si l'échec persiste, reconnectez-vous au compte.",
   "msgTo": "à",
   "msgCc": "cc",
   "details": {

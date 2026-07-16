@@ -34,6 +34,9 @@
   },
   "draftBadge": "Draft",
   "sendingBadge": "Sending…",
+  "sendFailedBadge": "Couldn't send",
+  "sendFailedTitle": "Message not sent",
+  "sendFailedHint": "This message hasn't been sent yet and will keep retrying automatically. If it keeps failing, sign in to the account again.",
   "msgTo": "to",
   "msgCc": "cc",
   "details": {

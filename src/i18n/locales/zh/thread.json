@@ -33,6 +33,9 @@
   },
   "draftBadge": "草稿",
   "sendingBadge": "发送中…",
+  "sendFailedBadge": "发送失败",
+  "sendFailedTitle": "邮件未发送",
+  "sendFailedHint": "此邮件尚未发送，将自动重试。如果持续失败，请重新登录该账户。",
   "msgTo": "收件人",
   "msgCc": "抄送",
   "details": {

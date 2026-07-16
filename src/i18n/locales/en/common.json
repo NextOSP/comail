@@ -58,6 +58,8 @@
       "mixed": "Finishing background sync"
     },
     "waitingForChord": "Waiting for chord",
+    "compose": "Compose",
+    "composeWithShortcut": "Compose ({{shortcut}})",
     "settings": "Settings",
     "settingsWithShortcut": "Settings ({{shortcut}})",
     "allAccounts": "All accounts",
