@@ -473,6 +473,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         notificationTabs: [],
         soundEnabled: true,
         autoAdvance: true,
+        selectAdvance: true,
         autoLabelsEnabled: true,
         aiCategorize: false,
         aiCategoryPrompt: "",

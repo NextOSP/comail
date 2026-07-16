@@ -229,6 +229,7 @@
       "g4": "Credentials: Create credentials, OAuth client ID, application type Desktop app. Desktop clients accept the http://127.0.0.1 loopback automatically, so there is no redirect URI to configure.",
       "g5": "Copy the Client ID (ends in .apps.googleusercontent.com) and the Client secret (starts GOCSPX-) into the fields below. They save on blur or Enter.",
       "g6": "Once sign-in works, return to the consent screen and click Publish app (Production). While in Testing, Google expires refresh tokens after 7 days and the account flips to needs-reauth weekly; publishing stops that.",
+      "g7": "For calendar sync (Connect Google Calendar): in the same project enable the Google Calendar API (APIs & Services, Library, search Google Calendar API, Enable), and on the consent screen add the scope https://www.googleapis.com/auth/calendar. Without both, connecting fails with a calendar server error.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Open Microsoft Entra",
       "m1": "At entra.microsoft.com (or portal.azure.com) go to App registrations, New registration. Name it Comail: users see this name on the consent screen.",
@@ -410,6 +411,10 @@
     "label": "Auto-advance",
     "hint": "After Done/Snooze in a conversation, open the next thread instead of returning to the list."
   },
+  "selectAdvance": {
+    "label": "Advance after select",
+    "hint": "After selecting a thread with X, move the cursor to the next row. Off toggles in place (Gmail-style)."
+  },
   "groupByDate": {
     "label": "Group by date",
     "hint": "Show Today / Yesterday / … headers between conversations in the list."
@@ -424,6 +429,8 @@
     "add": "Add signature",
     "newName": "New signature",
     "empty": "No signatures yet.",
+    "autoAdd": "Automatically add signature",
+    "autoAddHint": "Append your signature to new emails and replies.",
     "forNew": "Default for new emails",
     "forReply": "On reply / forward",
     "none": "No signature",
@@ -446,6 +453,7 @@
     "upToDate": "You're on the latest version.",
     "updateAvailable": "Version {{version}} is available.",
     "restartInstall": "Restart & install",
+    "preparingUpdate": "Preparing update…",
     "downloading": "Downloading update… {{percent}}%",
     "downloadingUnknown": "Downloading update…",
     "installing": "Installing update…",
@@ -464,6 +472,7 @@
     "connectGoogle": "Connect Google Calendar",
     "connectMicrosoft": "Connect Microsoft Calendar",
     "connectCaldav": "Connect CalDAV…",
+    "googleSetupHint": "Enable the Google Calendar API in your Google Cloud project and add the calendar scope to the OAuth consent screen, then try again. See the OAuth setup guide.",
     "connect": "Connect",
     "urlPlaceholder": "Server URL, e.g. https://caldav.fastmail.com",
     "username": "Username",

@@ -655,6 +655,10 @@ pub struct Settings {
     /// After archiving from a conversation, open the next thread (vs. back to list).
     #[serde(default = "default_true")]
     pub auto_advance: bool,
+    /// After selecting a thread with `x`, move the cursor to the next row. Off
+    /// makes `x` toggle in place (Gmail-style), leaving the cursor put.
+    #[serde(default = "default_true")]
+    pub select_advance: bool,
     /// Automatic Marketing/News/Social/Pitch categorization at sync time.
     #[serde(default = "default_true")]
     pub auto_labels_enabled: bool,
@@ -857,6 +861,7 @@ impl Default for Settings {
             notifications_enabled: true,
             sound_enabled: true,
             auto_advance: true,
+            select_advance: true,
             auto_labels_enabled: true,
             ai_categorize: false,
             ai_category_prompt: String::new(),

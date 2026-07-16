@@ -39,5 +39,14 @@ export function parseError(err: unknown): BackendError {
  */
 export function errorMessage(err: unknown): string {
   const { code, message } = parseError(err);
-  return i18n.t(`errors:${code}`, { defaultValue: message });
+  const localized = i18n.t(`errors:${code}`, { defaultValue: message });
+  // CalDAV/calendar failures are opaque without the server's own reason (an
+  // HTTP status, "no calendars found", a redirect target). The generic label
+  // alone leaves the user stuck, so append the backend detail when it carries
+  // more than the label already says.
+  if (code === "caldav") {
+    const detail = message.replace(/^caldav error:\s*/i, "").trim();
+    if (detail && detail !== localized) return `${localized}: ${detail}`;
+  }
+  return localized;
 }

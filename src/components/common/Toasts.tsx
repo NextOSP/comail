@@ -91,15 +91,24 @@ export function Toasts() {
                 style={{ width: `${Math.max(0, (1 - progress) * 100)}%` }}
               />
             )}
-            {t.progress != null && (
-              // Determinate fill growing along the bottom edge (update download).
+            {t.progress !== undefined && (
               <span
-                className={`co-progress-fill absolute inset-x-0 bottom-0 h-0.5 bg-accent${
-                  t.progress < 1 ? " is-loading" : ""
-                }`}
+                className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-accent/10"
                 aria-hidden
-                style={{ width: `${Math.min(100, Math.max(0, t.progress * 100))}%` }}
-              />
+              >
+                <span
+                  className={`co-progress-fill absolute inset-y-0 left-0 bg-accent ${
+                    t.progress == null ? "is-indeterminate" : "is-loading"
+                  }`}
+                  style={
+                    t.progress == null
+                      ? undefined
+                      : {
+                          width: `${Math.min(100, Math.max(0, t.progress * 100))}%`,
+                        }
+                  }
+                />
+              </span>
             )}
           </div>
         );

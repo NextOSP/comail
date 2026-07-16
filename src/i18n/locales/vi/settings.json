@@ -133,6 +133,7 @@
       "g4": "Thông tin đăng nhập: Create credentials, OAuth client ID, loại ứng dụng Desktop app. Client desktop tự động chấp nhận loopback http://127.0.0.1, nên không cần cấu hình URI chuyển hướng.",
       "g5": "Sao chép Client ID (kết thúc bằng .apps.googleusercontent.com) và Client secret (bắt đầu bằng GOCSPX-) vào các ô bên dưới. Chúng được lưu khi rời ô hoặc nhấn Enter.",
       "g6": "Khi đăng nhập hoạt động, quay lại màn hình chấp thuận và bấm Publish app (Production). Ở trạng thái Testing, Google làm hết hạn refresh token sau 7 ngày và tài khoản cần đăng nhập lại hằng tuần; xuất bản sẽ ngăn điều đó.",
+      "g7": "Để đồng bộ lịch (Kết nối Google Calendar): trong cùng dự án, bật Google Calendar API (APIs & Services, Library, tìm Google Calendar API, Enable), và trên màn hình chấp thuận thêm phạm vi https://www.googleapis.com/auth/calendar. Thiếu một trong hai, việc kết nối sẽ lỗi máy chủ lịch.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Mở Microsoft Entra",
       "m1": "Tại entra.microsoft.com (hoặc portal.azure.com) vào App registrations, New registration. Đặt tên Comail: người dùng sẽ thấy tên này trên màn hình cấp quyền.",
@@ -293,6 +294,10 @@
     "label": "Tự động chuyển tiếp",
     "hint": "Sau khi Hoàn tất/Tạm ẩn một cuộc hội thoại, mở cuộc hội thoại tiếp theo thay vì quay về danh sách."
   },
+  "selectAdvance": {
+    "label": "Chuyển tiếp sau khi chọn",
+    "hint": "Sau khi chọn một cuộc hội thoại bằng phím X, di chuyển con trỏ xuống hàng kế tiếp. Tắt thì chọn tại chỗ (kiểu Gmail)."
+  },
   "groupByDate": {
     "label": "Nhóm theo ngày",
     "hint": "Hiển thị tiêu đề Hôm nay / Hôm qua / … giữa các cuộc hội thoại trong danh sách."
@@ -303,6 +308,8 @@
     "add": "Thêm chữ ký",
     "newName": "Chữ ký mới",
     "empty": "Chưa có chữ ký nào.",
+    "autoAdd": "Tự động thêm chữ ký",
+    "autoAddHint": "Thêm chữ ký của bạn vào email mới và email trả lời.",
     "forNew": "Mặc định cho thư mới",
     "forReply": "Khi trả lời / chuyển tiếp",
     "none": "Không có chữ ký",
@@ -325,6 +332,7 @@
     "upToDate": "Bạn đang dùng phiên bản mới nhất.",
     "updateAvailable": "Đã có phiên bản {{version}}.",
     "restartInstall": "Khởi động lại và cài đặt",
+    "preparingUpdate": "Đang chuẩn bị cập nhật…",
     "downloading": "Đang tải bản cập nhật… {{percent}}%",
     "downloadingUnknown": "Đang tải bản cập nhật…",
     "installing": "Đang cài đặt bản cập nhật…",
@@ -343,6 +351,7 @@
     "connectGoogle": "Kết nối Google Calendar",
     "connectMicrosoft": "Kết nối Lịch Microsoft",
     "connectCaldav": "Kết nối CalDAV…",
+    "googleSetupHint": "Bật Google Calendar API trong dự án Google Cloud của bạn và thêm phạm vi lịch vào màn hình chấp thuận OAuth, rồi thử lại. Xem hướng dẫn thiết lập OAuth.",
     "connect": "Kết nối",
     "urlPlaceholder": "URL máy chủ, ví dụ https://caldav.fastmail.com",
     "username": "Tên đăng nhập",

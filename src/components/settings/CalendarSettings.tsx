@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { call } from "../../ipc/commands";
-import { errorMessage } from "../../ipc/errors";
+import { errorMessage, parseError } from "../../ipc/errors";
 import type { Account } from "../../ipc/types";
 import { queryClient } from "../../queries/client";
 import { useAccounts } from "../../queries/hooks";
@@ -82,7 +82,14 @@ function AccountCalendarCard({
       setPassword("");
       refresh();
     } catch (err) {
-      pushToast({ kind: "error", message: errorMessage(err) });
+      // A Google CalDAV rejection (403/404) almost always means the Cloud
+      // project behind the OAuth client hasn't enabled the Calendar API or
+      // added the calendar scope. Point the user straight at the fix.
+      const googleSetup =
+        kind === "google" && parseError(err).code === "caldav"
+          ? ` ${t("settings:calendar.googleSetupHint")}`
+          : "";
+      pushToast({ kind: "error", message: `${errorMessage(err)}${googleSetup}` });
     } finally {
       setBusy(false);
     }

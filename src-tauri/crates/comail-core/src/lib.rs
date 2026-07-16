@@ -1940,12 +1940,19 @@ impl Core {
         }
 
         // CalDAV rows need the server-side DELETE; keep a tombstone and let
-        // the push path finish the job. Everything else goes right away.
+        // the push path finish the job. Mail-invite rows keep a terminal
+        // tombstone - purging them would let the next re-parse of the
+        // archived invitation email resurrect the event. Purely local rows
+        // go right away.
         if ev.calendar_id.is_some() {
             self.db
                 .write(move |conn| repo::calendar::mark_deleted(conn, event_id))
                 .await?;
             self.enqueue_cal_push(event_id, ev.account_id, "cal_delete")
+                .await?;
+        } else if ev.message_id.is_some() {
+            self.db
+                .write(move |conn| repo::calendar::mark_deleted(conn, event_id))
                 .await?;
         } else {
             self.db

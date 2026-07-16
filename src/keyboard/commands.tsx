@@ -7,7 +7,7 @@ import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { subscribeEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
-import type { Account, Address, MessageDetail, ThreadDetail } from "../ipc/types";
+import type { Account, Address, MessageDetail, Settings, ThreadDetail } from "../ipc/types";
 import { addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
 import { normalizeSyncStatus } from "../lib/syncStatus";
@@ -459,7 +459,10 @@ export const ALL_COMMANDS: Command[] = [
       const id = ctx.ui.selectedThreadId ?? ctx.ui.visibleThreadIds[ctx.ui.selectedIndex];
       if (id != null) {
         useUi.getState().toggleSelect(id);
-        ctx.moveCursor(1);
+        // Advance the cursor unless the user opted for Gmail-style toggle-in-place.
+        const advance =
+          queryClient.getQueryData<Settings>(["settings"])?.selectAdvance !== false;
+        if (advance) ctx.moveCursor(1);
       }
     },
   },

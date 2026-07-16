@@ -1447,6 +1447,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   notificationTabs: [],
   soundEnabled: true,
   autoAdvance: true,
+  selectAdvance: true,
   autoLabelsEnabled: true,
   aiCategorize: false,
   aiCategoryPrompt: "",

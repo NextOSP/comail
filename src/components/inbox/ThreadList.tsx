@@ -357,7 +357,7 @@ export function ThreadList({
               <div key={th.id} className="absolute inset-x-0" style={style}>
                 <ThreadRow
                   thread={th}
-                  selected={th.id === selectedThreadId && selection.length === 0}
+                  selected={th.id === selectedThreadId}
                   checked={selection.includes(th.id)}
                   selectionMode={selection.length > 0}
                   selfEmails={selfEmails}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AiCalendarSuggestion } from "../../ipc/types";
 import { performThreadAction } from "../../queries/actions";
@@ -68,9 +68,40 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   // and pointer scrolling afterwards are untouched.
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const autoScrolledFor = useRef<number | null>(null);
+  // Whether the on-open anchor is the very first message (nothing read above
+  // it). Set in render below; read by the auto-center effect.
+  const anchorIsFirstRef = useRef(false);
+
+  // A freshly opened thread must start at the top. App keeps a single
+  // ConversationScreen mounted (no key), so the scroll container is reused and
+  // its scrollTop otherwise carries over from the previous email - most visible
+  // at small window sizes, where the thread actually overflows. Reset it as a
+  // layout effect so the top lands before the browser paints the new thread,
+  // once per thread (never on later `data` changes like auto-mark-read, which
+  // would yank a reader back to the top). The real scroller differs between the
+  // Tauri webview and the browser, so clear the wrapper, any overflowing
+  // ancestor, and the document - the reverse of scrollToLatest.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const scrollResetFor = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (!data || scrollResetFor.current === threadId) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    scrollResetFor.current = threadId;
+    el.scrollTop = 0;
+    for (let a: HTMLElement | null = el.parentElement; a; a = a.parentElement)
+      if (a.scrollHeight > a.clientHeight + 1) a.scrollTop = 0;
+    const doc = document.scrollingElement as HTMLElement | null;
+    if (doc) doc.scrollTop = 0;
+  }, [data, threadId]);
+
   useEffect(() => {
     if (!data || autoScrolledFor.current === threadId) return;
     autoScrolledFor.current = threadId;
+    // The first unread IS the first message: the layout effect already parked us
+    // at the top, which is where new mail should start. Only threads with read
+    // history above the new mail need centering to pull it above the fold.
+    if (anchorIsFirstRef.current) return;
     let timer: number | undefined;
     const raf = requestAnimationFrame(() => {
       const el = anchorRef.current;
@@ -131,6 +162,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
   // Where the on-open auto-scroll lands: the first unread message (start of
   // what's new), falling back to the newest one.
   const anchorId = messages.find((m) => !m.isRead && !m.isDraft)?.id ?? lastId;
+  anchorIsFirstRef.current = anchorId === messages[0]?.id;
   // The message a reply will target, mirrored as a highlight so it's always
   // clear which one is selected. Defaults (nothing hovered/navigated yet) to
   // the latest incoming message - matching the keyboard `compose` fallback - so
@@ -175,7 +207,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
 
   return (
     <div className="co-fade-in flex min-h-0 flex-1 overflow-hidden">
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div ref={scrollerRef} className="min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-6 py-6 pb-24">
         <header className="flex items-start justify-between gap-4">
           <div>

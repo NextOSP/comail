@@ -46,8 +46,8 @@ export interface ToastItem {
   durationMs?: number;
   /** show a live countdown of remaining seconds (undo send) */
   countdown?: boolean;
-  /** 0..1 determinate progress bar (update download); null/undefined hides it */
-  progress?: number;
+  /** 0..1 determinate progress; null = indeterminate; undefined = hidden. */
+  progress?: number | null;
 }
 
 export interface ComposerState {

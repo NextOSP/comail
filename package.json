@@ -1,7 +1,7 @@
 {
   "name": "comail",
   "private": true,
-  "version": "0.2.18",
+  "version": "0.2.19",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.11.0",
   "type": "module",

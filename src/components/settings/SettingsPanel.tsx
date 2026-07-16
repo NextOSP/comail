@@ -9,6 +9,7 @@ import i18n, {
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { appVersion, checkForUpdate } from "../../ipc/updater";
+import { HEATMAP_OPACITY, heatmapLevel } from "../../lib/heatmap";
 import { useInstallUpdate } from "../../lib/useInstallUpdate";
 import type {
   AiAutomationAction,
@@ -97,6 +98,7 @@ const DEFAULT_SETTINGS: Settings = {
   notificationTabs: [],
   soundEnabled: true,
   autoAdvance: true,
+  selectAdvance: true,
   autoLabelsEnabled: true,
   aiCategorize: false,
   aiCategoryPrompt: "",
@@ -740,6 +742,16 @@ export function SettingsPanel() {
               />
             </SettingRow>
             <SettingRow
+              label={t("settings:selectAdvance.label")}
+              hint={t("settings:selectAdvance.hint")}
+            >
+              <Toggle
+                label={t("settings:selectAdvance.label")}
+                checked={s.selectAdvance}
+                onChange={(selectAdvance) => void updateSettings({ selectAdvance })}
+              />
+            </SettingRow>
+            <SettingRow
               label={t("settings:groupByDate.label")}
               hint={t("settings:groupByDate.hint")}
             >
@@ -989,7 +1001,7 @@ function AboutSection() {
             disabled={checking}
           >
             {checking
-              ? t("settings:about.checking")
+              ? <BusyLabel>{t("settings:about.checking")}</BusyLabel>
               : t("settings:about.checkUpdates")}
           </button>
         </div>
@@ -1105,11 +1117,8 @@ function EmailStatsDashboard() {
   }
   const countFor = (sent: number, received: number) =>
     metric === "sent" ? sent : metric === "received" ? received : sent + received;
-  const maxCount = Math.max(
-    1,
-    ...Array.from(dayByDate.values(), (day) =>
-      countFor(day.sent, day.received),
-    ),
+  const activityCounts = Array.from(dayByDate.values(), (day) =>
+    countFor(day.sent, day.received),
   );
   const heatColor =
     metric === "sent"
@@ -1219,9 +1228,7 @@ function EmailStatsDashboard() {
               const sent = day?.sent ?? 0;
               const received = day?.received ?? 0;
               const count = countFor(sent, received);
-              const ratio = count / maxCount;
-              const opacity =
-                count === 0 ? undefined : 0.18 + Math.ceil(ratio * 4) * 0.17;
+              const level = heatmapLevel(count, activityCounts);
               const title = t("settings:stats.dayTitle", {
                 date: date.toLocaleDateString(i18n.language, {
                   year: "numeric",
@@ -1234,11 +1241,11 @@ function EmailStatsDashboard() {
               return (
                 <span
                   key={key}
-                  className="aspect-square w-full rounded-[2px] bg-bg3 ring-1 ring-inset ring-black/[0.035]"
+                  className="aspect-square w-full rounded-[2px] ring-1 ring-inset ring-hairline"
                   style={
-                    count > 0
-                      ? { background: heatColor, opacity }
-                      : undefined
+                    level > 0
+                      ? { background: heatColor, opacity: HEATMAP_OPACITY[level] }
+                      : { background: "transparent" }
                   }
                   title={title}
                   aria-label={title}
@@ -1249,12 +1256,14 @@ function EmailStatsDashboard() {
         </div>
         <div className="mt-2 flex items-center justify-end gap-1 text-[9.5px] text-ink-faint">
           <span>{t("settings:ai.usage.less")}</span>
-          {[0, 0.35, 0.52, 0.69, 0.86].map((opacity, index) => (
+          {HEATMAP_OPACITY.map((opacity, index) => (
             <span
-              key={opacity}
-              className="size-2.5 rounded-[2px] bg-bg3"
+              key={index}
+              className="size-2.5 rounded-[2px] ring-1 ring-inset ring-hairline"
               style={
-                index === 0 ? undefined : { background: heatColor, opacity }
+                index === 0
+                  ? { background: "transparent" }
+                  : { background: heatColor, opacity }
               }
             />
           ))}
@@ -1284,9 +1293,9 @@ function AiUsageDashboard() {
   ) {
     heatmapDays.push(new Date(cursor));
   }
-  const maxTokens = Math.max(
-    1,
-    ...Array.from(dayByDate.values(), (day) => day.totalTokens),
+  const activityTokens = Array.from(
+    dayByDate.values(),
+    (day) => day.totalTokens,
   );
   const summaries = [
     { label: t("settings:ai.usage.total"), value: usage?.totalTokens ?? 0 },
@@ -1369,9 +1378,7 @@ function AiUsageDashboard() {
               const key = localDateKey(date);
               const day = dayByDate.get(key);
               const tokens = day?.totalTokens ?? 0;
-              const ratio = tokens / maxTokens;
-              const opacity =
-                tokens === 0 ? undefined : 0.18 + Math.ceil(ratio * 4) * 0.17;
+              const level = heatmapLevel(tokens, activityTokens);
               const title = t("settings:ai.usage.dayTitle", {
                 date: date.toLocaleDateString(i18n.language, {
                   year: "numeric",
@@ -1384,11 +1391,14 @@ function AiUsageDashboard() {
               return (
                 <span
                   key={key}
-                  className="aspect-square w-full rounded-[2px] bg-bg3 ring-1 ring-inset ring-black/[0.035]"
+                  className="aspect-square w-full rounded-[2px] ring-1 ring-inset ring-hairline"
                   style={
-                    tokens > 0
-                      ? { background: "var(--accent)", opacity }
-                      : undefined
+                    level > 0
+                      ? {
+                          background: "var(--accent)",
+                          opacity: HEATMAP_OPACITY[level],
+                        }
+                      : { background: "transparent" }
                   }
                   title={title}
                   aria-label={title}
@@ -1399,13 +1409,13 @@ function AiUsageDashboard() {
         </div>
         <div className="mt-2 flex items-center justify-end gap-1 text-[9.5px] text-ink-faint">
           <span>{t("settings:ai.usage.less")}</span>
-          {[0, 0.35, 0.52, 0.69, 0.86].map((opacity, index) => (
+          {HEATMAP_OPACITY.map((opacity, index) => (
             <span
-              key={opacity}
-              className="size-2.5 rounded-[2px] bg-bg3"
+              key={index}
+              className="size-2.5 rounded-[2px] ring-1 ring-inset ring-hairline"
               style={
                 index === 0
-                  ? undefined
+                  ? { background: "transparent" }
                   : { background: "var(--accent)", opacity }
               }
             />
@@ -2352,7 +2362,7 @@ function OAuthGuide() {
       title: t("settings:oauth.guide.googleTitle"),
       linkLabel: t("settings:oauth.guide.openGoogle"),
       url: "https://console.cloud.google.com/apis/credentials",
-      steps: ["g1", "g2", "g3", "g4", "g5", "g6"],
+      steps: ["g1", "g2", "g3", "g4", "g5", "g6", "g7"],
       note: undefined as string | undefined,
     },
     {
@@ -2768,6 +2778,20 @@ function AccountSignatures({
     });
   };
 
+  // Convenience switch over the per-mode defaults: on = default both new and
+  // reply to a signature (keeping any specific picks already made), off = none.
+  const autoAdd = Boolean(defs.newId || defs.replyId);
+  const setAutoAdd = (enabled: boolean) => {
+    const cur = settings.signatureDefaults[key] ?? {};
+    const fallback = sigs[0]?.id ?? null;
+    writeSignatures(settings.signatureList, {
+      ...settings.signatureDefaults,
+      [key]: enabled
+        ? { newId: cur.newId ?? fallback, replyId: cur.replyId ?? fallback }
+        : { newId: null, replyId: null },
+    });
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 text-[12px] font-medium tracking-wide text-ink-muted">
@@ -2805,18 +2829,32 @@ function AccountSignatures({
 
       {sigs.length > 0 && (
         <div className="flex flex-col gap-2 border-t border-hairline pt-3">
-          <DefaultSelect
-            label={t("settings:signature.forNew")}
-            value={defs.newId ?? ""}
-            sigs={sigs}
-            onChange={(id) => setDefault("newId", id)}
-          />
-          <DefaultSelect
-            label={t("settings:signature.forReply")}
-            value={defs.replyId ?? ""}
-            sigs={sigs}
-            onChange={(id) => setDefault("replyId", id)}
-          />
+          <SettingRow
+            label={t("settings:signature.autoAdd")}
+            hint={t("settings:signature.autoAddHint")}
+          >
+            <Toggle
+              label={t("settings:signature.autoAdd")}
+              checked={autoAdd}
+              onChange={setAutoAdd}
+            />
+          </SettingRow>
+          {autoAdd && (
+            <>
+              <DefaultSelect
+                label={t("settings:signature.forNew")}
+                value={defs.newId ?? ""}
+                sigs={sigs}
+                onChange={(id) => setDefault("newId", id)}
+              />
+              <DefaultSelect
+                label={t("settings:signature.forReply")}
+                value={defs.replyId ?? ""}
+                sigs={sigs}
+                onChange={(id) => setDefault("replyId", id)}
+              />
+            </>
+          )}
         </div>
       )}
     </div>

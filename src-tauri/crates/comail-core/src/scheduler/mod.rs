@@ -99,6 +99,14 @@ pub fn spawn(
                     .await
                 {
                     for m in masters {
+                        // Same gates as upcoming_for_notify: cancelled series
+                        // (incl. CANCEL tombstones) and declined invites are
+                        // silent.
+                        if m.event.status.as_deref() == Some("CANCELLED")
+                            || m.event.rsvp_status.as_deref() == Some("DECLINED")
+                        {
+                            continue;
+                        }
                         let Some(rrule) = m.event.rrule.clone() else {
                             continue;
                         };

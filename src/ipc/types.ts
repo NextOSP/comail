@@ -376,6 +376,9 @@ export interface Settings {
   soundEnabled: boolean;
   /** After archiving from a conversation, open the next thread (vs. back to list). */
   autoAdvance: boolean;
+  /** After selecting a thread with `x`, advance the cursor to the next row. Off
+   *  toggles in place (Gmail-style), leaving the cursor put. */
+  selectAdvance: boolean;
   /** Automatic Marketing/News/Social/Pitch categorization at sync time. */
   autoLabelsEnabled: boolean;
   /** Sort mail that no rule catches into a category with the AI classifier. */

@@ -133,6 +133,7 @@
       "g4": "Credenciales: Crear credenciales, ID de cliente de OAuth, tipo de aplicación App de escritorio. Los clientes de escritorio aceptan automáticamente el bucle local http://127.0.0.1, así que no hay URI de redirección que configurar.",
       "g5": "Copia el ID de cliente (termina en .apps.googleusercontent.com) y el secreto de cliente (empieza por GOCSPX-) en los campos de abajo. Se guardan al salir del campo o con Enter.",
       "g6": "Cuando el inicio de sesión funcione, vuelve a la pantalla de consentimiento y pulsa Publicar app (Producción). En estado de Pruebas, Google caduca los tokens de actualización tras 7 días y la cuenta pasa a necesitar reautenticación cada semana; publicar lo evita.",
+      "g7": "Para sincronizar el calendario (Conectar Google Calendar): en el mismo proyecto habilita la API de Google Calendar (APIs y servicios, Biblioteca, busca Google Calendar API, Habilitar) y en la pantalla de consentimiento añade el ámbito https://www.googleapis.com/auth/calendar. Sin ambos, la conexión falla con un error del servidor de calendario.",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "Abrir Microsoft Entra",
       "m1": "En entra.microsoft.com (o portal.azure.com) ve a Registros de aplicaciones, Nuevo registro. Llámala Comail: los usuarios ven este nombre en la pantalla de consentimiento.",
@@ -290,6 +291,10 @@
     "label": "Avance automático",
     "hint": "Tras Hecho/Posponer en una conversación, abre la siguiente conversación en lugar de volver a la lista."
   },
+  "selectAdvance": {
+    "label": "Avanzar tras seleccionar",
+    "hint": "Tras seleccionar un hilo con X, mueve el cursor a la fila siguiente. Desactivado, alterna sin moverse (estilo Gmail)."
+  },
   "groupByDate": {
     "label": "Agrupar por fecha",
     "hint": "Muestra encabezados Hoy / Ayer / … entre conversaciones en la lista."
@@ -300,6 +305,8 @@
     "add": "Añadir firma",
     "newName": "Nueva firma",
     "empty": "Aún no hay firmas.",
+    "autoAdd": "Añadir firma automáticamente",
+    "autoAddHint": "Adjunta tu firma a los correos nuevos y las respuestas.",
     "forNew": "Predeterminada para correos nuevos",
     "forReply": "Al responder / reenviar",
     "none": "Sin firma",
@@ -322,6 +329,7 @@
     "upToDate": "Tienes la última versión.",
     "updateAvailable": "La versión {{version}} está disponible.",
     "restartInstall": "Reiniciar e instalar",
+    "preparingUpdate": "Preparando actualización…",
     "downloading": "Descargando actualización… {{percent}} %",
     "downloadingUnknown": "Descargando actualización…",
     "installing": "Instalando actualización…"
@@ -337,6 +345,7 @@
     "connectGoogle": "Conectar Google Calendar",
     "connectMicrosoft": "Conectar Calendario de Microsoft",
     "connectCaldav": "Conectar CalDAV…",
+    "googleSetupHint": "Habilita la API de Google Calendar en tu proyecto de Google Cloud y añade el ámbito de calendario a la pantalla de consentimiento de OAuth; luego inténtalo de nuevo. Consulta la guía de configuración de OAuth.",
     "connect": "Conectar",
     "urlPlaceholder": "URL del servidor, p. ej. https://caldav.fastmail.com",
     "username": "Usuario",

@@ -133,6 +133,7 @@
       "g4": "凭据：创建凭据，OAuth 客户端 ID，应用类型选择桌面应用。桌面客户端会自动接受 http://127.0.0.1 环回地址，因此无需配置重定向 URI。",
       "g5": "将客户端 ID（以 .apps.googleusercontent.com 结尾）和客户端密钥（以 GOCSPX- 开头）复制到下方字段。字段在失焦或按 Enter 时保存。",
       "g6": "登录成功后，回到同意屏幕点击“发布应用”（正式版）。在测试状态下，Google 会在 7 天后使刷新令牌过期，账户每周需要重新验证；发布可避免这种情况。",
+      "g7": "要同步日历（连接 Google 日历）：在同一项目中启用 Google Calendar API（API 和服务、库、搜索 Google Calendar API、启用），并在同意屏幕添加范围 https://www.googleapis.com/auth/calendar。缺少任一项，连接都会失败并提示日历服务器错误。",
       "msTitle": "Microsoft (Outlook / 365)",
       "openMs": "打开 Microsoft Entra",
       "m1": "在 entra.microsoft.com（或 portal.azure.com）前往应用注册，新注册。命名为 Comail：用户会在授权页面上看到这个名称。",
@@ -290,6 +291,10 @@
     "label": "自动前进",
     "hint": "在会话中完成/暂停后，打开下一个会话，而不是返回列表。"
   },
+  "selectAdvance": {
+    "label": "选择后前进",
+    "hint": "用 X 选择会话后，将光标移到下一行。关闭则原地切换（Gmail 风格）。"
+  },
   "groupByDate": {
     "label": "按日期分组",
     "hint": "在列表的会话之间显示“今天 / 昨天 / …”标题。"
@@ -300,6 +305,8 @@
     "add": "添加签名",
     "newName": "新签名",
     "empty": "暂无签名。",
+    "autoAdd": "自动添加签名",
+    "autoAddHint": "在新邮件和回复中附加你的签名。",
     "forNew": "新邮件默认",
     "forReply": "回复 / 转发时",
     "none": "无签名",
@@ -322,6 +329,7 @@
     "upToDate": "已是最新版本。",
     "updateAvailable": "版本 {{version}} 可用。",
     "restartInstall": "重启并安装",
+    "preparingUpdate": "正在准备更新…",
     "downloading": "正在下载更新… {{percent}}%",
     "downloadingUnknown": "正在下载更新…",
     "installing": "正在安装更新…"
@@ -337,6 +345,7 @@
     "connectGoogle": "连接 Google 日历",
     "connectMicrosoft": "连接 Microsoft 日历",
     "connectCaldav": "连接 CalDAV…",
+    "googleSetupHint": "在你的 Google Cloud 项目中启用 Google Calendar API，并在 OAuth 同意屏幕添加日历范围，然后重试。请参阅 OAuth 设置指南。",
     "connect": "连接",
     "urlPlaceholder": "服务器地址，如 https://caldav.fastmail.com",
     "username": "用户名",
