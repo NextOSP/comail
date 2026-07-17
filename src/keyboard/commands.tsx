@@ -1050,7 +1050,9 @@ export const ALL_COMMANDS: Command[] = [
     id: "palette",
     titleKey: "commands:title.palette",
     aliases: ["commands", "command palette"],
-    keys: ["mod+k"],
+    // "ctrl+k" is only distinct on macOS (mod = Cmd there); elsewhere Ctrl+K
+    // already normalizes to "mod+k".
+    keys: ["mod+k", "ctrl+k"],
     section: "Meta",
     run: (ctx) => useUi.getState().set({ paletteOpen: !ctx.paletteOpen }),
     hiddenInPalette: true,

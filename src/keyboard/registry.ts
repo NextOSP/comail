@@ -190,12 +190,46 @@ export function installKeyboard() {
 // click inside a message. (Chrome/Blink does deliver them to a listener on the
 // iframe document, which is why it only reproduces in WebKit.)
 //
-// Fix: never let focus rest in one of these iframes. When it grabs focus the
-// parent window fires `blur`; on the next tick we yank focus back to an
-// offscreen sink so keydowns land on the parent document where the handler
-// above lives. Verified in WebKit: it does not disturb an in-progress text
-// selection (mouse selection completes and survives) and `preventScroll` keeps
-// the viewport put.
+// Fix: never let focus rest in one of these iframes. Two triggers feed the
+// same reclaim:
+//   1. The parent window's `blur` (fires in Blink when a subframe grabs focus).
+//   2. `mouseup` inside the iframe's own document (wired up by whoever renders
+//      the iframe, via `reclaimIframeFocus`). WKWebView doesn't reliably fire
+//      the parent blur for same-page focus moves, but it DOES deliver mouse
+//      events inside the sandboxed frame - the click is the only way focus
+//      gets in there, so it's also the reclaim point.
+// On the next tick we yank focus back to an offscreen sink so keydowns land on
+// the parent document where the handler above lives. Verified in WebKit: it
+// does not disturb an in-progress text selection (mouse selection completes
+// and survives) and `preventScroll` keeps the viewport put.
+
+let focusSink: HTMLDivElement | null = null;
+
+function ensureFocusSink(): HTMLDivElement {
+  if (focusSink && focusSink.isConnected) return focusSink;
+  const sink = document.createElement("div");
+  sink.tabIndex = -1;
+  sink.setAttribute("aria-hidden", "true");
+  sink.style.cssText =
+    "position:fixed;top:0;left:0;width:0;height:0;opacity:0;outline:none;pointer-events:none";
+  document.body.appendChild(sink);
+  focusSink = sink;
+  return sink;
+}
+
+/** If keyboard focus is resting inside one of the app's sandboxed iframes,
+ *  yank it back to the offscreen sink (deferred a tick so the focus move /
+ *  text selection that triggered this settles first). Exported so the iframe
+ *  owners can call it from events that fire inside the frame's document -
+ *  the only signals WKWebView reliably delivers there. */
+export function reclaimIframeFocus() {
+  window.setTimeout(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLIFrameElement && active.matches("iframe[data-app-iframe]")) {
+      ensureFocusSink().focus({ preventScroll: true });
+    }
+  }, 0);
+}
 
 let focusGuardInstalled = false;
 
@@ -203,28 +237,35 @@ export function installIframeFocusGuard() {
   if (focusGuardInstalled || typeof document === "undefined") return () => {};
   focusGuardInstalled = true;
 
-  const sink = document.createElement("div");
-  sink.tabIndex = -1;
-  sink.setAttribute("aria-hidden", "true");
-  sink.style.cssText =
-    "position:fixed;top:0;left:0;width:0;height:0;opacity:0;outline:none;pointer-events:none";
-  document.body.appendChild(sink);
+  const sink = ensureFocusSink();
+  window.addEventListener("blur", reclaimIframeFocus);
 
-  const bounce = () => {
-    // Defer: the iframe becomes `activeElement` only after this blur settles.
-    window.setTimeout(() => {
-      const active = document.activeElement;
-      if (active instanceof HTMLIFrameElement && active.matches("iframe[data-app-iframe]")) {
-        sink.focus({ preventScroll: true });
+  // With focus reclaimed to the parent, a native Cmd/Ctrl+C copies the parent
+  // document's (empty) selection - not the text the user just selected inside
+  // an email iframe. Rescue it: when the parent selection is empty but a
+  // sandboxed iframe holds one, write that text to the clipboard ourselves.
+  // The parent document is focused here, so the async clipboard write is
+  // allowed (it's rejected only while the subframe holds focus).
+  const copyRescue = (e: KeyboardEvent) => {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "c") return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    for (const frame of document.querySelectorAll<HTMLIFrameElement>("iframe[data-app-iframe]")) {
+      const text = frame.contentDocument?.getSelection()?.toString();
+      if (text) {
+        e.preventDefault();
+        void navigator.clipboard.writeText(text).catch(() => {});
+        return;
       }
-    }, 0);
+    }
   };
-  window.addEventListener("blur", bounce);
+  window.addEventListener("keydown", copyRescue);
 
   return () => {
     focusGuardInstalled = false;
-    window.removeEventListener("blur", bounce);
+    window.removeEventListener("blur", reclaimIframeFocus);
+    window.removeEventListener("keydown", copyRescue);
     sink.remove();
+    focusSink = null;
   };
 }
 

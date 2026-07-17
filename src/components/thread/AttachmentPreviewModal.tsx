@@ -5,6 +5,7 @@ import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { MOCK_MODE } from "../../ipc/mock";
 import { useUi } from "../../stores/ui";
+import { reclaimIframeFocus } from "../../keyboard/registry";
 import type { AttachmentPreview, SheetPreview } from "../../ipc/types";
 import { formatSize } from "../../lib/format";
 
@@ -275,6 +276,12 @@ function SandboxedHtml({ html }: { html: string }) {
       data-app-iframe
       sandbox="allow-same-origin"
       srcDoc={srcDoc}
+      // Clicking inside steals keyboard focus, and WKWebView delivers keydowns
+      // in a scriptless sandboxed frame to no listener at all - hand focus
+      // back to the parent after each click so shortcuts keep working.
+      onLoad={(e) =>
+        e.currentTarget.contentDocument?.addEventListener("mouseup", reclaimIframeFocus)
+      }
       className="h-full w-full rounded-md border-0 bg-bg1"
       title={t("thread:attachment.preview.documentTitle")}
     />

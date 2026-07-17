@@ -9,6 +9,10 @@ import { MOD_LABEL, relativeTime } from "../../lib/format";
 import { Composer } from "../compose/Composer";
 import { MessageCard } from "./MessageCard";
 
+/** Any of these means the user took over scrolling, ending the on-open
+ *  auto-align (wheel/trackpad, touch, keyboard nav, scrollbar drag). */
+const USER_SCROLL_EVENTS = ["wheel", "touchstart", "keydown", "mousedown"] as const;
+
 export function ConversationScreen({ threadId }: { threadId: number }) {
   const { t } = useTranslation();
   const { data, isLoading, isError } = useThread(threadId);
@@ -102,26 +106,45 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
     // at the top, which is where new mail should start. Only threads with read
     // history above the new mail need centering to pull it above the fold.
     if (anchorIsFirstRef.current) return;
-    let timer: number | undefined;
-    const raf = requestAnimationFrame(() => {
+
+    // A message that (nearly) fills the viewport aligns to its top so its body
+    // occupies the screen; a short one centers so the surrounding thread stays
+    // visible for context.
+    const align = () => {
       const el = anchorRef.current;
       if (!el) return;
-      el.scrollIntoView({ block: "center" });
-      // Message bodies render into iframes that grow after first paint and
-      // shift the layout, so re-center once things settle - unless the user
-      // has scrolled in the meantime.
       let scroller: HTMLElement | null = el.parentElement;
       while (scroller && scroller.scrollHeight <= scroller.clientHeight + 1)
         scroller = scroller.parentElement;
-      const pos = scroller?.scrollTop;
-      timer = window.setTimeout(() => {
-        if (scroller == null || scroller.scrollTop === pos)
-          anchorRef.current?.scrollIntoView({ block: "center" });
-      }, 350);
-    });
+      const viewH = scroller?.clientHeight ?? window.innerHeight;
+      el.scrollIntoView({ block: el.offsetHeight > viewH * 0.6 ? "start" : "center" });
+    };
+
+    // Message bodies render into sandboxed iframes that are measured and grow
+    // well after first paint (body fetch, remote images, the height
+    // transition), so a one-shot scroll lands short: at scroll time the anchor
+    // is a small skeleton at the very end of the content, the scroller clamps
+    // at its bottom, and once the iframe grows the message header is left
+    // pinned at the bottom edge with the whole body below the fold. Instead,
+    // re-align on every content resize during a settle window - and stop the
+    // moment the user scrolls on their own.
+    let done = false;
+    const ro = new ResizeObserver(align);
+    const stop = () => {
+      if (done) return;
+      done = true;
+      ro.disconnect();
+      for (const ev of USER_SCROLL_EVENTS) window.removeEventListener(ev, stop, true);
+      window.clearTimeout(settle);
+    };
+    const content = scrollerRef.current?.firstElementChild;
+    if (content) ro.observe(content);
+    for (const ev of USER_SCROLL_EVENTS) window.addEventListener(ev, stop, true);
+    const settle = window.setTimeout(stop, 2000);
+    const raf = requestAnimationFrame(align);
     return () => {
       cancelAnimationFrame(raf);
-      if (timer !== undefined) clearTimeout(timer);
+      stop();
     };
   }, [data, threadId]);
 

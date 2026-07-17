@@ -17,7 +17,7 @@ import {
   trimTrailingEmptyHtml,
 } from "../../lib/quotes";
 import { InviteCard } from "../calendar/InviteCard";
-import { dispatchKeyboardEvent } from "../../keyboard/registry";
+import { dispatchKeyboardEvent, reclaimIframeFocus } from "../../keyboard/registry";
 
 /** Maps a file to a short badge label + accent color by extension/mime. */
 function fileKind(filename: string | null, mimeType: string | null): { label: string; color: string } {
@@ -712,10 +712,15 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     observerRef.current.observe(doc.body);
     doc.addEventListener("load", measure, true);
     // Clicking inside the email moves keyboard focus into this sandboxed
-    // iframe, so keydowns fire on its document - never the parent window that
-    // the keyboard registry listens on, so app shortcuts (Esc to go back, Cmd+K
-    // palette, J/K, R…) stop working. Route the iframe's keydowns through the
-    // registry directly. It applies its own guards (typing in a field or
+    // iframe. WKWebView (what the app ships on) then delivers keydowns to NO
+    // listener at all - not this document, not the parent window - so every
+    // app shortcut (Esc, Cmd+K palette, J/K, R…) dies. The parent-blur focus
+    // guard misses same-page focus moves in WKWebView, but mouse events DO
+    // fire in here, and a click is the only way focus gets in - so reclaim
+    // focus for the parent right after each click / completed selection.
+    doc.addEventListener("mouseup", reclaimIframeFocus);
+    // In Blink, keydowns do fire on this document while it briefly holds
+    // focus, so also route them through the registry directly. It applies its own guards (typing in a field or
     // activating a focused link is left native), so we forward every key -
     // except the native clipboard/selection shortcuts, which must stay native
     // so the user can select and copy text (e.g. an OTP code) out of the email.

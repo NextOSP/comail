@@ -41,9 +41,12 @@ const STARTUP_GRACE_MS = 20_000;
 const COOLDOWN_MS = 1_500; // ignore repeats of the same sound within this window
 const CHIME_WINDOW_MS = 10_000; // rolling window for the chime cap
 const MAX_CHIMES = 5; // most new-mail chimes allowed per window
-// Per-sound playback volume (1 = clip's natural level).
+// Per-sound playback volume (1 = clip's natural level). Both clips are
+// mastered hot (0 dBFS peaks, ~-19 dBFS RMS), so these sit well below 1: the
+// send whoosh is a long 3.4s swell that reads as blaring anywhere near its
+// natural level - keep it a subtle background cue.
 const GAINS: Record<Exclude<SoundName, "intro">, number> = {
-  send: 0.5,
+  send: 0.2,
   "new-email": 0.8,
 };
 
