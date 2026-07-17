@@ -10,6 +10,8 @@ import type {
   AiAutomationPlan,
   AiStatus,
   AiUsageStats,
+  AskCitation,
+  AskResult,
   AttachmentMeta,
   AttachmentPreview,
   CalendarEvent,
@@ -2020,11 +2022,33 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
   let attachOnly = false;
   let fromFilter: string | null = null;
   let viewFilter: View | null = null;
+  let sortOrder: "newest" | "oldest" = "newest";
+  let afterDate: number | null = null;
+  let beforeDate: number | null = null;
   const terms: string[] = [];
+  const fieldFilters: FieldFilter[] = [];
 
-  for (const tok of args.query.trim().split(/\s+/).filter(Boolean)) {
+  for (const tok of tokenizeQuery(args.query)) {
     const lower = tok.toLowerCase();
-    if (lower.startsWith("from:")) fromFilter = lower.slice(5);
+    if (lower.startsWith("subject:") || lower.startsWith("body:")) {
+      // Field phrase, e.g. subject:"quarterly report". A leading `!` forces
+      // case-insensitive (the default) and `!!` forces case-sensitive; the
+      // value may be quoted to hold spaces. Slice from `tok`, not `lower`, so
+      // case-sensitive matches keep the original casing.
+      const field: "subject" | "body" = lower.startsWith("subject:")
+        ? "subject"
+        : "body";
+      let rest = tok.slice(field.length + 1);
+      let caseSensitive = false;
+      if (rest.startsWith("!!")) {
+        caseSensitive = true;
+        rest = rest.slice(2);
+      } else if (rest.startsWith("!")) {
+        rest = rest.slice(1);
+      }
+      const phrase = stripQuotes(rest);
+      if (phrase) fieldFilters.push({ field, phrase, caseSensitive });
+    } else if (lower.startsWith("from:")) fromFilter = lower.slice(5);
     else if (lower === "is:unread") unreadOnly = true;
     else if (lower === "is:starred") starredOnly = true;
     else if (lower === "has:attachment") attachOnly = true;
@@ -2043,22 +2067,47 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
         all: "all",
       };
       viewFilter = map[v] ?? null;
-    } else terms.push(foldText(lower));
+    } else if (lower.startsWith("sort:")) {
+      const v = lower.slice(5);
+      if (v === "oldest" || v === "asc" || v === "old") sortOrder = "oldest";
+      else if (v === "newest" || v === "latest" || v === "desc" || v === "new")
+        sortOrder = "newest";
+    } else if (lower.startsWith("last:")) {
+      const ms = parseRelative(lower.slice(5));
+      if (ms != null) afterDate = Date.now() - ms;
+    } else if (lower.startsWith("after:")) {
+      const d = parseDay(lower.slice(6));
+      if (d != null) afterDate = d;
+    } else if (lower.startsWith("before:")) {
+      const d = parseDay(lower.slice(7));
+      if (d != null) beforeDate = d + DAY_MS;
+    } else if (lower.startsWith("between:")) {
+      const [a0, b0] = lower.slice(8).split(":");
+      const start = parseDay(a0 ?? "");
+      const end = parseDay(b0 ?? "");
+      if (start != null) afterDate = start;
+      if (end != null) beforeDate = end + DAY_MS;
+    } else terms.push(foldText(stripQuotes(tok)));
   }
 
   // Two tiers, like the backend: threads matching every term win; when none
   // do, fall back to threads matching any term.
   const exact: ThreadSummary[] = [];
   const loose: ThreadSummary[] = [];
+  const dir = sortOrder === "oldest" ? -1 : 1;
   const sorted = [...threads].sort(
     (a, b) =>
-      (b.messages[b.messages.length - 1]?.date ?? 0) -
-      (a.messages[a.messages.length - 1]?.date ?? 0),
+      dir *
+      ((b.messages[b.messages.length - 1]?.date ?? 0) -
+        (a.messages[a.messages.length - 1]?.date ?? 0)),
   );
   for (const t of sorted) {
     if (exact.length >= limit) break;
     if (viewFilter && !inView(t, viewFilter)) continue;
     if (!viewFilter && (t.folder === "trash" || t.folder === "spam")) continue;
+    const lastDate = t.messages[t.messages.length - 1]?.date ?? 0;
+    if (afterDate != null && lastDate < afterDate) continue;
+    if (beforeDate != null && lastDate >= beforeDate) continue;
     const s = summarize(t);
     if (unreadOnly && s.unreadCount === 0) continue;
     if (starredOnly && !s.isStarred) continue;
@@ -2070,6 +2119,17 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
           (m.from.name ?? "").toLowerCase().includes(fromFilter!),
       );
       if (!hit) continue;
+    }
+    if (fieldFilters.length > 0) {
+      const subject = t.subject;
+      const body = t.messages.map((m) => m.textBody).join("\n");
+      const ok = fieldFilters.every((f) => {
+        const hay = f.field === "subject" ? subject : body;
+        return f.caseSensitive
+          ? hay.includes(f.phrase)
+          : foldText(hay).includes(foldText(f.phrase));
+      });
+      if (!ok) continue;
     }
     if (terms.length > 0) {
       const folded = foldText(
@@ -2088,6 +2148,174 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
     exact.push(s);
   }
   return exact.length > 0 ? exact : loose;
+}
+
+// ---------------------------------------------------------------------------
+// Ask: natural-language retrieval over the mailbox
+//
+// There's no model in this mock, so "Ask" is grounded, not generative: it
+// translates the question into the same operator query the manual search
+// understands, retrieves with the shared `searchThreads` path, then assembles a
+// cited answer from the sentences that actually match. That makes it behave
+// like a real RAG answer - precise filters in, sourced text out - without an
+// LLM.
+// ---------------------------------------------------------------------------
+
+const ASK_STOPWORDS = new Set([
+  "what", "when", "where", "which", "who", "whom", "whose", "why", "how", "did",
+  "does", "do", "done", "is", "are", "was", "were", "the", "a", "an", "of", "to",
+  "in", "on", "for", "from", "by", "with", "about", "that", "this", "these",
+  "those", "my", "me", "we", "our", "us", "you", "your", "and", "or", "but",
+  "not", "any", "all", "some", "show", "find", "get", "tell", "give", "list",
+  "see", "read", "email", "emails", "mail", "mails", "message", "messages",
+  "thread", "threads", "inbox", "sent", "draft", "drafts", "archive", "archived",
+  "spam", "trash", "unread", "starred", "flagged", "attachment", "attachments",
+  "attached", "file", "files", "last", "past", "previous", "week", "weeks",
+  "month", "months", "year", "years", "day", "days", "today", "yesterday",
+  "recent", "recently", "lately", "between", "before", "after", "since", "sort",
+  "oldest", "newest", "earliest", "latest", "said", "say", "says", "saying",
+  "regarding", "please", "can", "could", "would", "should", "need", "want",
+  "anything", "everything", "something",
+]);
+
+/** Content words from the question, minus stopwords and operator triggers. */
+function questionKeywords(question: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const w of question
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)) {
+    if (out.length >= 6) break;
+    if (w.length >= 3 && !ASK_STOPWORDS.has(w) && !seen.has(w)) {
+      seen.add(w);
+      out.push(w);
+    }
+  }
+  return out;
+}
+
+/** Map a fuzzy date phrase in the question to a `last:` operator, or null. */
+function relativeFromText(q: string): string | null {
+  let m: RegExpExecArray | null;
+  if (/\btoday\b/.test(q)) return "last:1day";
+  if (/\byesterday\b/.test(q)) return "last:2days";
+  if ((m = /\b(?:past|last|previous)\s+(\d+)\s*(day|week|month|year)s?\b/.exec(q)))
+    return `last:${m[1]}${m[2]}s`;
+  if (/\b(?:last|this|past)\s+week\b/.test(q)) return "last:7days";
+  if (/\b(?:last|this|past)\s+month\b/.test(q)) return "last:month";
+  if (/\b(?:last|this|past)\s+year\b/.test(q)) return "last:year";
+  if (/\brecent(?:ly)?\b|\blately\b/.test(q)) return "last:month";
+  return null;
+}
+
+/** Pull a sender out of the question: an explicit email, or a name after "from". */
+function senderFromText(question: string): string | null {
+  const email = /[\w.+-]+@[\w.-]+\.\w+/.exec(question);
+  if (email) return email[0];
+  const m = /\b(?:from|by|sender|sent by)\s+([A-Za-z][\w'-]+)/i.exec(question);
+  if (!m) return null;
+  const name = m[1];
+  return /^(the|my|us|them|our|an?|this|that|someone|anyone)$/i.test(name)
+    ? null
+    : name;
+}
+
+/**
+ * Translate a natural-language question into an operator query: folder, the
+ * unread/starred/attachment flags, a recency window, a sender, and the leftover
+ * content words as free text. `searchThreads` does the rest.
+ */
+function buildAskQuery(question: string): string {
+  const q = question.toLowerCase();
+  const ops: string[] = [];
+  if (/\binbox\b/.test(q)) ops.push("in:inbox");
+  else if (/\bsent\b/.test(q)) ops.push("in:sent");
+  else if (/\barchiv/.test(q)) ops.push("in:archive");
+  else if (/\bdraft/.test(q)) ops.push("in:drafts");
+  else if (/\bspam\b|\bjunk\b/.test(q)) ops.push("in:spam");
+  else if (/\btrash\b|\bdeleted\b/.test(q)) ops.push("in:trash");
+  if (/\bunread\b/.test(q)) ops.push("is:unread");
+  if (/\bstarred\b|\bflagged\b/.test(q)) ops.push("is:starred");
+  if (/\battach\w*|\bfiles?\b/.test(q)) ops.push("has:attachment");
+  const rel = relativeFromText(q);
+  if (rel) ops.push(rel);
+  const from = senderFromText(question);
+  if (from) ops.push(`from:${from}`);
+  if (/\boldest\b|\bearliest\b|\bchronological\b/.test(q)) ops.push("sort:oldest");
+  // Drop keywords that are just pieces of the sender we already matched (e.g.
+  // "alice", "acme", "com" from an extracted email address).
+  const fromLower = from?.toLowerCase();
+  const kw = questionKeywords(question).filter(
+    (k) => !fromLower || !fromLower.includes(k),
+  );
+  return [...ops, ...kw].join(" ").trim();
+}
+
+/** The sentence in a thread that best covers the question's keywords. */
+function bestSnippet(t: MockThread, keywords: string[]): string {
+  const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+  const segments = t.messages
+    .flatMap((m) => m.textBody.split(/(?<=[.!?])\s+|\n+/))
+    .map(clean)
+    .filter((s) => s.length > 0);
+  if (segments.length === 0) return clean(t.subject).slice(0, 160);
+  if (keywords.length === 0) return segments[segments.length - 1].slice(0, 160);
+  let best = segments[0];
+  let bestScore = -1;
+  for (const s of segments) {
+    const low = s.toLowerCase();
+    const score = keywords.reduce((n, k) => n + (low.includes(k) ? 1 : 0), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
+  }
+  return best.slice(0, 160);
+}
+
+/** A grounded, cited answer assembled from the retrieved threads (Markdown). */
+function composeAskAnswer(
+  question: string,
+  citations: AskCitation[],
+  query: string,
+): string {
+  const q = question.trim() || "your question";
+  const n = citations.length;
+  const searched = query
+    ? `_Searched \`${query}\` — ${n} relevant thread${n === 1 ? "" : "s"}._`
+    : `_Scanned your most recent mail — ${n} thread${n === 1 ? "" : "s"}._`;
+  const points = citations
+    .map((c, i) => `- ${c.snippet} — ${c.from}, "${c.subject}" [${i + 1}]`)
+    .join("\n");
+  return `${searched}\n\nHere's what your mail says about **${q}**:\n\n${points}`;
+}
+
+function askMailbox(question: string, accountId: number | null): AskResult {
+  const query = buildAskQuery(question);
+  const hits = searchThreads({ query, accountId, limit: 6 });
+  const top = hits.slice(0, 5);
+  if (top.length === 0) {
+    return {
+      answer:
+        "I couldn't find anything in your mailbox that matches that. Try naming a sender, a date range, or a distinctive keyword.",
+      citations: [],
+    };
+  }
+  const keywords = questionKeywords(question);
+  const citations: AskCitation[] = top.map((s) => {
+    const t = threads.find((x) => x.id === s.id)!;
+    const last = t.messages[t.messages.length - 1];
+    return {
+      messageId: last?.id ?? t.id,
+      threadId: t.id,
+      subject: t.subject,
+      from: threadSender(t).name ?? threadSender(t).email,
+      date: last?.date ?? NOW,
+      snippet: bestSnippet(t, keywords),
+    };
+  });
+  return { answer: composeAskAnswer(question, citations, query), citations };
 }
 
 // ---------------------------------------------------------------------------
@@ -2113,6 +2341,74 @@ function allContacts(accountId?: number): Address[] {
     }
   }
   return [...seen.values()];
+}
+
+const DAY_MS = 86_400_000;
+
+/** A `subject:`/`body:` phrase constraint parsed out of the query. */
+type FieldFilter = {
+  field: "subject" | "body";
+  phrase: string;
+  caseSensitive: boolean;
+};
+
+/**
+ * Split a query into tokens on whitespace, but keep a double-quoted run intact
+ * so `subject:"quarterly report"` stays one token instead of two. Quote
+ * characters are preserved; `stripQuotes` unwraps the value later.
+ */
+function tokenizeQuery(q: string): string[] {
+  const tokens: string[] = [];
+  let cur = "";
+  let inQuote = false;
+  for (const ch of q) {
+    if (ch === '"') {
+      inQuote = !inQuote;
+      cur += ch;
+    } else if (!inQuote && /\s/.test(ch)) {
+      if (cur) {
+        tokens.push(cur);
+        cur = "";
+      }
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur) tokens.push(cur);
+  return tokens;
+}
+
+/** Unwrap a `"double-quoted"` value; leave anything else untouched. */
+function stripQuotes(s: string): string {
+  return s.length >= 2 && s.startsWith('"') && s.endsWith('"')
+    ? s.slice(1, -1)
+    : s;
+}
+
+/** Parse a `YYYY-MM-DD` token to local start-of-day ms, or null if malformed. */
+function parseDay(s: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const t = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/**
+ * Parse a relative window like `7days`, `24h`, `week`, `3months` to a duration
+ * in ms, or null. A bare unit (`month`, `week`) counts as one. Months/years use
+ * fixed 30/365-day approximations, which is plenty for a recency filter.
+ */
+function parseRelative(s: string): number | null {
+  const m =
+    /^(\d+)?(hours?|h|days?|d|weeks?|w|months?|m|years?|y)$/.exec(s);
+  if (!m) return null;
+  const n = m[1] ? Number(m[1]) : 1;
+  const unit = m[2];
+  if (unit === "m" || unit.startsWith("month")) return n * 30 * DAY_MS;
+  if (unit[0] === "h") return n * (DAY_MS / 24);
+  if (unit[0] === "d") return n * DAY_MS;
+  if (unit[0] === "w") return n * 7 * DAY_MS;
+  return n * 365 * DAY_MS; // years
 }
 
 /** Lowercase + strip diacritics, mirroring the backend's accent-insensitive fold. */
@@ -3001,26 +3297,8 @@ export async function mockInvoke(
 
     case "ai_ask": {
       const question = (a.question as string) ?? "";
-      const top = threads.slice(0, 3);
-      return delay(
-        {
-          answer: top.length
-            ? `Based on your recent mail, the short answer to "${question.trim() || "your question"}" is: the team agreed on next steps in "${top[0].subject}" [1]${top[1] ? `, with related context in "${top[1].subject}" [2]` : ""}.`
-            : "I couldn't find anything relevant in your mailbox.",
-          citations: top.map((t) => {
-            const last = t.messages[t.messages.length - 1];
-            return {
-              messageId: last?.id ?? t.id,
-              threadId: t.id,
-              subject: t.subject,
-              from: threadSender(t).name ?? threadSender(t).email,
-              date: last?.date ?? NOW,
-              snippet: last?.textBody?.slice(0, 120) ?? t.subject,
-            };
-          }),
-        },
-        900,
-      );
+      const accountId = (a.accountId as number | null | undefined) ?? null;
+      return delay(askMailbox(question, accountId), 900);
     }
 
     case "embedding_status":

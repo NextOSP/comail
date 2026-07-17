@@ -267,6 +267,7 @@ textarea {
    soft highlight that sweeps across the filled portion so it reads as actively
    working. The sheen stops once the work completes. */
 .co-progress-fill {
+  position: relative;
   overflow: hidden;
   transition: width 260ms cubic-bezier(0.4, 0, 0.2, 1);
 }

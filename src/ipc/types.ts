@@ -918,7 +918,11 @@ export interface Commands {
   /** Learn the user's writing voice from their sent mail; returns the profile text. */
   ai_learn_voice(args: Record<string, never>): Promise<string>;
   /** RAG: answer a question grounded in the most relevant messages, with citations. */
-  ai_ask(args: { question: string; requestId: string }): Promise<AskResult>;
+  ai_ask(args: {
+    question: string;
+    requestId: string;
+    accountId?: number | null;
+  }): Promise<AskResult>;
   /** Progress of the semantic (vector) index. */
   embedding_status(args: Record<string, never>): Promise<EmbeddingStatus>;
   /** Requeue the whole mailbox for (re-)embedding; returns the number queued. */

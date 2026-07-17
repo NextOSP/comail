@@ -311,7 +311,7 @@ export function useAsk() {
   // the connection after the answer completed) doesn't discard a good answer.
   const streamed = useRef("");
 
-  const run = useCallback((question: string) => {
+  const run = useCallback((question: string, accountId: number | null = null) => {
     const requestId = crypto.randomUUID();
     activeId.current = requestId;
     streamed.current = "";
@@ -336,7 +336,7 @@ export function useAsk() {
       if (isCurrent(p.requestId)) setReasoning((prev) => prev + p.delta);
     });
 
-    call("ai_ask", { question, requestId })
+    call("ai_ask", { question, requestId, accountId })
       .then((res) => {
         if (activeId.current !== requestId) return;
         setAnswer(res.answer);

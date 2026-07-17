@@ -207,7 +207,11 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
 
   return (
     <div className="co-fade-in flex min-h-0 flex-1 overflow-hidden">
-      <div ref={scrollerRef} className="min-w-0 flex-1 overflow-y-auto">
+      {/* Keyed by thread so switching conversations (auto-advance after
+          archive/delete included) replaces the scroll container outright -
+          a fresh node is born at scrollTop 0, independent of how the engine
+          times scroll clamping while async iframe bodies grow in. */}
+      <div key={threadId} ref={scrollerRef} className="min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-6 py-6 pb-24">
         <header className="flex items-start justify-between gap-4">
           <div>

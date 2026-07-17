@@ -41,6 +41,12 @@ const STARTUP_GRACE_MS = 20_000;
 const COOLDOWN_MS = 1_500; // ignore repeats of the same sound within this window
 const CHIME_WINDOW_MS = 10_000; // rolling window for the chime cap
 const MAX_CHIMES = 5; // most new-mail chimes allowed per window
+// Per-sound playback volume (1 = clip's natural level).
+const GAINS: Record<Exclude<SoundName, "intro">, number> = {
+  send: 0.5,
+  "new-email": 0.8,
+};
+
 const lastPlayedAt = new Map<SoundName, number>();
 const chimeTimes: number[] = [];
 
@@ -157,7 +163,10 @@ export function playSound(name: Exclude<SoundName, "intro">): void {
 
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(ctx.destination);
+    const gain = ctx.createGain();
+    gain.gain.value = GAINS[name];
+    src.connect(gain);
+    gain.connect(ctx.destination);
     src.start();
   } catch {
     /* best-effort */

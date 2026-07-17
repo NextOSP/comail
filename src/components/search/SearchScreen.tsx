@@ -8,34 +8,69 @@ import { ThreadList } from "../inbox/ThreadList";
 import { Markdown } from "../common/Markdown";
 import { SourcePreview } from "./SourcePreview";
 
-// Shown in the "Try" row when nothing is being completed.
-const OPERATORS = ["from:", "subject:", "in:", "is:unread", "has:attachment"];
+// Every operator the search parser understands, each with a one-line
+// description that drives the as-you-type suggestion list and hover hints.
+// Operators ending in `:` take a freeform value, so they complete to the bare
+// prefix; the rest are self-contained. `starter` surfaces the operator in the
+// "Try" row shown when there's nothing to complete.
+type OperatorMeta = { op: string; desc: string; starter?: boolean };
+const OPERATOR_META: OperatorMeta[] = [
+  { op: "from:", desc: "Sender name or email", starter: true },
+  { op: "to:", desc: "Recipient name or email" },
+  { op: "subject:", desc: 'Words or "phrase" in the subject', starter: true },
+  { op: "body:", desc: 'Words or "phrase" in the body' },
+  { op: "in:inbox", desc: "Only the inbox", starter: true },
+  { op: "in:sent", desc: "Only sent mail" },
+  { op: "in:drafts", desc: "Only drafts" },
+  { op: "in:archive", desc: "Only archived mail" },
+  { op: "in:trash", desc: "Only trash" },
+  { op: "in:spam", desc: "Only spam" },
+  { op: "is:unread", desc: "Unread only", starter: true },
+  { op: "is:starred", desc: "Starred only" },
+  { op: "has:attachment", desc: "Has an attachment", starter: true },
+  { op: "last:7days", desc: "Within the last 7 days", starter: true },
+  { op: "last:month", desc: "Within the last 30 days" },
+  { op: "after:", desc: "On or after a date, YYYY-MM-DD" },
+  { op: "before:", desc: "Before a date, YYYY-MM-DD" },
+  { op: "between:", desc: "Date range, YYYY-MM-DD:YYYY-MM-DD" },
+  { op: "sort:newest", desc: "Newest first (default)" },
+  { op: "sort:oldest", desc: "Oldest first" },
+  { op: "exclude:", desc: "Drop results with a word" },
+];
+const OPERATORS = OPERATOR_META.filter((m) => m.starter);
+
+// Ready-made example queries for the "?" cheat-sheet, grouped by theme. Each
+// row is [query, what it does]; clicking one drops it into the search box.
+const SEARCH_EXAMPLES: { title: string; rows: [string, string][] }[] = [
+  {
+    title: "Combine operators",
+    rows: [
+      ["from:alice in:inbox last:7days", "recent inbox mail from Alice"],
+      ["subject:invoice has:attachment", "invoices with an attachment"],
+      ["in:sent sort:oldest", "your sent mail, oldest first"],
+      ["from:bob is:unread is:starred", "unread, starred mail from Bob"],
+      [
+        'between:2026-01-01:2026-03-31 subject:"q1 report"',
+        "a phrase within a date range",
+      ],
+    ],
+  },
+  {
+    title: "Phrases & case",
+    rows: [
+      ['subject:"quarterly report"', "match an exact phrase"],
+      ['subject:!"phrase"', "ignore case (the default)"],
+      ['subject:!!"Phrase"', "match case exactly"],
+      ['"kept together"', "quote any phrase, not just fields"],
+    ],
+  },
+];
 
 // The most recent line of the model's reasoning, for the clipped one-line trace.
 function lastLine(text: string): string {
   const lines = text.split("\n").filter((l) => l.trim() !== "");
   return lines.length > 0 ? lines[lines.length - 1] : text;
 }
-
-// The full set the search parser understands, used for as-you-type completion.
-// `from:`/`to:`/`exclude:` take a freeform value, so they complete to the bare
-// prefix; the rest are self-contained.
-const OPERATOR_SUGGESTIONS = [
-  "from:",
-  "to:",
-  "subject:",
-  "body:",
-  "in:inbox",
-  "in:sent",
-  "in:drafts",
-  "in:archive",
-  "in:trash",
-  "in:spam",
-  "is:unread",
-  "is:starred",
-  "has:attachment",
-  "exclude:",
-];
 
 export function SearchScreen() {
   const { t } = useTranslation();
@@ -47,6 +82,8 @@ export function SearchScreen() {
 
   const [input, setInput] = useState(storedQuery);
   const [mode, setMode] = useState<"search" | "ask">("search");
+  // The "?" cheat-sheet popover that introduces the search operators.
+  const [showHelp, setShowHelp] = useState(false);
   // Enter guard: false while typing, so Enter never opens an email until you
   // arrow into the list. Arrowing moves the shared cursor (highlight and
   // scrolling live in ThreadList, same as the inbox).
@@ -168,12 +205,13 @@ export function SearchScreen() {
   // "active" suggestion - Tab or Enter completes to it.
   const opSuggestions = useMemo(() => {
     const tok = currentToken.toLowerCase();
-    if (!tok) return [];
-    return OPERATOR_SUGGESTIONS.filter(
-      (s) => s.toLowerCase().startsWith(tok) && s.toLowerCase() !== tok,
+    if (!tok) return [] as OperatorMeta[];
+    return OPERATOR_META.filter(
+      (m) => m.op.toLowerCase().startsWith(tok) && m.op.toLowerCase() !== tok,
     );
   }, [currentToken]);
-  const activeSuggestion = mode === "search" && !enterArmed ? (opSuggestions[0] ?? null) : null;
+  const activeSuggestion =
+    mode === "search" && !enterArmed ? (opSuggestions[0]?.op ?? null) : null;
 
   const applyCompletion = (op: string) => {
     setInput(input.slice(0, tokenStart) + op);
@@ -262,7 +300,7 @@ export function SearchScreen() {
                 // highlight: nothing - never yank into an email while typing.
                 if (mode === "ask") {
                   e.preventDefault();
-                  if (input.trim()) ask.run(input.trim());
+                  if (input.trim()) ask.run(input.trim(), accountFilter);
                 }
               }}
               placeholder={mode === "ask" ? "Ask anything about your mailbox…" : t("common:search.placeholder")}
@@ -271,6 +309,95 @@ export function SearchScreen() {
             />
             {(isFetching || ask.status === "pending" || ask.status === "streaming") && (
               <span className="co-spinner size-3 shrink-0 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+            )}
+            {mode === "search" && storedQuery.trim() !== "" && rows.length > 0 && (
+              <span
+                className="co-chip shrink-0 !py-0.5 !text-[11px] tabular-nums text-ink-muted"
+                title={`${rows.length}${rows.length >= 60 ? "+" : ""} result${
+                  rows.length === 1 ? "" : "s"
+                }`}
+              >
+                {rows.length}
+                {rows.length >= 60 ? "+" : ""}
+              </span>
+            )}
+            {mode === "search" && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  title="Search syntax"
+                  aria-label="Search syntax"
+                  onClick={() => setShowHelp((v) => !v)}
+                  className={`flex size-5 items-center justify-center rounded-full border text-[11px] font-medium transition-colors ${
+                    showHelp
+                      ? "border-accent/60 bg-accent/10 text-accent"
+                      : "border-hairline text-ink-faint hover:text-ink-muted"
+                  }`}
+                >
+                  ?
+                </button>
+                {showHelp && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setShowHelp(false)}
+                    />
+                    <div className="co-pop-in absolute right-0 top-full z-30 mt-2 w-[340px] overflow-hidden rounded-xl border border-hairline bg-bg1 shadow-lg">
+                      <div className="border-b border-hairline px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                        Search operators
+                      </div>
+                      <div className="max-h-[46vh] overflow-y-auto py-1">
+                        {OPERATOR_META.map((m) => (
+                          <button
+                            key={m.op}
+                            onClick={() => {
+                              setInput((v) =>
+                                v.trim() ? `${v.trim()} ${m.op}` : m.op,
+                              );
+                              setShowHelp(false);
+                              inputRef.current?.focus();
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-1 text-left hover:bg-bg2"
+                          >
+                            <span className="w-[92px] shrink-0 font-mono text-[12px] text-ink">
+                              {m.op}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
+                              {m.desc}
+                            </span>
+                          </button>
+                        ))}
+                        {SEARCH_EXAMPLES.map((group) => (
+                          <div key={group.title}>
+                            <div className="mt-1 border-t border-hairline px-3 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                              {group.title}
+                            </div>
+                            {group.rows.map(([ex, desc]) => (
+                              <button
+                                key={ex}
+                                title={`Search: ${ex}`}
+                                onClick={() => {
+                                  setInput(ex);
+                                  setShowHelp(false);
+                                  inputRef.current?.focus();
+                                }}
+                                className="flex w-full flex-col gap-0.5 px-3 py-1.5 text-left hover:bg-bg2"
+                              >
+                                <span className="break-words font-mono text-[11.5px] text-ink-muted">
+                                  {ex}
+                                </span>
+                                <span className="text-[11px] text-ink-faint">
+                                  {desc}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
             <div className="flex shrink-0 rounded-lg border border-hairline bg-bg0 p-0.5">
               {(["search", "ask"] as const).map((m) => (
@@ -293,40 +420,67 @@ export function SearchScreen() {
             <kbd className="co-kbd shrink-0">Esc</kbd>
           </div>
           {mode === "search" && (
-            <div className="mt-2.5 flex items-center gap-1.5">
-              <span className="text-[11px] text-ink-faint">{t("common:search.try")}</span>
-              {opSuggestions.length > 0
-                ? // Completing the current token: show matches, first is active.
-                  opSuggestions.slice(0, 6).map((op) => {
-                    const active = op === activeSuggestion;
+            <div className="relative mt-2.5">
+              {opSuggestions.length > 0 ? (
+                // Completing the current token: a floating list of matches, each
+                // with a one-line description. The first is active - Tab/Enter
+                // (or a click) accepts it. Absolute so it overlays results
+                // without nudging them as it appears.
+                <div className="co-pop-in absolute left-0 top-0 z-20 w-[360px] max-w-full overflow-hidden rounded-xl border border-hairline bg-bg1 py-1 shadow-lg">
+                  {opSuggestions.slice(0, 7).map((m) => {
+                    const active = m.op === activeSuggestion;
                     return (
                       <button
-                        key={op}
-                        className={`co-chip !py-0.5 !text-[11.5px] hover:bg-bg2 ${
-                          active
-                            ? "!border-accent/60 bg-accent/10 text-ink"
-                            : "text-ink-muted"
+                        key={m.op}
+                        // mousedown, not click: fire before the input blurs so
+                        // focus (and the caret) stays put through completion.
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          applyCompletion(m.op);
+                        }}
+                        className={`flex w-full items-center gap-3 px-3 py-1.5 text-left ${
+                          active ? "bg-accent/10" : "hover:bg-bg2"
                         }`}
-                        onClick={() => applyCompletion(op)}
                       >
-                        {op}
-                        {active && <kbd className="co-kbd ml-1.5 !text-[9px]">⇥</kbd>}
+                        <span
+                          className={`shrink-0 font-mono text-[12.5px] ${
+                            active ? "text-accent" : "text-ink"
+                          }`}
+                        >
+                          {m.op}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
+                          {m.desc}
+                        </span>
+                        {active && (
+                          <kbd className="co-kbd shrink-0 !text-[9px]">⇥</kbd>
+                        )}
                       </button>
                     );
-                  })
-                : // Nothing to complete: the default starter operators.
-                  OPERATORS.map((op) => (
+                  })}
+                </div>
+              ) : (
+                // Nothing to complete: the default starter operators, each
+                // labelled with what it does.
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-ink-faint">
+                    {t("common:search.try")}
+                  </span>
+                  {OPERATORS.map((m) => (
                     <button
-                      key={op}
+                      key={m.op}
+                      title={m.desc}
                       className="co-chip !py-0.5 !text-[11.5px] text-ink-muted hover:bg-bg2"
                       onClick={() => {
-                        setInput((v) => (v.trim() ? `${v.trim()} ${op}` : op));
+                        setInput((v) => (v.trim() ? `${v.trim()} ${m.op}` : m.op));
                         inputRef.current?.focus();
                       }}
                     >
-                      {op}
+                      {m.op}
                     </button>
                   ))}
+                </div>
+              )}
             </div>
           )}
         </div>

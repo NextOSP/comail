@@ -40,6 +40,33 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history + tags so the changelog step can diff against the
+          # previous release tag.
+          fetch-depth: 0
+
+      # Bullet-list changelog from commit subjects since the previous tag.
+      # Merge commits are skipped; the very first tag lists all history. On
+      # workflow_dispatch (no tag) the list is left empty.
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          log=""
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+            prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+            range="${prev:+${prev}..}${tag}"
+            # Strip redundant "vX.Y.Z: " prefixes from commit subjects.
+            log="$(git log --no-merges --pretty='- %s' "$range" \
+              | sed -E 's/^- v[0-9]+\.[0-9]+\.[0-9]+: /- /')"
+          fi
+          {
+            echo "body<<__CHANGELOG__"
+            echo "$log"
+            echo "__CHANGELOG__"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Install Linux system deps
         if: matrix.runner == 'ubuntu-22.04'
@@ -115,6 +142,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Comail ${{ github.ref_name }}"
           releaseBody: |
+            ### What's changed
+            ${{ steps.changelog.outputs.body }}
+
             ### Downloads
             - **macOS**: `Comail_x.y.z_universal.dmg` (Apple Silicon + Intel)
             - **Windows**: `Comail_x.y.z_x64-setup.exe`
