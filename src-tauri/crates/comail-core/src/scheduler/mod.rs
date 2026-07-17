@@ -2,8 +2,8 @@
 //! (send-later, undo-send windows) come due. Timers are app-local: anything
 //! past due fires on the next tick or at launch.
 
-use crate::db::repo;
 use crate::db::Db;
+use crate::db::repo;
 use crate::events::{CoreEvent, EventBus};
 use crate::models::now_ms;
 use std::collections::HashMap;

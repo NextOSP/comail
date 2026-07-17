@@ -7,11 +7,11 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::accounts::credentials::{self, Slot};
-use crate::db::repo;
 use crate::db::Db;
+use crate::db::repo;
 use crate::error::{CoreError, Result};
 use crate::events::EventBus;
-use crate::models::{now_ms, Provider};
+use crate::models::{Provider, now_ms};
 use crate::oauth::tokens::TokenProvider;
 
 use super::http::{DavAuth, HttpTransport};

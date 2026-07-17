@@ -27,14 +27,14 @@ pub mod sync;
 
 use crate::accounts::credentials::{self, Slot};
 use crate::config::Paths;
-use crate::db::repo;
 use crate::db::Db;
+use crate::db::repo;
 use crate::embed::Embedder;
 use crate::error::{CoreError, Result};
 use crate::events::{CoreEvent, EventBus};
 use crate::models::*;
 use crate::oauth::tokens::TokenProvider;
-use crate::sync::engine::{spawn_account, AccountHandle, SyncCmd, SyncCtx};
+use crate::sync::engine::{AccountHandle, SyncCmd, SyncCtx, spawn_account};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

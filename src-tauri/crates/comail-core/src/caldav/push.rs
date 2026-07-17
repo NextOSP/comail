@@ -4,9 +4,9 @@
 //! preserved as a detached local-only duplicate (nobody is emailed).
 
 use crate::calendar::{escape, fmt_utc, fold, parse_ics, push_prop};
+use crate::db::Db;
 use crate::db::repo;
 use crate::db::repo::calendar::SyncRow;
-use crate::db::Db;
 use crate::error::{CoreError, Result};
 use crate::events::{CoreEvent, EventBus};
 use crate::models::now_ms;
@@ -548,11 +548,12 @@ mod tests {
             .unwrap();
         assert!(!row.event.summary.is_none());
         assert_eq!(row.etag.as_deref(), Some("\"e1\""));
-        assert!(db
-            .read(|c| repo::calendar::dirty_rows(c, 1))
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            db.read(|c| repo::calendar::dirty_rows(c, 1))
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -601,11 +602,12 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.event.calendar_id, Some(10));
-        assert!(row
-            .caldav_href
-            .as_deref()
-            .unwrap()
-            .ends_with("new-1@comail.ics"));
+        assert!(
+            row.caldav_href
+                .as_deref()
+                .unwrap()
+                .ends_with("new-1@comail.ics")
+        );
     }
 
     #[tokio::test]
@@ -638,11 +640,12 @@ mod tests {
         let summaries: Vec<_> = events.iter().filter_map(|e| e.summary.clone()).collect();
         assert!(summaries.iter().any(|s| s == "Server truth"));
         assert!(summaries.iter().any(|s| s.contains("(conflict copy)")));
-        assert!(db
-            .read(|c| repo::calendar::dirty_rows(c, 1))
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            db.read(|c| repo::calendar::dirty_rows(c, 1))
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -664,11 +667,12 @@ mod tests {
         let seen = t.seen.lock().unwrap();
         assert_eq!(seen[0].0, "DELETE");
         drop(seen);
-        assert!(db
-            .read(move |c| repo::calendar::sync_row_for(c, id))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            db.read(move |c| repo::calendar::sync_row_for(c, id))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

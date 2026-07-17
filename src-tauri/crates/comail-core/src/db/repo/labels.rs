@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::Label;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 const DEFAULT_AUTO_LABELS: [(&str, &str, &str, i64); 4] = [
     ("Marketing", "#e0708a", "ComailAutoMarketing", 1000),
@@ -259,11 +259,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!(routed, None);
-        assert!(threads::get_summary(&c, thread)
-            .unwrap()
-            .unwrap()
-            .labels
-            .is_empty());
+        assert!(
+            threads::get_summary(&c, thread)
+                .unwrap()
+                .unwrap()
+                .labels
+                .is_empty()
+        );
 
         let manual = save(&c, None, "Temp", "#fff", 0).unwrap();
         delete(&c, manual.id).unwrap();

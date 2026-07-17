@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::*;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::parse_addrs;
 

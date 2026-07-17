@@ -3,8 +3,8 @@
 //! matched by local name only) plus the small XML request bodies we send.
 
 use crate::error::Result;
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use super::err;
 

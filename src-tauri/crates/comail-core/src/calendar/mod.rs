@@ -730,7 +730,9 @@ mod tests {
         // US Eastern: EDT (-04) Mar..Nov, EST (-05) otherwise. A July meeting is
         // in EDT; a January one is in EST.
         let vtz = "BEGIN:VTIMEZONE\r\nTZID:Eastern Standard Time\r\nBEGIN:STANDARD\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nRRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nRRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n";
-        let july = format!("BEGIN:VCALENDAR\r\n{vtz}BEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=Eastern Standard Time:20260715T090000\r\nEND:VEVENT\r\nEND:VCALENDAR");
+        let july = format!(
+            "BEGIN:VCALENDAR\r\n{vtz}BEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=Eastern Standard Time:20260715T090000\r\nEND:VEVENT\r\nEND:VCALENDAR"
+        );
         // 09:00 EDT (-04) == 13:00 UTC.
         let ev = &parse_ics(&july)[0];
         assert_eq!(
@@ -739,7 +741,9 @@ mod tests {
                 .unwrap()
                 .timestamp_millis()
         );
-        let jan = format!("BEGIN:VCALENDAR\r\n{vtz}BEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=Eastern Standard Time:20260115T090000\r\nEND:VEVENT\r\nEND:VCALENDAR");
+        let jan = format!(
+            "BEGIN:VCALENDAR\r\n{vtz}BEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=Eastern Standard Time:20260115T090000\r\nEND:VEVENT\r\nEND:VCALENDAR"
+        );
         // 09:00 EST (-05) == 14:00 UTC.
         let ev = &parse_ics(&jan)[0];
         assert_eq!(

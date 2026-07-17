@@ -1,5 +1,5 @@
 use crate::error::Result;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 pub fn set(
     conn: &Connection,

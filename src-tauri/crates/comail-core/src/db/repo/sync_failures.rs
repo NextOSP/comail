@@ -1,6 +1,6 @@
 use crate::error::{CoreError, Result};
 use crate::models::now_ms;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncFailure {

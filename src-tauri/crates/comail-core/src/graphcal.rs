@@ -11,13 +11,13 @@
 //! fresh window.
 
 use crate::calendar::{IcsAttendee, IcsEvent};
+use crate::db::Db;
 use crate::db::repo;
 use crate::db::repo::calendar::SyncRow;
-use crate::db::Db;
 use crate::error::{CoreError, Result};
 use crate::events::{CoreEvent, EventBus, NewEventInfo};
 use crate::graph;
-use crate::models::{now_ms, Provider};
+use crate::models::{Provider, now_ms};
 use crate::oauth::tokens::TokenProvider;
 
 /// Delta windows are fixed at first sync: 90 days back, ~13 months ahead.

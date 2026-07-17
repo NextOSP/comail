@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::Settings;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 pub fn get(conn: &Connection) -> Result<Settings> {
     let json: Option<String> = conn

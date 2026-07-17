@@ -3,7 +3,7 @@
 
 use crate::db::repo;
 use crate::error::Result;
-use crate::mime::{normalize_subject, ParsedHeaders};
+use crate::mime::{ParsedHeaders, normalize_subject};
 use rusqlite::Connection;
 
 const SUBJECT_WINDOW_MS: i64 = 14 * 24 * 3600 * 1000;

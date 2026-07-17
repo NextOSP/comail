@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::Snippet;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row, params};
 
 fn from_row(row: &Row) -> rusqlite::Result<Snippet> {
     Ok(Snippet {

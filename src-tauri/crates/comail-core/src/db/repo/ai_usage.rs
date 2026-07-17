@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::{AiUsageDay, AiUsageStats};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 pub fn record(
     conn: &Connection,

@@ -7,11 +7,11 @@
 //! for "no network". The replay-on-reconnect half is covered by the gated
 //! send_e2e/dovecot_e2e tests.
 
+use comail_core::Core;
 use comail_core::accounts::credentials::{self, Slot};
 use comail_core::config::Paths;
-use comail_core::db::{repo, Db};
+use comail_core::db::{Db, repo};
 use comail_core::models::*;
-use comail_core::Core;
 use std::time::{Duration, Instant};
 
 async fn wait_for<T, F, Fut>(what: &str, timeout: Duration, mut f: F) -> T
@@ -124,7 +124,8 @@ async fn actions(db: &Db) -> Vec<(String, String, i64)> {
 async fn offline_actions_queue_locally_and_survive_restart() {
     let creds_file =
         std::env::temp_dir().join(format!("comail-offline-creds-{}.json", std::process::id()));
-    std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file);
+    // SAFETY: single-threaded test setup, before any threads read the env.
+    unsafe { std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file) };
 
     let tmp = tempfile::tempdir().unwrap();
     let paths = Paths::for_tests(tmp.path());

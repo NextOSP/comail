@@ -6,7 +6,7 @@
 use url::Url;
 
 use super::xml;
-use super::{err, Transport};
+use super::{Transport, err};
 use crate::error::Result;
 
 #[derive(Debug, Clone)]
@@ -86,7 +86,7 @@ pub async fn discover(t: &dyn Transport, base_url: &str) -> Result<Discovery> {
                 }
             }
             Err(crate::error::CoreError::NeedsReauth) => {
-                return Err(crate::error::CoreError::NeedsReauth)
+                return Err(crate::error::CoreError::NeedsReauth);
             }
             Err(_) => continue,
         }

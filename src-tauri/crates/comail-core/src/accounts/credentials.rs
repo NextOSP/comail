@@ -171,7 +171,7 @@ pub fn load(account_id: i64, slot: Slot) -> Result<String> {
         match chunk_entry(account_id, &slot, index)?.get_password() {
             Ok(s) => out.push_str(&s),
             Err(keyring::Error::NoEntry) => {
-                return Err(CoreError::Auth("no stored credential".into()))
+                return Err(CoreError::Auth("no stored credential".into()));
             }
             Err(e) => return Err(e.into()),
         }

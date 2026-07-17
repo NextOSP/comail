@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::*;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 fn account_from_row(row: &Row) -> rusqlite::Result<Account> {
     Ok(Account {

@@ -1,7 +1,7 @@
 //! Performance validation at scale: 100k messages / ~30k threads.
 //! Gated: COMAIL_TEST_PERF=1 (seeding takes ~10-30s).
 
-use comail_core::db::{repo, Db};
+use comail_core::db::{Db, repo};
 use comail_core::models::View;
 use std::time::Instant;
 

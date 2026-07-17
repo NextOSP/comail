@@ -1,7 +1,7 @@
 use crate::calendar::IcsEvent;
 use crate::error::Result;
 use crate::models::{CalendarEvent, EventAttendee, UpdateEventArgs};
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 fn from_row(row: &Row) -> rusqlite::Result<CalendarEvent> {
     let attendees_json: Option<String> = row.get("attendees_json")?;

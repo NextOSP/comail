@@ -89,9 +89,11 @@ fn autocomplete_backfill_covers_pre_fold_rows() {
     )
     .unwrap();
     // Row predates the folded column; suggest can't see it until backfill.
-    assert!(repo::contacts::suggest(&conn, "tran duc", None, 5)
-        .unwrap()
-        .is_empty());
+    assert!(
+        repo::contacts::suggest(&conn, "tran duc", None, 5)
+            .unwrap()
+            .is_empty()
+    );
     repo::contacts::backfill_folded(&conn).unwrap();
     let hits = repo::contacts::suggest(&conn, "tran duc", None, 5).unwrap();
     assert_eq!(hits.len(), 1);

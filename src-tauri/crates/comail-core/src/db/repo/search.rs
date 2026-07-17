@@ -1,7 +1,7 @@
 use crate::error::Result;
-use crate::models::{roles, Address, ThreadSummary};
+use crate::models::{Address, ThreadSummary, roles};
 use crate::search::ParsedQuery;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 
 /// Index (or re-index) a message into the contentless FTS table.

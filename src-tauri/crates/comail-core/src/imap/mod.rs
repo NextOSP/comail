@@ -197,7 +197,7 @@ async fn connect_inner(host: &str, port: u16, creds: ImapCredentials) -> Result<
         Ok(None) => {
             return Err(CoreError::Imap(format!(
                 "{host}: connection closed before IMAP greeting"
-            )))
+            )));
         }
         Err(e) => return Err(CoreError::Imap(format!("{host}: reading greeting: {e}"))),
     }
@@ -937,7 +937,7 @@ pub fn uid_set(uids: &[u32]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalized_uid_set, section_fetch_query, section_paths, MIME_PLAN_QUERY};
+    use super::{MIME_PLAN_QUERY, normalized_uid_set, section_fetch_query, section_paths};
 
     #[test]
     fn uid_set_compresses() {

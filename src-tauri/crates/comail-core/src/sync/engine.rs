@@ -16,8 +16,8 @@
 
 use crate::accounts::credentials::{self, Slot};
 use crate::config::Paths;
-use crate::db::repo::{self, folders::Folder, messages::NewMessage};
 use crate::db::Db;
+use crate::db::repo::{self, folders::Folder, messages::NewMessage};
 use crate::error::{CoreError, Result};
 use crate::events::{CoreEvent, EventBus, SyncProgress};
 use crate::imap::{self, FetchedHeader, ImapCredentials, Session};
@@ -1566,7 +1566,7 @@ fn chime_worthy(is_automated: bool, from_email: &str) -> bool {
 
 #[cfg(test)]
 mod notification_policy_tests {
-    use super::{arrival_eligible, chime_worthy, CHIME_RECENT_MS};
+    use super::{CHIME_RECENT_MS, arrival_eligible, chime_worthy};
 
     fn eligible(baseline: Option<u32>, uid: u32, read: bool, outgoing: bool, age_ms: i64) -> bool {
         let now = 2 * CHIME_RECENT_MS;

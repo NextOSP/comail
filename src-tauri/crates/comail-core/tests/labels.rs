@@ -69,11 +69,13 @@ fn membership_flows_to_summary_and_filter() {
 
     // Removing membership clears it.
     repo::labels::remove_from_message(&conn, 100, work.id).unwrap();
-    assert!(repo::threads::get_summary(&conn, 10)
-        .unwrap()
-        .unwrap()
-        .labels
-        .is_empty());
+    assert!(
+        repo::threads::get_summary(&conn, 10)
+            .unwrap()
+            .unwrap()
+            .labels
+            .is_empty()
+    );
     assert_eq!(list_ids(&conn, Some(work.id)), Vec::<i64>::new());
 }
 

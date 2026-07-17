@@ -24,7 +24,8 @@ async fn probe_imap_primitives() {
     if std::env::var("COMAIL_TEST_IMAP").as_deref() != Ok("1") {
         return;
     }
-    std::env::set_var("COMAIL_TLS_INSECURE", "1");
+    // SAFETY: single-threaded test setup, before any threads read the env.
+    unsafe { std::env::set_var("COMAIL_TLS_INSECURE", "1") };
 
     let mut s = connect_probe().await;
 
@@ -91,7 +92,8 @@ async fn probe_smtp_starttls_auth() {
     if std::env::var("COMAIL_TEST_IMAP").as_deref() != Ok("1") {
         return;
     }
-    std::env::set_var("COMAIL_TLS_INSECURE", "1");
+    // SAFETY: single-threaded test setup, before any threads read the env.
+    unsafe { std::env::set_var("COMAIL_TLS_INSECURE", "1") };
     let cfg = comail_core::models::AccountConfig {
         id: 1,
         email: "probeuser@example.com".into(),

@@ -12,7 +12,7 @@
 use crate::autolabel::{self, Category};
 use crate::error::Result;
 use crate::models::{AiAutomationPlan, AiAutomationRule, Label, SplitRule};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
 
 /// Everything the heuristic / AI classifier needs about a thread, taken from its
@@ -734,7 +734,7 @@ mod tests {
     }
 
     fn tab_ids(conn: &Connection, tab: crate::db::repo::threads::TabFilter) -> Vec<i64> {
-        use crate::db::repo::threads::{list, ListArgs};
+        use crate::db::repo::threads::{ListArgs, list};
         use crate::models::View;
         list(
             conn,
@@ -847,9 +847,11 @@ mod tests {
         assert_eq!(labels, vec![label_id(&c, "ComailAutoNews")]);
         // Switching to unrouted clears the chip entirely.
         apply_tab(&c, t, None).unwrap();
-        assert!(crate::db::repo::labels::for_thread(&c, t)
-            .unwrap()
-            .is_empty());
+        assert!(
+            crate::db::repo::labels::for_thread(&c, t)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -862,7 +864,7 @@ mod tests {
 
     #[test]
     fn routed_thread_leaves_the_other_tab() {
-        use crate::db::repo::threads::{list, ListArgs, TabFilter};
+        use crate::db::repo::threads::{ListArgs, TabFilter, list};
         use crate::models::View;
         let c = testutil::conn();
         testutil::seed_account(&c);
@@ -951,12 +953,14 @@ mod tests {
             !split_matches(&c, t, &q(|q| q.senders = Some(vec!["gitlab.com".into()]))).unwrap()
         );
         // subject
-        assert!(split_matches(
-            &c,
-            t,
-            &q(|q| q.subject_contains = Some(vec!["build failed".into()]))
-        )
-        .unwrap());
+        assert!(
+            split_matches(
+                &c,
+                t,
+                &q(|q| q.subject_contains = Some(vec!["build failed".into()]))
+            )
+            .unwrap()
+        );
         // automated flag
         assert!(split_matches(&c, t, &q(|q| q.is_automated = Some(true))).unwrap());
         assert!(!split_matches(&c, t, &q(|q| q.is_automated = Some(false))).unwrap());
@@ -967,18 +971,22 @@ mod tests {
             params![t],
         )
         .unwrap();
-        assert!(split_matches(
-            &c,
-            t,
-            &q(|q| q.recipients = Some(vec!["sales@acme.co".into()]))
-        )
-        .unwrap());
-        assert!(!split_matches(
-            &c,
-            t,
-            &q(|q| q.recipients = Some(vec!["other@x.com".into()]))
-        )
-        .unwrap());
+        assert!(
+            split_matches(
+                &c,
+                t,
+                &q(|q| q.recipients = Some(vec!["sales@acme.co".into()]))
+            )
+            .unwrap()
+        );
+        assert!(
+            !split_matches(
+                &c,
+                t,
+                &q(|q| q.recipients = Some(vec!["other@x.com".into()]))
+            )
+            .unwrap()
+        );
         // has attachment
         assert!(!split_matches(&c, t, &q(|q| q.has_attachment = Some(true))).unwrap());
         assert!(split_matches(&c, t, &q(|q| q.has_attachment = Some(false))).unwrap());
@@ -990,24 +998,28 @@ mod tests {
         assert!(split_matches(&c, t, &q(|q| q.has_attachment = Some(true))).unwrap());
         assert!(!split_matches(&c, t, &q(|q| q.has_attachment = Some(false))).unwrap());
         // multiple conditions are ANDed
-        assert!(split_matches(
-            &c,
-            t,
-            &q(|q| {
-                q.senders = Some(vec!["github.com".into()]);
-                q.subject_contains = Some(vec!["ci".into()]);
-            })
-        )
-        .unwrap());
-        assert!(!split_matches(
-            &c,
-            t,
-            &q(|q| {
-                q.senders = Some(vec!["github.com".into()]);
-                q.subject_contains = Some(vec!["invoice".into()]);
-            })
-        )
-        .unwrap());
+        assert!(
+            split_matches(
+                &c,
+                t,
+                &q(|q| {
+                    q.senders = Some(vec!["github.com".into()]);
+                    q.subject_contains = Some(vec!["ci".into()]);
+                })
+            )
+            .unwrap()
+        );
+        assert!(
+            !split_matches(
+                &c,
+                t,
+                &q(|q| {
+                    q.senders = Some(vec!["github.com".into()]);
+                    q.subject_contains = Some(vec!["invoice".into()]);
+                })
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -1122,9 +1134,11 @@ mod tests {
         // A route key for a label that doesn't exist must not blow up the FK.
         apply_tab(&c, t, Some("label:99999")).unwrap();
         assert_eq!(routed(&c, t).as_deref(), Some("label:99999"));
-        assert!(crate::db::repo::labels::for_thread(&c, t)
-            .unwrap()
-            .is_empty());
+        assert!(
+            crate::db::repo::labels::for_thread(&c, t)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1212,10 +1226,12 @@ mod tests {
         let invalid = validate_automation_plan(invalid, &labels, &splits);
         assert!(!invalid.supported);
         assert!(invalid.actions.is_empty());
-        assert!(invalid
-            .issues
-            .iter()
-            .any(|issue| issue.contains("add_label")));
+        assert!(
+            invalid
+                .issues
+                .iter()
+                .any(|issue| issue.contains("add_label"))
+        );
     }
 
     #[test]

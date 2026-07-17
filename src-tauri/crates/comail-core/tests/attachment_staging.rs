@@ -8,9 +8,9 @@
 //! dispatch additionally refuses to read anything outside that dir. This test
 //! locks in the save-time control (the primary boundary) end-to-end.
 
-use comail_core::config::Paths;
-use comail_core::models::{roles, DraftAttachmentIn, SaveDraftArgs};
 use comail_core::Core;
+use comail_core::config::Paths;
+use comail_core::models::{DraftAttachmentIn, SaveDraftArgs, roles};
 
 async fn stored_paths(core: &Core, draft_id: i64) -> Vec<String> {
     // Manual row loop so the test needn't name `rusqlite` (not a dev-dep); the

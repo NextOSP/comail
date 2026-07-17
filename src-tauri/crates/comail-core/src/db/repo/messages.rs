@@ -1,7 +1,7 @@
 use crate::error::{CoreError, Result};
 use crate::mime::{MimePlan, PlannedAttachment};
 use crate::models::*;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::parse_addrs;
 
@@ -1187,10 +1187,12 @@ mod tests {
                 .unwrap(),
                 0
             );
-            assert!(sync_failures::due_content(&c, 1, i64::MAX, 20)
-                .unwrap()
-                .iter()
-                .all(|failure| failure.message_id != Some(id)));
+            assert!(
+                sync_failures::due_content(&c, 1, i64::MAX, 20)
+                    .unwrap()
+                    .iter()
+                    .all(|failure| failure.message_id != Some(id))
+            );
         }
 
         let good: (String, String) = c

@@ -7,10 +7,10 @@
 //! thread; only the short vector write does.
 
 use super::{
-    model_dir, model_present, prepare_chunks, spec_or_default, EmbedState, Embedder, LocalCandle,
+    EmbedState, Embedder, LocalCandle, model_dir, model_present, prepare_chunks, spec_or_default,
 };
 use crate::config::Paths;
-use crate::db::{repo, Db};
+use crate::db::{Db, repo};
 use crate::embed::store::VectorIndex;
 use crate::error::{CoreError, Result};
 use std::sync::Arc;

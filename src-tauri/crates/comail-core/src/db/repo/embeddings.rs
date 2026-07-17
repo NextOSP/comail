@@ -3,7 +3,7 @@
 
 use crate::embed::store::{from_blob, to_blob};
 use crate::error::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 /// Mark a message as needing (re-)embedding. Called when a body is stored.
 pub fn mark_pending(conn: &Connection, message_id: i64) -> Result<()> {

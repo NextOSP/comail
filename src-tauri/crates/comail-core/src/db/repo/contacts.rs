@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::models::{Address, ContactSuggestion};
 use crate::search::fold;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 /// Record an address seen in mail headers on `account_id`'s mail. `sent` = we
 /// sent to them. Updates both the global `contacts` row (identity + global

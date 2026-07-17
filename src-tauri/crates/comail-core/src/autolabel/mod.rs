@@ -5,7 +5,7 @@
 //! to IMAP - see `labels::reconcile_keywords`).
 
 use crate::error::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {

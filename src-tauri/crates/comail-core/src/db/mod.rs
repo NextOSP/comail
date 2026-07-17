@@ -100,7 +100,7 @@ impl Db {
 
 #[cfg(test)]
 pub(crate) mod testutil {
-    use rusqlite::{params, Connection};
+    use rusqlite::{Connection, params};
 
     /// In-memory DB with all migrations applied.
     pub fn conn() -> Connection {

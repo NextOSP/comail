@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::{SplitRule, SplitRuleQuery};
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 fn from_row(row: &Row) -> rusqlite::Result<SplitRule> {
     Ok(SplitRule {

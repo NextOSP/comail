@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::models::FolderInfo;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 #[derive(Debug, Clone)]
 pub struct Folder {

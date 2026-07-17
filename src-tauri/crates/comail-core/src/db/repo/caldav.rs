@@ -4,7 +4,7 @@
 
 use crate::error::Result;
 use crate::models::Calendar;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 #[derive(Debug, Clone)]
 pub struct CaldavConfig {

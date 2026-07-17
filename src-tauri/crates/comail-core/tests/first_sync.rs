@@ -4,12 +4,12 @@
 //! this fixture), and the backfill must emit MailUpdated so the UI fills in
 //! live. Gated: COMAIL_TEST_IMAP=1 (see dovecot_e2e.rs for the container).
 
+use comail_core::Core;
 use comail_core::config::Paths;
 use comail_core::db::Db;
 use comail_core::events::CoreEvent;
 use comail_core::imap;
 use comail_core::models::*;
-use comail_core::Core;
 use std::time::{Duration, Instant};
 
 // Three maximum-size selective UID batches. This catches regressions back to
@@ -57,12 +57,13 @@ async fn first_sync_drains_bodies_fast_and_updates_live() {
         eprintln!("skipping (set COMAIL_TEST_IMAP=1)");
         return;
     }
-    std::env::set_var("COMAIL_TLS_INSECURE", "1");
+    // SAFETY: single-threaded test setup, before any threads read the env.
+    unsafe { std::env::set_var("COMAIL_TLS_INSECURE", "1") };
     let creds_file = std::env::temp_dir().join(format!(
         "comail-firstsync-creds-{}.json",
         std::process::id()
     ));
-    std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file);
+    unsafe { std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file) };
 
     seed().await;
 

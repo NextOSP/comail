@@ -4,13 +4,13 @@
 //! fallback otherwise, and calendar-multiget for changed resources.
 
 use crate::calendar::parse_ics;
-use crate::db::repo;
 use crate::db::Db;
+use crate::db::repo;
 use crate::error::{CoreError, Result};
 use crate::events::{CoreEvent, EventBus, NewEventInfo};
 use crate::models::now_ms;
 
-use super::{err, push, xml, Transport};
+use super::{Transport, err, push, xml};
 
 const MULTIGET_BATCH: usize = 50;
 

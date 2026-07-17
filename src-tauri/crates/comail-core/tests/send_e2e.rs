@@ -3,10 +3,10 @@
 //! sink from scratchpad/smtp_sink.py on port 10588.
 //! Gated: COMAIL_TEST_IMAP=1 and COMAIL_TEST_SINK_DIR=<sink output dir>.
 
+use comail_core::Core;
 use comail_core::config::Paths;
 use comail_core::imap;
 use comail_core::models::*;
-use comail_core::Core;
 use std::time::{Duration, Instant};
 
 async fn wait_for<T, F, Fut>(what: &str, timeout: Duration, mut f: F) -> T
@@ -70,10 +70,11 @@ async fn reply_send_reaches_smtp_and_sent_folder() {
         eprintln!("skipping (set COMAIL_TEST_SINK_DIR)");
         return;
     };
-    std::env::set_var("COMAIL_TLS_INSECURE", "1");
+    // SAFETY: single-threaded test setup, before any threads read the env.
+    unsafe { std::env::set_var("COMAIL_TLS_INSECURE", "1") };
     let creds_file =
         std::env::temp_dir().join(format!("comail-send-creds-{}.json", std::process::id()));
-    std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file);
+    unsafe { std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file) };
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

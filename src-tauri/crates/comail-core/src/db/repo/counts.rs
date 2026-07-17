@@ -3,7 +3,7 @@
 //! threads.rs so the two evolve independently.
 
 use crate::error::Result;
-use crate::models::{roles, Label, SplitRule, UnreadCounts};
+use crate::models::{Label, SplitRule, UnreadCounts, roles};
 use rusqlite::Connection;
 use std::collections::HashMap;
 

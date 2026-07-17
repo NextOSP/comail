@@ -5,9 +5,9 @@
 //!
 //! Gated: runs only when COMAIL_TEST_IMAP=1.
 
+use comail_core::Core;
 use comail_core::config::Paths;
 use comail_core::models::*;
-use comail_core::Core;
 use std::time::{Duration, Instant};
 
 fn gated() -> bool {
@@ -47,18 +47,60 @@ async fn seed_mailbox() {
         )
     };
     let fixtures = [
-        msg(1, "Alice Chen <alice@example.com>", "Quarterly report draft",
-            "Hi,\r\n\r\nAttached the quarterly numbers draft. Can you review the revenue section before Friday?\r\n\r\nAlice", None, 0, ""),
-        msg(2, "Alice Chen <alice@example.com>", "Re: Quarterly report draft",
-            "Ping - did you get a chance to look?\r\n\r\nAlice", Some("<m1@example.com>"), 0, ""),
-        msg(3, "Bob Kowalski <bob@widgets.io>", "Lunch tomorrow?",
-            "Thinking pho at 12:30. You in?\r\n\r\nBob", None, 1, ""),
-        msg(4, "GitHub <notifications@github.com>", "[comail] CI failed on master",
-            "Run #4512 failed on master.\r\n", None, 3, "List-Id: <comail.github.com>\r\n"),
-        msg(5, "Stripe <billing@stripe.com>", "Your invoice is ready",
-            "Invoice INV-2201 for $49.00 is available.\r\n", None, 4, "List-Unsubscribe: <https://stripe.com/unsub>\r\n"),
-        msg(6, "Dana <dana@example.com>", "Flight options for the offsite",
-            "Found three options under $400, sending the comparison later today.\r\n\r\nDana", None, 5, ""),
+        msg(
+            1,
+            "Alice Chen <alice@example.com>",
+            "Quarterly report draft",
+            "Hi,\r\n\r\nAttached the quarterly numbers draft. Can you review the revenue section before Friday?\r\n\r\nAlice",
+            None,
+            0,
+            "",
+        ),
+        msg(
+            2,
+            "Alice Chen <alice@example.com>",
+            "Re: Quarterly report draft",
+            "Ping - did you get a chance to look?\r\n\r\nAlice",
+            Some("<m1@example.com>"),
+            0,
+            "",
+        ),
+        msg(
+            3,
+            "Bob Kowalski <bob@widgets.io>",
+            "Lunch tomorrow?",
+            "Thinking pho at 12:30. You in?\r\n\r\nBob",
+            None,
+            1,
+            "",
+        ),
+        msg(
+            4,
+            "GitHub <notifications@github.com>",
+            "[comail] CI failed on master",
+            "Run #4512 failed on master.\r\n",
+            None,
+            3,
+            "List-Id: <comail.github.com>\r\n",
+        ),
+        msg(
+            5,
+            "Stripe <billing@stripe.com>",
+            "Your invoice is ready",
+            "Invoice INV-2201 for $49.00 is available.\r\n",
+            None,
+            4,
+            "List-Unsubscribe: <https://stripe.com/unsub>\r\n",
+        ),
+        msg(
+            6,
+            "Dana <dana@example.com>",
+            "Flight options for the offsite",
+            "Found three options under $400, sending the comparison later today.\r\n\r\nDana",
+            None,
+            5,
+            "",
+        ),
         // Multipart message with an attachment (base64 "MOCKUP NOTES - review by Friday").
         format!(
             "Message-ID: <m7@example.com>\r\nFrom: Eve Park <eve@example.com>\r\n\
@@ -137,10 +179,11 @@ async fn full_sync_triage_and_search() {
         eprintln!("skipping (set COMAIL_TEST_IMAP=1 to run)");
         return;
     }
-    std::env::set_var("COMAIL_TLS_INSECURE", "1");
+    // SAFETY: single-threaded test setup, before any threads read the env.
+    unsafe { std::env::set_var("COMAIL_TLS_INSECURE", "1") };
     let creds_file =
         std::env::temp_dir().join(format!("comail-test-creds-{}.json", std::process::id()));
-    std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file);
+    unsafe { std::env::set_var("COMAIL_CREDENTIALS_INSECURE_FILE", &creds_file) };
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -443,5 +486,7 @@ async fn full_sync_triage_and_search() {
         "IDLE-pushed message should appear in the inbox"
     );
 
-    eprintln!("e2e OK: sync, threading, splits, bodies, FTS, archive+undo, snooze, contacts, remote replay, IDLE push");
+    eprintln!(
+        "e2e OK: sync, threading, splits, bodies, FTS, archive+undo, snooze, contacts, remote replay, IDLE push"
+    );
 }

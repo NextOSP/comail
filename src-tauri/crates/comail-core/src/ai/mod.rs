@@ -885,8 +885,7 @@ pub fn search_inbox_tool() -> serde_json::Value {
 }
 
 /// System prompt for the agentic Ask loop (RAG seed + `search_inbox` tool).
-pub const AGENTIC_ASK_SYSTEM: &str =
-    "You help the user answer questions about their own email. You are given some initial \
+pub const AGENTIC_ASK_SYSTEM: &str = "You help the user answer questions about their own email. You are given some initial \
      email excerpts plus a search_inbox tool. If the initial excerpts don't fully answer the \
      question, call search_inbox with focused queries - reword, try synonyms, narrow down, or \
      use operators like from:, to:, subject:, is:unread, has:attachment - and you may call it \
@@ -1381,10 +1380,12 @@ mod tests {
         assert_eq!(event.start, "2026-07-17");
 
         let old_shape = r#"{"timeline":[],"keyPoints":[],"nextAction":null,"proposedReply":null}"#;
-        assert!(parse_thread_summary(old_shape)
-            .unwrap()
-            .calendar_suggestion
-            .is_none());
+        assert!(
+            parse_thread_summary(old_shape)
+                .unwrap()
+                .calendar_suggestion
+                .is_none()
+        );
     }
 
     #[test]
