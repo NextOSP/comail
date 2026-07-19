@@ -48,7 +48,7 @@ url = "2"
 
 # CalDAV (HTTP + multistatus XML); rustls keeps the no-native-TLS property
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"] }
-quick-xml = { version = "0.37", features = ["encoding"] }
+quick-xml = { version = "0.41", features = ["encoding"] }
 async-trait = "0.1"
 
 # misc
