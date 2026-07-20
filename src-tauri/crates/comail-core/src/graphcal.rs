@@ -241,6 +241,9 @@ async fn sync_calendar(
                                 all_day: ics.all_day,
                             });
                         }
+                        if let Some(master) = &ev.series_master_id {
+                            repo::calendar::set_series_master(&tx, calendar_id, &ev.id, master)?;
+                        }
                     }
                     tx.commit()?;
                     Ok(fresh)

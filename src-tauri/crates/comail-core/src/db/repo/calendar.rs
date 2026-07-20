@@ -430,19 +430,43 @@ pub fn hrefs_for_calendar(
 /// also exist as a mail invite become terminal tombstones instead: purging
 /// them would let the next re-parse of the archived invitation email (fresh
 /// index, body re-decode) resurrect an event that was deleted everywhere.
+///
+/// `id` is matched against either `caldav_href` (the normal case - the
+/// server dropped exactly this resource/instance) or `series_master_id`
+/// (Microsoft Graph: deleting a whole recurring series sends one `@removed`
+/// item carrying the series master's id, which was never stored as its own
+/// row - see `graphcal.rs` - so it must cascade to every occurrence row that
+/// recorded it as their master).
 pub fn delete_by_href(conn: &Connection, calendar_id: i64, href: &str) -> Result<()> {
     conn.execute(
         "UPDATE calendar_events
          SET deleted = 1, status = 'CANCELLED',
              calendar_id = NULL, caldav_href = NULL, etag = NULL
-         WHERE calendar_id = ?1 AND caldav_href = ?2 AND dirty = 0 AND deleted = 0
-           AND message_id IS NOT NULL",
+         WHERE calendar_id = ?1 AND (caldav_href = ?2 OR series_master_id = ?2)
+           AND dirty = 0 AND deleted = 0 AND message_id IS NOT NULL",
         params![calendar_id, href],
     )?;
     conn.execute(
         "DELETE FROM calendar_events
-         WHERE calendar_id = ?1 AND caldav_href = ?2 AND dirty = 0 AND deleted = 0",
+         WHERE calendar_id = ?1 AND (caldav_href = ?2 OR series_master_id = ?2)
+           AND dirty = 0 AND deleted = 0",
         params![calendar_id, href],
+    )?;
+    Ok(())
+}
+
+/// Record which (unstored) series master an occurrence/exception row belongs
+/// to, so a later series-wide deletion can find it via `delete_by_href`.
+pub fn set_series_master(
+    conn: &Connection,
+    calendar_id: i64,
+    href: &str,
+    series_master_id: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE calendar_events SET series_master_id = ?3
+         WHERE calendar_id = ?1 AND caldav_href = ?2",
+        params![calendar_id, href, series_master_id],
     )?;
     Ok(())
 }
@@ -799,6 +823,35 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM calendar_events", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn delete_by_href_cascades_to_occurrences_via_series_master() {
+        // Microsoft Graph expands a recurring series into per-occurrence rows
+        // (see graphcal.rs) and never stores the series master itself. When
+        // the whole series is deleted, Graph's delta sends a single @removed
+        // item for the master's id - which must cascade to every occurrence
+        // that recorded it as their series_master_id.
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let cal = seed_calendar(&c);
+
+        let mut day = sample_ics_event();
+        day.uid = "occ-1@graph".into();
+        upsert_remote(&c, 1, cal, "occ-1", "\"e1\"", "", &day).unwrap();
+        let mut day2 = sample_ics_event();
+        day2.uid = "occ-2@graph".into();
+        upsert_remote(&c, 1, cal, "occ-2", "\"e1\"", "", &day2).unwrap();
+        set_series_master(&c, cal, "occ-1", "series-master-1").unwrap();
+        set_series_master(&c, cal, "occ-2", "series-master-1").unwrap();
+
+        assert_eq!(list_range(&c, 0, i64::MAX / 2).unwrap().len(), 2);
+
+        // The removed delta item carries the series master's id, not either
+        // occurrence's own id.
+        delete_by_href(&c, cal, "series-master-1").unwrap();
+
+        assert!(list_range(&c, 0, i64::MAX / 2).unwrap().is_empty());
     }
 
     #[test]

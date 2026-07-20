@@ -272,6 +272,10 @@ pub struct DeltaEvent {
     pub ical_uid: Option<String>,
     /// "singleInstance" | "occurrence" | "exception" | "seriesMaster"
     pub event_type: Option<String>,
+    /// Set on occurrence/exception instances; identifies the (unstored)
+    /// series master so its own `@removed` delta item can cascade-delete
+    /// every materialized occurrence of that series.
+    pub series_master_id: Option<String>,
     pub etag: Option<String>,
     pub subject: Option<String>,
     pub body_preview: Option<String>,
@@ -350,6 +354,7 @@ fn parse_delta_event(v: &serde_json::Value) -> Option<DeltaEvent> {
             removed: true,
             ical_uid: None,
             event_type: None,
+            series_master_id: None,
             etag: None,
             subject: None,
             body_preview: None,
@@ -406,6 +411,7 @@ fn parse_delta_event(v: &serde_json::Value) -> Option<DeltaEvent> {
         removed: false,
         ical_uid: s(&["iCalUId"]),
         event_type: s(&["type"]),
+        series_master_id: s(&["seriesMasterId"]),
         etag: s(&["@odata.etag"]).or_else(|| s(&["changeKey"])),
         subject: s(&["subject"]),
         body_preview: s(&["bodyPreview"]),
@@ -497,6 +503,19 @@ mod tests {
         // 2026-08-01T09:00Z
         assert_eq!(ev.start_ms, 1_785_574_800_000);
         assert_eq!(ev.end_ms, Some(1_785_578_400_000));
+    }
+
+    #[test]
+    fn parses_series_master_id_on_occurrence() {
+        let v = serde_json::json!({
+            "id": "AAMkAD1-occ1",
+            "type": "occurrence",
+            "seriesMasterId": "AAMkAD1-master",
+            "start": { "dateTime": "2026-08-01T09:00:00.0000000", "timeZone": "UTC" },
+            "end": { "dateTime": "2026-08-01T10:00:00.0000000", "timeZone": "UTC" }
+        });
+        let ev = parse_delta_event(&v).unwrap();
+        assert_eq!(ev.series_master_id.as_deref(), Some("AAMkAD1-master"));
     }
 
     #[test]

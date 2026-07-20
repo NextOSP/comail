@@ -48,5 +48,20 @@ export function errorMessage(err: unknown): string {
     const detail = message.replace(/^caldav error:\s*/i, "").trim();
     if (detail && detail !== localized) return `${localized}: ${detail}`;
   }
+  // "other"/"unknown" are the catch-all buckets: every AI failure (unparseable
+  // model output, "ai api error 429", "couldn't reach AI endpoint", a timeout)
+  // lands here, and the generic "Something went wrong" label hides the one
+  // thing that would tell the user what to fix. Show the backend's own reason
+  // instead, trimmed so an echoed payload can't overflow the toast.
+  if (code === "other" || code === "unknown") {
+    const detail = message.trim();
+    if (detail && detail !== localized) return truncate(detail);
+  }
   return localized;
+}
+
+/** Cap an error detail so a long backend blob stays a readable one-line toast. */
+function truncate(text: string, max = 200): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }

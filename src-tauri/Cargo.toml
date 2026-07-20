@@ -12,7 +12,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 [package]
 name = "comail"
-version = "0.2.22"
+version = "0.2.23"
 description = "Comail - a fast, offline-first, keyboard-driven email client"
 authors = ["hello@deanoss.com"]
 license = "AGPL-3.0-only"
