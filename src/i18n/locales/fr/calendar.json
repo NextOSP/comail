@@ -79,6 +79,7 @@
     "edit": "Modifier",
     "delete": "Supprimer",
     "confirmDelete": "Supprimer cet événement ?",
+    "confirmRemove": "Retirer cet événement de votre agenda ? Personne d’autre n’est notifié.",
     "confirmCancel_one": "Annuler cet événement ? Un e-mail d’annulation sera envoyé à {{count}} participant.",
     "confirmCancel_other": "Annuler cet événement ? Un e-mail d’annulation sera envoyé à {{count}} participants."
   },

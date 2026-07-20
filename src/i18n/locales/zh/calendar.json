@@ -79,6 +79,7 @@
     "edit": "编辑",
     "delete": "删除",
     "confirmDelete": "删除此日程？",
+    "confirmRemove": "从你的日历中移除此日程？不会通知其他人。",
     "confirmCancel_one": "取消此日程？将向 {{count}} 位参与者发送取消邮件。",
     "confirmCancel_other": "取消此日程？将向 {{count}} 位参与者发送取消邮件。"
   },

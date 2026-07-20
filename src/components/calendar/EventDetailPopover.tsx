@@ -138,15 +138,18 @@ function DetailCard({ event }: { event: CalendarEvent }) {
   const confirmDelete = () => {
     if (del.isPending) return;
     const n = event.attendees.length;
+    // Only an event we organize sends METHOD:CANCEL; deleting one we don't
+    // organize (a received invite, or a server-side item we merely pulled
+    // in) just removes our own copy - the server sees a plain DELETE.
     del.mutate(
-      { eventId: event.id, notify: true },
+      { eventId: event.id, notify: event.isLocal },
       {
         onSuccess: () => {
           close();
           pushToast({
             kind: "info",
             message:
-              n > 0
+              event.isLocal && n > 0
                 ? t("calendar:deleted.withInvites", { count: n })
                 : t("calendar:deleted.plain"),
           });
@@ -168,7 +171,7 @@ function DetailCard({ event }: { event: CalendarEvent }) {
     showAllAttendees ? event.attendees : event.attendees.slice(0, ATTENDEE_CAP);
   const hiddenAttendees = event.attendees.length - shownAttendees.length;
 
-  const hasFooter = canRsvp || event.joinUrl != null || event.isLocal;
+  const hasFooter = true; // every event has at least a Delete action
 
   return (
     <div
@@ -292,9 +295,11 @@ function DetailCard({ event }: { event: CalendarEvent }) {
             {confirming ? (
               <div className="mt-3 rounded-lg border border-danger/40 bg-danger/5 p-3">
                 <p className="text-[12.5px] text-ink">
-                  {event.attendees.length > 0
-                    ? t("calendar:detail.confirmCancel", { count: event.attendees.length })
-                    : t("calendar:detail.confirmDelete")}
+                  {event.isLocal
+                    ? event.attendees.length > 0
+                      ? t("calendar:detail.confirmCancel", { count: event.attendees.length })
+                      : t("calendar:detail.confirmDelete")
+                    : t("calendar:detail.confirmRemove")}
                 </p>
                 <div className="mt-2 flex justify-end gap-2">
                   <button
@@ -315,38 +320,34 @@ function DetailCard({ event }: { event: CalendarEvent }) {
                 </div>
               </div>
             ) : (
-              (event.joinUrl != null || event.isLocal) && (
-                <div className="mt-3 flex items-center gap-1.5">
-                  {event.joinUrl && !cancelled && (
-                    <button
-                      type="button"
-                      className="rounded-md bg-accent px-3 py-1 text-[12.5px] font-semibold text-white hover:opacity-90"
-                      onClick={() => void openUrl(event.joinUrl!)}
-                    >
-                      {t("calendar:join")}
-                    </button>
-                  )}
-                  <div className="grow" />
-                  {event.isLocal && (
-                    <>
-                      <button
-                        type="button"
-                        className="rounded-md border border-hairline px-3 py-1 text-[12.5px] font-medium text-ink-muted hover:bg-bg2 hover:text-ink"
-                        onClick={edit}
-                      >
-                        {t("calendar:detail.edit")}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-md border border-hairline px-3 py-1 text-[12.5px] font-medium text-danger hover:bg-danger/10"
-                        onClick={() => setConfirming(true)}
-                      >
-                        {t("calendar:detail.delete")}
-                      </button>
-                    </>
-                  )}
-                </div>
-              )
+              <div className="mt-3 flex items-center gap-1.5">
+                {event.joinUrl && !cancelled && (
+                  <button
+                    type="button"
+                    className="rounded-md bg-accent px-3 py-1 text-[12.5px] font-semibold text-white hover:opacity-90"
+                    onClick={() => void openUrl(event.joinUrl!)}
+                  >
+                    {t("calendar:join")}
+                  </button>
+                )}
+                <div className="grow" />
+                {event.isLocal && (
+                  <button
+                    type="button"
+                    className="rounded-md border border-hairline px-3 py-1 text-[12.5px] font-medium text-ink-muted hover:bg-bg2 hover:text-ink"
+                    onClick={edit}
+                  >
+                    {t("calendar:detail.edit")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="rounded-md border border-hairline px-3 py-1 text-[12.5px] font-medium text-danger hover:bg-danger/10"
+                  onClick={() => setConfirming(true)}
+                >
+                  {t("calendar:detail.delete")}
+                </button>
+              </div>
             )}
           </div>
         )}

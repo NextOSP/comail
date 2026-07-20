@@ -89,6 +89,7 @@
     "edit": "Sửa",
     "delete": "Xóa",
     "confirmDelete": "Xóa sự kiện này?",
+    "confirmRemove": "Xóa sự kiện này khỏi lịch của bạn? Sẽ không ai khác được thông báo.",
     "confirmCancel_one": "Hủy sự kiện này? Email hủy sẽ được gửi tới {{count}} người tham dự.",
     "confirmCancel_other": "Hủy sự kiện này? Email hủy sẽ được gửi tới {{count}} người tham dự."
   },

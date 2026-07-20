@@ -79,6 +79,7 @@
     "edit": "Editar",
     "delete": "Eliminar",
     "confirmDelete": "¿Eliminar este evento?",
+    "confirmRemove": "¿Quitar este evento de tu calendario? No se notificará a nadie más.",
     "confirmCancel_one": "¿Cancelar este evento? Se enviará un correo de cancelación a {{count}} asistente.",
     "confirmCancel_other": "¿Cancelar este evento? Se enviará un correo de cancelación a {{count}} asistentes."
   },

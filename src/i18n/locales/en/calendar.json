@@ -100,6 +100,7 @@
     "edit": "Edit",
     "delete": "Delete",
     "confirmDelete": "Delete this event?",
+    "confirmRemove": "Remove this event from your calendar? No one else is notified.",
     "confirmCancel_one": "Cancel this event? A cancellation email goes to {{count}} attendee.",
     "confirmCancel_other": "Cancel this event? A cancellation email goes to {{count}} attendees."
   },
