@@ -28,6 +28,8 @@
   "removeNamed": "Remove {{name}}",
   "bodyPlaceholder": "Write something… ( ;shortcut expands snippets, {{mod}}+; to browse )",
   "send": "Send",
+  "attach": "Attach",
+  "dropToAttach": "Drop to attach",
   "footerHints": "{{mod}}↵ send · {{mod}}⇧↵ send & done",
   "draftSaved": "Draft saved",
   "unsaved": "Unsaved",

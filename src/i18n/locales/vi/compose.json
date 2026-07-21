@@ -28,6 +28,8 @@
   "removeNamed": "Xóa {{name}}",
   "bodyPlaceholder": "Viết gì đó… ( ;phím tắt để chèn mẫu, {{mod}}+; để duyệt )",
   "send": "Gửi",
+  "attach": "Đính kèm",
+  "dropToAttach": "Thả để đính kèm",
   "footerHints": "{{mod}}↵ gửi · {{mod}}⇧↵ gửi & hoàn tất",
   "draftSaved": "Đã lưu bản nháp",
   "unsaved": "Chưa lưu",

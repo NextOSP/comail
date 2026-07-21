@@ -28,6 +28,8 @@
   "removeNamed": "移除 {{name}}",
   "bodyPlaceholder": "写点什么…（ ;快捷词 展开片段，{{mod}}+; 浏览 ）",
   "send": "发送",
+  "attach": "附加",
+  "dropToAttach": "拖放以附加",
   "footerHints": "{{mod}}↵ 发送 · {{mod}}⇧↵ 发送并完成",
   "draftSaved": "草稿已保存",
   "unsaved": "未保存",

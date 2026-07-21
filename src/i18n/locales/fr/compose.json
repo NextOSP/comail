@@ -28,6 +28,8 @@
   "removeNamed": "Retirer {{name}}",
   "bodyPlaceholder": "Écrivez quelque chose… ( ;raccourci développe les extraits, {{mod}}+; pour parcourir )",
   "send": "Envoyer",
+  "attach": "Joindre",
+  "dropToAttach": "Déposer pour joindre",
   "footerHints": "{{mod}}↵ envoyer · {{mod}}⇧↵ envoyer et terminer",
   "draftSaved": "Brouillon enregistré",
   "unsaved": "Non enregistré",

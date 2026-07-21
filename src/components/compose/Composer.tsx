@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import i18n from "../../i18n";
 import { errorMessage } from "../../ipc/errors";
 import { call } from "../../ipc/commands";
@@ -188,6 +189,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const [attachments, setAttachments] = useState<DraftAttachment[]>(
     state.initial?.attachments ?? [],
   );
+  const [dragOver, setDragOver] = useState(false);
 
   // Quoted original: collapsed behind "⋯", appended back on save/send.
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -449,6 +451,17 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     [saveDraft, sending, state.mode, state.replyTo, closeComposer, pushToast, t],
   );
 
+  // Merge picked/dropped paths into the attachment list, skipping dupes.
+  const stageAttachmentPaths = (paths: string[]) => {
+    setAttachments((cur) => [
+      ...cur,
+      ...paths
+        .filter((p) => !cur.some((a) => a.filePath === p))
+        .map((p) => ({ filePath: p, filename: p.split(/[\\/]/).pop() || p })),
+    ]);
+    markDirty();
+  };
+
   // Stage files to attach; the backend reads them from disk at dispatch time.
   const attachFiles = useCallback(async () => {
     if (MOCK_MODE) {
@@ -468,13 +481,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       if (!picked) return;
       const paths = Array.isArray(picked) ? picked : [picked];
       if (paths.length === 0) return;
-      setAttachments((cur) => [
-        ...cur,
-        ...paths
-          .filter((p) => !cur.some((a) => a.filePath === p))
-          .map((p) => ({ filePath: p, filename: p.split(/[\\/]/).pop() || p })),
-      ]);
-      markDirty();
+      stageAttachmentPaths(paths);
     } catch (err) {
       pushToast({
         kind: "error",
@@ -483,6 +490,31 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pushToast]);
+
+  // The webview intercepts native OS file drops at the window level (no
+  // "over any composer" scoping needed - App.tsx only ever mounts one
+  // Composer at a time, full-screen or inline). Skipped in mock/browser dev
+  // since there's no real Tauri webview to subscribe to.
+  useEffect(() => {
+    if (MOCK_MODE) return;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "drop") {
+          setDragOver(false);
+          stageAttachmentPaths(event.payload.paths);
+        } else if (event.payload.type === "enter" || event.payload.type === "over") {
+          setDragOver(true);
+        } else {
+          setDragOver(false);
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => unlisten?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const removeAttachment = (filePath: string) => {
     setAttachments((cur) => cur.filter((a) => a.filePath !== filePath));
@@ -979,6 +1011,16 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
           </button>
           <button
             className="flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 disabled:opacity-50"
+            onClick={() => void attachFiles()}
+            title={`${t("compose:attach")} (${MOD_LABEL}⇧A)`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+            {t("compose:attach")}
+          </button>
+          <button
+            className="flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 disabled:opacity-50"
             onClick={() => void runProofread()}
             disabled={proofPending || isHtmlEmpty(body)}
             title={`${t("compose:proofread")} (${MOD_LABEL}⇧P)`}
@@ -1056,6 +1098,14 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {dragOver && (
+          <div className="co-fade-in pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent/10">
+            <span className="rounded-lg bg-bg1 px-3.5 py-1.5 text-[13px] font-medium text-accent" style={{ boxShadow: "var(--elev-2)" }}>
+              {t("compose:dropToAttach")}
+            </span>
           </div>
         )}
 

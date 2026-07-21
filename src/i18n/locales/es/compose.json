@@ -28,6 +28,8 @@
   "removeNamed": "Eliminar {{name}}",
   "bodyPlaceholder": "Escribe algo… ( ;atajo expande fragmentos, {{mod}}+; para explorar )",
   "send": "Enviar",
+  "attach": "Adjuntar",
+  "dropToAttach": "Suelta para adjuntar",
   "footerHints": "{{mod}}↵ enviar · {{mod}}⇧↵ enviar y hecho",
   "draftSaved": "Borrador guardado",
   "unsaved": "Sin guardar",
