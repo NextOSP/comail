@@ -370,21 +370,52 @@ const MEETING_HOSTS: &[&str] = &[
     "webex.com",
     "whereby.com",
     "meet.jit.si",
+    "wa.me",
+    "gateway.rauta.ai",
+    "gateway.infra-arena.ai",
 ];
+
+/// True when a URL (any scheme) should drive the Join button.
+fn is_join_url(url: &str) -> bool {
+    let u = url.trim();
+    let lower = u.to_ascii_lowercase();
+    if lower.starts_with("facetime://")
+        || lower.starts_with("facetime:")
+        || lower.starts_with("facetime-audio://")
+        || lower.starts_with("facetime-audio:")
+    {
+        return true;
+    }
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return false;
+    }
+    let host = u.split('/').nth(2).unwrap_or("");
+    let host = host.split(':').next().unwrap_or(host);
+    MEETING_HOSTS.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")))
+}
 
 /// First meeting-service URL inside free text (location or description).
 pub fn find_join_url(text: &str) -> Option<String> {
+    // Native FaceTime schemes (not http — Comail Join must still open them).
+    for prefix in ["facetime://", "facetime:", "facetime-audio://", "facetime-audio:"] {
+        if let Some(idx) = text.to_ascii_lowercase().find(prefix) {
+            let rest = &text[idx..];
+            let end = rest
+                .find(|c: char| c.is_whitespace() || matches!(c, '>' | '"' | '\'' | ')' | ','))
+                .unwrap_or(rest.len());
+            let url = rest[..end].trim_end_matches(['.', ';']);
+            if url.len() > prefix.len() {
+                return Some(url.to_string());
+            }
+        }
+    }
     for (idx, _) in text.match_indices("https://") {
         let rest = &text[idx..];
         let end = rest
             .find(|c: char| c.is_whitespace() || matches!(c, '>' | '"' | '\'' | ')' | ','))
             .unwrap_or(rest.len());
         let url = rest[..end].trim_end_matches(['.', ';']);
-        if MEETING_HOSTS.iter().any(|h| {
-            url.split('/')
-                .nth(2)
-                .is_some_and(|host| host == *h || host.ends_with(&format!(".{h}")))
-        }) {
+        if is_join_url(url) {
             return Some(url.to_string());
         }
     }
@@ -439,10 +470,10 @@ pub fn parse_ics(text: &str) -> Vec<IcsEvent> {
                         // Collected by the recurrence expander from the raw
                         // VCALENDAR; nothing to store on the master here.
                     }
-                    "URL" | "X-GOOGLE-CONFERENCE" => {
+                    "URL" | "X-GOOGLE-CONFERENCE" | "CONFERENCE" => {
                         if ev.join_url.is_none() {
                             let v = value.trim();
-                            if v.starts_with("http") {
+                            if is_join_url(v) {
                                 ev.join_url = Some(v.to_string());
                             }
                         }
@@ -803,6 +834,24 @@ mod tests {
             Some("https://acme.zoom.us/j/123456?pwd=x")
         );
         assert_eq!(find_join_url("call me at https://example.com/x"), None);
+    }
+
+    #[test]
+    fn joins_facetime_and_rauta_launch_urls() {
+        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:evt-ft\r\nURL:facetime://+14155550100\r\nDTSTART:20260720T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR";
+        assert_eq!(
+            parse_ics(ics)[0].join_url.as_deref(),
+            Some("facetime://+14155550100")
+        );
+        let ics2 = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:evt-ft2\r\nURL:https://gateway.rauta.ai/call/facetime/14155550100\r\nCONFERENCE;VALUE=URI;FEATURE=AUDIO,VIDEO:https://gateway.rauta.ai/call/facetime/14155550100\r\nDTSTART:20260720T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR";
+        assert_eq!(
+            parse_ics(ics2)[0].join_url.as_deref(),
+            Some("https://gateway.rauta.ai/call/facetime/14155550100")
+        );
+        assert_eq!(
+            find_join_url("Join / call: https://wa.me/call/14155550100"),
+            Some("https://wa.me/call/14155550100".into())
+        );
     }
 
     #[test]

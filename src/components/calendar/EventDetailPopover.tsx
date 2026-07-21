@@ -26,14 +26,19 @@ function whenLabel(ev: CalendarEvent): string {
     : `${day} · ${time(ev.startsAt)}`;
 }
 
-/** Location line: URLs (a Meet/Zoom link embedded in LOCATION) open directly;
- *  the remaining street address opens in Google Maps. Both are otherwise dead
- *  plain text you can't click. */
+/** Match http(s) + FaceTime schemes so LOCATION/DESCRIPTION aren't dead text. */
+const CALL_URL_RE = /(?:https?:\/\/|facetime(?:-audio)?:\/\/?)[^\s,;<>"]+/gi;
+
+function extractCallUrls(text: string): string[] {
+  return text.match(CALL_URL_RE) ?? [];
+}
+
+/** Location line: URLs (Meet/Zoom/FaceTime/wa.me) open directly;
+ *  the remaining street address opens in Google Maps. */
 function LocationLine({ location }: { location: string }) {
-  const urlRe = /https?:\/\/[^\s,;]+/g;
-  const urls = location.match(urlRe) ?? [];
+  const urls = extractCallUrls(location);
   const address = location
-    .replace(urlRe, "")
+    .replace(CALL_URL_RE, "")
     .replace(/[;,\s]+$/, "")
     .trim();
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
@@ -66,6 +71,41 @@ function LocationLine({ location }: { location: string }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Description with tappable call/join URLs (plain text otherwise). */
+function DescriptionBody({ text }: { text: string }) {
+  const parts: Array<{ kind: "text" | "url"; value: string }> = [];
+  const re = new RegExp(CALL_URL_RE.source, "gi");
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) != null) {
+    if (m.index > last) parts.push({ kind: "text", value: text.slice(last, m.index) });
+    parts.push({ kind: "url", value: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ kind: "text", value: text.slice(last) });
+  return (
+    <p className="mt-3 text-[13px] leading-[1.55] whitespace-pre-wrap text-ink-muted select-text">
+      {parts.map((p, i) =>
+        p.kind === "url" ? (
+          <button
+            key={i}
+            type="button"
+            className="cursor-pointer break-all text-accent hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              void openUrl(p.value);
+            }}
+          >
+            {p.value}
+          </button>
+        ) : (
+          <span key={i}>{p.value}</span>
+        ),
+      )}
+    </p>
   );
 }
 
@@ -220,11 +260,7 @@ function DetailCard({ event }: { event: CalendarEvent }) {
           {event.location && !event.location.startsWith("http") && (
             <LocationLine location={event.location} />
           )}
-          {event.description && (
-            <p className="mt-3 text-[13px] leading-[1.55] whitespace-pre-wrap text-ink-muted select-text">
-              {event.description}
-            </p>
-          )}
+          {event.description && <DescriptionBody text={event.description} />}
 
           {event.attendees.length > 0 && (
             <div className="mt-3">
