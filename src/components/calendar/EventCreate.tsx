@@ -4,8 +4,21 @@ import i18n from "../../i18n";
 import { errorMessage } from "../../ipc/errors";
 import type { Address } from "../../ipc/types";
 import { call } from "../../ipc/commands";
+import {
+  bothCallLinksDescription,
+  callLaunchUrl,
+  callLinkDigits,
+  callLocationLabel,
+  mergeCallDescription,
+  type CallLinkMethod,
+} from "../../lib/callLinks";
 import { parseQuickAdd } from "../../lib/quickadd";
-import { useAccounts, useCreateEvent, useUpdateEvent } from "../../queries/hooks";
+import {
+  useAccounts,
+  useCreateEvent,
+  useSettings,
+  useUpdateEvent,
+} from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 
 const H_MS = 3_600_000;
@@ -153,6 +166,7 @@ export function EventCreate() {
   const set = useUi((s) => s.set);
   const pushToast = useUi((s) => s.pushToast);
   const { data: accounts } = useAccounts();
+  const { data: settings } = useSettings();
   const create = useCreateEvent();
   const update = useUpdateEvent();
   const quickRef = useRef<HTMLInputElement>(null);
@@ -256,6 +270,43 @@ export function EventCreate() {
     const startsAt = allDay ? fromInputs(date, "00:00") : fromInputs(date, time);
     const endsAt = allDay ? startsAt + 24 * H_MS : endsFromInputs(startsAt);
     return fillTeamsMeeting(startsAt, endsAt, summary);
+  };
+
+  /** One-click FaceTime / WhatsApp / both — uses Settings → call number. */
+  const fillCallLink = (mode: CallLinkMethod | "both") => {
+    const phone = settings?.meetingCallPhone?.trim() ?? "";
+    if (!callLinkDigits(phone)) {
+      pushToast({
+        kind: "info",
+        message: t("calendar:create.callPhoneMissing"),
+        durationMs: 4500,
+      });
+      useUi.getState().set({ panel: "settings", settingsTab: "general" });
+      return;
+    }
+    if (mode === "both") {
+      const primary = callLaunchUrl("facetime", phone);
+      const block = bothCallLinksDescription(phone);
+      if (!primary || !block) return;
+      setJoinUrl(primary);
+      if (!location.trim()) setLocation(callLocationLabel("both"));
+      setDescription((d) => mergeCallDescription(d, block));
+      pushToast({
+        kind: "info",
+        message: t("calendar:create.callLinkAdded", { label: callLocationLabel("both") }),
+        durationMs: 2500,
+      });
+      return;
+    }
+    const url = callLaunchUrl(mode, phone);
+    if (!url) return;
+    setJoinUrl(url);
+    if (!location.trim()) setLocation(callLocationLabel(mode));
+    pushToast({
+      kind: "info",
+      message: t("calendar:create.callLinkAdded", { label: callLocationLabel(mode) }),
+      durationMs: 2500,
+    });
   };
 
   // Quick-add asked for an online meeting ("create team meeting 2pm tmr"):
@@ -542,22 +593,48 @@ export function EventCreate() {
                     {ICON.link}
                     {t("calendar:create.joinUrl")}
                   </span>
-                  {isMicrosoftAccount && (
+                  <div className="flex flex-wrap items-center justify-end gap-1">
                     <button
                       type="button"
-                      disabled={teamsPending}
-                      onClick={() => void createTeamsMeeting()}
-                      title={t("calendar:create.teamsTip")}
-                      className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/[0.06] px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50"
+                      onClick={() => fillCallLink("facetime")}
+                      title={t("calendar:create.facetimeTip")}
+                      className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
                     >
-                      {teamsPending ? (
-                        <span className="co-spinner size-2.5 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-                      ) : (
-                        ICON.video
-                      )}
-                      {t("calendar:create.teamsMeeting")}
+                      {t("calendar:create.facetime")}
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => fillCallLink("whatsapp")}
+                      title={t("calendar:create.whatsappTip")}
+                      className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
+                    >
+                      {t("calendar:create.whatsapp")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fillCallLink("both")}
+                      title={t("calendar:create.bothCallsTip")}
+                      className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
+                    >
+                      {t("calendar:create.bothCalls")}
+                    </button>
+                    {isMicrosoftAccount && (
+                      <button
+                        type="button"
+                        disabled={teamsPending}
+                        onClick={() => void createTeamsMeeting()}
+                        title={t("calendar:create.teamsTip")}
+                        className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/[0.06] px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50"
+                      >
+                        {teamsPending ? (
+                          <span className="co-spinner size-2.5 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+                        ) : (
+                          ICON.video
+                        )}
+                        {t("calendar:create.teamsMeeting")}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <input
                   className={inputCls}
