@@ -572,77 +572,67 @@ export function EventCreate() {
             />
           </div>
 
-          {/* WHERE */}
-          <div>
+          {/* WHERE — stacked so FaceTime / WhatsApp presets stay visible */}
+          <div className="space-y-2.5">
             <SectionLabel>{t("calendar:create.section.where")}</SectionLabel>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <div className="mb-1 flex h-6 items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
-                  {ICON.location}
-                  {t("calendar:create.location")}
-                </div>
-                <input
-                  className={inputCls}
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                />
-              </div>
-              <div className="flex-1">
-                <div className="mb-1 flex h-6 items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
-                    {ICON.link}
-                    {t("calendar:create.joinUrl")}
-                  </span>
-                  <div className="flex flex-wrap items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      onClick={() => fillCallLink("facetime")}
-                      title={t("calendar:create.facetimeTip")}
-                      className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
-                    >
-                      {t("calendar:create.facetime")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => fillCallLink("whatsapp")}
-                      title={t("calendar:create.whatsappTip")}
-                      className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
-                    >
-                      {t("calendar:create.whatsapp")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => fillCallLink("both")}
-                      title={t("calendar:create.bothCallsTip")}
-                      className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2 py-0.5 text-[11px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
-                    >
-                      {t("calendar:create.bothCalls")}
-                    </button>
-                    {isMicrosoftAccount && (
-                      <button
-                        type="button"
-                        disabled={teamsPending}
-                        onClick={() => void createTeamsMeeting()}
-                        title={t("calendar:create.teamsTip")}
-                        className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/[0.06] px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50"
-                      >
-                        {teamsPending ? (
-                          <span className="co-spinner size-2.5 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-                        ) : (
-                          ICON.video
-                        )}
-                        {t("calendar:create.teamsMeeting")}
-                      </button>
+            <div>
+              <FieldLabel icon={ICON.location}>{t("calendar:create.location")}</FieldLabel>
+              <input
+                className={inputCls}
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
+            </div>
+            <div>
+              <FieldLabel icon={ICON.link}>{t("calendar:create.joinUrl")}</FieldLabel>
+              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => fillCallLink("facetime")}
+                  title={t("calendar:create.facetimeTip")}
+                  className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2.5 py-1 text-[11.5px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
+                >
+                  {t("calendar:create.facetime")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fillCallLink("whatsapp")}
+                  title={t("calendar:create.whatsappTip")}
+                  className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2.5 py-1 text-[11.5px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
+                >
+                  {t("calendar:create.whatsapp")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fillCallLink("both")}
+                  title={t("calendar:create.bothCallsTip")}
+                  className="inline-flex items-center gap-1 rounded-full border border-hairline bg-bg2/60 px-2.5 py-1 text-[11.5px] font-medium text-ink-muted transition hover:border-accent/30 hover:bg-accent/[0.06] hover:text-accent"
+                >
+                  {t("calendar:create.bothCalls")}
+                </button>
+                {isMicrosoftAccount && (
+                  <button
+                    type="button"
+                    disabled={teamsPending}
+                    onClick={() => void createTeamsMeeting()}
+                    title={t("calendar:create.teamsTip")}
+                    className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50"
+                  >
+                    {teamsPending ? (
+                      <span className="co-spinner size-2.5 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+                    ) : (
+                      ICON.video
                     )}
-                  </div>
-                </div>
-                <input
-                  className={inputCls}
-                  placeholder="https://meet…"
-                  value={joinUrl}
-                  onChange={(e) => setJoinUrl(e.target.value)}
-                />
+                    {t("calendar:create.teamsMeeting")}
+                  </button>
+                )}
               </div>
+              <input
+                className={inputCls}
+                placeholder="https://meet…"
+                value={joinUrl}
+                onChange={(e) => setJoinUrl(e.target.value)}
+              />
             </div>
           </div>
 
