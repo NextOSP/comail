@@ -1444,6 +1444,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   voiceProfile: "",
   voiceLearnedAt: 0,
   meetingNotifyLeadMinutes: 10,
+  meetingCallPhone: "",
   notificationsEnabled: true,
   notificationScope: "important",
   notificationTabs: [],

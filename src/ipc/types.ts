@@ -426,6 +426,8 @@ export interface Settings {
   voiceLearnedAt: number;
   /** Minutes before a meeting to fire a desktop reminder; 0 disables. */
   meetingNotifyLeadMinutes: number;
+  /** Your FaceTime / WhatsApp number for one-click Meeting link presets. */
+  meetingCallPhone: string;
 }
 
 export interface AiUsageDay {

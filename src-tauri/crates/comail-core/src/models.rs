@@ -655,6 +655,10 @@ pub struct Settings {
     /// Minutes before a meeting to fire a desktop reminder; 0 disables.
     #[serde(default = "default_notify_lead")]
     pub meeting_notify_lead_minutes: i64,
+    /// Your FaceTime / WhatsApp number (E.164 or digits) for one-click Meeting
+    /// link presets when creating events. Empty disables the presets.
+    #[serde(default)]
+    pub meeting_call_phone: String,
     /// Desktop notification on new mail.
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
@@ -867,6 +871,7 @@ impl Default for Settings {
             voice_profile: String::new(),
             voice_learned_at: 0,
             meeting_notify_lead_minutes: 10,
+            meeting_call_phone: String::new(),
             notifications_enabled: true,
             sound_enabled: true,
             auto_advance: true,

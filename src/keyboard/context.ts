@@ -468,6 +468,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         voiceProfile: "",
         voiceLearnedAt: 0,
         meetingNotifyLeadMinutes: 10,
+        meetingCallPhone: "",
         notificationsEnabled: true,
         notificationScope: "important",
         notificationTabs: [],

@@ -93,6 +93,7 @@ const DEFAULT_SETTINGS: Settings = {
   voiceProfile: "",
   voiceLearnedAt: 0,
   meetingNotifyLeadMinutes: 10,
+  meetingCallPhone: "",
   notificationsEnabled: true,
   notificationScope: "important",
   notificationTabs: [],
@@ -370,6 +371,11 @@ export function SettingsPanel() {
       tab: "general",
       label: t("settings:contactSuggestAllAccounts.label"),
       keywords: "contacts autocomplete suggestions recipients to account domain all",
+    },
+    {
+      tab: "general",
+      label: t("settings:meetingCallPhone.label"),
+      keywords: "facetime whatsapp call phone meeting link join video",
     },
     {
       tab: "splits",
@@ -793,6 +799,20 @@ export function SettingsPanel() {
                   </option>
                 ))}
               </Select>
+            </SettingRow>
+            <SettingRow
+              label={t("settings:meetingCallPhone.label")}
+              hint={t("settings:meetingCallPhone.hint")}
+            >
+              <input
+                type="tel"
+                className="w-[220px] rounded-md border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-accent"
+                value={s.meetingCallPhone}
+                placeholder={t("settings:meetingCallPhone.placeholder")}
+                onChange={(e) =>
+                  void updateSettings({ meetingCallPhone: e.target.value })
+                }
+              />
             </SettingRow>
             <AboutSection />
           </section>

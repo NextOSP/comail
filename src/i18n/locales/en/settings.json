@@ -485,5 +485,10 @@
     "off": "Off",
     "minutes_one": "{{count}} minute before",
     "minutes_other": "{{count}} minutes before"
+  },
+  "meetingCallPhone": {
+    "label": "Call number for meetings",
+    "hint": "Your FaceTime / WhatsApp number. Used by FaceTime and WhatsApp buttons when creating an event.",
+    "placeholder": "+1 415 555 0100"
   }
 }
