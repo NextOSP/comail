@@ -42,7 +42,7 @@ hf-hub = { version = "1", default-features = false, features = ["rustls-tls"] }
 
 # auth
 keyring = { version = "3", features = ["sync-secret-service", "apple-native", "windows-native"] }
-base64 = "0.22"
+base64 = "0.23"
 sha2 = "0.10"
 url = "2"
 
