@@ -391,13 +391,20 @@ fn is_join_url(url: &str) -> bool {
     }
     let host = u.split('/').nth(2).unwrap_or("");
     let host = host.split(':').next().unwrap_or(host);
-    MEETING_HOSTS.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")))
+    MEETING_HOSTS
+        .iter()
+        .any(|h| host == *h || host.ends_with(&format!(".{h}")))
 }
 
 /// First meeting-service URL inside free text (location or description).
 pub fn find_join_url(text: &str) -> Option<String> {
     // Native FaceTime schemes (not http — Comail Join must still open them).
-    for prefix in ["facetime://", "facetime:", "facetime-audio://", "facetime-audio:"] {
+    for prefix in [
+        "facetime://",
+        "facetime:",
+        "facetime-audio://",
+        "facetime-audio:",
+    ] {
         if let Some(idx) = text.to_ascii_lowercase().find(prefix) {
             let rest = &text[idx..];
             let end = rest
