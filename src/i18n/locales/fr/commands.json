@@ -10,6 +10,7 @@
   },
   "title": {
     "markDone": "Marquer terminé",
+    "markDoneAndUnsubscribe": "Marquer terminé et se désabonner",
     "moveToInbox": "Déplacer vers la boîte de réception",
     "snooze": "Reporter…",
     "starUnstar": "Suivre / ne plus suivre",
@@ -97,6 +98,7 @@
   },
   "actionLabel": {
     "markedDone": "Marqué terminé",
+    "markedDoneUnsubscribed": "Marqué terminé · désabonné",
     "movedToInbox": "Déplacé vers la boîte de réception",
     "movedToTrash": "Mis à la corbeille",
     "markedAsSpam": "Marqué comme spam",

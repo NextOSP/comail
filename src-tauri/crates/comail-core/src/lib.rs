@@ -3962,10 +3962,16 @@ fn apply_thread_action(
                 ActionKind::Trash => (roles::TRASH, "trash"),
                 _ => (roles::SPAM, "spam"),
             };
-            // Gmail-style fallback: archiving with no Archive folder moves to All Mail.
+            // Gmail-style fallback: Archive → All Mail. Providers with neither
+            // (AgentMail: INBOX/Sent/Trash/Spam only, CREATE disabled) fall
+            // through to Trash so "mark done" still clears the inbox.
             let target = folder_of(&tx, account_id, target_role)?
                 .or(if kind == ActionKind::Archive {
-                    folder_of(&tx, account_id, roles::ALL)?
+                    folder_of(&tx, account_id, roles::ALL)?.or(folder_of(
+                        &tx,
+                        account_id,
+                        roles::TRASH,
+                    )?)
                 } else {
                     None
                 })
@@ -3993,8 +3999,16 @@ fn apply_thread_action(
             } else {
                 roles::SPAM
             };
+            // Mirror the archive→Trash fallback: if this account has no
+            // Archive/All Mail, Shift+E can restore from Trash.
+            let trash_is_archive = kind == ActionKind::Unarchive
+                && folder_of(&tx, account_id, roles::ARCHIVE)?.is_none()
+                && folder_of(&tx, account_id, roles::ALL)?.is_none();
             for (id, f, u, _r, _s, role) in &msgs {
-                if (role == from_role || (kind == ActionKind::Unarchive && role == roles::ALL))
+                let from_trash = trash_is_archive && role == roles::TRASH;
+                if (role == from_role
+                    || (kind == ActionKind::Unarchive && role == roles::ALL)
+                    || from_trash)
                     && f.is_some()
                 {
                     let aid = enqueue_move(

@@ -98,6 +98,9 @@ interface UiState {
 
   selectedIndex: number;
   selectedThreadId: number | null;
+  /** Thread row under the pointer. Keyboard triage (E, #, …) prefers this over
+   *  the keyboard cursor when set, so pointing at a row chooses the target. */
+  hoveredThreadId: number | null;
   openThreadId: number | null;
   /** message focused inside the conversation - the reply target (hover, click,
    *  or N/P keyboard). */
@@ -235,6 +238,7 @@ export const useUi = create<UiState>((set, get) => ({
   visibleThreadIds: [],
   selectedIndex: 0,
   selectedThreadId: null,
+  hoveredThreadId: null,
   openThreadId: null,
   focusedMessageId: null,
   messageCursorSource: "keyboard",
@@ -293,6 +297,7 @@ export const useUi = create<UiState>((set, get) => ({
       selectAnchorId: null,
       selectedIndex: 0,
       selectedThreadId: null,
+      hoveredThreadId: null,
     }),
 
   selectLabel: (labelId) =>
@@ -309,6 +314,7 @@ export const useUi = create<UiState>((set, get) => ({
       selectAnchorId: null,
       selectedIndex: 0,
       selectedThreadId: null,
+      hoveredThreadId: null,
     }),
 
   selectFolder: (folderId) =>
@@ -325,6 +331,7 @@ export const useUi = create<UiState>((set, get) => ({
       selectAnchorId: null,
       selectedIndex: 0,
       selectedThreadId: null,
+      hoveredThreadId: null,
     }),
 
   selectThread: (index, id) => set({ selectedIndex: index, selectedThreadId: id }),

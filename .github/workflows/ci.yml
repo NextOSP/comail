@@ -47,6 +47,9 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Customs inventory (check-customs / TC-PROBE-02)
+        run: ./scripts/check-customs.sh
+
       - name: Typecheck (tsc)
         run: pnpm typecheck
 

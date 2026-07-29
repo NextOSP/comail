@@ -10,6 +10,7 @@
   },
   "title": {
     "markDone": "Đánh dấu hoàn tất",
+    "markDoneAndUnsubscribe": "Đánh dấu hoàn tất và hủy đăng ký",
     "moveToInbox": "Chuyển vào hộp thư đến",
     "snooze": "Tạm ẩn…",
     "starUnstar": "Gắn sao / bỏ sao",
@@ -97,6 +98,7 @@
   },
   "actionLabel": {
     "markedDone": "Đã đánh dấu hoàn tất",
+    "markedDoneUnsubscribed": "Đã đánh dấu hoàn tất · đã hủy đăng ký",
     "movedToInbox": "Đã chuyển vào hộp thư đến",
     "movedToTrash": "Đã chuyển vào thùng rác",
     "markedAsSpam": "Đã đánh dấu là thư rác",

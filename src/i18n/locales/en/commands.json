@@ -10,6 +10,7 @@
   },
   "title": {
     "markDone": "Mark done",
+    "markDoneAndUnsubscribe": "Mark done & unsubscribe",
     "moveToInbox": "Move to inbox",
     "snooze": "Snooze…",
     "starUnstar": "Star / unstar",
@@ -98,6 +99,7 @@
   },
   "actionLabel": {
     "markedDone": "Marked done",
+    "markedDoneUnsubscribed": "Marked done · unsubscribed",
     "movedToInbox": "Moved to inbox",
     "movedToTrash": "Moved to trash",
     "markedAsSpam": "Marked as spam",

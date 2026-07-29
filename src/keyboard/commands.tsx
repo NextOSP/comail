@@ -145,6 +145,26 @@ function runUnsubscribe(ctx: CommandCtx) {
   push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
 }
 
+/** E + unsubscribe when List-Unsubscribe is present (marketing / newsletters). */
+async function runArchiveAndUnsubscribe(ctx: CommandCtx) {
+  const threadId = ctx.targets[0];
+  if (threadId != null && !queryClient.getQueryData<ThreadDetail>(["thread", threadId])) {
+    try {
+      const detail = await call("get_thread", { threadId });
+      queryClient.setQueryData(["thread", threadId], detail);
+    } catch {
+      // Still archive — unsubscribe just needs the header when available.
+    }
+  }
+  const canUnsub = unsubscribeMessage(ctx) != null;
+  if (canUnsub) runUnsubscribe(ctx);
+  ctx.act(
+    "archive",
+    undefined,
+    canUnsub ? i18n.t("commands:actionLabel.markedDoneUnsubscribed") : undefined,
+  );
+}
+
 // ----------------------------------------------------------- Sender search
 
 /** Main correspondent of the open/selected thread (never one of our own
@@ -395,6 +415,15 @@ export const ALL_COMMANDS: Command[] = [
     run: (ctx) => ctx.act("archive"),
   },
   {
+    id: "mark-done-unsubscribe",
+    titleKey: "commands:title.markDoneAndUnsubscribe",
+    aliases: ["unsubscribe and archive", "unsub", "opt out archive"],
+    keys: ["u"],
+    section: "Triage",
+    when: listOrConvo,
+    run: (ctx) => void runArchiveAndUnsubscribe(ctx),
+  },
+  {
     id: "unarchive",
     titleKey: "commands:title.moveToInbox",
     aliases: ["unarchive", "not done", "move to inbox"],
@@ -425,7 +454,7 @@ export const ALL_COMMANDS: Command[] = [
     id: "read",
     titleKey: "commands:title.markReadUnread",
     aliases: ["unread", "read", "seen"],
-    keys: ["u"],
+    keys: ["shift+u"],
     section: "Triage",
     when: listOrConvo,
     run: (ctx) => ctx.toggleRead(),
