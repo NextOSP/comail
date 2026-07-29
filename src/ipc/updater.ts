@@ -1,3 +1,4 @@
+import { updateInstallBlockedReason, updatesInstallAllowed } from "../lib/updateChannel";
 import { MOCK_MODE } from "./mock";
 
 /** Download progress for the in-flight update, emitted as bytes arrive. */
@@ -25,6 +26,9 @@ export interface UpdateInfo {
  */
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
   if (MOCK_MODE) return null;
+  // TC-UPD-00: while channel is locked, do not surface NextOSP offers at all
+  // (no toast → no accidental install path).
+  if (!updatesInstallAllowed()) return null;
   const { check } = await import("@tauri-apps/plugin-updater");
   const update = await check();
   if (!update) return null;
@@ -62,6 +66,10 @@ export async function installUpdate(
   update: UpdateInfo,
   onProgress?: (p: DownloadProgress) => void,
 ): Promise<void> {
+  const blocked = updateInstallBlockedReason();
+  if (blocked) {
+    throw new Error(blocked);
+  }
   await update.download(onProgress);
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();

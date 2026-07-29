@@ -10,6 +10,7 @@
   },
   "title": {
     "markDone": "Marcar como hecho",
+    "markDoneAndUnsubscribe": "Marcar hecho y cancelar suscripción",
     "moveToInbox": "Mover a la bandeja de entrada",
     "snooze": "Posponer…",
     "starUnstar": "Destacar / quitar destacado",
@@ -97,6 +98,7 @@
   },
   "actionLabel": {
     "markedDone": "Marcado como hecho",
+    "markedDoneUnsubscribed": "Marcado hecho · suscripción cancelada",
     "movedToInbox": "Movido a la bandeja de entrada",
     "movedToTrash": "Movido a la papelera",
     "markedAsSpam": "Marcado como spam",

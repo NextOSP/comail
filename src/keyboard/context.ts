@@ -46,7 +46,7 @@ export interface CommandCtx {
   /** a management panel (settings / snippets / splits) or the add-account modal is open */
   panelOpen: boolean;
   hasTargets: boolean;
-  /** threads an action applies to: multi-select > open thread > cursor */
+  /** threads an action applies to: multi-select > pointer hover > open > cursor */
   targets: number[];
   act: (
     kind: ActionKind,
@@ -73,8 +73,13 @@ export interface CommandCtx {
   setTheme: (theme: "snow" | "carbon" | "system") => void;
 }
 
-function currentTargets(ui: ReturnType<typeof useUi.getState>): number[] {
+/** Exported for TC-CUSTOM-01 L1 (hover / multi-select priority). */
+export function currentTargets(ui: ReturnType<typeof useUi.getState>): number[] {
+  // Explicit multi-select still wins (bulk triage).
   if (ui.selection.length > 0 && ui.openThreadId == null) return ui.selection;
+  // Pointer over a row beats the keyboard cursor / open thread — so E/# act on
+  // the email you're pointing at, even if a different row is highlighted.
+  if (ui.hoveredThreadId != null) return [ui.hoveredThreadId];
   if (ui.openThreadId != null) return [ui.openThreadId];
   if (ui.selectedThreadId != null) return [ui.selectedThreadId];
   return [];
@@ -85,7 +90,11 @@ export function advanceAfter(removed: number[]) {
   const ui = useUi.getState();
   const removedSet = new Set(removed);
   const order = ui.visibleThreadIds;
-  const anchor = ui.openThreadId ?? ui.selectedThreadId;
+  // Anchor on the acted-on row (hover/multi-select targets), not the keyboard
+  // cursor — so E on a hovered row lands selection on the next row below it.
+  const actedAnchor = removed.find((id) => order.includes(id));
+  const cursorAnchor = ui.openThreadId ?? ui.selectedThreadId;
+  const anchor = actedAnchor ?? cursorAnchor;
   const anchorIdx = anchor != null ? order.indexOf(anchor) : ui.selectedIndex;
 
   let next: number | null = null;
@@ -107,6 +116,12 @@ export function advanceAfter(removed: number[]) {
   const remaining = order.filter((id) => !removedSet.has(id));
   const nextIdx = next != null ? Math.max(0, remaining.indexOf(next)) : 0;
 
+  // If we archived the hovered row, keep hover-target in sync with the next
+  // row so a second E (still under the pointer) continues down the list.
+  const hoverWasRemoved =
+    ui.hoveredThreadId != null && removedSet.has(ui.hoveredThreadId);
+  const hoveredThreadId = hoverWasRemoved ? next : ui.hoveredThreadId;
+
   if (ui.openThreadId != null) {
     // auto-advance: show the next conversation, or fall back to the list
     ui.set({
@@ -114,9 +129,10 @@ export function advanceAfter(removed: number[]) {
       focusedMessageId: null,
       selectedThreadId: next,
       selectedIndex: nextIdx,
+      hoveredThreadId,
     });
   } else {
-    ui.set({ selectedThreadId: next, selectedIndex: nextIdx });
+    ui.set({ selectedThreadId: next, selectedIndex: nextIdx, hoveredThreadId });
   }
 }
 

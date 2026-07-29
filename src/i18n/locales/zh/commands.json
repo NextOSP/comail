@@ -10,6 +10,7 @@
   },
   "title": {
     "markDone": "标记为完成",
+    "markDoneAndUnsubscribe": "标记完成并退订",
     "moveToInbox": "移动到收件箱",
     "snooze": "暂停…",
     "starUnstar": "加/取消星标",
@@ -97,6 +98,7 @@
   },
   "actionLabel": {
     "markedDone": "已标记完成",
+    "markedDoneUnsubscribed": "已标记完成 · 已退订",
     "movedToInbox": "已移动到收件箱",
     "movedToTrash": "已移动到垃圾箱",
     "markedAsSpam": "已标记为垃圾邮件",

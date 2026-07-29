@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "channel": "locked",
+  "pubkey_ok": false,
+  "endpoint_ok": false,
+  "version": "0.2.26",
+  "rauta_version_counter": 0,
+  "notes": "pubkey_ok/endpoint_ok stay false until personal minisign + mkmk10k/comail latest.json are baked. channel=locked refuses install (TC-UPD-00).",
+  "customs": [
+    {
+      "id": "hover-target-triage",
+      "paths": [
+        "src/keyboard/context.ts",
+        "src/stores/ui.ts",
+        "src/components/inbox/ThreadList.tsx"
+      ],
+      "sentinels": ["hoveredThreadId", "Pointer over a row beats"],
+      "risk": "keyboard targeting; no update path"
+    },
+    {
+      "id": "u-archive-unsubscribe",
+      "paths": [
+        "src/keyboard/commands.tsx",
+        "src/i18n/locales/en/commands.json"
+      ],
+      "sentinels": ["mark-done-unsubscribe", "runArchiveAndUnsubscribe"],
+      "risk": "command registry keys; no update path"
+    },
+    {
+      "id": "agentmail-archive-to-trash",
+      "paths": ["src-tauri/crates/comail-core/src/lib.rs"],
+      "sentinels": ["trash_is_archive", "through to Trash"],
+      "risk": "core folder fallback; no update path"
+    },
+    {
+      "id": "update-channel-lock",
+      "paths": ["src/lib/updateChannel.ts", "src/ipc/updater.ts"],
+      "sentinels": ["UPDATE_CHANNEL", "TC-UPD-00"],
+      "risk": "touches update path — must stay locked until P2 cutover"
+    },
+    {
+      "id": "facetime-whatsapp-presets",
+      "paths": [],
+      "sentinels": ["FaceTime", "WhatsApp"],
+      "notes": "Already on master via merged PRs; verify Join/presets on L3 dogfood",
+      "risk": "calendar UI; no update path"
+    }
+  ],
+  "dirty_allowlist": [
+    ".cursor/",
+    "docs/VERIFICATION.md"
+  ]
+}
