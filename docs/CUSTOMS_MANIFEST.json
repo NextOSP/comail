@@ -1,6 +1,7 @@
 {
   "ok": true,
   "channel": "locked",
+  "updateChannel": "locked",
   "pubkey_ok": false,
   "endpoint_ok": false,
   "version": "0.2.26",

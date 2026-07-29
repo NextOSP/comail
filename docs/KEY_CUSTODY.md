@@ -1,6 +1,8 @@
 # Key custody (personal Comail update channel)
 
-**Status: BLOCKED — `minisign` not installed on this machine; no keypair generated this session.**
+**Status (2026-07-28):** No personal minisign key by this date ⇒ **updater permanently locked** for current dogfood (`UPDATE_CHANNEL=locked`). Unlock only after the checklist below is green — not by flipping a flag alone.
+
+**Blocker:** `minisign` not installed on the build machine; no keypair generated this session.
 
 Do **not** flip `tauri.conf.json` pubkey/endpoint or `UPDATE_CHANNEL` to `rauta` until this checklist is green.
 

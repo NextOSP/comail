@@ -23,6 +23,13 @@ missing = [k for k in required if k not in m or m[k] is None]
 if missing:
     print(f"FAIL schema missing/null: {missing}", file=sys.stderr)
     sys.exit(1)
+# updateChannel must match channel (fail if someone edits one without the other)
+if "updateChannel" in m and m["updateChannel"] != m["channel"]:
+    print(
+        f"FAIL updateChannel={m['updateChannel']!r} != channel={m['channel']!r}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 if not isinstance(m["customs"], list) or len(m["customs"]) < 1:
     print("FAIL customs[] empty", file=sys.stderr)
     sys.exit(1)
