@@ -175,6 +175,9 @@ pub struct MessageDetail {
     pub automation_note: Option<String>,
     pub attachments: Vec<AttachmentMeta>,
     pub list_unsubscribe: Option<String>,
+    /// Raw List-Unsubscribe-Post (RFC 8058); `List-Unsubscribe=One-Click`
+    /// means the HTTPS List-Unsubscribe URL accepts a one-click POST.
+    pub list_unsubscribe_post: Option<String>,
     /// Transmitting party (Sender:, Return-Path or DKIM d=) when its domain
     /// doesn't align with `from` - mailing lists, ESPs, spoofed From:.
     /// Email address or bare domain; the UI shows it as "via <domain>".

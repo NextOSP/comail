@@ -94,12 +94,17 @@
     "syncing": "Syncing…",
     "noUnsubscribeLink": "No unsubscribe link",
     "unsubscribeWouldOpen": "Unsubscribe: would open {{url}}",
+    "unsubscribed": "Unsubscribed",
+    "unsubscribeOpenedConfirm": "Opened unsubscribe page — confirm there",
+    "unsubscribeEmailSent": "Unsubscribe email sent",
+    "unsubscribeFailed": "Unsubscribe failed: {{detail}}",
     "couldNotOpenLink": "Couldn't open link: {{detail}}",
     "noMeetingToJoin": "No upcoming meeting with a join link"
   },
   "actionLabel": {
     "markedDone": "Marked done",
     "markedDoneUnsubscribed": "Marked done · unsubscribed",
+    "markedDoneUnsubscribeFailed": "Marked done · unsubscribe failed",
     "movedToInbox": "Moved to inbox",
     "movedToTrash": "Moved to trash",
     "markedAsSpam": "Marked as spam",

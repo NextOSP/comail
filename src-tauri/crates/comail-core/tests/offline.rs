@@ -96,6 +96,7 @@ async fn seed(db: &Db, port: u16) -> (i64, i64) {
             snippet: "please review".into(),
             references: vec![],
             list_unsubscribe: None,
+            list_unsubscribe_post: None,
             sender_addr: None,
         };
         repo::messages::insert(conn, &msg, thread_id)?;

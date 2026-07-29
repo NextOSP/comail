@@ -79,5 +79,11 @@
       "sheetFallback": "Trang tính {{n}}",
       "documentTitle": "Xem trước tài liệu"
     }
-  }
+  },
+  "unsubscribe": "Hủy đăng ký",
+  "unsubscribed": "Đã hủy đăng ký",
+  "unsubscribeConfirmInBrowser": "Đã mở trang hủy đăng ký — hãy xác nhận tại đó",
+  "unsubscribeEmailSent": "Đã gửi email hủy đăng ký",
+  "unsubscribeFailed": "Hủy đăng ký thất bại: {{detail}}",
+  "unsubscribeMock": "Hủy đăng ký (mock)"
 }

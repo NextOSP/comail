@@ -93,12 +93,17 @@
     "syncing": "Đang đồng bộ…",
     "noUnsubscribeLink": "Không có liên kết hủy đăng ký",
     "unsubscribeWouldOpen": "Hủy đăng ký: sẽ mở {{url}}",
+    "unsubscribed": "Đã hủy đăng ký",
+    "unsubscribeOpenedConfirm": "Đã mở trang hủy đăng ký — hãy xác nhận tại đó",
+    "unsubscribeEmailSent": "Đã gửi email hủy đăng ký",
+    "unsubscribeFailed": "Hủy đăng ký thất bại: {{detail}}",
     "couldNotOpenLink": "Không thể mở liên kết: {{detail}}",
     "noMeetingToJoin": "Không có cuộc họp sắp tới nào có liên kết tham gia"
   },
   "actionLabel": {
     "markedDone": "Đã đánh dấu hoàn tất",
     "markedDoneUnsubscribed": "Đã đánh dấu hoàn tất · đã hủy đăng ký",
+    "markedDoneUnsubscribeFailed": "Đã đánh dấu hoàn tất · hủy đăng ký thất bại",
     "movedToInbox": "Đã chuyển vào hộp thư đến",
     "movedToTrash": "Đã chuyển vào thùng rác",
     "markedAsSpam": "Đã đánh dấu là thư rác",

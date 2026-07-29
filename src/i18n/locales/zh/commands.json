@@ -93,12 +93,17 @@
     "syncing": "同步中…",
     "noUnsubscribeLink": "无退订链接",
     "unsubscribeWouldOpen": "退订：将打开 {{url}}",
+    "unsubscribed": "已退订",
+    "unsubscribeOpenedConfirm": "已打开退订页面 — 请在该页确认",
+    "unsubscribeEmailSent": "已发送退订邮件",
+    "unsubscribeFailed": "退订失败：{{detail}}",
     "couldNotOpenLink": "无法打开链接：{{detail}}",
     "noMeetingToJoin": "没有带会议链接的近期会议"
   },
   "actionLabel": {
     "markedDone": "已标记完成",
     "markedDoneUnsubscribed": "已标记完成 · 已退订",
+    "markedDoneUnsubscribeFailed": "已标记完成 · 退订失败",
     "movedToInbox": "已移动到收件箱",
     "movedToTrash": "已移动到垃圾箱",
     "markedAsSpam": "已标记为垃圾邮件",

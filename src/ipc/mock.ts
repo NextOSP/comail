@@ -2563,6 +2563,38 @@ export async function mockInvoke(
       throw new Error(`Message ${a.messageId} not found`);
     }
 
+    case "unsubscribe_message": {
+      for (const t of threads) {
+        const m = t.messages.find((x) => x.id === a.messageId);
+        if (!m?.listUnsubscribe) {
+          return delay({
+            ok: false,
+            method: "one_click",
+            error: "no List-Unsubscribe header",
+          });
+        }
+        const post = (m as { listUnsubscribePost?: string | null }).listUnsubscribePost;
+        if (post && /one-click/i.test(post) && /https:\/\//i.test(m.listUnsubscribe)) {
+          return delay({ ok: true, method: "one_click", status: 200 });
+        }
+        if (/https:\/\//i.test(m.listUnsubscribe)) {
+          const match = m.listUnsubscribe.match(/<(https:[^>]+)>/i);
+          const bare = m.listUnsubscribe.match(/(https:\/\/\S+)/i);
+          return delay({
+            ok: false,
+            method: "needs_browser",
+            url: match?.[1] ?? bare?.[1] ?? m.listUnsubscribe,
+          });
+        }
+        return delay({
+          ok: false,
+          method: "mailto",
+          mailto: { to: "unsub@example.com", subject: "unsubscribe" },
+        });
+      }
+      throw new Error(`Message ${a.messageId} not found`);
+    }
+
     case "get_attachment":
       return delay(`/tmp/comail-mock/attachment-${a.attachmentId}`);
 

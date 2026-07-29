@@ -79,5 +79,11 @@
       "sheetFallback": "工作表 {{n}}",
       "documentTitle": "文档预览"
     }
-  }
+  },
+  "unsubscribe": "退订",
+  "unsubscribed": "已退订",
+  "unsubscribeConfirmInBrowser": "已打开退订页面 — 请在该页确认",
+  "unsubscribeEmailSent": "已发送退订邮件",
+  "unsubscribeFailed": "退订失败：{{detail}}",
+  "unsubscribeMock": "退订（模拟）"
 }

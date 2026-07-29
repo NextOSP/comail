@@ -20,6 +20,9 @@ pub struct ParsedHeaders {
     pub is_automated: bool,
     /// Raw List-Unsubscribe header value, e.g. "<https://…>, <mailto:…>".
     pub list_unsubscribe: Option<String>,
+    /// Raw List-Unsubscribe-Post value (RFC 8058), typically
+    /// `List-Unsubscribe=One-Click` when one-click POST is supported.
+    pub list_unsubscribe_post: Option<String>,
     /// The party that actually transmitted the message, when its domain does
     /// NOT align with From: (mailing lists, ESPs, send-on-behalf - and mail
     /// whose From: is spoofed). First misaligned identity out of the RFC 5322
@@ -1342,12 +1345,26 @@ fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
         date_ms: msg.date().map(|d| d.to_timestamp() * 1000),
         references: refs,
         is_automated,
-        list_unsubscribe: msg
-            .header("List-Unsubscribe")
-            .and_then(|h| h.as_text())
-            .map(|s| s.to_string()),
+        // mail-parser parses List-Unsubscribe as Address, so as_text() is
+        // always None — use the raw header bytes (RFC 2369 URI list).
+        list_unsubscribe: header_raw_trimmed(msg, "List-Unsubscribe"),
+        list_unsubscribe_post: header_raw_trimmed(msg, "List-Unsubscribe-Post").or_else(|| {
+            msg.header("List-Unsubscribe-Post")
+                .and_then(|h| h.as_text())
+                .map(|s| s.to_string())
+        }),
         via,
     }
+}
+
+/// Raw header value with folding whitespace collapsed. Prefer this over
+/// `as_text()` for headers mail-parser special-cases as Address (e.g.
+/// List-Unsubscribe).
+fn header_raw_trimmed(msg: &mail_parser::Message<'_>, name: &str) -> Option<String> {
+    let raw = msg.header_raw(name)?;
+    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 /// Parse a full raw RFC 5322 message.
@@ -1629,6 +1646,25 @@ pub fn normalize_subject(subject: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_list_unsubscribe_and_post() {
+        let raw = b"Message-ID: <abc@example.com>\r\nFrom: List <list@example.com>\r\nTo: Bob <bob@example.com>\r\nSubject: Newsletter\r\nList-Unsubscribe: <https://esp.example/u/1>, <mailto:u@esp.example?subject=bye>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\nDate: Mon, 1 Jan 2024 10:00:00 +0000\r\nContent-Type: text/plain\r\n\r\nHi\r\n";
+        let parsed = parse_message(raw).unwrap();
+        assert!(
+            parsed
+                .headers
+                .list_unsubscribe
+                .as_deref()
+                .unwrap()
+                .contains("https://esp.example/u/1")
+        );
+        assert_eq!(
+            parsed.headers.list_unsubscribe_post.as_deref(),
+            Some("List-Unsubscribe=One-Click")
+        );
+        assert!(parsed.headers.is_automated);
+    }
 
     #[test]
     fn normalizes_subjects() {

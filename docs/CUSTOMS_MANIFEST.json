@@ -19,13 +19,49 @@
       "risk": "keyboard targeting; no update path"
     },
     {
-      "id": "u-archive-unsubscribe",
+      "id": "one-click-unsubscribe",
       "paths": [
+        "src-tauri/crates/comail-core/src/unsubscribe.rs",
+        "src-tauri/crates/comail-core/src/mime/mod.rs",
+        "src-tauri/crates/comail-core/src/imap/mod.rs",
+        "src-tauri/crates/comail-core/src/lib.rs",
+        "src-tauri/crates/comail-core/src/models.rs",
+        "src-tauri/crates/comail-core/src/db/migrations.rs",
+        "src-tauri/crates/comail-core/src/db/migrations/019_list_unsubscribe_post.sql",
+        "src-tauri/crates/comail-core/src/db/repo/messages.rs",
+        "src-tauri/crates/comail-core/src/sync/engine.rs",
+        "src-tauri/crates/comail-core/src/ai/mod.rs",
+        "src-tauri/crates/comail-core/tests/offline.rs",
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/lib.rs",
         "src/keyboard/commands.tsx",
-        "src/i18n/locales/en/commands.json"
+        "src/keyboard/unsubscribe.ts",
+        "src/keyboard/unsubscribe.test.ts",
+        "src/components/thread/MessageCard.tsx",
+        "src/ipc/types.ts",
+        "src/ipc/mock.ts",
+        "src/i18n/locales/en/commands.json",
+        "src/i18n/locales/en/thread.json",
+        "src/i18n/locales/es/commands.json",
+        "src/i18n/locales/es/thread.json",
+        "src/i18n/locales/fr/commands.json",
+        "src/i18n/locales/fr/thread.json",
+        "src/i18n/locales/vi/commands.json",
+        "src/i18n/locales/vi/thread.json",
+        "src/i18n/locales/zh/commands.json",
+        "src/i18n/locales/zh/thread.json"
       ],
-      "sentinels": ["mark-done-unsubscribe", "runArchiveAndUnsubscribe"],
-      "risk": "command registry keys; no update path"
+      "sentinels": [
+        "mark-done-unsubscribe",
+        "runArchiveAndUnsubscribe",
+        "unsubscribe_message",
+        "LIST-UNSUBSCRIBE-POST",
+        "header_raw_trimmed",
+        "post_one_click",
+        "unsubscribeOpenedConfirm",
+        "List-Unsubscribe=One-Click"
+      ],
+      "risk": "RFC 8058 one-click + honest U/Cmd+U toasts; no update path"
     },
     {
       "id": "agentmail-archive-to-trash",
@@ -49,6 +85,7 @@
   ],
   "dirty_allowlist": [
     ".cursor/",
-    "docs/VERIFICATION.md"
+    "docs/VERIFICATION.md",
+    "docs/PATCHES.md"
   ]
 }

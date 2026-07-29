@@ -7,7 +7,14 @@ import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { subscribeEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
-import type { Account, Address, MessageDetail, Settings, ThreadDetail } from "../ipc/types";
+import type {
+  Account,
+  Address,
+  MessageDetail,
+  Settings,
+  ThreadDetail,
+  UnsubscribeResult,
+} from "../ipc/types";
 import { addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
 import { normalizeSyncStatus } from "../lib/syncStatus";
@@ -17,6 +24,7 @@ import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
 import { inboxTabs, type CommandCtx } from "./context";
 import { displayShortcut, type Command } from "./registry";
+import { toastForUnsubscribe } from "./unsubscribe";
 
 /** Bridge for composer-scoped commands (composer owns the form state). */
 export type ComposerAction =
@@ -95,6 +103,19 @@ function editableFocused(): boolean {
 
 // ------------------------------------------------------------- Unsubscribe
 
+/** Ensure the focused/selected thread is in the query cache (Cmd+U needs headers). */
+async function ensureThreadCached(threadId: number): Promise<ThreadDetail | null> {
+  const existing = queryClient.getQueryData<ThreadDetail>(["thread", threadId]);
+  if (existing) return existing;
+  try {
+    const detail = await call("get_thread", { threadId });
+    queryClient.setQueryData(["thread", threadId], detail);
+    return detail;
+  } catch {
+    return null;
+  }
+}
+
 /** Latest message carrying a List-Unsubscribe header for the focused/open thread. */
 function unsubscribeMessage(ctx: CommandCtx): MessageDetail | null {
   const threadId = ctx.targets[0];
@@ -106,63 +127,134 @@ function unsubscribeMessage(ctx: CommandCtx): MessageDetail | null {
   return withHeader.reduce((a, b) => (b.date >= a.date ? b : a));
 }
 
-function runUnsubscribe(ctx: CommandCtx) {
+async function sendMailtoUnsubscribe(
+  msg: MessageDetail,
+  mailto: { to: string; subject?: string | null; body?: string | null },
+): Promise<boolean> {
+  const { draftId } = await call("save_draft", {
+    args: {
+      draftId: null,
+      accountId: msg.accountId,
+      to: [{ name: null, email: mailto.to }],
+      cc: [],
+      bcc: [],
+      subject: mailto.subject?.trim() || "unsubscribe",
+      bodyText: mailto.body ?? "",
+      bodyHtml: null,
+      mode: "new",
+      inReplyToMessageId: null,
+      attachments: [],
+    },
+  });
+  const { actionId } = await call("queue_send", {
+    args: { draftId, sendAt: Date.now() },
+  });
+  await call("send_now", { actionId });
+  return true;
+}
+
+function pushUnsubscribeToast(
+  outcome: ReturnType<typeof toastForUnsubscribe>,
+) {
   const push = useUi.getState().pushToast;
+  const message = i18n.t(`commands:toast.${outcome.key}`, outcome.params ?? {});
+  push({ kind: outcome.kind === "success" ? "info" : outcome.kind, message });
+}
+
+/** Perform real unsubscribe via Rust (RFC 8058 POST when advertised). */
+async function runUnsubscribe(ctx: CommandCtx): Promise<boolean> {
+  const push = useUi.getState().pushToast;
+  const threadId = ctx.targets[0];
+  if (threadId != null) {
+    await ensureThreadCached(threadId);
+  }
   const msg = unsubscribeMessage(ctx);
-  const raw = msg?.listUnsubscribe;
-  if (!msg || !raw) {
+  if (!msg?.listUnsubscribe) {
     push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
-    return;
-  }
-  // Header form: "<https://x/unsub>, <mailto:u@x?subject=s>" (angle brackets optional)
-  const entries = [...raw.matchAll(/<([^>]+)>/g)].map((m) => m[1].trim());
-  if (entries.length === 0) entries.push(...raw.split(",").map((s) => s.trim()).filter(Boolean));
-
-  const https = entries.find((e) => /^https?:\/\//i.test(e));
-  if (https) {
-    if (MOCK_MODE) {
-      push({ kind: "info", message: i18n.t("commands:toast.unsubscribeWouldOpen", { url: https }) });
-    } else {
-      void openUrl(https).catch((err: unknown) => {
-        push({ kind: "error", message: i18n.t("commands:toast.couldNotOpenLink", { detail: errorMessage(err) }) });
-      });
-    }
-    return;
+    return false;
   }
 
-  const mailto = entries.find((e) => /^mailto:/i.test(e));
-  if (mailto) {
-    const addr = mailto.replace(/^mailto:/i, "").split("?")[0].trim();
-    if (addr) {
-      useUi.getState().openComposer({
-        mode: "new",
-        accountId: msg.accountId,
-        initial: { to: [{ name: null, email: addr }], subject: "unsubscribe" },
+  if (MOCK_MODE) {
+    push({
+      kind: "info",
+      message: i18n.t("commands:toast.unsubscribeWouldOpen", {
+        url: msg.listUnsubscribe.slice(0, 80),
+      }),
+    });
+    return false;
+  }
+
+  let result: UnsubscribeResult;
+  try {
+    result = await call("unsubscribe_message", { messageId: msg.id });
+  } catch (err: unknown) {
+    push({
+      kind: "error",
+      message: i18n.t("commands:toast.unsubscribeFailed", {
+        detail: errorMessage(err),
+      }),
+    });
+    return false;
+  }
+
+  if (result.method === "needs_browser" && result.url) {
+    try {
+      await openUrl(result.url);
+    } catch (err: unknown) {
+      push({
+        kind: "error",
+        message: i18n.t("commands:toast.couldNotOpenLink", {
+          detail: errorMessage(err),
+        }),
       });
-      return;
+      return false;
+    }
+    pushUnsubscribeToast(toastForUnsubscribe(result));
+    return false;
+  }
+
+  if (result.method === "mailto" && result.mailto) {
+    try {
+      await sendMailtoUnsubscribe(msg, result.mailto);
+      pushUnsubscribeToast(
+        toastForUnsubscribe({ ...result, mailtoSent: true }),
+      );
+      return true;
+    } catch (err: unknown) {
+      pushUnsubscribeToast(
+        toastForUnsubscribe({
+          ...result,
+          mailtoSent: false,
+          error: errorMessage(err),
+        }),
+      );
+      return false;
     }
   }
-  push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
+
+  const toast = toastForUnsubscribe(result);
+  pushUnsubscribeToast(toast);
+  return toast.unsubscribed;
 }
 
 /** E + unsubscribe when List-Unsubscribe is present (marketing / newsletters). */
 async function runArchiveAndUnsubscribe(ctx: CommandCtx) {
   const threadId = ctx.targets[0];
-  if (threadId != null && !queryClient.getQueryData<ThreadDetail>(["thread", threadId])) {
-    try {
-      const detail = await call("get_thread", { threadId });
-      queryClient.setQueryData(["thread", threadId], detail);
-    } catch {
-      // Still archive — unsubscribe just needs the header when available.
-    }
+  if (threadId != null) {
+    await ensureThreadCached(threadId);
   }
   const canUnsub = unsubscribeMessage(ctx) != null;
-  if (canUnsub) runUnsubscribe(ctx);
-  ctx.act(
-    "archive",
-    undefined,
-    canUnsub ? i18n.t("commands:actionLabel.markedDoneUnsubscribed") : undefined,
-  );
+  let unsubOk = false;
+  if (canUnsub) {
+    unsubOk = await runUnsubscribe(ctx);
+  }
+  let label: string | undefined;
+  if (canUnsub && unsubOk) {
+    label = i18n.t("commands:actionLabel.markedDoneUnsubscribed");
+  } else if (canUnsub && !unsubOk) {
+    label = i18n.t("commands:actionLabel.markedDoneUnsubscribeFailed");
+  }
+  ctx.act("archive", undefined, label);
 }
 
 // ----------------------------------------------------------- Sender search

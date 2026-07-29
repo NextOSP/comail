@@ -24,6 +24,7 @@ pub mod scheduler;
 pub mod search;
 pub mod smtp;
 pub mod sync;
+pub mod unsubscribe;
 
 use crate::accounts::credentials::{self, Slot};
 use crate::config::Paths;
@@ -740,6 +741,10 @@ impl Core {
                 Ok(ThreadDetail { thread, messages })
             })
             .await?;
+        // Backfill List-Unsubscribe* from cached .eml when the DB columns are
+        // empty (messages synced before we persisted those headers).
+        self.backfill_unsubscribe_headers(&mut detail.messages)
+            .await;
         let t_db = t0.elapsed();
         // Resolve embedded cid: images to data: URIs so they render in the
         // sandboxed iframe (which can't fetch cid: URLs). Batched: one DB
@@ -793,6 +798,11 @@ impl Core {
             .db
             .read(move |conn| repo::messages::detail(conn, message_id))
             .await?;
+        {
+            let mut msgs = vec![detail];
+            self.backfill_unsubscribe_headers(&mut msgs).await;
+            detail = msgs.pop().unwrap();
+        }
         if detail.body_state == "none" || detail.body_state == "fetching" {
             self.request_body(detail.account_id, message_id).await;
         }
@@ -800,6 +810,68 @@ impl Core {
             detail.html_body = Some(self.inline_cid_images(message_id, html).await);
         }
         Ok(detail)
+    }
+
+    /// RFC 8058 / RFC 2369 unsubscribe for one message. Performs One-Click POST
+    /// when advertised; otherwise returns `needs_browser` or `mailto` for the UI.
+    pub async fn unsubscribe_message(
+        &self,
+        message_id: i64,
+    ) -> Result<crate::unsubscribe::UnsubscribeResult> {
+        let mut detail = self
+            .db
+            .read(move |conn| repo::messages::detail(conn, message_id))
+            .await?;
+        {
+            let mut msgs = vec![detail];
+            self.backfill_unsubscribe_headers(&mut msgs).await;
+            detail = msgs.pop().unwrap();
+        }
+        Ok(crate::unsubscribe::unsubscribe(
+            detail.list_unsubscribe.as_deref(),
+            detail.list_unsubscribe_post.as_deref(),
+        )
+        .await)
+    }
+
+    async fn backfill_unsubscribe_headers(&self, messages: &mut [MessageDetail]) {
+        for m in messages.iter_mut() {
+            if m.list_unsubscribe.is_some() && m.list_unsubscribe_post.is_some() {
+                continue;
+            }
+            let id = m.id;
+            let path = match self
+                .db
+                .read(move |conn| repo::messages::raw_path(conn, id))
+                .await
+            {
+                Ok(Some(p)) if !p.is_empty() => p,
+                _ => continue,
+            };
+            let Ok(bytes) = tokio::fs::read(&path).await else {
+                continue;
+            };
+            let Ok((unsub, post)) = crate::unsubscribe::headers_from_raw(&bytes) else {
+                continue;
+            };
+            if unsub.is_none() && post.is_none() {
+                continue;
+            }
+            if m.list_unsubscribe.is_none() {
+                m.list_unsubscribe = unsub.clone();
+            }
+            if m.list_unsubscribe_post.is_none() {
+                m.list_unsubscribe_post = post.clone();
+            }
+            let u = unsub;
+            let p = post;
+            let _ = self
+                .db
+                .write(move |conn| {
+                    repo::messages::set_unsubscribe_headers(conn, id, u.as_deref(), p.as_deref())
+                })
+                .await;
+        }
     }
 
     /// Rewrite `src="cid:…"` references in a message body to `data:` URIs built
@@ -1175,6 +1247,7 @@ impl Core {
                             snippet: crate::mime::make_snippet(&args.body_text),
                             references: Vec::new(),
                             list_unsubscribe: None,
+                            list_unsubscribe_post: None,
                             sender_addr: None,
                         };
                         let id = repo::messages::insert(&tx, &nm, tid)?;

@@ -26,6 +26,7 @@ Evidence for the 12-TC matrix. **Do not claim a TC green without a dated row.**
 | ID | Status | Evidence |
 |----|--------|----------|
 | TC-CUSTOM-01 | L1 partial | `pnpm test` → `src/keyboard/targets.test.ts` (hover/multi/U keys). L3 dogfood TBD. AgentMail Trash: code in comail-core, cargo fixture TBD. |
+| TC-UNSUB-01 | L1+L3 green | RFC 8058 One-Click: `cargo test -p comail-core --lib unsubscribe` (10); `pnpm test` unsubscribe toast honesty. Live POST 2026-07-29: `app.loops.so` → **201**, `account.microsoft.com/profile/unsubscribe` → **200** (tokens redacted). No browser on one-click path. |
 | TC-UPD-00 | L1 green | `updateChannel.test.ts` + `updateChannel.pluginBoundary.test.ts` (plugin never invoked). L3: rebuild + Settings check shows no NextOSP offer. |
 | TC-UPD-CONFIG | red (expected) | tauri.conf still NextOSP; MANIFEST `pubkey_ok=false` while locked |
 | TC-UPD-04 | **BLOCKED** | no personal key (`minisign` missing) |
@@ -52,3 +53,23 @@ Evidence for the 12-TC matrix. **Do not claim a TC green without a dated row.**
 2. Bake pubkey + `mkmk10k/comail` `latest.json` into `tauri.conf.json`; set `UPDATE_CHANNEL=rauta`; **bundle-audit** updater points at our channel
 3. Publish ≥1 signed release; run UPD-04/06/07 + ROLLBACK-01 on real disk
 4. Complete Global DoD checkboxes with evidence
+
+## One-click unsubscribe — production dogfood (post-build)
+
+**Recon 2026-07-29:** both targets advertise RFC 8058 (`List-Unsubscribe` HTTPS + `List-Unsubscribe-Post: List-Unsubscribe=One-Click`). Live IMAP verified; do not re-probe.
+
+**DB caveat:** `messages.list_unsubscribe` was empty for all 7646 rows at recon time. Unsubscribe path must backfill from on-disk raw MIME (or live IMAP) before POST — see `backfill_unsubscribe_headers` in comail-core.
+
+| # | Sender | Account | msg id | thread | Notes |
+|---|--------|---------|--------|--------|-------|
+| 1 | **SoFi** | `mikko.sj.kiiskila@gmail.com` (acct 2) | **7610** | t5408 | `no-reply@r.sofi.com` · “Stay on top of your money…” · AllMail uid 60977. Alt: **7408** / INBOX 37451 |
+| 2 | **Mike / Refero** | `mikko.sampo.k@gmail.com` (acct 9) | **7169** | t5123 | `mike@mails.refero.design` · “Weekly design update is here” · INBOX uid 123. Alt: **6803** |
+
+**Pass criteria (per sender):** toast reports one-click success (not “opened browser”); second press is honest no-op / already-done; no silent failure.
+
+| Sender | Status | Evidence |
+|--------|--------|----------|
+| SoFi 7610 | pending | wait for local rebuild + `install-local-macos.sh` |
+| Refero 7169 | pending | wait for local rebuild + `install-local-macos.sh` |
+
+Backups if primary gone: Luma (api.luma.com one-click), Glide/SendGrid, Ford Careers, Spreaker.

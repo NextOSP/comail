@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/016_ai_usage.sql"),
     include_str!("migrations/017_contact_accounts.sql"),
     include_str!("migrations/018_series_master.sql"),
+    include_str!("migrations/019_list_unsubscribe_post.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {

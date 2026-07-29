@@ -79,5 +79,11 @@
       "sheetFallback": "Feuille {{n}}",
       "documentTitle": "Aperçu du document"
     }
-  }
+  },
+  "unsubscribe": "Se désabonner",
+  "unsubscribed": "Désabonné",
+  "unsubscribeConfirmInBrowser": "Page de désabonnement ouverte — confirmez-y",
+  "unsubscribeEmailSent": "E-mail de désabonnement envoyé",
+  "unsubscribeFailed": "Échec du désabonnement : {{detail}}",
+  "unsubscribeMock": "Se désabonner (mock)"
 }

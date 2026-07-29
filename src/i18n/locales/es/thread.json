@@ -79,5 +79,11 @@
       "sheetFallback": "Hoja {{n}}",
       "documentTitle": "Vista previa del documento"
     }
-  }
+  },
+  "unsubscribe": "Cancelar suscripción",
+  "unsubscribed": "Suscripción cancelada",
+  "unsubscribeConfirmInBrowser": "Se abrió la página de baja — confirma allí",
+  "unsubscribeEmailSent": "Correo de baja enviado",
+  "unsubscribeFailed": "Error al cancelar la suscripción: {{detail}}",
+  "unsubscribeMock": "Cancelar suscripción (mock)"
 }

@@ -117,6 +117,8 @@ export interface MessageDetail {
   attachments: AttachmentMeta[];
   /** raw List-Unsubscribe header value, e.g. `"<https://x/unsub>, <mailto:u@x>"` */
   listUnsubscribe: string | null;
+  /** Raw List-Unsubscribe-Post (RFC 8058); typically `List-Unsubscribe=One-Click`. */
+  listUnsubscribePost?: string | null;
   /** Email from the Sender: header; shown as "via <domain>" when it differs from `from`. */
   via: string | null;
   /** Delivery state of a queued draft: "queued" while its send is in flight,
@@ -130,6 +132,20 @@ export interface MessageDetail {
 export interface ThreadDetail {
   thread: ThreadSummary;
   messages: MessageDetail[];
+}
+
+/** Result of `unsubscribe_message` — never claim success unless `ok` (one-click 2xx). */
+export interface UnsubscribeResult {
+  ok: boolean;
+  method: "one_click" | "needs_browser" | "mailto" | string;
+  status?: number | null;
+  url?: string | null;
+  mailto?: {
+    to: string;
+    subject?: string | null;
+    body?: string | null;
+  } | null;
+  error?: string | null;
 }
 
 export interface ThreadPage {
@@ -762,6 +778,8 @@ export interface Commands {
   }): Promise<ThreadPage>;
   get_thread(args: { threadId: number }): Promise<ThreadDetail>;
   get_body(args: { messageId: number }): Promise<MessageDetail>;
+  /** RFC 8058 one-click unsubscribe (or needs_browser / mailto fallback). */
+  unsubscribe_message(args: { messageId: number }): Promise<UnsubscribeResult>;
   /** Extracts the attachment to disk and returns the file path. */
   get_attachment(args: { attachmentId: number }): Promise<string>;
   /** Saves (downloads) the attachment to a chosen destination path. */

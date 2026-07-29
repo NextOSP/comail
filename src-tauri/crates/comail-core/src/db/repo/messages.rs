@@ -31,6 +31,8 @@ pub struct NewMessage {
     pub snippet: String,
     pub references: Vec<String>,
     pub list_unsubscribe: Option<String>,
+    /// RFC 8058 List-Unsubscribe-Post raw value, when present.
+    pub list_unsubscribe_post: Option<String>,
     /// Transmitting party misaligned with From: (see mime::resolve_via) -     /// email or bare DKIM domain, shown as "via" in the UI. None when the
     /// transmitting domain aligns with From:.
     pub sender_addr: Option<String>,
@@ -98,8 +100,8 @@ pub fn insert(conn: &Connection, m: &NewMessage, thread_id: i64) -> Result<i64> 
         "INSERT INTO messages (account_id, thread_id, folder_id, uid, message_id, gm_msgid, gm_thrid,
             subject, from_name, from_addr, to_json, cc_json, bcc_json, date, internal_date,
             is_read, is_starred, is_draft, is_outgoing, is_automated, has_attachments, size, snippet,
-            list_unsubscribe, sender_addr)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",
+            list_unsubscribe, list_unsubscribe_post, sender_addr)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26)",
         params![
             m.account_id,
             thread_id,
@@ -125,6 +127,7 @@ pub fn insert(conn: &Connection, m: &NewMessage, thread_id: i64) -> Result<i64> 
             m.size,
             m.snippet,
             m.list_unsubscribe,
+            m.list_unsubscribe_post,
             m.sender_addr,
         ],
     )?;
@@ -173,6 +176,31 @@ pub fn set_starred(conn: &Connection, id: i64, is_starred: bool) -> Result<()> {
         params![id, is_starred as i64],
     )?;
     Ok(())
+}
+
+/// Persist (or backfill) List-Unsubscribe / List-Unsubscribe-Post headers.
+pub fn set_unsubscribe_headers(
+    conn: &Connection,
+    id: i64,
+    list_unsubscribe: Option<&str>,
+    list_unsubscribe_post: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE messages
+         SET list_unsubscribe = COALESCE(?2, list_unsubscribe),
+             list_unsubscribe_post = COALESCE(?3, list_unsubscribe_post)
+         WHERE id = ?1",
+        params![id, list_unsubscribe, list_unsubscribe_post],
+    )?;
+    Ok(())
+}
+
+pub fn raw_path(conn: &Connection, id: i64) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT raw_path FROM messages WHERE id = ?1")?;
+    Ok(stmt
+        .query_row(params![id], |r| r.get::<_, Option<String>>(0))
+        .optional()?
+        .flatten())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -786,6 +814,7 @@ fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
         automation_note: (!automation_note.trim().is_empty()).then_some(automation_note),
         attachments: Vec::new(),
         list_unsubscribe: row.get("list_unsubscribe")?,
+        list_unsubscribe_post: row.get("list_unsubscribe_post")?,
         via: row.get("sender_addr")?,
         send_state: row.get("send_state")?,
         send_error: row.get("send_error")?,

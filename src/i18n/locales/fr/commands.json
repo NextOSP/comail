@@ -93,12 +93,17 @@
     "syncing": "Synchronisation…",
     "noUnsubscribeLink": "Aucun lien de désabonnement",
     "unsubscribeWouldOpen": "Désabonnement : ouvrirait {{url}}",
+    "unsubscribed": "Désabonné",
+    "unsubscribeOpenedConfirm": "Page de désabonnement ouverte — confirmez-y",
+    "unsubscribeEmailSent": "E-mail de désabonnement envoyé",
+    "unsubscribeFailed": "Échec du désabonnement : {{detail}}",
     "couldNotOpenLink": "Impossible d’ouvrir le lien : {{detail}}",
     "noMeetingToJoin": "Aucune réunion à venir avec un lien de connexion"
   },
   "actionLabel": {
     "markedDone": "Marqué terminé",
     "markedDoneUnsubscribed": "Marqué terminé · désabonné",
+    "markedDoneUnsubscribeFailed": "Marqué terminé · échec du désabonnement",
     "movedToInbox": "Déplacé vers la boîte de réception",
     "movedToTrash": "Mis à la corbeille",
     "markedAsSpam": "Marqué comme spam",

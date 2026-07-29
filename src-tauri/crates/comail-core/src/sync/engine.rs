@@ -1642,6 +1642,20 @@ async fn store_headers(
                             &plan.attachments,
                         )?;
                     }
+                    // Backfill unsubscribe headers for rows synced before we
+                    // stored List-Unsubscribe / List-Unsubscribe-Post.
+                    if let Ok(parsed) = crate::mime::parse_header_block(&fh.header_bytes) {
+                        if parsed.list_unsubscribe.is_some()
+                            || parsed.list_unsubscribe_post.is_some()
+                        {
+                            let _ = repo::messages::set_unsubscribe_headers(
+                                &tx,
+                                existing.id,
+                                parsed.list_unsubscribe.as_deref(),
+                                parsed.list_unsubscribe_post.as_deref(),
+                            );
+                        }
+                    }
                     let _ = repo::sync_failures::clear_header(&tx, folder_id, fh.uid as i64);
                     continue;
                 }
@@ -1733,6 +1747,7 @@ async fn store_headers(
                     snippet: String::new(),
                     references: parsed.references.clone(),
                     list_unsubscribe: parsed.list_unsubscribe.clone(),
+                    list_unsubscribe_post: parsed.list_unsubscribe_post.clone(),
                     sender_addr: parsed.via.clone(),
                 };
                 let msg_id = repo::messages::insert(&tx, &nm, thread_id)?;

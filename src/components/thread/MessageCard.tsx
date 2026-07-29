@@ -209,6 +209,84 @@ export function MessageCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {message.listUnsubscribe && (
+            <button
+              type="button"
+              className="rounded px-2 py-0.5 text-[11.5px] text-ink-faint transition-colors hover:bg-bg2 hover:text-ink"
+              title={t("thread:unsubscribe")}
+              onClick={(e) => {
+                e.stopPropagation();
+                void (async () => {
+                  const { pushToast } = useUi.getState();
+                  try {
+                    if (MOCK_MODE) {
+                      pushToast({
+                        kind: "info",
+                        message: t("thread:unsubscribeMock"),
+                      });
+                      return;
+                    }
+                    const result = await call("unsubscribe_message", {
+                      messageId: message.id,
+                    });
+                    if (result.method === "one_click" && result.ok) {
+                      pushToast({ kind: "info", message: t("thread:unsubscribed") });
+                      return;
+                    }
+                    if (result.method === "needs_browser" && result.url) {
+                      await openUrl(result.url);
+                      pushToast({
+                        kind: "info",
+                        message: t("thread:unsubscribeConfirmInBrowser"),
+                      });
+                      return;
+                    }
+                    if (result.method === "mailto" && result.mailto) {
+                      const { draftId } = await call("save_draft", {
+                        args: {
+                          draftId: null,
+                          accountId: message.accountId,
+                          to: [{ name: null, email: result.mailto.to }],
+                          cc: [],
+                          bcc: [],
+                          subject: result.mailto.subject?.trim() || "unsubscribe",
+                          bodyText: result.mailto.body ?? "",
+                          bodyHtml: null,
+                          mode: "new",
+                          inReplyToMessageId: null,
+                          attachments: [],
+                        },
+                      });
+                      const { actionId } = await call("queue_send", {
+                        args: { draftId, sendAt: Date.now() },
+                      });
+                      await call("send_now", { actionId });
+                      pushToast({
+                        kind: "info",
+                        message: t("thread:unsubscribeEmailSent"),
+                      });
+                      return;
+                    }
+                    pushToast({
+                      kind: "error",
+                      message: t("thread:unsubscribeFailed", {
+                        detail: result.error ?? String(result.status ?? "?"),
+                      }),
+                    });
+                  } catch (err: unknown) {
+                    pushToast({
+                      kind: "error",
+                      message: t("thread:unsubscribeFailed", {
+                        detail: errorMessage(err),
+                      }),
+                    });
+                  }
+                })();
+              }}
+            >
+              {t("thread:unsubscribe")}
+            </button>
+          )}
           {hasFile && <PaperclipIcon />}
           <time className="text-[11.5px] whitespace-nowrap text-ink-faint">{longTime(message.date)}</time>
         </div>

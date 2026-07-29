@@ -93,12 +93,17 @@
     "syncing": "Sincronizando…",
     "noUnsubscribeLink": "Sin enlace para cancelar suscripción",
     "unsubscribeWouldOpen": "Cancelar suscripción: abriría {{url}}",
+    "unsubscribed": "Suscripción cancelada",
+    "unsubscribeOpenedConfirm": "Se abrió la página de baja — confirma allí",
+    "unsubscribeEmailSent": "Correo de baja enviado",
+    "unsubscribeFailed": "Error al cancelar la suscripción: {{detail}}",
     "couldNotOpenLink": "No se pudo abrir el enlace: {{detail}}",
     "noMeetingToJoin": "No hay reuniones próximas con enlace para unirse"
   },
   "actionLabel": {
     "markedDone": "Marcado como hecho",
     "markedDoneUnsubscribed": "Marcado hecho · suscripción cancelada",
+    "markedDoneUnsubscribeFailed": "Marcado hecho · fallo al cancelar suscripción",
     "movedToInbox": "Movido a la bandeja de entrada",
     "movedToTrash": "Movido a la papelera",
     "markedAsSpam": "Marcado como spam",
