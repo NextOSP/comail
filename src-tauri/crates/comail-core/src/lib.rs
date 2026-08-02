@@ -24,6 +24,7 @@ pub mod scheduler;
 pub mod search;
 pub mod smtp;
 pub mod sync;
+pub mod unsubscribe;
 
 use crate::accounts::credentials::{self, Slot};
 use crate::config::Paths;
@@ -806,6 +807,102 @@ impl Core {
         Ok(detail)
     }
 
+    /// Unsubscribe from the list a message came from, preferring the RFC 8058
+    /// one-click HTTPS POST, then the RFC 2369 mailto: (sent immediately over
+    /// SMTP), and finally handing the URL back for the browser. The returned
+    /// outcome states what actually happened so the UI can toast honestly.
+    pub async fn unsubscribe_message(&self, message_id: i64) -> Result<UnsubscribeOutcome> {
+        let detail = self
+            .db
+            .read(move |conn| repo::messages::detail(conn, message_id))
+            .await?;
+        let raw = detail
+            .list_unsubscribe
+            .ok_or_else(|| CoreError::NotFound("message has no List-Unsubscribe header".into()))?;
+        let plan = unsubscribe::plan(&raw, detail.list_unsubscribe_post.as_deref())
+            .ok_or_else(|| CoreError::Other("List-Unsubscribe header has no usable URI".into()))?;
+        match plan {
+            unsubscribe::UnsubscribePlan::OneClick { url } => {
+                match unsubscribe::post_one_click(&url).await {
+                    Ok(()) => {
+                        tracing::info!(message_id, %url, "one-click unsubscribe accepted");
+                        Ok(UnsubscribeOutcome::OneClick)
+                    }
+                    // The endpoint exists but didn't take the POST (blocked
+                    // bots, expired token, outage): let the user finish there.
+                    Err(e) => {
+                        tracing::warn!(message_id, %url, error = %e, "one-click unsubscribe failed; deferring to browser");
+                        Ok(UnsubscribeOutcome::NeedsBrowser { url })
+                    }
+                }
+            }
+            unsubscribe::UnsubscribePlan::Mailto { to, subject, body } => {
+                self.send_unsubscribe_mail(detail.account_id, &to, &subject, &body)
+                    .await?;
+                tracing::info!(message_id, %to, "mailto unsubscribe sent");
+                Ok(UnsubscribeOutcome::MailtoSent)
+            }
+            unsubscribe::UnsubscribePlan::Browser { url } => {
+                Ok(UnsubscribeOutcome::NeedsBrowser { url })
+            }
+        }
+    }
+
+    /// Build and send the tiny unsubscribe-request message a mailto: List-
+    /// Unsubscribe asks for. Sent directly (not through the pending-action
+    /// queue): the user expects an immediate, definite answer, and there is no
+    /// draft to reconcile.
+    async fn send_unsubscribe_mail(
+        &self,
+        account_id: i64,
+        to: &str,
+        subject: &str,
+        body: &str,
+    ) -> Result<()> {
+        let cfg = self
+            .db
+            .read(move |conn| repo::accounts::get_config(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound(format!("account {account_id}")))?;
+        let from = Address {
+            name: cfg.display_name.clone(),
+            email: cfg.email.clone(),
+        };
+        let domain = cfg
+            .email
+            .split('@')
+            .nth(1)
+            .unwrap_or("localhost")
+            .to_string();
+        let recipients = [Address {
+            name: None,
+            email: to.to_string(),
+        }];
+        let out = crate::mime::OutgoingMessage {
+            from,
+            to: &recipients,
+            cc: &[],
+            bcc: &[],
+            subject,
+            body_text: body,
+            body_html: None,
+            in_reply_to: None,
+            references: &[],
+            message_id_domain: &domain,
+            attachments: Vec::new(),
+        };
+        let (_msg_id, raw) = crate::mime::build_message(&out)?;
+        let auth = match cfg.auth_kind {
+            AuthKind::Password => crate::smtp::SmtpAuth::Password(
+                credentials::load_async(cfg.id, Slot::Password).await?,
+            ),
+            AuthKind::Oauth2 => crate::smtp::SmtpAuth::XOAuth2(
+                self.tokens.access_token(cfg.id, cfg.provider).await?,
+            ),
+        };
+        crate::smtp::send_raw(&cfg, &auth, &cfg.email, &[to.to_string()], &raw).await
+    }
+
     /// Rewrite `src="cid:…"` references in a message body to `data:` URIs built
     /// from its inline attachments, so embedded images render in the sandboxed
     /// iframe. No-op when the body has no cid: references. On any failure the
@@ -1180,6 +1277,7 @@ impl Core {
                             snippet: crate::mime::make_snippet(&args.body_text),
                             references: Vec::new(),
                             list_unsubscribe: None,
+                            list_unsubscribe_post: None,
                             sender_addr: None,
                         };
                         let id = repo::messages::insert(&tx, &nm, tid)?;

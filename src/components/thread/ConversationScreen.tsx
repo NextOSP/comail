@@ -8,6 +8,7 @@ import { useThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 
 import { MOD_LABEL, relativeTime } from "../../lib/format";
+import { latestUnsubscribeMessage, unsubscribeFromMessage } from "../../lib/unsubscribe";
 import { Composer } from "../compose/Composer";
 import { MessageCard } from "./MessageCard";
 
@@ -198,6 +199,8 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
     nonDraft[nonDraft.length - 1]?.id ??
     null;
   const selectedId = focusedMessageId ?? defaultTargetId;
+  // Same message the U shortcut targets, so button and key never disagree.
+  const unsubMsg = latestUnsubscribeMessage(messages);
 
   // Seed a reply composer with the AI's proposed answer, targeting the same
   // message a manual reply would (the highlighted one), quote and recipients
@@ -297,6 +300,19 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
                 {t("thread:messages", { count: messages.length })}
               </button>{" "}
               · {data.thread.accountEmail} · {relativeTime(data.thread.lastMessageAt)}
+              {unsubMsg && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="rounded-sm hover:text-ink-muted hover:underline"
+                    title={t("thread:unsubscribeTitle")}
+                    onClick={() => void unsubscribeFromMessage(unsubMsg)}
+                  >
+                    {t("thread:unsubscribe")}
+                  </button>
+                </>
+              )}
               {data.thread.snoozedUntil && data.thread.snoozedUntil > Date.now() && (
                 <span className="ml-2 text-accent">{t("thread:snoozedBadge")}</span>
               )}

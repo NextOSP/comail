@@ -1458,6 +1458,7 @@ mod tests {
             automation_note: None,
             attachments: vec![],
             list_unsubscribe: None,
+            list_unsubscribe_post: None,
             via: None,
             send_state: None,
             send_error: None,

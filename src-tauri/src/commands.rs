@@ -125,6 +125,18 @@ pub async fn get_body(state: State<'_, AppState>, message_id: i64) -> CmdResult<
 }
 
 #[tauri::command]
+pub async fn unsubscribe_message(
+    state: State<'_, AppState>,
+    message_id: i64,
+) -> CmdResult<UnsubscribeOutcome> {
+    state
+        .core
+        .unsubscribe_message(message_id)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
 pub async fn list_folders(
     state: State<'_, AppState>,
     account_id: Option<i64>,

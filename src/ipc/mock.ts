@@ -66,6 +66,7 @@ interface MockMessage {
   automationNote: string | null;
   attachments: AttachmentMeta[];
   listUnsubscribe: string | null;
+  listUnsubscribePost: string | null;
   via: string | null;
 }
 
@@ -214,6 +215,7 @@ interface MsgSpec {
   outgoing?: boolean;
   attachments?: Array<{ name: string; mime: string; size: number }>;
   listUnsubscribe?: string;
+  listUnsubscribePost?: string;
   via?: string;
 }
 
@@ -264,6 +266,7 @@ function addThread(
         isInline: false,
       })),
       listUnsubscribe: m.listUnsubscribe ?? null,
+      listUnsubscribePost: m.listUnsubscribePost ?? null,
       via: m.via ?? null,
     });
   }
@@ -622,6 +625,7 @@ addThread(1, "The Pragmatic Engineer: The Reliability Org at Scale", [
     unread: true,
     listUnsubscribe:
       "<https://pragmaticengineer.substack.com/action/disable_email?token=mock123>, <mailto:unsubscribe@substack.com>",
+    listUnsubscribePost: "List-Unsubscribe=One-Click",
     body: "THE PRAGMATIC ENGINEER\n\nThe Reliability Org at Scale\n\nHow four companies structure on-call, what a 'you build it, you run it' rollback actually looks like, and why error budgets die in committee.\n\n1. The three shapes of reliability orgs\nPlatform-owned, embedded, and federated. Most companies drift between them...\n\n2. Error budgets in practice\nThe budget is a communication device, not a control system...\n\nRead the full issue online (32 min).",
     html: "<div style='font-family:Georgia,serif;max-width:600px;line-height:1.6'><p style='letter-spacing:2px;font-size:12px;color:#888'>THE PRAGMATIC ENGINEER</p><h1 style='font-size:24px;margin:8px 0'>The Reliability Org at Scale</h1><p><i>How four companies structure on-call, what a 'you build it, you run it' rollback actually looks like, and why error budgets die in committee.</i></p><h3>1. The three shapes of reliability orgs</h3><p>Platform-owned, embedded, and federated. Most companies drift between them without noticing, and the drift is where the pages come from...</p><h3>2. Error budgets in practice</h3><p>The budget is a communication device, not a control system. The moment it becomes a gate, teams start gaming the SLIs...</p><p><a href='#'>Read the full issue online</a> · 32 min</p></div>",
   },
@@ -1706,6 +1710,7 @@ function toDetail(m: MockMessage): MessageDetail {
     automationNote: m.automationNote,
     attachments: m.attachments,
     listUnsubscribe: m.listUnsubscribe,
+    listUnsubscribePost: m.listUnsubscribePost,
     via: m.via,
   };
 }
@@ -1962,6 +1967,7 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
       automationNote: null,
       attachments: [],
       listUnsubscribe: null,
+      listUnsubscribePost: null,
       via: null,
     };
     thread.messages.push(msg);
@@ -2607,6 +2613,23 @@ export async function mockInvoke(
         if (m) return delay(toDetail(m));
       }
       throw new Error(`Message ${a.messageId} not found`);
+    }
+
+    case "unsubscribe_message": {
+      for (const t of threads) {
+        const m = t.messages.find((x) => x.id === a.messageId);
+        if (!m?.listUnsubscribe) continue;
+        // Mirror the backend's preference order: one-click POST, mailto, browser.
+        const uris = [...m.listUnsubscribe.matchAll(/<([^>]+)>/g)].map((x) => x[1].trim());
+        const https = uris.find((u) => /^https:\/\//i.test(u));
+        if (https && m.listUnsubscribePost?.trim().toLowerCase() === "list-unsubscribe=one-click") {
+          return delay({ kind: "oneClick" as const });
+        }
+        if (uris.some((u) => /^mailto:/i.test(u))) return delay({ kind: "mailtoSent" as const });
+        const web = uris.find((u) => /^https?:\/\//i.test(u));
+        if (web) return delay({ kind: "needsBrowser" as const, url: web });
+      }
+      throw new Error(`Message ${a.messageId} has no unsubscribe link`);
     }
 
     case "get_attachment":

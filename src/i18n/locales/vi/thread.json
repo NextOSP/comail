@@ -81,5 +81,7 @@
       "sheetFallback": "Trang tính {{n}}",
       "documentTitle": "Xem trước tài liệu"
     }
-  }
+  },
+  "unsubscribe": "Hủy đăng ký",
+  "unsubscribeTitle": "Hủy đăng ký khỏi danh sách của người gửi này"
 }

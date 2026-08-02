@@ -82,5 +82,7 @@
       "sheetFallback": "Sheet {{n}}",
       "documentTitle": "Document preview"
     }
-  }
+  },
+  "unsubscribe": "Unsubscribe",
+  "unsubscribeTitle": "Unsubscribe from this sender's list"
 }

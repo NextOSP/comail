@@ -92,6 +92,10 @@
     "syncing": "Synchronisation…",
     "noUnsubscribeLink": "Aucun lien de désabonnement",
     "unsubscribeWouldOpen": "Désabonnement : ouvrirait {{url}}",
+    "unsubscribed": "Désabonné",
+    "unsubscribeRequestSent": "Demande de désabonnement envoyée",
+    "unsubscribeOpenedBrowser": "Page de désabonnement ouverte dans le navigateur",
+    "unsubscribeFailed": "Désabonnement impossible : {{detail}}",
     "couldNotOpenLink": "Impossible d’ouvrir le lien : {{detail}}",
     "noMeetingToJoin": "Aucune réunion à venir avec un lien de connexion"
   },

@@ -81,5 +81,7 @@
       "sheetFallback": "Feuille {{n}}",
       "documentTitle": "Aperçu du document"
     }
-  }
+  },
+  "unsubscribe": "Se désabonner",
+  "unsubscribeTitle": "Se désabonner de la liste de cet expéditeur"
 }

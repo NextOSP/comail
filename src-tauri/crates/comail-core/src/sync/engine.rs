@@ -1735,6 +1735,7 @@ async fn store_headers(
                     snippet: String::new(),
                     references: parsed.references.clone(),
                     list_unsubscribe: parsed.list_unsubscribe.clone(),
+                    list_unsubscribe_post: parsed.list_unsubscribe_post.clone(),
                     sender_addr: parsed.via.clone(),
                 };
                 let msg_id = repo::messages::insert(&tx, &nm, thread_id)?;

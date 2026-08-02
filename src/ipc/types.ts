@@ -117,6 +117,9 @@ export interface MessageDetail {
   attachments: AttachmentMeta[];
   /** raw List-Unsubscribe header value, e.g. `"<https://x/unsub>, <mailto:u@x>"` */
   listUnsubscribe: string | null;
+  /** raw List-Unsubscribe-Post header; "List-Unsubscribe=One-Click" marks the
+   *  HTTPS URI in `listUnsubscribe` as an RFC 8058 one-click endpoint. */
+  listUnsubscribePost: string | null;
   /** Email from the Sender: header; shown as "via <domain>" when it differs from `from`. */
   via: string | null;
   /** Delivery state of a queued draft: "queued" while its send is in flight,
@@ -131,6 +134,13 @@ export interface ThreadDetail {
   thread: ThreadSummary;
   messages: MessageDetail[];
 }
+
+/** What actually happened when unsubscribing - toasts must only claim
+ *  "unsubscribed" for outcomes that really completed. */
+export type UnsubscribeOutcome =
+  | { kind: "oneClick" }
+  | { kind: "mailtoSent" }
+  | { kind: "needsBrowser"; url: string };
 
 export interface ThreadPage {
   threads: ThreadSummary[];
@@ -770,6 +780,9 @@ export interface Commands {
   }): Promise<ThreadPage>;
   get_thread(args: { threadId: number }): Promise<ThreadDetail>;
   get_body(args: { messageId: number }): Promise<MessageDetail>;
+  /** Unsubscribe from the list this message came from (RFC 8058 one-click
+   *  POST, mailto: send, or hand back a URL for the browser). */
+  unsubscribe_message(args: { messageId: number }): Promise<UnsubscribeOutcome>;
   /** Extracts the attachment to disk and returns the file path. */
   get_attachment(args: { attachmentId: number }): Promise<string>;
   /** Saves (downloads) the attachment to a chosen destination path. */

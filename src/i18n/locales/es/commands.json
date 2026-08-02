@@ -92,6 +92,10 @@
     "syncing": "Sincronizando…",
     "noUnsubscribeLink": "Sin enlace para cancelar suscripción",
     "unsubscribeWouldOpen": "Cancelar suscripción: abriría {{url}}",
+    "unsubscribed": "Suscripción cancelada",
+    "unsubscribeRequestSent": "Solicitud de cancelación enviada",
+    "unsubscribeOpenedBrowser": "Página de cancelación abierta en el navegador",
+    "unsubscribeFailed": "No se pudo cancelar la suscripción: {{detail}}",
     "couldNotOpenLink": "No se pudo abrir el enlace: {{detail}}",
     "noMeetingToJoin": "No hay reuniones próximas con enlace para unirse"
   },

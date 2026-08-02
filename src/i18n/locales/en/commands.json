@@ -93,6 +93,10 @@
     "syncing": "Syncing…",
     "noUnsubscribeLink": "No unsubscribe link",
     "unsubscribeWouldOpen": "Unsubscribe: would open {{url}}",
+    "unsubscribed": "Unsubscribed",
+    "unsubscribeRequestSent": "Unsubscribe request sent",
+    "unsubscribeOpenedBrowser": "Unsubscribe page opened in the browser",
+    "unsubscribeFailed": "Couldn't unsubscribe: {{detail}}",
     "couldNotOpenLink": "Couldn't open link: {{detail}}",
     "noMeetingToJoin": "No upcoming meeting with a join link"
   },

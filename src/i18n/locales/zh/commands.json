@@ -92,6 +92,10 @@
     "syncing": "同步中…",
     "noUnsubscribeLink": "无退订链接",
     "unsubscribeWouldOpen": "退订：将打开 {{url}}",
+    "unsubscribed": "已退订",
+    "unsubscribeRequestSent": "退订请求已发送",
+    "unsubscribeOpenedBrowser": "已在浏览器中打开退订页面",
+    "unsubscribeFailed": "无法退订：{{detail}}",
     "couldNotOpenLink": "无法打开链接：{{detail}}",
     "noMeetingToJoin": "没有带会议链接的近期会议"
   },

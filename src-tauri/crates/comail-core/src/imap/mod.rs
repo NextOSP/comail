@@ -322,7 +322,7 @@ fn flags_of(fetch: &async_imap::types::Fetch) -> FetchedFlags {
     f
 }
 
-const HEADER_FIELDS: &str = "BODY.PEEK[HEADER.FIELDS (MESSAGE-ID IN-REPLY-TO REFERENCES SUBJECT FROM TO CC BCC DATE LIST-ID LIST-UNSUBSCRIBE PRECEDENCE AUTO-SUBMITTED)]";
+const HEADER_FIELDS: &str = "BODY.PEEK[HEADER.FIELDS (MESSAGE-ID IN-REPLY-TO REFERENCES SUBJECT FROM TO CC BCC DATE LIST-ID LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST PRECEDENCE AUTO-SUBMITTED)]";
 
 /// Fetch envelope headers + flags for a UID set (e.g. "100:200" or "5,7,9").
 pub async fn fetch_headers(session: &mut Session, uid_set: &str) -> Result<Vec<FetchedHeader>> {

@@ -175,6 +175,9 @@ pub struct MessageDetail {
     pub automation_note: Option<String>,
     pub attachments: Vec<AttachmentMeta>,
     pub list_unsubscribe: Option<String>,
+    /// Raw List-Unsubscribe-Post header; "List-Unsubscribe=One-Click" marks the
+    /// HTTPS URI in `list_unsubscribe` as an RFC 8058 one-click endpoint.
+    pub list_unsubscribe_post: Option<String>,
     /// Transmitting party (Sender:, Return-Path or DKIM d=) when its domain
     /// doesn't align with `from` - mailing lists, ESPs, spoofed From:.
     /// Email address or bare domain; the UI shows it as "via <domain>".
@@ -188,6 +191,21 @@ pub struct MessageDetail {
     pub send_state: Option<String>,
     /// The last delivery error when `send_state` is `"failed"`.
     pub send_error: Option<String>,
+}
+
+/// What actually happened when the user asked to unsubscribe - the UI's toast
+/// must only claim "unsubscribed" for outcomes that really completed.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum UnsubscribeOutcome {
+    /// RFC 8058 one-click POST returned 2xx: the unsubscribe is done.
+    OneClick,
+    /// An unsubscribe request email was sent to the list's mailto: address.
+    MailtoSent,
+    /// No one-click endpoint (or the POST failed); the user must finish in the
+    /// browser at this URL.
+    #[serde(rename_all = "camelCase")]
+    NeedsBrowser { url: String },
 }
 
 #[derive(Debug, Clone, Serialize)]

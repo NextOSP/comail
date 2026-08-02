@@ -81,5 +81,7 @@
       "sheetFallback": "工作表 {{n}}",
       "documentTitle": "文档预览"
     }
-  }
+  },
+  "unsubscribe": "退订",
+  "unsubscribeTitle": "退订此发件人的邮件列表"
 }

@@ -81,5 +81,7 @@
       "sheetFallback": "Hoja {{n}}",
       "documentTitle": "Vista previa del documento"
     }
-  }
+  },
+  "unsubscribe": "Cancelar suscripción",
+  "unsubscribeTitle": "Cancelar la suscripción a la lista de este remitente"
 }

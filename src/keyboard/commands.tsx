@@ -12,6 +12,7 @@ import { addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
 import { normalizeSyncStatus } from "../lib/syncStatus";
 import { parsePartialAiSummary } from "../lib/summaryStream";
+import { latestUnsubscribeMessage, unsubscribeFromMessage } from "../lib/unsubscribe";
 import { findCachedSummary } from "../queries/actions";
 import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
@@ -101,48 +102,17 @@ function unsubscribeMessage(ctx: CommandCtx): MessageDetail | null {
   if (threadId == null) return null;
   const detail = queryClient.getQueryData<ThreadDetail>(["thread", threadId]);
   if (!detail) return null;
-  const withHeader = detail.messages.filter((m) => m.listUnsubscribe);
-  if (withHeader.length === 0) return null;
-  return withHeader.reduce((a, b) => (b.date >= a.date ? b : a));
+  return latestUnsubscribeMessage(detail.messages);
 }
 
 function runUnsubscribe(ctx: CommandCtx) {
   const push = useUi.getState().pushToast;
   const msg = unsubscribeMessage(ctx);
-  const raw = msg?.listUnsubscribe;
-  if (!msg || !raw) {
+  if (!msg) {
     push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
     return;
   }
-  // Header form: "<https://x/unsub>, <mailto:u@x?subject=s>" (angle brackets optional)
-  const entries = [...raw.matchAll(/<([^>]+)>/g)].map((m) => m[1].trim());
-  if (entries.length === 0) entries.push(...raw.split(",").map((s) => s.trim()).filter(Boolean));
-
-  const https = entries.find((e) => /^https?:\/\//i.test(e));
-  if (https) {
-    if (MOCK_MODE) {
-      push({ kind: "info", message: i18n.t("commands:toast.unsubscribeWouldOpen", { url: https }) });
-    } else {
-      void openUrl(https).catch((err: unknown) => {
-        push({ kind: "error", message: i18n.t("commands:toast.couldNotOpenLink", { detail: errorMessage(err) }) });
-      });
-    }
-    return;
-  }
-
-  const mailto = entries.find((e) => /^mailto:/i.test(e));
-  if (mailto) {
-    const addr = mailto.replace(/^mailto:/i, "").split("?")[0].trim();
-    if (addr) {
-      useUi.getState().openComposer({
-        mode: "new",
-        accountId: msg.accountId,
-        initial: { to: [{ name: null, email: addr }], subject: "unsubscribe" },
-      });
-      return;
-    }
-  }
-  push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
+  void unsubscribeFromMessage(msg);
 }
 
 // ----------------------------------------------------------- Sender search

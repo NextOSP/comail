@@ -92,6 +92,10 @@
     "syncing": "Đang đồng bộ…",
     "noUnsubscribeLink": "Không có liên kết hủy đăng ký",
     "unsubscribeWouldOpen": "Hủy đăng ký: sẽ mở {{url}}",
+    "unsubscribed": "Đã hủy đăng ký",
+    "unsubscribeRequestSent": "Đã gửi yêu cầu hủy đăng ký",
+    "unsubscribeOpenedBrowser": "Đã mở trang hủy đăng ký trong trình duyệt",
+    "unsubscribeFailed": "Không thể hủy đăng ký: {{detail}}",
     "couldNotOpenLink": "Không thể mở liên kết: {{detail}}",
     "noMeetingToJoin": "Không có cuộc họp sắp tới nào có liên kết tham gia"
   },

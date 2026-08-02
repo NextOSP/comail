@@ -20,6 +20,9 @@ pub struct ParsedHeaders {
     pub is_automated: bool,
     /// Raw List-Unsubscribe header value, e.g. "<https://…>, <mailto:…>".
     pub list_unsubscribe: Option<String>,
+    /// Raw List-Unsubscribe-Post header value; "List-Unsubscribe=One-Click"
+    /// marks the HTTPS URI above as an RFC 8058 one-click endpoint.
+    pub list_unsubscribe_post: Option<String>,
     /// The party that actually transmitted the message, when its domain does
     /// NOT align with From: (mailing lists, ESPs, send-on-behalf - and mail
     /// whose From: is spoofed). First misaligned identity out of the RFC 5322
@@ -1285,6 +1288,44 @@ pub fn robot_sender(email: &str) -> bool {
     PREFIXES.iter().any(|p| local.starts_with(p))
 }
 
+/// Raw (unparsed) header value with folding whitespace collapsed, or None when
+/// absent/empty. Needed for headers mail-parser types as something other than
+/// text (List-Unsubscribe parses as an Address, so as_text() is always None).
+fn raw_header(msg: &mail_parser::Message, name: &str) -> Option<String> {
+    let raw = msg.header_raw(name)?;
+    let unfolded = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!unfolded.is_empty()).then_some(unfolded)
+}
+
+/// Split a List-Unsubscribe header into its URIs. RFC 2369 wraps each URI in
+/// angle brackets; tolerate bare comma-separated values from sloppy senders.
+pub fn parse_unsubscribe_uris(raw: &str) -> Vec<String> {
+    let bracketed: Vec<String> = raw
+        .match_indices('<')
+        .filter_map(|(start, _)| {
+            let rest = &raw[start + 1..];
+            let end = rest.find('>')?;
+            let uri = rest[..end].trim();
+            (!uri.is_empty()).then(|| uri.to_string())
+        })
+        .collect();
+    if !bracketed.is_empty() {
+        return bracketed;
+    }
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// RFC 8058 §3.1: the header value must be exactly "List-Unsubscribe=One-Click"
+/// (compared case-insensitively; some senders add stray whitespace).
+pub fn is_one_click_post(raw: &str) -> bool {
+    raw.trim()
+        .eq_ignore_ascii_case("List-Unsubscribe=One-Click")
+}
+
 fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
     let mut refs: Vec<String> = Vec::new();
     if let Some(irt) = msg.in_reply_to().as_text_list() {
@@ -1342,10 +1383,10 @@ fn parse_headers(msg: &mail_parser::Message) -> ParsedHeaders {
         date_ms: msg.date().map(|d| d.to_timestamp() * 1000),
         references: refs,
         is_automated,
-        list_unsubscribe: msg
-            .header("List-Unsubscribe")
-            .and_then(|h| h.as_text())
-            .map(|s| s.to_string()),
+        // mail-parser types List-Unsubscribe as an Address header, so as_text()
+        // is always None; read the raw value and unfold it ourselves.
+        list_unsubscribe: raw_header(msg, "List-Unsubscribe"),
+        list_unsubscribe_post: raw_header(msg, "List-Unsubscribe-Post"),
         via,
     }
 }
@@ -1647,6 +1688,23 @@ mod tests {
             "alice@example.com"
         );
         assert!(parsed.text.unwrap().contains("Hello Bob"));
+    }
+
+    #[test]
+    fn captures_raw_list_unsubscribe_headers() {
+        // mail-parser types List-Unsubscribe as an Address header, which once
+        // made as_text() return None and left the DB column empty. The value
+        // here is folded across lines to exercise unfolding too.
+        let raw = b"From: news@example.com\r\nTo: bob@example.com\r\nSubject: Weekly\r\nList-Unsubscribe: <https://example.com/unsub?u=1>,\r\n <mailto:leave@example.com>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\nContent-Type: text/plain\r\n\r\nhi\r\n";
+        let parsed = parse_message(raw).unwrap();
+        assert_eq!(
+            parsed.headers.list_unsubscribe.as_deref(),
+            Some("<https://example.com/unsub?u=1>, <mailto:leave@example.com>")
+        );
+        assert_eq!(
+            parsed.headers.list_unsubscribe_post.as_deref(),
+            Some("List-Unsubscribe=One-Click")
+        );
     }
 
     #[test]
