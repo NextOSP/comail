@@ -15,7 +15,10 @@
     "fromSender": "Thư từ {{email}}",
     "fromDomain": "Tất cả @{{domain}}",
     "tabName": "tab: {{name}}",
-    "created": "Đã tạo nhóm \"{{name}}\""
+    "created": "Đã tạo nhóm \"{{name}}\"",
+    "excludeSender": "Loại trừ {{email}} khỏi quy tắc hiện tại",
+    "excludeDomain": "Loại trừ mọi người @{{domain}} khỏi quy tắc hiện tại",
+    "excluded": "Đã loại trừ khỏi \"{{name}}\""
   },
   "pane": {
     "empty": "Chưa chọn cuộc trò chuyện",

@@ -16,6 +16,12 @@
     "spam": "Spam",
     "all": "Tous les messages"
   },
+  "reauthBanner": {
+    "message": "{{email}} est déconnecté et ne peut pas relever le courrier.",
+    "action": "Se reconnecter avec {{provider}}",
+    "waiting": "En attente de {{provider}}… (cliquer pour annuler)",
+    "openSettings": "Ouvrir les réglages du compte"
+  },
   "syncState": {
     "idle": "inactif",
     "syncing": "synchronisation",

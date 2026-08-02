@@ -148,12 +148,17 @@
     }
   },
   "accounts": {
+    "signedOut": "Déconnecté. La synchronisation du courrier est en pause jusqu'à la reconnexion.",
     "provider": {
       "imap": "IMAP",
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
     "theme": "Thème",
+    "shortName": "Nom court",
+    "shortNameHint": "Nom court affiché sur les lignes de la boîte de réception pour repérer ce compte.",
+    "colorHint": "Couleur du repère de ce compte dans la boîte de réception. Cliquez sur la couleur sélectionnée pour revenir en automatique.",
+    "colorAuto": "Auto",
     "remove": "Supprimer",
     "reallyRemove": "Vraiment supprimer ?",
     "removed": "{{email}} supprimé",
@@ -196,6 +201,7 @@
     "title": "Divisions de la boîte",
     "describe": {
       "from": "de {{senders}}",
+      "notFrom": "sauf {{senders}}",
       "subjectHas": "l’objet contient {{subjects}}",
       "automatedOnly": "automatisés uniquement",
       "humanOnly": "humains uniquement",
@@ -224,6 +230,8 @@
     "namePlaceholder": "ex. GitHub",
     "senderLabel": "L’expéditeur est (adresses ou @domaines séparés par des virgules)",
     "senderPlaceholder": "@github.com, boss@co.com",
+    "excludeSenderLabel": "Mais jamais de (expéditeurs exclus)",
+    "excludeSenderPlaceholder": "boss@github.com, @partenaire.com",
     "subjectLabel": "L’objet contient (séparés par des virgules)",
     "subjectPlaceholder": "facture, reçu",
     "automatedLabel": "Messages automatisés",
@@ -350,7 +358,9 @@
     "urlPlaceholder": "URL du serveur, p. ex. https://caldav.fastmail.com",
     "username": "Identifiant",
     "appPassword": "Mot de passe d’application",
-    "default": "Par défaut"
+    "default": "Par défaut",
+    "makeDefault": "Définir par défaut",
+    "colorTip": "Changer la couleur du calendrier"
   },
   "meetingReminder": {
     "label": "Rappels de réunion",

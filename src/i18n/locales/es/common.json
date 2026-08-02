@@ -16,6 +16,12 @@
     "spam": "Spam",
     "all": "Todos los mensajes"
   },
+  "reauthBanner": {
+    "message": "{{email}} ha cerrado sesión y no puede comprobar el correo.",
+    "action": "Iniciar sesión con {{provider}} de nuevo",
+    "waiting": "Esperando a {{provider}}… (clic para cancelar)",
+    "openSettings": "Abrir ajustes de cuenta"
+  },
   "syncState": {
     "idle": "inactivo",
     "syncing": "sincronizando",

@@ -63,7 +63,7 @@ fn newest_inbound_id(conn: &Connection, thread_id: i64) -> Result<Option<i64>> {
     Ok(conn
         .query_row(
             "SELECT id FROM messages WHERE thread_id = ?1 AND is_outgoing = 0 AND is_draft = 0
-             ORDER BY date DESC LIMIT 1",
+             ORDER BY date DESC, id DESC LIMIT 1",
             params![thread_id],
             |r| r.get(0),
         )
@@ -79,7 +79,7 @@ pub fn thread_facts(conn: &Connection, thread_id: i64) -> Result<Option<ThreadFa
                     m.list_unsubscribe, COALESCE(m.snippet,'')
              FROM messages m
              WHERE m.thread_id = ?1 AND m.is_outgoing = 0 AND m.is_draft = 0
-             ORDER BY m.date DESC LIMIT 1",
+             ORDER BY m.date DESC, m.id DESC LIMIT 1",
             params![thread_id],
             |r| {
                 Ok((
@@ -117,15 +117,32 @@ pub fn split_matches(
 ) -> Result<bool> {
     let mut has_any = false;
 
+    // Exclusions veto the rule outright but never make it match on their own
+    // (they don't set `has_any`).
+    if let Some(excludes) = &q.exclude_senders {
+        for s in excludes.iter().filter(|s| !s.trim().is_empty()) {
+            let like = format!("%{}%", s.to_lowercase());
+            let hit: i64 = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = ?1
+                                AND LOWER(m.from_addr) LIKE ?2)",
+                params![thread_id, like],
+                |r| r.get(0),
+            )?;
+            if hit != 0 {
+                return Ok(false);
+            }
+        }
+    }
+
     if let Some(auto) = q.is_automated {
         has_any = true;
-        let (want, other) = if auto { (1, 0) } else { (0, 1) };
+        let want = auto as i64;
         let ok: i64 = conn.query_row(
-            "SELECT (EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = ?1
-                             AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = ?2)
-                 AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = ?1
-                             AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = ?3))",
-            params![thread_id, want, other],
+            "SELECT COALESCE((SELECT m.is_automated FROM messages m
+                              WHERE m.thread_id = ?1
+                                AND m.is_draft = 0 AND m.is_outgoing = 0
+                              ORDER BY m.date DESC, m.id DESC LIMIT 1), -1) = ?2",
+            params![thread_id, want],
             |r| r.get(0),
         )?;
         if ok == 0 {
@@ -715,6 +732,24 @@ mod tests {
         thread
     }
 
+    fn append_incoming(
+        conn: &Connection,
+        thread_id: i64,
+        from: &str,
+        subject: &str,
+        date: i64,
+        automated: bool,
+    ) -> i64 {
+        conn.execute(
+            "INSERT INTO messages (thread_id, account_id, folder_id, subject, from_addr,
+             date, is_read, is_automated, is_draft, is_outgoing)
+             VALUES (?1, 1, 1, ?2, ?3, ?4, 0, ?5, 0, 0)",
+            params![thread_id, subject, from, date, automated as i64],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
     fn label_id(conn: &Connection, keyword: &str) -> i64 {
         conn.query_row(
             "SELECT id FROM labels WHERE keyword = ?1",
@@ -771,6 +806,65 @@ mod tests {
             key,
             Some(format!("label:{}", label_id(&c, "ComailAutoMarketing")))
         );
+    }
+
+    #[test]
+    fn exclude_sender_overrides_match() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let bob = seed_auto_thread(&c, "bob@x.com", "hello", false);
+        let alice = seed_auto_thread(&c, "alice@x.com", "hi", false);
+        let q = SplitRuleQuery {
+            senders: Some(vec!["@x.com".into()]),
+            exclude_senders: Some(vec!["bob@x.com".into()]),
+            ..Default::default()
+        };
+        assert!(!split_matches(&c, bob, &q).unwrap());
+        assert!(split_matches(&c, alice, &q).unwrap());
+    }
+
+    #[test]
+    fn exclude_domain_needle() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let t = seed_auto_thread(&c, "news@spam.example", "digest", true);
+        let q = SplitRuleQuery {
+            is_automated: Some(true),
+            exclude_senders: Some(vec!["@spam.example".into()]),
+            ..Default::default()
+        };
+        assert!(!split_matches(&c, t, &q).unwrap());
+    }
+
+    #[test]
+    fn exclusion_only_rule_matches_nothing() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let t = seed_auto_thread(&c, "alice@x.com", "hi", false);
+        let q = SplitRuleQuery {
+            exclude_senders: Some(vec!["bob@y.com".into()]),
+            ..Default::default()
+        };
+        assert!(!split_matches(&c, t, &q).unwrap());
+        // Blank needles don't veto or match either.
+        let q = SplitRuleQuery {
+            exclude_senders: Some(vec!["  ".into()]),
+            ..Default::default()
+        };
+        assert!(!split_matches(&c, t, &q).unwrap());
+    }
+
+    #[test]
+    fn legacy_query_json_without_excludes() {
+        let q: SplitRuleQuery = serde_json::from_str(r#"{"senders":["a@b.c"]}"#).unwrap();
+        assert!(q.exclude_senders.is_none());
+        // And excludes round-trip under the camelCase wire name.
+        let q = SplitRuleQuery {
+            exclude_senders: Some(vec!["bob@x.com".into()]),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        assert_eq!(json, r#"{"excludeSenders":["bob@x.com"]}"#);
     }
 
     #[test]
@@ -911,6 +1005,52 @@ mod tests {
         // A pending thread must remain visible in Important/Other meanwhile.
         assert_eq!(tab_ids(&c, TabFilter::Other), vec![t]);
         assert!(tab_ids(&c, TabFilter::Important).is_empty());
+    }
+
+    #[test]
+    fn mixed_thread_follows_its_newest_incoming_message() {
+        use crate::db::repo::threads::TabFilter;
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let t = seed_auto_thread(&c, "notifications@example.com", "Automated start", true);
+        let latest = append_incoming(&c, t, "alice@example.com", "A human follow-up", 2000, false);
+
+        route_thread_deterministic(&c, &[], false, t).unwrap();
+        assert_eq!(routed(&c, t), None);
+        assert_eq!(tab_ids(&c, TabFilter::Important), vec![t]);
+        assert!(tab_ids(&c, TabFilter::Other).is_empty());
+        assert!(
+            split_matches(
+                &c,
+                t,
+                &SplitRuleQuery {
+                    is_automated: Some(false),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+        );
+
+        c.execute(
+            "UPDATE messages SET is_automated = 1, date = 3000 WHERE id = ?1",
+            params![latest],
+        )
+        .unwrap();
+        route_thread_deterministic(&c, &[], false, t).unwrap();
+        assert_eq!(routed(&c, t), None);
+        assert_eq!(tab_ids(&c, TabFilter::Other), vec![t]);
+        assert!(tab_ids(&c, TabFilter::Important).is_empty());
+        assert!(
+            split_matches(
+                &c,
+                t,
+                &SplitRuleQuery {
+                    is_automated: Some(true),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+        );
     }
 
     #[test]

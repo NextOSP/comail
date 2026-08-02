@@ -16,6 +16,12 @@
     "spam": "Spam",
     "all": "All Mail"
   },
+  "reauthBanner": {
+    "message": "{{email}} is signed out and can't check mail.",
+    "action": "Sign in with {{provider}} again",
+    "waiting": "Waiting for {{provider}}… (click to cancel)",
+    "openSettings": "Open account settings"
+  },
   "syncState": {
     "idle": "idle",
     "syncing": "syncing",

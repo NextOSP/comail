@@ -14,7 +14,7 @@ import { dateGroup, primaryCorrespondent } from "../../lib/format";
 import { prefetchThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { ContactPane } from "./ContactPane";
-import { ThreadRow } from "./ThreadRow";
+import { ThreadRow, type AccountMeta } from "./ThreadRow";
 
 const ROW_HEIGHT = 42;
 
@@ -47,6 +47,9 @@ type ThreadListProps = {
   threads: ThreadSummary[];
   selfEmails: Set<string>;
   labelMap: Map<number, Label>;
+  /** Per-account color + short name, keyed by account id. Provided only when
+   *  rows should carry an account marker (unified inbox, several accounts). */
+  accountMeta?: Map<number, AccountMeta>;
   /** Infinite scroll: called when the viewport nears the end of the list. */
   onEndReached?: () => void;
   isFetchingMore?: boolean;
@@ -66,6 +69,7 @@ export function ThreadList({
   threads,
   selfEmails,
   labelMap,
+  accountMeta,
   onEndReached,
   isFetchingMore,
   groupByDate = false,
@@ -362,6 +366,7 @@ export function ThreadList({
                   selectionMode={selection.length > 0}
                   selfEmails={selfEmails}
                   labelMap={labelMap}
+                  account={accountMeta?.get(th.accountId)}
                   leaving={leavingIds.has(th.id)}
                   onRowClick={handleRowClick}
                   onRowContextMenu={handleRowContextMenu}

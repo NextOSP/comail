@@ -15,7 +15,10 @@
     "fromSender": "Mail from {{email}}",
     "fromDomain": "Everyone @{{domain}}",
     "tabName": "tab: {{name}}",
-    "created": "Split \"{{name}}\" created"
+    "created": "Split \"{{name}}\" created",
+    "excludeSender": "Exclude {{email}} from its current rule",
+    "excludeDomain": "Exclude everyone @{{domain}} from its current rule",
+    "excluded": "Excluded from \"{{name}}\""
   },
   "pane": {
     "empty": "No conversation selected",

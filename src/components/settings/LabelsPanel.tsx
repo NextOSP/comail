@@ -8,7 +8,7 @@ import { useLabels } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { ConfirmButton, FormField, ghostBtnCls, inputCls, primaryBtnCls } from "./panelKit";
 
-const SWATCHES = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#6b7280"];
+export const SWATCHES = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#6b7280"];
 
 function invalidateLabelViews() {
   void queryClient.invalidateQueries({ queryKey: ["labels"] });

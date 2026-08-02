@@ -62,21 +62,20 @@ impl Q {
     }
 
     /// Important (`automated=false`) / Other (`automated=true`) default buckets:
-    /// forced by a routing rule, or unrouted mail split by `is_automated`.
-    /// Mirrors the bucket clauses in `threads::list`.
+    /// forced by a routing rule, or unrouted mail split by the newest incoming
+    /// message. Mirrors the bucket clauses in `threads::list`.
     fn bucket(mut self, automated: bool) -> Self {
-        let (want, other, forced) = if automated {
-            (1, 0, "other")
+        let (want, forced) = if automated {
+            (1, "other")
         } else {
-            (0, 1, "important")
+            (0, "important")
         };
         self.clauses.push(format!(
             "(t.routed_tab = '{forced}'
               OR ((t.routed_tab IS NULL OR t.routed_tab = 'pending')
-                  AND EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                              AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = {want})
-                  AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-                              AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = {other})))"
+                  AND (SELECT m.is_automated FROM messages m
+                       WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
+                       ORDER BY m.date DESC, m.id DESC LIMIT 1) = {want}))"
         ));
         self
     }
@@ -229,6 +228,16 @@ mod tests {
         .unwrap();
     }
 
+    fn append_incoming(conn: &Connection, thread_id: i64, date: i64, automated: bool) {
+        conn.execute(
+            "INSERT INTO messages (thread_id, account_id, folder_id, subject,
+             from_addr, date, is_read, is_automated, is_draft, is_outgoing)
+             VALUES (?1, 1, 1, 'follow-up', 'reply@b.c', ?2, 0, ?3, 0, 0)",
+            params![thread_id, date, automated as i64],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn partitions_important_and_other() {
         let conn = test_db();
@@ -245,6 +254,20 @@ mod tests {
         // account filter that matches nothing
         let none = unread_counts(&conn, Some(99), &[], &[]).unwrap();
         assert_eq!(none.inbox, 0);
+    }
+
+    #[test]
+    fn mixed_threads_are_counted_by_the_newest_incoming_message() {
+        let conn = test_db();
+        seed_thread(&conn, 1, 1, false);
+        append_incoming(&conn, 1, 2000, true);
+        seed_thread(&conn, 2, 1, true);
+        append_incoming(&conn, 2, 2000, false);
+
+        let c = unread_counts(&conn, None, &[], &[]).unwrap();
+        assert_eq!(c.inbox, 2);
+        assert_eq!(c.important, 1, "latest human reply belongs in Important");
+        assert_eq!(c.other, 1, "latest automated reply belongs in Other");
     }
 
     #[test]

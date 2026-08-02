@@ -100,6 +100,11 @@ pub async fn authorize_with(
     }
     if let Some(hint) = login_hint {
         auth_url.push_str(&format!("&login_hint={}", urlencode(hint)));
+    } else if provider == Provider::Microsoft {
+        // Without a hint, an active Microsoft SSO session signs in silently as
+        // whoever it belongs to - the user never sees a login page. Force the
+        // account picker so signing in is an explicit, visible choice.
+        auth_url.push_str("&prompt=select_account");
     }
 
     tracing::info!(

@@ -5,8 +5,9 @@ import { errorMessage } from "../../ipc/errors";
 import type { Address } from "../../ipc/types";
 import { call } from "../../ipc/commands";
 import { parseQuickAdd } from "../../lib/quickadd";
-import { useAccounts, useCreateEvent, useUpdateEvent } from "../../queries/hooks";
+import { useAccounts, useCalendars, useCreateEvent, useUpdateEvent } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { normalizeHex } from "./calendarColor";
 
 const H_MS = 3_600_000;
 
@@ -153,6 +154,7 @@ export function EventCreate() {
   const set = useUi((s) => s.set);
   const pushToast = useUi((s) => s.pushToast);
   const { data: accounts } = useAccounts();
+  const { data: calendars } = useCalendars();
   const create = useCreateEvent();
   const update = useUpdateEvent();
   const quickRef = useRef<HTMLInputElement>(null);
@@ -175,6 +177,9 @@ export function EventCreate() {
   const [quick, setQuick] = useState("");
   const [quickAiPending, setQuickAiPending] = useState(false);
   const [teamsPending, setTeamsPending] = useState(false);
+  // "cal:<id>" targets a calendar collection, "acct:<id>" an account with no
+  // writable calendar (local-only event); null = not yet touched (use default).
+  const [calSelection, setCalSelection] = useState<string | null>(null);
 
   // Seed from prefill (create-from-email) each time the modal opens.
   useEffect(() => {
@@ -197,6 +202,7 @@ export function EventCreate() {
     setJoinUrl(p?.joinUrl ?? "");
     setDescription(p?.description ?? "");
     setQuick("");
+    setCalSelection(null);
     requestAnimationFrame(() => quickRef.current?.focus());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -207,11 +213,40 @@ export function EventCreate() {
 
   const editingId = open.eventId ?? null;
   // Editing keeps the event on its own account; creating follows the filter.
-  const accountId =
+  const fallbackAccountId =
     open.prefill?.accountId ?? useUi.getState().accountFilter ?? accounts?.[0]?.id ?? null;
+
+  // Calendar picker (create only): enabled, writable calendars grouped by
+  // account; an account without any gets a single local-only option.
+  const writable = (calendars ?? []).filter((c) => c.enabled && !c.readOnly);
+  const defaultSelectionFor = (accId: number | null): string | null => {
+    if (accId == null) return null;
+    const cals = writable.filter((c) => c.accountId === accId);
+    const def = cals.find((c) => c.isDefault) ?? cals[0];
+    return def ? `cal:${def.id}` : `acct:${accId}`;
+  };
+  const selection = calSelection ?? defaultSelectionFor(fallbackAccountId);
+  const selectedCalendar = selection?.startsWith("cal:")
+    ? writable.find((c) => c.id === Number(selection.slice(4)))
+    : undefined;
+  const accountId =
+    editingId != null
+      ? fallbackAccountId
+      : (selectedCalendar?.accountId ??
+        (selection?.startsWith("acct:") ? Number(selection.slice(5)) : fallbackAccountId));
+  const calendarId = editingId == null ? (selectedCalendar?.id ?? null) : null;
+  const calendarOptionCount = (accounts ?? []).reduce(
+    (n, a) => n + Math.max(writable.filter((c) => c.accountId === a.id).length, 1),
+    0,
+  );
 
   const isMicrosoftAccount =
     accounts?.find((a) => a.id === accountId)?.provider === "microsoft";
+
+  const editCalendar =
+    editingId != null && open.prefill?.calendarId != null
+      ? (calendars ?? []).find((c) => c.id === open.prefill!.calendarId)
+      : undefined;
 
   // An end time at or before the start rolls over to the next day.
   const endsFromInputs = (startsAt: number) => {
@@ -324,6 +359,7 @@ export function EventCreate() {
     const attendees = parseAttendees(attendeesRaw);
     const args = {
       accountId,
+      calendarId,
       summary: summary.trim(),
       description: description.trim() || null,
       location: location.trim() || null,
@@ -457,6 +493,59 @@ export function EventCreate() {
               onChange={(e) => setSummary(e.target.value)}
             />
           </div>
+
+          {/* Calendar: pick the target account+calendar (create); read-only on
+              edit - moving an event between calendars isn't supported. */}
+          {editingId == null && calendarOptionCount > 1 && (
+            <div>
+              <FieldLabel icon={ICON.date}>
+                {t("calendar:create.calendar")}
+                <span
+                  className="size-2 rounded-full"
+                  style={{
+                    background: normalizeHex(selectedCalendar?.color) ?? "var(--accent)",
+                  }}
+                />
+              </FieldLabel>
+              <select
+                className={inputCls}
+                value={selection ?? ""}
+                onChange={(e) => setCalSelection(e.target.value)}
+              >
+                {(accounts ?? []).map((a) => {
+                  const cals = writable.filter((c) => c.accountId === a.id);
+                  return (
+                    <optgroup key={a.id} label={a.email}>
+                      {cals.length === 0 ? (
+                        <option value={`acct:${a.id}`}>
+                          {t("calendar:create.localOnly")}
+                        </option>
+                      ) : (
+                        cals.map((c) => (
+                          <option key={c.id} value={`cal:${c.id}`}>
+                            {c.displayName ?? c.url}
+                          </option>
+                        ))
+                      )}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+          {editingId != null && editCalendar && (
+            <div className="flex items-center gap-1.5 text-[12px] text-ink-faint">
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ background: normalizeHex(editCalendar.color) ?? "var(--accent)" }}
+              />
+              <span className="truncate">
+                {editCalendar.displayName ?? editCalendar.url}
+                {" · "}
+                {accounts?.find((a) => a.id === accountId)?.email ?? ""}
+              </span>
+            </div>
+          )}
 
           {/* WHEN */}
           <div>

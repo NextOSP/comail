@@ -40,7 +40,10 @@ export function mergeTabOrder(
   return [...splitItems, ...labelItems].sort((a, b) => a.position - b.position);
 }
 
-/** Complete inbox tab order shared by rendering, direct hotkeys, and cycling. */
+/** Complete inbox tab order shared by rendering, direct hotkeys, and cycling.
+ *  Rules that route their matches into an existing tab (a non-null `target`)
+ *  own no tab of their own, so they are excluded here; Settings lists them via
+ *  `mergeTabOrder` directly, which keeps every rule. */
 export function inboxTabOrder(
   splits: SplitRule[] | undefined,
   labels: Label[] | undefined,
@@ -48,7 +51,9 @@ export function inboxTabOrder(
 ): InboxTabOrderItem[] {
   return [
     { kind: "important" },
-    ...mergeTabOrder(splits, autoLabelsEnabled ? labels : []),
+    ...mergeTabOrder(splits, autoLabelsEnabled ? labels : []).filter(
+      (item) => item.kind !== "split" || item.rule.target == null,
+    ),
     { kind: "other" },
   ];
 }

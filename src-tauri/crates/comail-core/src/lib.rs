@@ -585,7 +585,10 @@ impl Core {
             Provider::Imap => return Err(CoreError::Auth("not an oauth provider".into())),
         };
         let outcome = tokio::select! {
-            r = oauth::flow::authorize_with(account.provider, consent_extra, None, open_url) => r?,
+            // Hint the provider at the account being repaired so the browser
+            // preselects it instead of silently reusing whatever session is
+            // active (which then fails the email match below).
+            r = oauth::flow::authorize_with(account.provider, consent_extra, Some(&account.email), open_url) => r?,
             _ = self.oauth_cancel.notified() => {
                 return Err(CoreError::Auth("sign-in cancelled".into()));
             }
@@ -1688,6 +1691,25 @@ impl Core {
             .await?
             .ok_or_else(|| CoreError::NotFound("account".into()))?;
 
+        if let Some(calendar_id) = args.calendar_id {
+            let cal = self
+                .db
+                .read(move |conn| repo::caldav::get_calendar(conn, calendar_id))
+                .await?
+                .ok_or_else(|| CoreError::NotFound("calendar".into()))?;
+            if cal.account_id != account_id {
+                return Err(CoreError::Other(
+                    "calendar belongs to another account".into(),
+                ));
+            }
+            if cal.read_only {
+                return Err(CoreError::Other("calendar is read-only".into()));
+            }
+            if !cal.enabled {
+                return Err(CoreError::Other("calendar is disabled".into()));
+            }
+        }
+
         let uid = format!("{}-{}@comail", now_ms(), crate::mime::rand_token());
         let attendees: Vec<EventAttendee> = args
             .attendees
@@ -1708,6 +1730,7 @@ impl Core {
                 repo::calendar::insert_local(
                     conn,
                     account_id,
+                    ev.calendar_id,
                     &uid_for_db,
                     ev.summary.trim(),
                     ev.location.as_deref(),
@@ -1985,6 +2008,7 @@ impl Core {
             });
             let body = invite_body_text(&CreateEventArgs {
                 account_id,
+                calendar_id: None,
                 summary: args.summary.clone(),
                 description: args.description.clone(),
                 location: args.location.clone(),
@@ -2443,6 +2467,51 @@ impl Core {
                 account_id: cal.account_id,
             });
         }
+        Ok(())
+    }
+
+    /// User override of the calendar's display color (`#RRGGBB`). None
+    /// clears the override so the next discovery restores the server color.
+    pub async fn set_calendar_color(&self, calendar_id: i64, color: Option<String>) -> Result<()> {
+        if let Some(c) = &color {
+            let valid = c.len() == 7
+                && c.starts_with('#')
+                && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+            if !valid {
+                return Err(CoreError::Other("invalid color".into()));
+            }
+        }
+        let cal = self
+            .db
+            .read(move |conn| repo::caldav::get_calendar(conn, calendar_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("calendar".into()))?;
+        self.db
+            .write(move |conn| {
+                repo::caldav::set_calendar_color(conn, calendar_id, color.as_deref())
+            })
+            .await?;
+        self.bus.emit(CoreEvent::CalendarUpdated {
+            account_id: cal.account_id,
+        });
+        Ok(())
+    }
+
+    /// Make this calendar the account's target for newly created events.
+    pub async fn set_default_calendar(&self, calendar_id: i64) -> Result<()> {
+        let cal = self
+            .db
+            .read(move |conn| repo::caldav::get_calendar(conn, calendar_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("calendar".into()))?;
+        if cal.read_only {
+            return Err(CoreError::Other("calendar is read-only".into()));
+        }
+        let account_id = cal.account_id;
+        self.db
+            .write(move |conn| repo::caldav::set_default_calendar(conn, account_id, calendar_id))
+            .await?;
+        self.bus.emit(CoreEvent::CalendarUpdated { account_id });
         Ok(())
     }
 
@@ -3235,6 +3304,22 @@ impl Core {
 
     pub async fn list_splits(&self) -> Result<Vec<SplitRule>> {
         self.db.read(|conn| repo::splits::list(conn)).await
+    }
+
+    /// First split rule (in position order) that matches a thread, if any.
+    /// `threads.routed_tab` can't answer this for rules with a `target` (they
+    /// write the target's route key, not `split:<id>`), so re-run the matcher.
+    pub async fn find_matching_split(&self, thread_id: i64) -> Result<Option<SplitRule>> {
+        self.db
+            .read(move |conn| {
+                for rule in repo::splits::list(conn)? {
+                    if route::split_matches(conn, thread_id, &rule.query)? {
+                        return Ok(Some(rule));
+                    }
+                }
+                Ok(None)
+            })
+            .await
     }
 
     pub async fn save_split(

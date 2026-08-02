@@ -133,7 +133,7 @@ pub fn upsert_calendar(
          VALUES (?1,?2,?3,?4,?5)
          ON CONFLICT(account_id, url) DO UPDATE SET
             display_name = excluded.display_name,
-            color = excluded.color,
+            color = COALESCE(calendars.color, excluded.color),
             read_only = excluded.read_only",
         params![account_id, url, display_name, color, read_only as i64],
     )?;
@@ -179,6 +179,14 @@ pub fn set_calendar_enabled(conn: &Connection, calendar_id: i64, enabled: bool) 
     conn.execute(
         "UPDATE calendars SET enabled = ?2 WHERE id = ?1",
         params![calendar_id, enabled as i64],
+    )?;
+    Ok(())
+}
+
+pub fn set_calendar_color(conn: &Connection, calendar_id: i64, color: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE calendars SET color = ?2 WHERE id = ?1",
+        params![calendar_id, color],
     )?;
     Ok(())
 }
@@ -285,6 +293,22 @@ mod tests {
         assert_eq!(
             sync_state(&c, a).unwrap(),
             (Some("c1".into()), Some("t1".into()))
+        );
+
+        // User-set color survives re-discovery.
+        set_calendar_color(&c, a, Some("#dc2626")).unwrap();
+        upsert_calendar(
+            &c,
+            1,
+            "https://dav.example.com/cal/a/",
+            Some("A3"),
+            Some("#123456"),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            get_calendar(&c, a).unwrap().unwrap().color.as_deref(),
+            Some("#dc2626")
         );
 
         set_default_calendar(&c, 1, b).unwrap();

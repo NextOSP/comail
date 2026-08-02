@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
 import { participantSummary, relativeTime } from "../../lib/format";
 
+/** Account marker shown on unified-inbox rows: edge bar color + name chip. */
+export type AccountMeta = { color: string; name: string; email: string };
+
 function ThreadRowImpl({
   thread,
   selected,
@@ -10,6 +13,7 @@ function ThreadRowImpl({
   selectionMode,
   selfEmails,
   labelMap,
+  account,
   onRowClick,
   onRowContextMenu,
   onRowHover,
@@ -25,6 +29,8 @@ function ThreadRowImpl({
   selectionMode: boolean;
   selfEmails: Set<string>;
   labelMap?: Map<number, Label>;
+  /** When set, the row shows which account the thread belongs to. */
+  account?: AccountMeta;
   onRowClick: (id: number, e: MouseEvent) => void;
   /** Right-click hook: opens the row context menu at the pointer. */
   onRowContextMenu?: (id: number, e: MouseEvent) => void;
@@ -45,7 +51,7 @@ function ThreadRowImpl({
 
   return (
     <div
-      className={`co-row flex h-full cursor-default items-center gap-3 pr-5 pl-4 ${leaving ? "co-row-leaving" : ""}`}
+      className={`co-row relative flex h-full cursor-default items-center gap-3 pr-5 pl-4 ${leaving ? "co-row-leaving" : ""}`}
       data-selected={selected}
       data-checked={checked}
       onMouseDown={onRowDown ? (e) => onRowDown(thread.id, e) : undefined}
@@ -54,6 +60,13 @@ function ThreadRowImpl({
       onMouseEnter={onRowHover ? () => onRowHover(thread.id) : undefined}
       onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
     >
+      {account && (
+        <span
+          className="absolute inset-y-[9px] left-0 w-[3px] rounded-r-full"
+          style={{ background: account.color }}
+        />
+      )}
+
       {/* gutter: checkbox (selection) / unread dot / star. self-stretch keeps the
           hit target the full row height so clicking/drag-selecting doesn't
           require landing on the tiny dot. */}
@@ -116,6 +129,19 @@ function ThreadRowImpl({
         <span className={unread ? "font-semibold text-ink" : "text-ink"}>{thread.subject}</span>
         <span className="text-ink-faint">&ensp;-&ensp;{thread.snippet}</span>
       </span>
+
+      {account && (
+        <span
+          className="max-w-[90px] shrink-0 truncate rounded-full px-2 py-[1px] text-[10.5px] font-medium"
+          style={{
+            background: `color-mix(in srgb, ${account.color} 14%, transparent)`,
+            color: account.color,
+          }}
+          title={account.email}
+        >
+          {account.name}
+        </span>
+      )}
 
       {labelMap && thread.labels.length > 0 && (
         <span className="flex shrink-0 items-center gap-1">

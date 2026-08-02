@@ -148,12 +148,17 @@
     }
   },
   "accounts": {
+    "signedOut": "Đã đăng xuất. Đồng bộ thư tạm dừng cho đến khi bạn đăng nhập lại.",
     "provider": {
       "imap": "IMAP",
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
     "theme": "Giao diện",
+    "shortName": "Tên ngắn",
+    "shortNameHint": "Tên ngắn hiển thị trên các dòng hộp thư để đánh dấu tài khoản này.",
+    "colorHint": "Màu đánh dấu cho các dòng hộp thư của tài khoản này. Nhấp vào màu đang chọn để trở về tự động.",
+    "colorAuto": "Tự động",
     "remove": "Xóa",
     "reallyRemove": "Thực sự xóa?",
     "removed": "Đã xóa {{email}}",
@@ -196,6 +201,7 @@
     "title": "Phân nhóm hộp thư",
     "describe": {
       "from": "từ {{senders}}",
+      "notFrom": "trừ {{senders}}",
       "subjectHas": "chủ đề có {{subjects}}",
       "hasLabel": "nhãn {{labels}}",
       "automatedOnly": "chỉ thư tự động",
@@ -225,6 +231,8 @@
     "namePlaceholder": "vd. GitHub",
     "senderLabel": "Người gửi là (địa chỉ hoặc @tên miền, cách nhau bằng dấu phẩy)",
     "senderPlaceholder": "@github.com, boss@co.com",
+    "excludeSenderLabel": "Nhưng không bao giờ từ (người gửi bị loại trừ)",
+    "excludeSenderPlaceholder": "boss@github.com, @doitac.com",
     "subjectLabel": "Chủ đề chứa (cách nhau bằng dấu phẩy)",
     "subjectPlaceholder": "hóa đơn, biên nhận",
     "labelLabel": "Có nhãn",
@@ -356,7 +364,9 @@
     "urlPlaceholder": "URL máy chủ, ví dụ https://caldav.fastmail.com",
     "username": "Tên đăng nhập",
     "appPassword": "Mật khẩu ứng dụng",
-    "default": "Mặc định"
+    "default": "Mặc định",
+    "makeDefault": "Đặt làm mặc định",
+    "colorTip": "Đổi màu lịch"
   },
   "meetingReminder": {
     "label": "Nhắc cuộc họp",

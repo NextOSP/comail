@@ -15,7 +15,10 @@
     "fromSender": "来自 {{email}} 的邮件",
     "fromDomain": "所有 @{{domain}}",
     "tabName": "标签页：{{name}}",
-    "created": "已创建分组“{{name}}”"
+    "created": "已创建分组“{{name}}”",
+    "excludeSender": "将 {{email}} 从其当前规则中排除",
+    "excludeDomain": "将所有 @{{domain}} 从其当前规则中排除",
+    "excluded": "已从“{{name}}”中排除"
   },
   "pane": {
     "empty": "未选择会话",

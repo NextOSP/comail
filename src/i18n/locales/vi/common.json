@@ -16,6 +16,12 @@
     "spam": "Thư rác",
     "all": "Tất cả thư"
   },
+  "reauthBanner": {
+    "message": "{{email}} đã bị đăng xuất và không thể kiểm tra thư.",
+    "action": "Đăng nhập lại bằng {{provider}}",
+    "waiting": "Đang chờ {{provider}}… (bấm để hủy)",
+    "openSettings": "Mở cài đặt tài khoản"
+  },
   "syncState": {
     "idle": "chờ",
     "syncing": "đang đồng bộ",

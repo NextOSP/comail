@@ -124,10 +124,22 @@ async fn push_row(db: &Db, token: &str, account_id: i64, row: &SyncRow) -> Resul
             .await?;
         }
         None => {
-            let default = db
-                .read(move |conn| repo::caldav::default_calendar(conn, account_id))
-                .await?
-                .ok_or_else(|| CoreError::CalDav("no calendar to write to".into()))?;
+            // Prefer the event's chosen calendar; fall back to the account's
+            // default when none was chosen or it vanished/was disabled.
+            let mut target = None;
+            if let Some(cal_id) = row.event.calendar_id {
+                target = db
+                    .read(move |conn| repo::caldav::get_calendar(conn, cal_id))
+                    .await?
+                    .filter(|c| c.enabled && !c.read_only);
+            }
+            let default = match target {
+                Some(c) => c,
+                None => db
+                    .read(move |conn| repo::caldav::default_calendar(conn, account_id))
+                    .await?
+                    .ok_or_else(|| CoreError::CalDav("no calendar to write to".into()))?,
+            };
             let id = graph::create_calendar_event(token, Some(&default.url), &ev).await?;
             if id.is_empty() {
                 return Err(CoreError::Other("graph create returned no event id".into()));

@@ -1463,6 +1463,8 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   signatureList: [],
   signatureDefaults: {},
   accountThemes: {},
+  accountColors: {},
+  accountShortNames: {},
 };
 
 let settings: Settings = (() => {
@@ -2762,6 +2764,28 @@ export async function mockInvoke(
       return delay(undefined);
     }
 
+    case "find_matching_split": {
+      // Sender-only approximation of the backend matcher: excludes veto,
+      // then the first rule (position order) with a matching sender wins.
+      const t = threads.find((x) => x.id === a.threadId);
+      if (!t) return delay(null);
+      const froms = t.messages
+        .filter((m) => !m.isDraft && !m.isOutgoing)
+        .map((m) => m.from.email.toLowerCase());
+      const hit = [...splits]
+        .sort((x, y) => x.position - y.position || x.id - y.id)
+        .find((s) => {
+          const excluded = (s.query.excludeSenders ?? []).some((n) =>
+            froms.some((f) => f.includes(n.toLowerCase())),
+          );
+          if (excluded) return false;
+          return (s.query.senders ?? []).some((n) =>
+            froms.some((f) => f.includes(n.toLowerCase())),
+          );
+        });
+      return delay(hit ? { ...hit, query: { ...hit.query } } : null);
+    }
+
     case "reorder_tabs": {
       const order = a.order as { kind: "split" | "label"; id: number }[];
       order.forEach((ref, i) => {
@@ -2986,7 +3010,7 @@ export async function mockInvoke(
         joinUrl: args.joinUrl ?? null,
         rsvpStatus: null,
         isLocal: true,
-        calendarId: null,
+        calendarId: args.calendarId ?? null,
         rrule: null,
         startsAt: args.startsAt,
         endsAt: args.endsAt,
@@ -3101,6 +3125,22 @@ export async function mockInvoke(
     case "set_calendar_enabled": {
       const cal = mockCalendars.find((c) => c.id === (a.calendarId as number));
       if (cal) cal.enabled = a.enabled as boolean;
+      return delay(undefined, 60);
+    }
+
+    case "set_calendar_color": {
+      const cal = mockCalendars.find((c) => c.id === (a.calendarId as number));
+      if (cal) cal.color = a.color as string | null;
+      return delay(undefined, 60);
+    }
+
+    case "set_default_calendar": {
+      const cal = mockCalendars.find((c) => c.id === (a.calendarId as number));
+      if (cal) {
+        for (const c of mockCalendars) {
+          if (c.accountId === cal.accountId) c.isDefault = c.id === cal.id;
+        }
+      }
       return delay(undefined, 60);
     }
 

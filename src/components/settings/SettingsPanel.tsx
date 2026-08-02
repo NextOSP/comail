@@ -43,7 +43,8 @@ import {
 import { commandScore } from "../../keyboard/commandScore";
 import { useUi, type SettingsTab } from "../../stores/ui";
 import { CalendarSettings } from "./CalendarSettings";
-import { LabelsSection } from "./LabelsPanel";
+import { LabelsSection, SWATCHES } from "./LabelsPanel";
+import { accountColor, accountLabel } from "../../lib/format";
 import { SnippetsSection } from "./SnippetsPanel";
 import { SplitInboxSection } from "./SplitsPanel";
 import {
@@ -112,6 +113,8 @@ const DEFAULT_SETTINGS: Settings = {
   signatureList: [],
   signatureDefaults: {},
   accountThemes: {},
+  accountColors: {},
+  accountShortNames: {},
 };
 
 /** Optimistic settings write: cache first, backend follows, rollback on error. */
@@ -414,7 +417,7 @@ export function SettingsPanel() {
     {
       tab: "accounts",
       label: t("settings:section.accounts"),
-      keywords: "accounts add remove gmail microsoft imap oauth",
+      keywords: "accounts add remove gmail microsoft imap oauth color short name",
     },
     {
       tab: "accounts",
@@ -2625,7 +2628,9 @@ function SyncSection() {
                 >
                   {reauthAccountId === account.id
                     ? t("settings:sync.reauthWaiting")
-                    : t("settings:sync.reauth")}
+                    : t("common:reauthBanner.action", {
+                        provider: t(`settings:accounts.provider.${account.provider}`),
+                      })}
                 </button>
               ) : (
                 <button
@@ -2997,6 +3002,8 @@ function AccountsSection() {
   const { data: accounts } = useAccounts();
   const { data: settings } = useSettings();
   const accountThemes = settings?.accountThemes ?? {};
+  const accountColors = settings?.accountColors ?? {};
+  const accountShortNames = settings?.accountShortNames ?? {};
   const pushToast = useUi((s) => s.pushToast);
   const set = useUi((s) => s.set);
   const [oauthBusy, setOauthBusy] = useState<Provider | null>(null);
@@ -3085,20 +3092,34 @@ function AccountsSection() {
         {(accounts ?? []).map((a) => (
           <div
             key={a.id}
-            className="flex items-center gap-2.5 rounded-lg border border-hairline bg-bg0 px-3 py-2"
+            className={`flex flex-col gap-2 rounded-lg border bg-bg0 px-3 py-2 ${
+              a.syncState === "needs_reauth" ? "border-danger/40" : "border-hairline"
+            }`}
           >
+            <div className="flex items-center gap-2.5">
             <span
               className="size-2 shrink-0 rounded-full"
               style={{ background: SYNC_DOT[a.syncState] }}
               title={t(`common:syncState.${a.syncState}`)}
             />
-            <span className="min-w-0 flex-1 truncate">
-              <span className="text-[13px] text-ink">{a.email}</span>
-              {a.displayName && (
-                <span className="ml-2 text-[11.5px] text-ink-faint">
-                  {a.displayName}
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate">
+                <span className="text-[13px] text-ink">{a.email}</span>
+                {a.displayName && (
+                  <span className="ml-2 text-[11.5px] text-ink-faint">
+                    {a.displayName}
+                  </span>
+                )}
+              </span>
+              {a.syncState === "needs_reauth" ? (
+                <span className="text-[11px] font-medium text-danger">
+                  {t("settings:accounts.signedOut")}
                 </span>
-              )}
+              ) : a.syncState !== "idle" ? (
+                <span className="text-[11px] text-ink-faint">
+                  {t(`common:syncState.${a.syncState}`)}
+                </span>
+              ) : null}
             </span>
             <Select
               className="!w-auto !py-1 !pr-8 !text-[12.5px]"
@@ -3126,13 +3147,15 @@ function AccountsSection() {
             {a.syncState === "needs_reauth" && a.provider !== "imap" && (
               <button
                 type="button"
-                className={ghostBtnCls}
+                className={primaryBtnCls}
                 disabled={reauthId != null && reauthId !== a.id}
                 onClick={() => void reauth(a.id, a.email)}
               >
                 {reauthId === a.id
                   ? t("settings:sync.reauthWaiting")
-                  : t("settings:sync.reauth")}
+                  : t("common:reauthBanner.action", {
+                      provider: t(`settings:accounts.provider.${a.provider}`),
+                    })}
               </button>
             )}
             <ConfirmButton
@@ -3140,6 +3163,62 @@ function AccountsSection() {
               confirmLabel={t("settings:accounts.reallyRemove")}
               onConfirm={() => void removeAccount(a.id, a.email)}
             />
+            </div>
+            <div className="flex flex-wrap items-center gap-3 pl-[18px]">
+              <input
+                className={`${inputCls} !w-40 !py-1 !text-[12.5px]`}
+                defaultValue={accountShortNames[String(a.id)] ?? ""}
+                placeholder={accountLabel(a)}
+                title={t("settings:accounts.shortNameHint")}
+                aria-label={t("settings:accounts.shortName")}
+                spellCheck={false}
+                maxLength={24}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if ((accountShortNames[String(a.id)] ?? "") === v) return;
+                  const next = { ...accountShortNames };
+                  if (v) next[String(a.id)] = v;
+                  else delete next[String(a.id)];
+                  void updateSettings({ accountShortNames: next });
+                }}
+              />
+              <div
+                className="flex items-center gap-1.5"
+                title={t("settings:accounts.colorHint")}
+              >
+                {SWATCHES.map((c) => {
+                  const picked = accountColors[String(a.id)] === c;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-label={c}
+                      aria-pressed={picked}
+                      onClick={() => {
+                        // Clicking the picked swatch clears back to automatic.
+                        const next = { ...accountColors };
+                        if (picked) delete next[String(a.id)];
+                        else next[String(a.id)] = c;
+                        void updateSettings({ accountColors: next });
+                      }}
+                      className={`size-4 rounded-full transition ${
+                        picked ? "ring-2 ring-accent ring-offset-2 ring-offset-bg0" : ""
+                      }`}
+                      style={{ background: c }}
+                    />
+                  );
+                })}
+                {!accountColors[String(a.id)] && (
+                  <span className="ml-1 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ background: accountColor(a) }}
+                    />
+                    {t("settings:accounts.colorAuto")}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         ))}
         {(accounts ?? []).length === 0 && (

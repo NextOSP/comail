@@ -165,6 +165,8 @@ interface UiState {
       joinUrl?: string;
       allDay?: boolean;
       accountId?: number;
+      /** editing: the calendar the event lives on (shown read-only) */
+      calendarId?: number | null;
     };
   } | null;
   /** event-detail popover, anchored near the clicked rect when given */

@@ -230,6 +230,8 @@ export interface Snippet {
 export interface SplitRuleQuery {
   /** match sender address or domain, e.g. "@github.com" or "boss@co.com" */
   senders?: string[];
+  /** never match these sender addresses/domains, even when everything else hits */
+  excludeSenders?: string[];
   /** match a recipient (To or Cc) address or domain */
   recipients?: string[];
   /** substring match on subject */
@@ -414,6 +416,12 @@ export interface Settings {
   signatureDefaults: Record<string, SignatureDefaults>;
   /** Per-account theme override, keyed by stringified account id. Missing = global theme. */
   accountThemes: Record<string, "snow" | "carbon" | "holiday" | "system">;
+  /** Per-account marker color (hex), keyed by stringified account id. Missing =
+   * a stable hue derived from the address. */
+  accountColors: Record<string, string>;
+  /** Short name shown on inbox rows, keyed by stringified account id. Missing =
+   * display name, else the address local part. */
+  accountShortNames: Record<string, string>;
   /** Semantic-search backend: "local" runs a small on-device model, "off" is keyword-only. */
   embeddingBackend: "local" | "off";
   /** Registry key of the local embedding model. */
@@ -509,6 +517,8 @@ export interface EventAttendee {
 
 export interface CreateEventArgs {
   accountId: number;
+  /** Target calendar collection; null/omitted = account's default (or local-only). */
+  calendarId?: number | null;
   summary: string;
   description?: string | null;
   location?: string | null;
@@ -805,6 +815,8 @@ export interface Commands {
     split: Omit<SplitRule, "id"> & { id: number | null };
   }): Promise<SplitRule>;
   delete_split(args: { splitId: number }): Promise<void>;
+  /** First rule (position order) matching the thread; null when routed by AI/heuristic. */
+  find_matching_split(args: { threadId: number }): Promise<SplitRule | null>;
   /** Persist the shared top-to-bottom order of custom splits and auto-label tabs. */
   reorder_tabs(args: {
     order: { kind: "split" | "label"; id: number }[];
@@ -876,6 +888,13 @@ export interface Commands {
     calendarId: number;
     enabled: boolean;
   }): Promise<void>;
+  /** User override of the calendar's display color (#RRGGBB); null clears it. */
+  set_calendar_color(args: {
+    calendarId: number;
+    color: string | null;
+  }): Promise<void>;
+  /** Make this calendar the account's target for newly created events. */
+  set_default_calendar(args: { calendarId: number }): Promise<void>;
   calendar_sync_now(args: { accountId?: number | null }): Promise<void>;
 
   /** Startup show (first-run intro) is done, or absent: release the deferred

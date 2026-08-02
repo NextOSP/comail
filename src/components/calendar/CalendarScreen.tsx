@@ -17,6 +17,7 @@ import {
 } from "../../lib/calendarGrid";
 import { useCalendarEvents, useMoveEvent } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { eventColorStyles, useCalendarColorMap } from "./calendarColor";
 import { MonthView } from "./MonthView";
 import { useGridDrag, type AnchorRect } from "./useGridDrag";
 
@@ -163,6 +164,9 @@ export function CalendarScreen() {
   const now = Date.now();
   const nowTop = ((now - todayStart) / 3_600_000) * HOUR_PX;
   const dragging = preview != null;
+  const colorMap = useCalendarColorMap();
+  const stylesFor = (ev: CalendarEvent) =>
+    eventColorStyles(ev.calendarId != null ? (colorMap.get(ev.calendarId) ?? null) : null);
 
   return (
     <div
@@ -242,18 +246,22 @@ export function CalendarScreen() {
                     {new Date(day).toLocaleDateString(i18n.language, { weekday: "short" })}{" "}
                     <span className="tabular-nums">{new Date(day).getDate()}</span>
                   </div>
-                  {allDay.map((ev) => (
-                    <div
-                      key={`${ev.id}:${ev.startsAt}`}
-                      className={`mt-1 cursor-pointer truncate rounded bg-accent/15 px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-accent/25 ${
-                        isCancelled(ev) ? "line-through opacity-60" : ""
-                      }`}
-                      title={ev.summary ?? undefined}
-                      onClick={(e) => openDetailFromClick(ev, e)}
-                    >
-                      {ev.summary ?? t("calendar:noTitle")}
-                    </div>
-                  ))}
+                  {allDay.map((ev) => {
+                    const styles = isCancelled(ev) ? null : stylesFor(ev);
+                    return (
+                      <div
+                        key={`${ev.id}:${ev.startsAt}`}
+                        className={`mt-1 cursor-pointer truncate rounded px-1.5 py-0.5 text-[11px] font-medium hover:brightness-110 ${
+                          styles ? "" : "bg-accent/15 text-accent hover:bg-accent/25"
+                        } ${isCancelled(ev) ? "line-through opacity-60" : ""}`}
+                        style={styles?.chip}
+                        title={ev.summary ?? undefined}
+                        onClick={(e) => openDetailFromClick(ev, e)}
+                      >
+                        {ev.summary ?? t("calendar:noTitle")}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -307,15 +315,18 @@ export function CalendarScreen() {
                       const draggable = isDraggable(ev);
                       const beingDragged =
                         preview != null && preview.kind !== "create" && preview.ev.id === ev.id;
+                      const styles = cancelled ? null : stylesFor(ev);
                       return (
                         <div
                           key={`${ev.id}:${ev.startsAt}`}
                           className={`absolute overflow-hidden rounded-md border px-1.5 py-0.5 text-[11px] leading-tight ${
                             cancelled
                               ? "border-hairline bg-bg2 text-ink-faint line-through opacity-70"
-                              : ev.isLocal
-                                ? "border-accent/50 bg-accent/20 text-ink"
-                                : "border-accent/30 bg-accent/10 text-ink"
+                              : styles
+                                ? "text-ink"
+                                : ev.isLocal
+                                  ? "border-accent/50 bg-accent/20 text-ink"
+                                  : "border-accent/30 bg-accent/10 text-ink"
                           } ${draggable ? "cursor-grab" : "cursor-pointer"} ${
                             beingDragged ? "opacity-40" : ""
                           }`}
@@ -324,6 +335,7 @@ export function CalendarScreen() {
                             height,
                             left: `calc(${(lane / lanes) * 100}% + 2px)`,
                             width: `calc(${100 / lanes}% - 4px)`,
+                            ...(styles ? (ev.isLocal ? styles.localBlock : styles.block) : null),
                           }}
                           title={`${ev.summary ?? ""}${ev.location ? ` · ${ev.location}` : ""}`}
                           onMouseDown={(e) => {

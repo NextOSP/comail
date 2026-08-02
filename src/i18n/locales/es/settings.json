@@ -148,12 +148,17 @@
     }
   },
   "accounts": {
+    "signedOut": "Sesión cerrada. La sincronización de correo está en pausa hasta que inicies sesión de nuevo.",
     "provider": {
       "imap": "IMAP",
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
     "theme": "Tema",
+    "shortName": "Nombre corto",
+    "shortNameHint": "Nombre corto que aparece en las filas de la bandeja para identificar esta cuenta.",
+    "colorHint": "Color del marcador de esta cuenta en las filas de la bandeja. Haz clic en el color seleccionado para volver al automático.",
+    "colorAuto": "Automático",
     "remove": "Eliminar",
     "reallyRemove": "¿Eliminar de verdad?",
     "removed": "{{email}} eliminada",
@@ -196,6 +201,7 @@
     "title": "Divisiones de la bandeja",
     "describe": {
       "from": "de {{senders}}",
+      "notFrom": "no de {{senders}}",
       "subjectHas": "el asunto contiene {{subjects}}",
       "automatedOnly": "solo automatizado",
       "humanOnly": "solo humano",
@@ -224,6 +230,8 @@
     "namePlaceholder": "p. ej. GitHub",
     "senderLabel": "El remitente es (direcciones o @dominios separados por comas)",
     "senderPlaceholder": "@github.com, jefe@empresa.com",
+    "excludeSenderLabel": "Pero nunca de (remitentes excluidos)",
+    "excludeSenderPlaceholder": "jefe@github.com, @socio.com",
     "subjectLabel": "El asunto contiene (separado por comas)",
     "subjectPlaceholder": "factura, recibo",
     "automatedLabel": "Correo automatizado",
@@ -350,7 +358,9 @@
     "urlPlaceholder": "URL del servidor, p. ej. https://caldav.fastmail.com",
     "username": "Usuario",
     "appPassword": "Contraseña de aplicación",
-    "default": "Predeterminado"
+    "default": "Predeterminado",
+    "makeDefault": "Hacer predeterminado",
+    "colorTip": "Cambiar el color del calendario"
   },
   "meetingReminder": {
     "label": "Recordatorios de reuniones",

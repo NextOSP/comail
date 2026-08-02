@@ -5,6 +5,7 @@ import type { CalendarEvent } from "../../ipc/types";
 import { DAY_MS, monthGridDays, startOfDayMs, startOfMonth } from "../../lib/calendarGrid";
 import { useCalendarEvents } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { eventColorStyles, useCalendarColorMap } from "./calendarColor";
 
 const MAX_CHIPS = 3;
 
@@ -41,6 +42,7 @@ export function MonthView({ anchor }: { anchor: number }) {
 
   const todayStart = startOfDayMs(Date.now());
   const gotoWeek = (day: number) => set({ calendarView: "week", calendarFocusDay: day });
+  const colorMap = useCalendarColorMap();
 
   const openDetail = (ev: CalendarEvent, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -89,6 +91,11 @@ export function MonthView({ anchor }: { anchor: number }) {
               </span>
               {list.slice(0, MAX_CHIPS).map((ev) => {
                 const cancelled = isCancelled(ev);
+                const styles = cancelled
+                  ? null
+                  : eventColorStyles(
+                      ev.calendarId != null ? (colorMap.get(ev.calendarId) ?? null) : null,
+                    );
                 return (
                   <button
                     key={`${ev.id}:${ev.startsAt}`}
@@ -96,10 +103,13 @@ export function MonthView({ anchor }: { anchor: number }) {
                     className={`w-full truncate rounded px-1 py-px text-left text-[10.5px] leading-tight font-medium ${
                       cancelled
                         ? "bg-bg2 text-ink-faint line-through opacity-70"
-                        : inMonth
-                          ? "bg-accent/15 text-accent hover:bg-accent/25"
-                          : "bg-accent/10 text-accent/70 hover:bg-accent/20"
+                        : styles
+                          ? `hover:brightness-110 ${inMonth ? "" : "opacity-60"}`
+                          : inMonth
+                            ? "bg-accent/15 text-accent hover:bg-accent/25"
+                            : "bg-accent/10 text-accent/70 hover:bg-accent/20"
                     }`}
+                    style={styles?.chip}
                     title={ev.summary ?? undefined}
                     onClick={(e) => openDetail(ev, e)}
                   >

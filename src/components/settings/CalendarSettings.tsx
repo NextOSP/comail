@@ -1,20 +1,18 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
 import { call } from "../../ipc/commands";
 import { errorMessage, parseError } from "../../ipc/errors";
-import type { Account } from "../../ipc/types";
+import type { Account, Calendar } from "../../ipc/types";
+import { normalizeHex } from "../calendar/calendarColor";
 import { queryClient } from "../../queries/client";
-import { useAccounts } from "../../queries/hooks";
+import {
+  useAccounts,
+  useCalendars,
+  useSetCalendarColor,
+  useSetDefaultCalendar,
+} from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
-
-function useCalendars() {
-  return useQuery({
-    queryKey: ["calendars"],
-    queryFn: () => call("list_calendars", {}),
-    staleTime: 30_000,
-  });
-}
+import { SWATCHES } from "./LabelsPanel";
 
 /** Per-account calendar sync (Settings → Accounts): connect Google Calendar
  *  (OAuth re-consent), Microsoft 365 (Graph consent; Outlook has no CalDAV)
@@ -207,40 +205,95 @@ function AccountCalendarCard({
       {connected && (
         <div className="mt-2 flex flex-col gap-1">
           {calendars.map((c) => (
-            <label
-              key={c.id}
-              className="flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-muted select-none"
+            <CalendarRow key={c.id} calendar={c} onChanged={refresh} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One discovered collection: enable toggle, color swatch picker, and a
+ *  "make default" control (the default receives newly created events). */
+function CalendarRow({ calendar: c, onChanged }: { calendar: Calendar; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const pushToast = useUi((s) => s.pushToast);
+  const setColor = useSetCalendarColor();
+  const setDefault = useSetDefaultCalendar();
+  const [picking, setPicking] = useState(false);
+
+  const onError = (err: unknown) => pushToast({ kind: "error", message: errorMessage(err) });
+  const hex = normalizeHex(c.color);
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 text-[12.5px] text-ink-muted select-none">
+        <input
+          type="checkbox"
+          className="cursor-pointer"
+          checked={c.enabled}
+          onChange={async (e) => {
+            try {
+              await call("set_calendar_enabled", {
+                calendarId: c.id,
+                enabled: e.target.checked,
+              });
+              onChanged();
+            } catch (err) {
+              onError(err);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="flex size-4 shrink-0 items-center justify-center rounded-full hover:ring-2 hover:ring-accent/40"
+          title={t("settings:calendar.colorTip")}
+          aria-label={t("settings:calendar.colorTip")}
+          onClick={() => setPicking((v) => !v)}
+        >
+          <span
+            className="size-2.5 rounded-full"
+            style={{ background: hex ?? "var(--accent)" }}
+          />
+        </button>
+        <span className="min-w-0 flex-1 truncate">{c.displayName ?? c.url}</span>
+        {c.isDefault ? (
+          <span className="rounded bg-bg2 px-1.5 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
+            {t("settings:calendar.default")}
+          </span>
+        ) : (
+          !c.readOnly && (
+            <button
+              type="button"
+              className="rounded px-1.5 text-[10px] font-semibold tracking-wide text-ink-faint uppercase hover:bg-bg2 hover:text-ink"
+              onClick={() =>
+                setDefault.mutate({ calendarId: c.id }, { onSuccess: onChanged, onError })
+              }
             >
-              <input
-                type="checkbox"
-                checked={c.enabled}
-                onChange={async (e) => {
-                  try {
-                    await call("set_calendar_enabled", {
-                      calendarId: c.id,
-                      enabled: e.target.checked,
-                    });
-                    refresh();
-                  } catch (err) {
-                    pushToast({ kind: "error", message: errorMessage(err) });
-                  }
-                }}
-              />
-              {c.color && (
-                <span
-                  className="size-2 rounded-full"
-                  style={{ background: c.color.slice(0, 7) }}
-                />
-              )}
-              <span className="min-w-0 flex-1 truncate">
-                {c.displayName ?? c.url}
-              </span>
-              {c.isDefault && (
-                <span className="rounded bg-bg2 px-1.5 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
-                  {t("settings:calendar.default")}
-                </span>
-              )}
-            </label>
+              {t("settings:calendar.makeDefault")}
+            </button>
+          )
+        )}
+      </div>
+      {picking && (
+        <div className="mt-1.5 mb-1 ml-6 flex flex-wrap items-center gap-1.5">
+          {SWATCHES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-label={s}
+              className={`size-4.5 rounded-full transition ${
+                hex === s ? "ring-2 ring-accent ring-offset-1 ring-offset-bg0" : ""
+              }`}
+              style={{ background: s }}
+              onClick={() => {
+                setPicking(false);
+                setColor.mutate(
+                  { calendarId: c.id, color: s },
+                  { onSuccess: onChanged, onError },
+                );
+              }}
+            />
           ))}
         </div>
       )}

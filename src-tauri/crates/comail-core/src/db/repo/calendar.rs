@@ -278,6 +278,7 @@ pub fn upsert_remote(
 pub fn insert_local(
     conn: &Connection,
     account_id: i64,
+    calendar_id: Option<i64>,
     uid: &str,
     summary: &str,
     location: Option<&str>,
@@ -292,12 +293,13 @@ pub fn insert_local(
     let attendees_json = attendees_to_json(attendees)?;
     conn.execute(
         "INSERT INTO calendar_events
-            (account_id, ical_uid, method, summary, location, organizer,
+            (account_id, calendar_id, ical_uid, method, summary, location, organizer,
              description, attendees_json, join_url, is_local,
              starts_at, ends_at, all_day, status)
-         VALUES (?1,?2,'REQUEST',?3,?4,?5,?6,?7,?8,1,?9,?10,?11,'CONFIRMED')",
+         VALUES (?1,?2,?3,'REQUEST',?4,?5,?6,?7,?8,?9,1,?10,?11,?12,'CONFIRMED')",
         params![
             account_id,
+            calendar_id,
             uid,
             summary,
             location,
@@ -629,6 +631,7 @@ mod tests {
         let id = insert_local(
             &c,
             1,
+            None,
             "local-1@comail",
             "Planning",
             Some("Room 9"),
@@ -656,6 +659,7 @@ mod tests {
         let id = insert_local(
             &c,
             1,
+            Some(cal),
             "u1@comail",
             "Edit me",
             None,
@@ -668,6 +672,7 @@ mod tests {
             false,
         )
         .unwrap();
+        assert_eq!(get(&c, id).unwrap().unwrap().calendar_id, Some(cal));
 
         // Local edit bumps sequence and flags dirty.
         let args = UpdateEventArgs {
@@ -950,6 +955,7 @@ mod tests {
         let id = insert_local(
             &c,
             1,
+            None,
             "n1@comail",
             "Standup",
             None,
@@ -972,6 +978,7 @@ mod tests {
         let id2 = insert_local(
             &c,
             1,
+            None,
             "n2@comail",
             "Skip",
             None,

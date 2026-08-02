@@ -148,12 +148,17 @@
     }
   },
   "accounts": {
+    "signedOut": "已退出登录。重新登录前邮件同步将暂停。",
     "provider": {
       "imap": "IMAP",
       "gmail": "Google",
       "microsoft": "Microsoft"
     },
     "theme": "主题",
+    "shortName": "简称",
+    "shortNameHint": "显示在收件箱行上的简称，用于标识此账户。",
+    "colorHint": "此账户在收件箱行上的标记颜色。点击已选中的色块可恢复自动。",
+    "colorAuto": "自动",
     "remove": "移除",
     "reallyRemove": "确定要移除吗？",
     "removed": "已移除 {{email}}",
@@ -196,6 +201,7 @@
     "title": "收件箱分组",
     "describe": {
       "from": "来自 {{senders}}",
+      "notFrom": "不来自 {{senders}}",
       "subjectHas": "主题包含 {{subjects}}",
       "automatedOnly": "仅自动邮件",
       "humanOnly": "仅真人邮件",
@@ -224,6 +230,8 @@
     "namePlaceholder": "例如：GitHub",
     "senderLabel": "发件人为（以逗号分隔的地址或 @域名）",
     "senderPlaceholder": "@github.com, boss@co.com",
+    "excludeSenderLabel": "但绝不来自（排除的发件人）",
+    "excludeSenderPlaceholder": "boss@github.com, @partner.com",
     "subjectLabel": "主题包含（以逗号分隔）",
     "subjectPlaceholder": "发票, 收据",
     "automatedLabel": "自动邮件",
@@ -350,7 +358,9 @@
     "urlPlaceholder": "服务器地址，如 https://caldav.fastmail.com",
     "username": "用户名",
     "appPassword": "应用专用密码",
-    "default": "默认"
+    "default": "默认",
+    "makeDefault": "设为默认",
+    "colorTip": "更改日历颜色"
   },
   "meetingReminder": {
     "label": "会议提醒",

@@ -16,6 +16,12 @@
     "spam": "垃圾邮件",
     "all": "全部邮件"
   },
+  "reauthBanner": {
+    "message": "{{email}} 已退出登录，无法收取邮件。",
+    "action": "重新使用 {{provider}} 登录",
+    "waiting": "正在等待 {{provider}}…（点击取消）",
+    "openSettings": "打开账户设置"
+  },
   "syncState": {
     "idle": "空闲",
     "syncing": "同步中",

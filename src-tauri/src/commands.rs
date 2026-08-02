@@ -421,6 +421,28 @@ pub async fn set_calendar_enabled(
 }
 
 #[tauri::command]
+pub async fn set_calendar_color(
+    state: State<'_, AppState>,
+    calendar_id: i64,
+    color: Option<String>,
+) -> CmdResult<()> {
+    state
+        .core
+        .set_calendar_color(calendar_id, color)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_default_calendar(state: State<'_, AppState>, calendar_id: i64) -> CmdResult<()> {
+    state
+        .core
+        .set_default_calendar(calendar_id)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
 pub async fn calendar_sync_now(
     state: State<'_, AppState>,
     account_id: Option<i64>,
@@ -693,6 +715,14 @@ pub async fn save_split(state: State<'_, AppState>, split: SplitInput) -> CmdRes
 #[tauri::command]
 pub async fn delete_split(state: State<'_, AppState>, split_id: i64) -> CmdResult<()> {
     state.core.delete_split(split_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn find_matching_split(
+    state: State<'_, AppState>,
+    thread_id: i64,
+) -> CmdResult<Option<SplitRule>> {
+    state.core.find_matching_split(thread_id).await.map_err(err)
 }
 
 /// One reorderable tab: `kind` is `"split"` or `"label"`, `id` its row id.

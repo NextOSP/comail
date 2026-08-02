@@ -365,6 +365,10 @@ pub struct Snippet {
 pub struct SplitRuleQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub senders: Option<Vec<String>>,
+    /// Never match threads from these addresses/domains, even when every
+    /// positive criterion holds. Exclusions alone never make a rule match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude_senders: Option<Vec<String>>,
     /// Match a recipient (To or Cc) address/domain.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recipients: Option<Vec<String>>,
@@ -728,6 +732,14 @@ pub struct Settings {
     /// stringified account id. Missing = follow the global `theme`.
     #[serde(default)]
     pub account_themes: std::collections::HashMap<String, String>,
+    /// Per-account marker color (hex), keyed by stringified account id.
+    /// Missing = the frontend derives a stable hue from the address.
+    #[serde(default)]
+    pub account_colors: std::collections::HashMap<String, String>,
+    /// Short name shown on inbox rows, keyed by stringified account id.
+    /// Missing = display name, else the address local part.
+    #[serde(default)]
+    pub account_short_names: std::collections::HashMap<String, String>,
 }
 
 /// A named, rich-HTML signature belonging to one account.
@@ -886,6 +898,8 @@ impl Default for Settings {
             signature_list: Vec::new(),
             signature_defaults: std::collections::HashMap::new(),
             account_themes: std::collections::HashMap::new(),
+            account_colors: std::collections::HashMap::new(),
+            account_short_names: std::collections::HashMap::new(),
         }
     }
 }
@@ -989,6 +1003,9 @@ pub struct EventAttendee {
 #[serde(rename_all = "camelCase")]
 pub struct CreateEventArgs {
     pub account_id: i64,
+    /// Target calendar collection; None = account's default (or local-only).
+    #[serde(default)]
+    pub calendar_id: Option<i64>,
     pub summary: String,
     #[serde(default)]
     pub description: Option<String>,

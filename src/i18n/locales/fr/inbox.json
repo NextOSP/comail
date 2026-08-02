@@ -15,7 +15,10 @@
     "fromSender": "Messages de {{email}}",
     "fromDomain": "Tous @{{domain}}",
     "tabName": "onglet : {{name}}",
-    "created": "Division « {{name}} » créée"
+    "created": "Division « {{name}} » créée",
+    "excludeSender": "Exclure {{email}} de sa règle actuelle",
+    "excludeDomain": "Exclure tout le monde @{{domain}} de sa règle actuelle",
+    "excluded": "Exclu de « {{name}} »"
   },
   "pane": {
     "empty": "Aucune conversation sélectionnée",

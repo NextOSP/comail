@@ -244,6 +244,7 @@
     }
   },
   "accounts": {
+    "signedOut": "Signed out. Mail sync is paused until you sign in again.",
     "provider": {
       "imap": "IMAP",
       "gmail": "Google",
@@ -252,6 +253,10 @@
     "theme": "Theme",
     "themeHint": "Theme for this account. \"Global default\" follows your Preferences theme.",
     "themeInherit": "Global default",
+    "shortName": "Short name",
+    "shortNameHint": "Short name shown on inbox rows to mark this account.",
+    "colorHint": "Marker color for this account's inbox rows. Click the selected swatch to go back to automatic.",
+    "colorAuto": "Auto",
     "remove": "Remove",
     "reallyRemove": "Really remove?",
     "removed": "Removed {{email}}",
@@ -294,6 +299,7 @@
     "title": "Inbox splits",
     "describe": {
       "from": "from {{senders}}",
+      "notFrom": "not from {{senders}}",
       "to": "to {{recipients}}",
       "subjectHas": "subject has {{subjects}}",
       "hasLabel": "label {{labels}}",
@@ -329,6 +335,8 @@
     "namePlaceholder": "e.g. GitHub",
     "senderLabel": "Sender is (use @domain to match a whole domain)",
     "senderPlaceholder": "@github.com, boss@co.com",
+    "excludeSenderLabel": "But never from (excluded senders)",
+    "excludeSenderPlaceholder": "boss@github.com, @partner.com",
     "recipientLabel": "Recipient is (To or Cc)",
     "recipientPlaceholder": "sales@myco.com, @myco.com",
     "subjectLabel": "Subject contains",
@@ -477,7 +485,9 @@
     "urlPlaceholder": "Server URL, e.g. https://caldav.fastmail.com",
     "username": "Username",
     "appPassword": "App password",
-    "default": "Default"
+    "default": "Default",
+    "makeDefault": "Make default",
+    "colorTip": "Change calendar color"
   },
   "meetingReminder": {
     "label": "Meeting reminders",

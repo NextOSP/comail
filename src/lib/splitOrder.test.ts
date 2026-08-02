@@ -57,6 +57,21 @@ describe("inboxTabOrder", () => {
     ]);
   });
 
+  it("excludes rules that route their matches into an existing tab", () => {
+    const routed = { ...split(2, "Receipts", 1), target: "label:101" };
+    const tabs = inboxTabOrder(
+      [split(1, "Ads", 0), routed],
+      [autoLabel(101, "News", 2)],
+      true,
+    );
+    expect(tabs.map((tab) => "name" in tab ? tab.name : tab.kind)).toEqual([
+      "important",
+      "Ads",
+      "News",
+      "other",
+    ]);
+  });
+
   it("omits auto labels when the feature is disabled", () => {
     const tabs = inboxTabOrder(
       [split(1, "Ads", 0)],

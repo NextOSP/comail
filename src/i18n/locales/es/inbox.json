@@ -15,7 +15,10 @@
     "fromSender": "Correo de {{email}}",
     "fromDomain": "Todos @{{domain}}",
     "tabName": "pestaña: {{name}}",
-    "created": "División \"{{name}}\" creada"
+    "created": "División \"{{name}}\" creada",
+    "excludeSender": "Excluir a {{email}} de su regla actual",
+    "excludeDomain": "Excluir a todos @{{domain}} de su regla actual",
+    "excluded": "Excluido de \"{{name}}\""
   },
   "pane": {
     "empty": "Ninguna conversación seleccionada",

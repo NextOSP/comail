@@ -13,6 +13,7 @@
   "noEventsWeek": "No events this week",
   "allDay": "All day",
   "noTitle": "(no title)",
+  "localCalendar": "Local calendar",
   "cancelled": "Cancelled",
   "byOrganizer": "by {{organizer}}",
   "join": "Join",
@@ -55,6 +56,8 @@
       "notes": "Notes"
     },
     "summary": "Title",
+    "calendar": "Calendar",
+    "localOnly": "On this device only",
     "date": "Date",
     "start": "Start",
     "end": "End",

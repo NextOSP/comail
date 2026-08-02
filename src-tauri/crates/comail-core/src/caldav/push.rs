@@ -48,21 +48,32 @@ async fn push_row(
         return push_delete(db, t, row).await;
     }
 
-    // Where does the resource live? Existing href, else the account's default
-    // calendar gets a new <uid>.ics resource.
+    // Where does the resource live? Existing href, else a new <uid>.ics
+    // resource in the event's chosen calendar (falling back to the account's
+    // default when none was chosen or it has since vanished/been disabled).
     let (calendar_id, href_path, if_match): (i64, String, Option<String>) =
         match (&row.event.calendar_id, &row.caldav_href) {
             (Some(cal), Some(href)) => (*cal, href.clone(), row.etag.clone()),
-            _ => {
-                let default = db
-                    .read(move |conn| repo::caldav::default_calendar(conn, account_id))
-                    .await?
-                    .ok_or_else(|| super::err("no calendar collection to write to"))?;
-                let path = match url::Url::parse(&default.url) {
-                    Ok(u) => format!("{}{}.ics", u.path(), sanitize_uid(&row.ical_uid)),
-                    Err(_) => format!("{}{}.ics", default.url, sanitize_uid(&row.ical_uid)),
+            (chosen, _) => {
+                let mut target = None;
+                if let Some(cal_id) = *chosen {
+                    target = db
+                        .read(move |conn| repo::caldav::get_calendar(conn, cal_id))
+                        .await?
+                        .filter(|c| c.enabled && !c.read_only);
+                }
+                let target = match target {
+                    Some(c) => c,
+                    None => db
+                        .read(move |conn| repo::caldav::default_calendar(conn, account_id))
+                        .await?
+                        .ok_or_else(|| super::err("no calendar collection to write to"))?,
                 };
-                (default.id, path, None)
+                let path = match url::Url::parse(&target.url) {
+                    Ok(u) => format!("{}{}.ics", u.path(), sanitize_uid(&row.ical_uid)),
+                    Err(_) => format!("{}{}.ics", target.url, sanitize_uid(&row.ical_uid)),
+                };
+                (target.id, path, None)
             }
         };
 
@@ -201,6 +212,7 @@ async fn resolve_conflict(
             repo::calendar::insert_local(
                 &tx,
                 account_id,
+                None,
                 &conflict_uid,
                 &format!(
                     "{} (conflict copy)",
@@ -565,6 +577,7 @@ mod tests {
                 repo::calendar::insert_local(
                     c,
                     1,
+                    None,
                     "new-1@comail",
                     "Fresh",
                     None,

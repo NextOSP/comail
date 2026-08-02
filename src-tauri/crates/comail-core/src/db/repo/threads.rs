@@ -223,17 +223,16 @@ pub struct ListArgs {
     pub limit: i64,
 }
 
-/// Threads whose only incoming (non-draft, non-outgoing) messages are human.
-const HUMAN_BUCKET: &str = "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 0)
-    AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 1)";
+/// Important/Other follows the newest incoming message. Requiring every
+/// historical message to have the same type made mixed threads match neither
+/// tab (for example, an automated notification followed by a human reply).
+const HUMAN_BUCKET: &str = "(SELECT m.is_automated FROM messages m
+        WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
+        ORDER BY m.date DESC, m.id DESC LIMIT 1) = 0";
 
-/// Threads whose only incoming messages are automated.
-const AUTO_BUCKET: &str = "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 1)
-    AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id
-        AND m.is_draft = 0 AND m.is_outgoing = 0 AND m.is_automated = 0)";
+const AUTO_BUCKET: &str = "(SELECT m.is_automated FROM messages m
+        WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
+        ORDER BY m.date DESC, m.id DESC LIMIT 1) = 1";
 
 pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
     let mut where_clauses: Vec<String> = Vec::new();

@@ -7,7 +7,7 @@ import type { Label, SplitRule, SplitRuleQuery } from "../../ipc/types";
 import { mergeTabOrder } from "../../lib/splitOrder";
 import { queryClient } from "../../queries/client";
 import { useLabels, useSplits } from "../../queries/hooks";
-import { useUi } from "../../stores/ui";
+import { SPLIT_IMPORTANT, useUi } from "../../stores/ui";
 import {
   BusyLabel,
   ChipInput,
@@ -43,6 +43,8 @@ function describeQuery(
   const parts: string[] = [];
   if (q.senders?.length)
     parts.push(t("settings:splits.describe.from", { senders: q.senders.join(", ") }));
+  if (q.excludeSenders?.length)
+    parts.push(t("settings:splits.describe.notFrom", { senders: q.excludeSenders.join(", ") }));
   if (q.recipients?.length)
     parts.push(t("settings:splits.describe.to", { recipients: q.recipients.join(", ") }));
   if (q.subjectContains?.length)
@@ -420,6 +422,7 @@ function SplitForm({
   const userLabels = (labels ?? []).filter((l) => !l.isAuto);
   const [name, setName] = useState(rule?.name ?? "");
   const [senders, setSenders] = useState<string[]>(rule?.query.senders ?? []);
+  const [excludeSenders, setExcludeSenders] = useState<string[]>(rule?.query.excludeSenders ?? []);
   const [recipients, setRecipients] = useState<string[]>(rule?.query.recipients ?? []);
   const [subjects, setSubjects] = useState<string[]>(rule?.query.subjectContains ?? []);
   const [labelIds, setLabelIds] = useState<number[]>(rule?.query.labels ?? []);
@@ -445,6 +448,8 @@ function SplitForm({
     try {
       const query: SplitRuleQuery = {};
       if (senders.length > 0) query.senders = senders;
+      // Excludes alone can't make a rule match; keep them out of hasCondition.
+      if (excludeSenders.length > 0) query.excludeSenders = excludeSenders;
       if (recipients.length > 0) query.recipients = recipients;
       if (subjects.length > 0) query.subjectContains = subjects;
       // Drop stale ids so a deleted label can't leave a dead condition behind.
@@ -452,7 +457,7 @@ function SplitForm({
       if (validLabelIds.length > 0) query.labels = validLabelIds;
       if (automated !== "any") query.isAutomated = automated === "automated";
       if (hasAttachment) query.hasAttachment = true;
-      await call("save_split", {
+      const saved = await call("save_split", {
         split: {
           id: rule?.id ?? null,
           name: name.trim(),
@@ -461,6 +466,11 @@ function SplitForm({
           target: target || null,
         },
       });
+      // Routing an existing rule elsewhere removes its tab; don't leave the
+      // inbox pointed at it.
+      if (saved.target != null && useUi.getState().splitId === saved.id) {
+        useUi.getState().set({ splitId: SPLIT_IMPORTANT, selectedIndex: 0, selectedThreadId: null, selection: [] });
+      }
       invalidateSplitViews();
       onDone();
     } catch (err) {
@@ -503,6 +513,12 @@ function SplitForm({
         values={senders}
         onChange={setSenders}
         placeholder={t("settings:splits.senderPlaceholder")}
+      />
+      <LabeledChips
+        label={t("settings:splits.excludeSenderLabel")}
+        values={excludeSenders}
+        onChange={setExcludeSenders}
+        placeholder={t("settings:splits.excludeSenderPlaceholder")}
       />
       <LabeledChips
         label={t("settings:splits.recipientLabel")}

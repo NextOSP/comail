@@ -4,8 +4,9 @@ import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { errorMessage } from "../../ipc/errors";
 import type { CalendarEvent, RsvpResponse } from "../../ipc/types";
-import { useDeleteEvent, useRsvpEvent } from "../../queries/hooks";
+import { useAccounts, useCalendars, useDeleteEvent, useRsvpEvent } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { normalizeHex } from "./calendarColor";
 
 function isCancelled(ev: CalendarEvent): boolean {
   return ev.status?.toUpperCase() === "CANCELLED" || ev.method?.toUpperCase() === "CANCEL";
@@ -78,6 +79,29 @@ export function EventDetailPopover() {
   return <DetailCard key={open.event.id} event={open.event} />;
 }
 
+/** Which calendar (and account) the event lives on, with its color dot. */
+function CalendarLine({ event }: { event: CalendarEvent }) {
+  const { t } = useTranslation();
+  const { data: calendars } = useCalendars();
+  const { data: accounts } = useAccounts();
+  const cal = event.calendarId != null ? calendars?.find((c) => c.id === event.calendarId) : null;
+  const account = accounts?.find((a) => a.id === event.accountId);
+  const name = cal ? (cal.displayName ?? cal.url) : t("calendar:localCalendar");
+  const hex = normalizeHex(cal?.color ?? null);
+  return (
+    <div className="mt-1 flex items-center gap-1.5 text-[12px] text-ink-faint">
+      <span
+        className={`size-2 shrink-0 rounded-full ${hex ? "" : "bg-accent"}`}
+        style={hex ? { backgroundColor: hex } : undefined}
+      />
+      <span className="truncate">
+        {name}
+        {account ? ` · ${account.email}` : ""}
+      </span>
+    </div>
+  );
+}
+
 function DetailCard({ event }: { event: CalendarEvent }) {
   const { t } = useTranslation();
   const set = useUi((s) => s.set);
@@ -130,6 +154,7 @@ function DetailCard({ event }: { event: CalendarEvent }) {
           joinUrl: event.joinUrl ?? undefined,
           allDay: event.allDay,
           accountId: event.accountId,
+          calendarId: event.calendarId,
         },
       },
     });
@@ -217,6 +242,7 @@ function DetailCard({ event }: { event: CalendarEvent }) {
         {/* Body (scrolls when the event is long, so nothing gets clipped) */}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-2 pb-2">
           <div className="text-[13px] text-ink-muted">{whenLabel(event)}</div>
+          <CalendarLine event={event} />
           {event.location && !event.location.startsWith("http") && (
             <LocationLine location={event.location} />
           )}

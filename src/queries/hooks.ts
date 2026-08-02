@@ -143,6 +143,29 @@ export function useFolders(accountId: number | null) {
   });
 }
 
+export function useCalendars(accountId: number | null = null) {
+  return useQuery({
+    queryKey: ["calendars", accountId],
+    queryFn: () => call("list_calendars", { accountId }),
+    staleTime: 30_000,
+  });
+}
+
+export function useSetCalendarColor() {
+  return useMutation({
+    mutationFn: (vars: { calendarId: number; color: string | null }) =>
+      call("set_calendar_color", vars),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendars"] }),
+  });
+}
+
+export function useSetDefaultCalendar() {
+  return useMutation({
+    mutationFn: (vars: { calendarId: number }) => call("set_default_calendar", vars),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendars"] }),
+  });
+}
+
 export function useCalendarEvents(startMs: number, endMs: number, enabled = true) {
   return useQuery({
     queryKey: ["events", startMs, endMs],

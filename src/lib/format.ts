@@ -134,3 +134,19 @@ export function hueOf(s: string): number {
 export function accountLabel(a: { displayName: string | null; email: string }): string {
   return a.displayName?.trim() || a.email.split("@")[0] || a.email;
 }
+
+/** Marker color for an account: the user's pick, else a stable hue from the address. */
+export function accountColor(
+  a: { id: number; email: string },
+  colors?: Record<string, string>,
+): string {
+  return colors?.[String(a.id)] || `hsl(${hueOf(a.email)} 55% 48%)`;
+}
+
+/** Inbox-row name for an account: the user's short name, else `accountLabel`. */
+export function accountShortName(
+  a: { id: number; displayName: string | null; email: string },
+  shortNames?: Record<string, string>,
+): string {
+  return shortNames?.[String(a.id)]?.trim() || accountLabel(a);
+}
