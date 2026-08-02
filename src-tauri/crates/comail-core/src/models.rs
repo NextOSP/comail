@@ -309,14 +309,14 @@ pub struct ActionResult {
     pub action_ids: Vec<i64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftAttachmentIn {
     pub file_path: String,
     pub filename: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveDraftArgs {
     pub draft_id: Option<i64>,

@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AiCalendarSuggestion } from "../../ipc/types";
+import { call } from "../../ipc/commands";
+import { errorMessage } from "../../ipc/errors";
 import { performThreadAction } from "../../queries/actions";
 import { useThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
@@ -219,6 +221,42 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
       },
     });
   };
+
+  const editDraft = async (draftId: number) => {
+    try {
+      const draft = await call("get_draft", { draftId });
+      const mode =
+        draft.mode === "reply" ||
+        draft.mode === "reply_all" ||
+        draft.mode === "forward"
+          ? draft.mode
+          : "new";
+      const replyTo =
+        draft.inReplyToMessageId == null
+          ? undefined
+          : data.messages.find((m) => m.id === draft.inReplyToMessageId);
+      openComposer({
+        mode,
+        draftId,
+        accountId: draft.accountId,
+        replyTo,
+        initial: {
+          to: draft.to,
+          cc: draft.cc,
+          bcc: draft.bcc,
+          subject: draft.subject,
+          body: draft.bodyText,
+          bodyHtml: draft.bodyHtml ?? undefined,
+          attachments: draft.attachments,
+        },
+      });
+    } catch (err) {
+      useUi.getState().pushToast({
+        kind: "error",
+        message: t("thread:draftOpenFailed", { detail: errorMessage(err) }),
+      });
+    }
+  };
   // Expansion follows explicit toggles, the last message, and unread state -   // NOT the selection, so hovering to pick a reply target never expands or
   // collapses a message. Keyboard nav (N/P) expands its target via the effect
   // below ("expand next/previous").
@@ -285,6 +323,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
                 message={m}
                 focused={selectedId === m.id}
                 expanded={isExpanded(m.id, m.isRead)}
+                onEditDraft={m.isDraft ? () => void editDraft(m.id) : undefined}
                 onToggle={() => {
                   selectMessage(m.id);
                   setOverrides((o) => ({ ...o, [m.id]: !isExpanded(m.id, m.isRead) }));

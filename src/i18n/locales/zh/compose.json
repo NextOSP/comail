@@ -32,6 +32,7 @@
   "dropToAttach": "拖放以附加",
   "footerHints": "{{mod}}↵ 发送 · {{mod}}⇧↵ 发送并完成",
   "draftSaved": "草稿已保存",
+  "discardFailed": "无法丢弃草稿：{{detail}}",
   "unsaved": "未保存",
   "keepDraft": "保留此草稿？",
   "saveDraftButton": "保存草稿",

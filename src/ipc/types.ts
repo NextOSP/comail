@@ -780,6 +780,7 @@ export interface Commands {
   send_now(args: { actionId: number }): Promise<{ sent: boolean }>;
 
   save_draft(args: { args: SaveDraftArgs }): Promise<{ draftId: number }>;
+  get_draft(args: { draftId: number }): Promise<SaveDraftArgs>;
   delete_draft(args: { draftId: number }): Promise<void>;
   queue_send(args: { args: QueueSendArgs }): Promise<QueueSendResult>;
   list_contacts(args: { prefix: string; accountId?: number; limit?: number }): Promise<Address[]>;

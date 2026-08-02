@@ -33,6 +33,8 @@
     "useReply": "Use as reply"
   },
   "draftBadge": "Draft",
+  "editDraft": "Edit draft",
+  "draftOpenFailed": "Couldn’t open draft: {{detail}}",
   "sendingBadge": "Sending…",
   "sendFailedBadge": "Couldn't send",
   "sendFailedTitle": "Message not sent",

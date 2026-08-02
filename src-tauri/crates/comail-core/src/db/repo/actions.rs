@@ -199,6 +199,26 @@ pub fn bump_attempt(conn: &Connection, id: i64, retry_at: i64, error: &str) -> R
     Ok(())
 }
 
+/// Whether an optimistic move is still in flight from this folder. Header sync
+/// uses this to avoid re-linking the old server copy to a row already moved
+/// locally while the queued IMAP command is waiting to run.
+pub fn has_active_move_from(conn: &Connection, message_id: i64, folder_id: i64) -> Result<bool> {
+    let mut stmt = conn.prepare(
+        "SELECT payload FROM pending_actions
+         WHERE message_id = ?1
+           AND kind IN ('archive','unarchive','trash','spam','not_spam','move')
+           AND state IN ('pending','inflight')",
+    )?;
+    let payloads = stmt.query_map(params![message_id], |row| row.get::<_, String>(0))?;
+    for payload in payloads {
+        let payload: serde_json::Value = serde_json::from_str(&payload?)?;
+        if payload["srcFolderId"].as_i64() == Some(folder_id) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Most recent undoable action (pending or just done, within the window).
 pub fn last_undoable(conn: &Connection, since_ms: i64) -> Result<Option<PendingAction>> {
     let mut stmt = conn.prepare(

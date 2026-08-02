@@ -175,6 +175,11 @@ pub async fn save_draft(
 }
 
 #[tauri::command]
+pub async fn get_draft(state: State<'_, AppState>, draft_id: i64) -> CmdResult<SaveDraftArgs> {
+    state.core.get_draft(draft_id).await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn delete_draft(state: State<'_, AppState>, draft_id: i64) -> CmdResult<()> {
     state.core.delete_draft(draft_id).await.map_err(err)
 }

@@ -1777,7 +1777,7 @@ function inView(t: MockThread, view: View): boolean {
         t.folder !== "spam"
       );
     case "drafts":
-      return t.messages.some((m) => m.isDraft) && t.folder !== "trash";
+      return t.messages.some((m) => m.isDraft) && t.folder === "drafts";
     case "done":
       return t.folder === "done";
     case "trash":
@@ -1908,6 +1908,7 @@ interface DraftLoc {
   messageId: number;
 }
 const draftIndex = new Map<number, DraftLoc>();
+const draftArgsById = new Map<number, SaveDraftArgs>();
 
 function saveDraft(args: SaveDraftArgs): { draftId: number } {
   let loc = args.draftId != null ? draftIndex.get(args.draftId) : undefined;
@@ -1982,7 +1983,41 @@ function saveDraft(args: SaveDraftArgs): { draftId: number } {
     size: null,
     isInline: false,
   }));
+  draftArgsById.set(msg.id, {
+    ...args,
+    draftId: msg.id,
+    to: [...args.to],
+    cc: [...args.cc],
+    bcc: [...args.bcc],
+    attachments: [...(args.attachments ?? [])],
+  });
   return { draftId: msg.id };
+}
+
+function getDraft(draftId: number): SaveDraftArgs {
+  const saved = draftArgsById.get(draftId);
+  if (saved) return saved;
+  for (const thread of threads) {
+    const msg = thread.messages.find((m) => m.id === draftId && m.isDraft);
+    if (!msg) continue;
+    const args: SaveDraftArgs = {
+      draftId,
+      accountId: msg.accountId,
+      to: [...msg.to],
+      cc: [...msg.cc],
+      bcc: [],
+      subject: msg.subject,
+      bodyText: msg.textBody,
+      bodyHtml: msg.htmlBody,
+      mode: "new",
+      inReplyToMessageId: null,
+      attachments: [],
+    };
+    draftIndex.set(draftId, { threadId: thread.id, messageId: draftId });
+    draftArgsById.set(draftId, args);
+    return args;
+  }
+  throw new Error(`Draft ${draftId} not found`);
 }
 
 function dispatchSend(draftId: number) {
@@ -1995,10 +2030,19 @@ function dispatchSend(draftId: number) {
   m.date = Date.now();
   if (t.folder === "drafts") t.folder = "sent";
   draftIndex.delete(draftId);
+  draftArgsById.delete(draftId);
 }
 
 function deleteDraft(draftId: number) {
-  const loc = draftIndex.get(draftId);
+  const loc =
+    draftIndex.get(draftId) ??
+    threads
+      .map((thread) => ({
+        thread,
+        message: thread.messages.find((message) => message.id === draftId && message.isDraft),
+      }))
+      .filter(({ message }) => message != null)
+      .map(({ thread, message }) => ({ threadId: thread.id, messageId: message!.id }))[0];
   if (!loc) return;
   const t = threads.find((x) => x.id === loc.threadId);
   if (t) {
@@ -2009,6 +2053,7 @@ function deleteDraft(draftId: number) {
     }
   }
   draftIndex.delete(draftId);
+  draftArgsById.delete(draftId);
 }
 
 // ---------------------------------------------------------------------------
@@ -2601,6 +2646,9 @@ export async function mockInvoke(
 
     case "save_draft":
       return delay(saveDraft(a.args as SaveDraftArgs));
+
+    case "get_draft":
+      return delay(getDraft(a.draftId as number));
 
     case "delete_draft":
       deleteDraft(a.draftId as number);

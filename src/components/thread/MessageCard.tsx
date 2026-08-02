@@ -76,11 +76,13 @@ export function MessageCard({
   expanded,
   focused,
   onToggle,
+  onEditDraft,
 }: {
   message: MessageDetail;
   expanded: boolean;
   focused: boolean;
   onToggle: () => void;
+  onEditDraft?: () => void;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -123,7 +125,7 @@ export function MessageCard({
         className={`co-row flex cursor-pointer items-baseline gap-4 rounded-lg px-3 py-2.5 transition-colors hover:bg-bg1 ${
           focused ? "bg-bg1 ring-1 ring-inset ring-accent/60" : ""
         }`}
-        onClick={onToggle}
+        onClick={message.isDraft && !isSendPending ? onEditDraft ?? onToggle : onToggle}
       >
         <span className="w-32 shrink-0 truncate text-[13.5px] font-medium text-ink">
           {addressName(message.from)}
@@ -209,6 +211,18 @@ export function MessageCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {message.isDraft && !isSendPending && (
+            <button
+              type="button"
+              className="rounded-md border border-hairline px-2 py-1 text-[11.5px] font-medium text-accent hover:border-accent/50 hover:bg-bg2"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEditDraft?.();
+              }}
+            >
+              {t("thread:editDraft")}
+            </button>
+          )}
           {hasFile && <PaperclipIcon />}
           <time className="text-[11.5px] whitespace-nowrap text-ink-faint">{longTime(message.date)}</time>
         </div>

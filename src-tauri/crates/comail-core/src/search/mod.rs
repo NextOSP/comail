@@ -46,8 +46,18 @@ enum Token {
 }
 
 /// `subject:` / `body:` (the column-scoped operators that accept a quoted
-/// value) mapped to their FTS5 column name; anything else is `None`.
+/// value) mapped to their FTS5 column name; anything else is `None`. A `!` or
+/// `!!` case marker directly before the quote (`body:!"phrase"`,
+/// `body:!!"Phrase"` - documented in the search help as "ignore case" /
+/// "match case exactly") is tolerated here so the phrase still gets column
+/// scoping; the marker itself is a no-op today since FTS5's unicode61
+/// tokenizer already folds case unconditionally; case-exact matching isn't
+/// implemented.
 fn scoped_col(token: &str) -> Option<&'static str> {
+    let token = token
+        .strip_suffix("!!")
+        .or_else(|| token.strip_suffix('!'))
+        .unwrap_or(token);
     match token.strip_suffix(':')?.to_ascii_lowercase().as_str() {
         "subject" => Some("subject"),
         "body" => Some("body"),
@@ -317,6 +327,19 @@ mod tests {
     fn body_quoted_value_scopes_the_phrase() {
         let q = parse("body:\"past due\"");
         assert_eq!(q.fts, "body:\"past due\"");
+    }
+
+    #[test]
+    fn case_marker_before_quote_still_scopes_the_phrase() {
+        // `!`/`!!` right before the quote (documented as "ignore case" /
+        // "match case exactly") must not break column scoping - previously
+        // `body:!"..."` lost the "body" prefix entirely and fell through as
+        // an unscoped, ungated positive term.
+        let q = parse("body:!\"15.235.209.251\"");
+        assert_eq!(q.fts, "body:\"15.235.209.251\"");
+
+        let q = parse("subject:!!\"Exact Case\"");
+        assert_eq!(q.fts, "subject:\"Exact Case\"");
     }
 
     #[test]

@@ -32,6 +32,8 @@
     "useReply": "Usar como respuesta"
   },
   "draftBadge": "Borrador",
+  "editDraft": "Editar borrador",
+  "draftOpenFailed": "No se pudo abrir el borrador: {{detail}}",
   "sendingBadge": "Enviando…",
   "sendFailedBadge": "No se pudo enviar",
   "sendFailedTitle": "Mensaje no enviado",

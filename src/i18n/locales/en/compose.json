@@ -32,6 +32,7 @@
   "dropToAttach": "Drop to attach",
   "footerHints": "{{mod}}↵ send · {{mod}}⇧↵ send & done",
   "draftSaved": "Draft saved",
+  "discardFailed": "Couldn’t discard draft: {{detail}}",
   "unsaved": "Unsaved",
   "keepDraft": "Keep this draft?",
   "saveDraftButton": "Save draft",

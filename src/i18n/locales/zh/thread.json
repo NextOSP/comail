@@ -32,6 +32,8 @@
     "useReply": "用作回复"
   },
   "draftBadge": "草稿",
+  "editDraft": "编辑草稿",
+  "draftOpenFailed": "无法打开草稿：{{detail}}",
   "sendingBadge": "发送中…",
   "sendFailedBadge": "发送失败",
   "sendFailedTitle": "邮件未发送",

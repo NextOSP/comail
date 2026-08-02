@@ -351,6 +351,7 @@ pub fn run() {
             commands::cancel_send,
             commands::send_now,
             commands::save_draft,
+            commands::get_draft,
             commands::delete_draft,
             commands::queue_send,
             commands::list_contacts,

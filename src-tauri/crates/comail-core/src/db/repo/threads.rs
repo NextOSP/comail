@@ -260,9 +260,14 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
             let c = role_exists(roles::SENT, &mut bind);
             where_clauses.push(c);
         }
-        View::Drafts => where_clauses.push(
-            "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.is_draft = 1)".into(),
-        ),
+        View::Drafts => {
+            bind.push(Box::new(roles::DRAFTS.to_string()));
+            where_clauses.push(format!(
+                "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+                         WHERE m.thread_id = t.id AND m.is_draft = 1 AND f.role = ?{})",
+                bind.len()
+            ));
+        }
         View::Done => {
             let c = role_exists(roles::ARCHIVE, &mut bind);
             let inbox = role_exists(roles::INBOX, &mut bind);

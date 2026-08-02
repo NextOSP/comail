@@ -172,7 +172,10 @@ pub fn unread_counts(
     views.insert(
         "drafts".to_string(),
         Q::any(account_id)
-            .clause("EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.is_draft = 1)")
+            .clause(
+                "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+                         WHERE m.thread_id = t.id AND m.is_draft = 1 AND f.role = 'drafts')",
+            )
             .run(conn)?,
     );
 

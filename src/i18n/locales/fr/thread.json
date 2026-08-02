@@ -32,6 +32,8 @@
     "useReply": "Utiliser comme réponse"
   },
   "draftBadge": "Brouillon",
+  "editDraft": "Modifier le brouillon",
+  "draftOpenFailed": "Impossible d’ouvrir le brouillon : {{detail}}",
   "sendingBadge": "Envoi…",
   "sendFailedBadge": "Échec de l'envoi",
   "sendFailedTitle": "Message non envoyé",

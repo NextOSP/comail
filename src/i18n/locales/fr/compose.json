@@ -32,6 +32,7 @@
   "dropToAttach": "Déposer pour joindre",
   "footerHints": "{{mod}}↵ envoyer · {{mod}}⇧↵ envoyer et terminer",
   "draftSaved": "Brouillon enregistré",
+  "discardFailed": "Impossible de supprimer le brouillon : {{detail}}",
   "unsaved": "Non enregistré",
   "keepDraft": "Conserver ce brouillon ?",
   "saveDraftButton": "Enregistrer le brouillon",

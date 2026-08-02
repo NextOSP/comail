@@ -32,6 +32,7 @@
   "dropToAttach": "Suelta para adjuntar",
   "footerHints": "{{mod}}↵ enviar · {{mod}}⇧↵ enviar y hecho",
   "draftSaved": "Borrador guardado",
+  "discardFailed": "No se pudo descartar el borrador: {{detail}}",
   "unsaved": "Sin guardar",
   "keepDraft": "¿Conservar este borrador?",
   "saveDraftButton": "Guardar borrador",

@@ -1672,7 +1672,9 @@ async fn store_headers(
                 // message APPENDed earlier, or Gmail label duplication).
                 if let Some(mid) = &parsed.message_id {
                     if let Some(existing) = repo::messages::by_message_id(&tx, account_id, mid)? {
-                        if existing.uid.is_none() {
+                        if existing.uid.is_none()
+                            && !repo::actions::has_active_move_from(&tx, existing.id, folder_id)?
+                        {
                             repo::messages::set_uid_and_folder(
                                 &tx,
                                 existing.id,

@@ -32,6 +32,7 @@
   "dropToAttach": "Thả để đính kèm",
   "footerHints": "{{mod}}↵ gửi · {{mod}}⇧↵ gửi & hoàn tất",
   "draftSaved": "Đã lưu bản nháp",
+  "discardFailed": "Không thể bỏ bản nháp: {{detail}}",
   "unsaved": "Chưa lưu",
   "keepDraft": "Giữ bản nháp này?",
   "saveDraftButton": "Lưu bản nháp",

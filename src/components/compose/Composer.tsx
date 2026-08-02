@@ -6,7 +6,7 @@ import i18n from "../../i18n";
 import { errorMessage } from "../../ipc/errors";
 import { call } from "../../ipc/commands";
 import { MOCK_MODE } from "../../ipc/mock";
-import type { Address, DraftAttachment, MessageDetail, Snippet } from "../../ipc/types";
+import type { Address, DraftAttachment, MessageDetail, Snippet, ThreadDetail } from "../../ipc/types";
 import { RecipientField } from "./RecipientField";
 import { onComposerAction } from "../../keyboard/commands";
 import { advanceAfter, buildCommandContext } from "../../keyboard/context";
@@ -62,15 +62,22 @@ function initialFields(c: ComposerState, selfEmails: Set<string>) {
     // the body; pull it back out so it isn't doubled at send time.
     const q = quoteFor(c);
     let body = c.initial.body ?? "";
+    let bodyHtml = c.initial.bodyHtml;
     if (q && body.includes(q)) {
       body = body.replace(q, "").replace(/\n+$/, "");
+    }
+    if (q && bodyHtml) {
+      const quoteSuffix = `<br><br>${quoteToHtml(q)}`;
+      if (bodyHtml.endsWith(quoteSuffix)) {
+        bodyHtml = bodyHtml.slice(0, -quoteSuffix.length);
+      }
     }
     return {
       to: c.initial.to ?? [],
       cc: c.initial.cc ?? [],
       bcc: c.initial.bcc ?? [],
       subject: c.initial.subject ?? "",
-      bodyHtml: c.initial.bodyHtml ?? textToHtml(body),
+      bodyHtml: bodyHtml ?? textToHtml(body),
       quote: q,
     };
   }
@@ -700,10 +707,20 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     if (draftId != null) {
       try {
         await call("delete_draft", { draftId });
-      } catch {
-        /* ignore */
+      } catch (err) {
+        pushToast({
+          kind: "error",
+          message: t("compose:discardFailed", { detail: errorMessage(err) }),
+        });
+        return;
       }
+      queryClient.setQueriesData<ThreadDetail>({ queryKey: ["thread"] }, (detail) =>
+        detail
+          ? { ...detail, messages: detail.messages.filter((message) => message.id !== draftId) }
+          : detail,
+      );
       void queryClient.invalidateQueries({ queryKey: ["threads"] });
+      void queryClient.invalidateQueries({ queryKey: ["thread"] });
     }
     closeComposer();
   };
@@ -711,6 +728,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const saveAndClose = async () => {
     await saveDraft();
     void queryClient.invalidateQueries({ queryKey: ["threads"] });
+    void queryClient.invalidateQueries({ queryKey: ["thread"] });
     closeComposer();
     pushToast({ kind: "info", message: t("compose:draftSaved"), durationMs: 2500 });
   };

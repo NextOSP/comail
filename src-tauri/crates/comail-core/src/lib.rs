@@ -35,6 +35,7 @@ use crate::events::{CoreEvent, EventBus};
 use crate::models::*;
 use crate::oauth::tokens::TokenProvider;
 use crate::sync::engine::{AccountHandle, SyncCmd, SyncCtx, spawn_account};
+use rusqlite::OptionalExtension;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -1103,7 +1104,8 @@ impl Core {
                 filename: att.filename.clone(),
             });
         }
-        self.db
+        let (draft_id, thread_id) = self
+            .db
             .write(move |conn| {
                 let tx = conn.transaction()?;
 
@@ -1212,27 +1214,156 @@ impl Core {
                     "UPDATE messages SET has_attachments = ?2 WHERE id = ?1",
                     rusqlite::params![draft_id, (!staged.is_empty()) as i64],
                 )?;
-                if let Some(tid) = repo::messages::get_row(&tx, draft_id)?.and_then(|r| r.thread_id)
-                {
+                let thread_id =
+                    repo::messages::get_row(&tx, draft_id)?.and_then(|r| r.thread_id);
+                if let Some(tid) = thread_id {
                     repo::threads::recompute(&tx, tid)?;
                 }
                 tx.commit()?;
-                Ok(draft_id)
+                Ok((draft_id, thread_id))
+            })
+            .await?;
+        if let Some(thread_id) = thread_id {
+            self.bus.emit(CoreEvent::MailUpdated {
+                thread_ids: vec![thread_id],
+            });
+        }
+        Ok(draft_id)
+    }
+
+    /// Load the complete editable state for a saved draft. Message detail omits
+    /// Bcc and app-managed attachment paths, so reopening from the rendered
+    /// message alone would silently lose both on the next save.
+    pub async fn get_draft(&self, draft_id: i64) -> Result<SaveDraftArgs> {
+        self.db
+            .read(move |conn| {
+                let mut draft = conn
+                    .query_row(
+                        "SELECT m.account_id, m.to_json, m.cc_json, m.bcc_json, m.subject,
+                                COALESCE(b.text_body, ''), b.html_body,
+                                COALESCE(dm.mode, 'new'), dm.in_reply_to_message_id,
+                                m.is_draft
+                         FROM messages m
+                         LEFT JOIN message_bodies b ON b.message_id = m.id
+                         LEFT JOIN drafts_meta dm ON dm.message_id = m.id
+                         WHERE m.id = ?1",
+                        rusqlite::params![draft_id],
+                        |row| {
+                            let is_draft = row.get::<_, i64>(9)? != 0;
+                            Ok((
+                                SaveDraftArgs {
+                                    draft_id: Some(draft_id),
+                                    account_id: row.get(0)?,
+                                    to: serde_json::from_str(&row.get::<_, String>(1)?)
+                                        .unwrap_or_default(),
+                                    cc: serde_json::from_str(&row.get::<_, String>(2)?)
+                                        .unwrap_or_default(),
+                                    bcc: serde_json::from_str(&row.get::<_, String>(3)?)
+                                        .unwrap_or_default(),
+                                    subject: row.get(4)?,
+                                    body_text: row.get(5)?,
+                                    body_html: row.get(6)?,
+                                    mode: row.get(7)?,
+                                    in_reply_to_message_id: row.get(8)?,
+                                    attachments: Vec::new(),
+                                },
+                                is_draft,
+                            ))
+                        },
+                    )
+                    .optional()?
+                    .ok_or_else(|| CoreError::NotFound("draft".into()))?;
+                if !draft.1 {
+                    return Err(CoreError::NotFound("draft".into()));
+                }
+
+                let mut stmt = conn.prepare(
+                    "SELECT file_path, filename
+                     FROM draft_attachments WHERE draft_id = ?1 ORDER BY id",
+                )?;
+                draft.0.attachments = stmt
+                    .query_map(rusqlite::params![draft_id], |row| {
+                        Ok(crate::models::DraftAttachmentIn {
+                            file_path: row.get(0)?,
+                            filename: row.get(1)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(draft.0)
             })
             .await
     }
 
     pub async fn delete_draft(&self, draft_id: i64) -> Result<()> {
-        self.db
+        let (thread_id, nudge_account) = self
+            .db
             .write(move |conn| {
-                let row = repo::messages::get_row(conn, draft_id)?;
-                repo::messages::delete(conn, draft_id)?;
-                if let Some(tid) = row.and_then(|r| r.thread_id) {
+                let row = conn
+                    .query_row(
+                        "SELECT m.account_id, m.thread_id, m.folder_id, m.uid, m.is_draft,
+                                COALESCE(f.role, '')
+                         FROM messages m LEFT JOIN folders f ON f.id = m.folder_id
+                         WHERE m.id = ?1",
+                        rusqlite::params![draft_id],
+                        |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, Option<i64>>(1)?,
+                                row.get::<_, Option<i64>>(2)?,
+                                row.get::<_, Option<i64>>(3)?,
+                                row.get::<_, i64>(4)? != 0,
+                                row.get::<_, String>(5)?,
+                            ))
+                        },
+                    )
+                    .optional()?
+                    .ok_or_else(|| CoreError::NotFound("draft".into()))?;
+                if !row.4 {
+                    return Err(CoreError::NotFound("draft".into()));
+                }
+
+                let mut nudge_account = None;
+                if row.3.is_some() && row.5 != roles::TRASH {
+                    // This draft exists on IMAP. Move it optimistically and
+                    // queue the matching remote move so the next sync cannot
+                    // resurrect the local row in Drafts.
+                    let trash = repo::folders::by_role(conn, row.0, roles::TRASH)?
+                        .ok_or_else(|| CoreError::NotFound("no trash folder".into()))?;
+                    let payload = serde_json::json!({
+                        "srcFolderId": row.2,
+                        "srcUid": row.3,
+                        "targetFolderId": trash.id,
+                    });
+                    repo::messages::set_uid_and_folder(conn, draft_id, trash.id, None)?;
+                    repo::actions::enqueue(
+                        conn,
+                        row.0,
+                        "trash",
+                        Some(draft_id),
+                        row.1,
+                        &payload,
+                        None,
+                    )?;
+                    nudge_account = Some(row.0);
+                } else {
+                    // Purely local drafts have no remote copy to preserve.
+                    repo::messages::delete(conn, draft_id)?;
+                }
+                if let Some(tid) = row.1 {
                     repo::threads::recompute(conn, tid)?;
                 }
-                Ok(())
+                Ok((row.1, nudge_account))
             })
-            .await
+            .await?;
+        if let Some(thread_id) = thread_id {
+            self.bus.emit(CoreEvent::MailUpdated {
+                thread_ids: vec![thread_id],
+            });
+        }
+        if let Some(account_id) = nudge_account {
+            self.nudge(Some(account_id), || SyncCmd::RunActions).await;
+        }
+        Ok(())
     }
 
     pub async fn queue_send(&self, args: QueueSendArgs) -> Result<QueueSendResult> {
@@ -3844,15 +3975,18 @@ fn apply_thread_action(
         |r| r.get(0),
     )?;
 
-    // Messages in this thread with their current folder role.
+    // Most thread actions intentionally ignore drafts. Archive and Trash are
+    // exceptions: users can file or discard a draft from the Drafts view, and
+    // excluding it here made the optimistic removal snap back on reconciliation.
+    let include_drafts = matches!(kind, ActionKind::Archive | ActionKind::Trash);
     let mut stmt = tx.prepare(
         "SELECT m.id, m.folder_id, m.uid, m.is_read, m.is_starred, COALESCE(f.role,'')
          FROM messages m LEFT JOIN folders f ON f.id = m.folder_id
-         WHERE m.thread_id = ?1 AND m.is_draft = 0",
+         WHERE m.thread_id = ?1 AND (m.is_draft = 0 OR ?2 = 1)",
     )?;
     #[allow(clippy::type_complexity)]
     let msgs: Vec<(i64, Option<i64>, Option<i64>, bool, bool, String)> = stmt
-        .query_map(rusqlite::params![thread_id], |r| {
+        .query_map(rusqlite::params![thread_id, include_drafts as i64], |r| {
             Ok((
                 r.get(0)?,
                 r.get(1)?,
@@ -3970,10 +4104,9 @@ fn apply_thread_action(
                     None
                 })
                 .ok_or_else(|| CoreError::NotFound(format!("no {target_role} folder")))?;
-            let src_role = roles::INBOX;
             for (id, f, u, _r, _s, role) in &msgs {
                 let movable = match kind {
-                    ActionKind::Archive => role == src_role,
+                    ActionKind::Archive => role == roles::INBOX || role == roles::DRAFTS,
                     _ => role != target_role && !role.is_empty(),
                 };
                 if movable && f.is_some() {

@@ -32,6 +32,8 @@
     "useReply": "Dùng làm trả lời"
   },
   "draftBadge": "Bản nháp",
+  "editDraft": "Sửa bản nháp",
+  "draftOpenFailed": "Không thể mở bản nháp: {{detail}}",
   "sendingBadge": "Đang gửi…",
   "sendFailedBadge": "Không gửi được",
   "sendFailedTitle": "Thư chưa được gửi",
