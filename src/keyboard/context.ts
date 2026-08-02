@@ -487,6 +487,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         signatureList: [],
         signatureDefaults: {},
         accountThemes: {},
+        showAccountBadges: true,
         accountColors: {},
         accountShortNames: {},
         ...settings,

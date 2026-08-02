@@ -1467,6 +1467,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   signatureList: [],
   signatureDefaults: {},
   accountThemes: {},
+  showAccountBadges: true,
   accountColors: {},
   accountShortNames: {},
 };

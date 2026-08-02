@@ -113,6 +113,7 @@ const DEFAULT_SETTINGS: Settings = {
   signatureList: [],
   signatureDefaults: {},
   accountThemes: {},
+  showAccountBadges: true,
   accountColors: {},
   accountShortNames: {},
 };
@@ -3088,6 +3089,20 @@ function AccountsSection() {
   return (
     <section>
       <SectionLabel>{t("settings:section.accounts")}</SectionLabel>
+      <div className="mb-3">
+        <SettingRow
+          label={t("settings:accounts.showBadges")}
+          hint={t("settings:accounts.showBadgesHint")}
+        >
+          <Toggle
+            label={t("settings:accounts.showBadges")}
+            checked={settings?.showAccountBadges ?? true}
+            onChange={(showAccountBadges) =>
+              void updateSettings({ showAccountBadges })
+            }
+          />
+        </SettingRow>
+      </div>
       <div className="flex flex-col gap-1.5">
         {(accounts ?? []).map((a) => (
           <div
@@ -3164,6 +3179,7 @@ function AccountsSection() {
               onConfirm={() => void removeAccount(a.id, a.email)}
             />
             </div>
+            {(settings?.showAccountBadges ?? true) && (
             <div className="flex flex-wrap items-center gap-3 pl-[18px]">
               <input
                 className={`${inputCls} !w-40 !py-1 !text-[12.5px]`}
@@ -3219,6 +3235,7 @@ function AccountsSection() {
                 )}
               </div>
             </div>
+            )}
           </div>
         ))}
         {(accounts ?? []).length === 0 && (

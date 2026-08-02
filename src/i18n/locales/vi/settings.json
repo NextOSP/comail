@@ -155,6 +155,8 @@
       "microsoft": "Microsoft"
     },
     "theme": "Giao diện",
+    "showBadges": "Đánh dấu tài khoản",
+    "showBadgesHint": "Hiển thị chấm màu theo tài khoản trên các dòng hộp thư khi có nhiều tài khoản được kết nối. Di chuột lên chấm để xem tên.",
     "shortName": "Tên ngắn",
     "shortNameHint": "Tên ngắn hiển thị trên các dòng hộp thư để đánh dấu tài khoản này.",
     "colorHint": "Màu đánh dấu cho các dòng hộp thư của tài khoản này. Nhấp vào màu đang chọn để trở về tự động.",

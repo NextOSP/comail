@@ -750,6 +750,9 @@ pub struct Settings {
     /// stringified account id. Missing = follow the global `theme`.
     #[serde(default)]
     pub account_themes: std::collections::HashMap<String, String>,
+    /// Show which account each unified-inbox row belongs to (dot + short name).
+    #[serde(default = "default_true")]
+    pub show_account_badges: bool,
     /// Per-account marker color (hex), keyed by stringified account id.
     /// Missing = the frontend derives a stable hue from the address.
     #[serde(default)]
@@ -916,6 +919,7 @@ impl Default for Settings {
             signature_list: Vec::new(),
             signature_defaults: std::collections::HashMap::new(),
             account_themes: std::collections::HashMap::new(),
+            show_account_badges: true,
             account_colors: std::collections::HashMap::new(),
             account_short_names: std::collections::HashMap::new(),
         }

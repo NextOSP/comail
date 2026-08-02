@@ -253,6 +253,8 @@
     "theme": "Theme",
     "themeHint": "Theme for this account. \"Global default\" follows your Preferences theme.",
     "themeInherit": "Global default",
+    "showBadges": "Account markers",
+    "showBadgesHint": "Show a colored account dot on inbox rows when several accounts are connected. Hover it for the account name.",
     "shortName": "Short name",
     "shortNameHint": "Short name shown on inbox rows to mark this account.",
     "colorHint": "Marker color for this account's inbox rows. Click the selected swatch to go back to automatic.",

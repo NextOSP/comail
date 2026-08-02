@@ -51,7 +51,7 @@ function ThreadRowImpl({
 
   return (
     <div
-      className={`co-row relative flex h-full cursor-default items-center gap-3 pr-5 pl-4 ${leaving ? "co-row-leaving" : ""}`}
+      className={`co-row flex h-full cursor-default items-center gap-3 pr-5 pl-4 ${leaving ? "co-row-leaving" : ""}`}
       data-selected={selected}
       data-checked={checked}
       onMouseDown={onRowDown ? (e) => onRowDown(thread.id, e) : undefined}
@@ -60,13 +60,6 @@ function ThreadRowImpl({
       onMouseEnter={onRowHover ? () => onRowHover(thread.id) : undefined}
       onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
     >
-      {account && (
-        <span
-          className="absolute inset-y-[9px] left-0 w-[3px] rounded-r-full"
-          style={{ background: account.color }}
-        />
-      )}
-
       {/* gutter: checkbox (selection) / unread dot / star. self-stretch keeps the
           hit target the full row height so clicking/drag-selecting doesn't
           require landing on the tiny dot. */}
@@ -132,15 +125,10 @@ function ThreadRowImpl({
 
       {account && (
         <span
-          className="max-w-[90px] shrink-0 truncate rounded-full px-2 py-[1px] text-[10.5px] font-medium"
-          style={{
-            background: `color-mix(in srgb, ${account.color} 14%, transparent)`,
-            color: account.color,
-          }}
-          title={account.email}
-        >
-          {account.name}
-        </span>
+          className="size-[7px] shrink-0 rounded-full"
+          style={{ background: account.color }}
+          title={`${account.name} · ${account.email}`}
+        />
       )}
 
       {labelMap && thread.labels.length > 0 && (

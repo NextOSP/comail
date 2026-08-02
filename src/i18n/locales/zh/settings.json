@@ -155,6 +155,8 @@
       "microsoft": "Microsoft"
     },
     "theme": "主题",
+    "showBadges": "账户标记",
+    "showBadgesHint": "连接多个账户时，在收件箱行上显示账户彩色圆点。悬停可查看账户名称。",
     "shortName": "简称",
     "shortNameHint": "显示在收件箱行上的简称，用于标识此账户。",
     "colorHint": "此账户在收件箱行上的标记颜色。点击已选中的色块可恢复自动。",

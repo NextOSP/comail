@@ -426,6 +426,8 @@ export interface Settings {
   signatureDefaults: Record<string, SignatureDefaults>;
   /** Per-account theme override, keyed by stringified account id. Missing = global theme. */
   accountThemes: Record<string, "snow" | "carbon" | "holiday" | "system">;
+  /** Show which account each unified-inbox row belongs to (dot + short name). */
+  showAccountBadges: boolean;
   /** Per-account marker color (hex), keyed by stringified account id. Missing =
    * a stable hue derived from the address. */
   accountColors: Record<string, string>;

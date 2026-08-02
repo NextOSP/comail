@@ -155,6 +155,8 @@
       "microsoft": "Microsoft"
     },
     "theme": "Thème",
+    "showBadges": "Repères de compte",
+    "showBadgesHint": "Affiche un point coloré par compte sur les lignes de la boîte de réception quand plusieurs comptes sont connectés. Survolez-le pour voir le nom.",
     "shortName": "Nom court",
     "shortNameHint": "Nom court affiché sur les lignes de la boîte de réception pour repérer ce compte.",
     "colorHint": "Couleur du repère de ce compte dans la boîte de réception. Cliquez sur la couleur sélectionnée pour revenir en automatique.",

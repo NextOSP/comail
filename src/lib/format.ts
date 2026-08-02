@@ -135,12 +135,16 @@ export function accountLabel(a: { displayName: string | null; email: string }): 
   return a.displayName?.trim() || a.email.split("@")[0] || a.email;
 }
 
-/** Marker color for an account: the user's pick, else a stable hue from the address. */
+/** Curated marker colors (same palette as label swatches); raw hue math can
+ *  land on muddy tones, so automatic account colors pick from these instead. */
+const ACCOUNT_PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#6b7280"];
+
+/** Marker color for an account: the user's pick, else a stable palette pick. */
 export function accountColor(
   a: { id: number; email: string },
   colors?: Record<string, string>,
 ): string {
-  return colors?.[String(a.id)] || `hsl(${hueOf(a.email)} 55% 48%)`;
+  return colors?.[String(a.id)] || ACCOUNT_PALETTE[hueOf(a.email) % ACCOUNT_PALETTE.length];
 }
 
 /** Inbox-row name for an account: the user's short name, else `accountLabel`. */

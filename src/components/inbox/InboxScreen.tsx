@@ -31,8 +31,9 @@ export function InboxScreen() {
   // thread belongs to. Omitted with a single account or when filtered to one.
   const accountColors = settings?.accountColors;
   const accountShortNames = settings?.accountShortNames;
+  const showAccountBadges = settings?.showAccountBadges ?? true;
   const accountMeta = useMemo(() => {
-    if ((accounts ?? []).length < 2) return undefined;
+    if (!showAccountBadges || (accounts ?? []).length < 2) return undefined;
     return new Map(
       (accounts ?? []).map((a) => [
         a.id,
@@ -43,7 +44,7 @@ export function InboxScreen() {
         },
       ]),
     );
-  }, [accounts, accountColors, accountShortNames]);
+  }, [accounts, accountColors, accountShortNames, showAccountBadges]);
 
   const query = useThreads(
     view,

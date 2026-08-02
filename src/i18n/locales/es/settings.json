@@ -155,6 +155,8 @@
       "microsoft": "Microsoft"
     },
     "theme": "Tema",
+    "showBadges": "Marcadores de cuenta",
+    "showBadgesHint": "Muestra un punto de color por cuenta en las filas de la bandeja cuando hay varias cuentas conectadas. Pasa el cursor para ver el nombre.",
     "shortName": "Nombre corto",
     "shortNameHint": "Nombre corto que aparece en las filas de la bandeja para identificar esta cuenta.",
     "colorHint": "Color del marcador de esta cuenta en las filas de la bandeja. Haz clic en el color seleccionado para volver al automático.",
