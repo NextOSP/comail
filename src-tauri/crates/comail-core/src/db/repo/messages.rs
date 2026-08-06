@@ -351,11 +351,12 @@ pub fn requeue_misdecoded_bodies(conn: &mut Connection) -> Result<Vec<i64>> {
             // Version 2 introduced authoritative BODYSTRUCTURE Base64
             // decoding. Re-fetch every older selective Base64 text plan once,
             // including plain/calendar parts whose encoded form cannot be
-            // distinguished safely from legitimate Base64-looking prose.
-            let legacy_base64 = has_any_base64
-                && plan
-                    .as_ref()
-                    .is_some_and(|plan| plan.version < crate::mime::MIME_PLAN_VERSION);
+            // distinguished safely from legitimate Base64-looking prose. The
+            // bound is pinned to 2 on purpose: later versions changed
+            // attachment metadata only, and re-downloading every cached body
+            // for that would be pure churn.
+            let legacy_base64 =
+                has_any_base64 && plan.as_ref().is_some_and(|plan| plan.version < 2);
             let bad_quoted_printable = (has_plain_qp
                 && text
                     .as_deref()
@@ -1120,7 +1121,8 @@ mod tests {
             store_body(&c, id, None, Some(body), None, false, Some(body)).unwrap();
         }
         let legacy_plain_plan = MimePlan {
-            version: crate::mime::MIME_PLAN_VERSION - 1,
+            // Version 1: the pre-BODYSTRUCTURE-Base64 plan that must requeue.
+            version: 1,
             text_sections: vec![crate::mime::PlannedTextSection {
                 section: "1".into(),
                 kind: crate::mime::TextSectionKind::Plain,

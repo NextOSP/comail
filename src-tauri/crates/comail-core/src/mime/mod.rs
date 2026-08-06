@@ -42,7 +42,9 @@ pub struct ParsedAttachment {
 }
 
 /// Schema version written into `messages.mime_plan_json`.
-pub const MIME_PLAN_VERSION: u8 = 2;
+/// Bumped to 3 when `is_inline` stopped treating a bare Content-ID as proof of
+/// an embedded part: plans stored under the old rule are rebuilt on demand.
+pub const MIME_PLAN_VERSION: u8 = 3;
 
 /// A compact, serializable description of the IMAP sections needed to make a
 /// message readable without downloading unrelated attachment bytes.
@@ -238,8 +240,16 @@ pub fn plan_bodystructure(bs: &async_imap::imap_proto::BodyStructure<'_>) -> Mim
             .is_some_and(|value| value.eq_ignore_ascii_case("attachment"))
             || filename.is_some();
         let content_id = other.id.as_ref().map(|value| normalize_cid(value));
-        let is_inline = disposition.is_some_and(|value| value.eq_ignore_ascii_case("inline"))
-            || content_id.is_some();
+        // A Content-ID alone does not make a part inline: Gmail and Exchange
+        // stamp one on every part, including ordinary file attachments, so
+        // trusting it hid real attachments (no paperclip, no footer chip).
+        // An explicit disposition is authoritative; the Content-ID is only a
+        // fallback for parts that declare no disposition at all.
+        let is_inline = match disposition {
+            Some(value) if value.eq_ignore_ascii_case("attachment") => false,
+            Some(value) if value.eq_ignore_ascii_case("inline") => true,
+            _ => content_id.is_some(),
+        };
 
         let kind = if mime_type == "text/plain" {
             Some(TextSectionKind::Plain)
@@ -802,6 +812,43 @@ mod selective_section_tests {
 
         let json = serde_json::to_string(&plan).unwrap();
         assert_eq!(serde_json::from_str::<MimePlan>(&json).unwrap(), plan);
+    }
+
+    #[test]
+    fn content_id_does_not_make_a_disposed_attachment_inline() {
+        // Gmail and Exchange stamp a Content-ID on ordinary attachments; the
+        // explicit disposition decides, so the paperclip still shows.
+        let structure = BodyStructure::Multipart {
+            common: common("multipart", "mixed", &[], None),
+            bodies: vec![
+                text("plain", &[], None, ContentEncoding::SevenBit, 20),
+                basic(
+                    "application",
+                    "vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    Some(("attachment", "raport.docx")),
+                    Some("<f_mqkxxopb0>"),
+                    1_700_000,
+                ),
+            ],
+            extension: None,
+        };
+
+        let plan = plan_bodystructure(&structure);
+        assert_eq!(plan.attachments.len(), 1);
+        assert!(!plan.attachments[0].is_inline);
+        assert_eq!(
+            plan.attachments[0].content_id.as_deref(),
+            Some("f_mqkxxopb0")
+        );
+        assert!(plan.has_file_attachments());
+    }
+
+    #[test]
+    fn content_id_without_a_disposition_still_reads_as_inline() {
+        let structure = basic("image", "png", None, Some("<logo@cid>"), 100);
+        let plan = plan_bodystructure(&structure);
+        assert!(plan.attachments[0].is_inline);
+        assert!(!plan.has_file_attachments());
     }
 
     #[test]
@@ -1419,12 +1466,19 @@ pub fn parse_message(raw: &[u8]) -> Result<ParsedBody> {
             calendar_parts.push(String::from_utf8_lossy(part.contents()).into_owned());
         }
         let content_id = part.content_id().map(|s| s.to_string());
+        // Mirrors `plan_bodystructure`: Content-Disposition decides, and a bare
+        // Content-ID only counts when no disposition was declared.
+        let is_inline = match part.content_disposition() {
+            Some(cd) if cd.is_attachment() => false,
+            Some(cd) if cd.is_inline() => true,
+            _ => content_id.is_some(),
+        };
         attachments.push(ParsedAttachment {
             part_id: i.to_string(),
             filename,
             mime_type,
             size: part.contents().len() as i64,
-            is_inline: content_id.is_some(),
+            is_inline,
             content_id,
         });
     }
@@ -1688,6 +1742,26 @@ mod tests {
             "alice@example.com"
         );
         assert!(parsed.text.unwrap().contains("Hello Bob"));
+    }
+
+    #[test]
+    fn attachment_with_content_id_is_not_inline() {
+        let raw = b"From: alice@example.com\r\nTo: bob@example.com\r\nSubject: Raport\r\nContent-Type: multipart/mixed; boundary=b1\r\n\r\n--b1\r\nContent-Type: text/plain\r\n\r\nHi\r\n--b1\r\nContent-Type: application/msword; name=\"raport.docx\"\r\nContent-Disposition: attachment; filename=\"raport.docx\"\r\nContent-ID: <f_mqkxxopb0>\r\nContent-Transfer-Encoding: base64\r\n\r\nAAAA\r\n--b1--\r\n";
+        let parsed = parse_message(raw).unwrap();
+        assert_eq!(parsed.attachments.len(), 1);
+        assert_eq!(
+            parsed.attachments[0].filename.as_deref(),
+            Some("raport.docx")
+        );
+        assert!(!parsed.attachments[0].is_inline);
+    }
+
+    #[test]
+    fn embedded_image_with_content_id_stays_inline() {
+        let raw = b"From: alice@example.com\r\nTo: bob@example.com\r\nSubject: Newsletter\r\nContent-Type: multipart/related; boundary=b1\r\n\r\n--b1\r\nContent-Type: text/html\r\n\r\n<img src=\"cid:logo@cid\">\r\n--b1\r\nContent-Type: image/png\r\nContent-Disposition: inline; filename=\"logo.png\"\r\nContent-ID: <logo@cid>\r\nContent-Transfer-Encoding: base64\r\n\r\nAAAA\r\n--b1--\r\n";
+        let parsed = parse_message(raw).unwrap();
+        assert_eq!(parsed.attachments.len(), 1);
+        assert!(parsed.attachments[0].is_inline);
     }
 
     #[test]
