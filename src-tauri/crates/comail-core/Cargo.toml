@@ -1,6 +1,6 @@
 [package]
 name = "comail-core"
-version = "0.2.28"
+version = "0.2.29"
 edition = "2024"
 license = "AGPL-3.0-only"
 

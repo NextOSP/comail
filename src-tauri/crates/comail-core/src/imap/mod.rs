@@ -135,6 +135,23 @@ struct XOAuth2Authenticator {
     sent_initial: bool,
 }
 
+/// Exchange Online sometimes accepts the OAuth identity but fails to attach
+/// the resulting IMAP session to the mailbox, returning this exact response.
+/// That is a transient mailbox/backend failure, not evidence that the refresh
+/// token was revoked. Keep it out of `Auth` so the sync actor uses its normal
+/// reconnect backoff instead of pausing indefinitely in `needs_reauth`.
+fn xoauth2_error(detail: String) -> CoreError {
+    let message = format!("imap xoauth2: {detail}");
+    if detail
+        .to_ascii_lowercase()
+        .contains("user is authenticated but not connected")
+    {
+        CoreError::Imap(message)
+    } else {
+        CoreError::Auth(message)
+    }
+}
+
 impl async_imap::Authenticator for XOAuth2Authenticator {
     type Response = String;
     fn process(&mut self, challenge: &[u8]) -> Self::Response {
@@ -215,7 +232,7 @@ async fn connect_inner(host: &str, port: u16, creds: ImapCredentials) -> Result<
             client
                 .authenticate("XOAUTH2", auth)
                 .await
-                .map_err(|(e, _)| CoreError::Auth(format!("imap xoauth2: {e}")))?
+                .map_err(|(e, _)| xoauth2_error(e.to_string()))?
         }
     };
     tracing::debug!(%host, "imap connect: authenticated");
@@ -938,6 +955,22 @@ pub fn uid_set(uids: &[u32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{MIME_PLAN_QUERY, normalized_uid_set, section_fetch_query, section_paths};
+    use crate::error::CoreError;
+
+    #[test]
+    fn exchange_authenticated_but_not_connected_is_retryable() {
+        let error = super::xoauth2_error(
+            "no response: code: None, info: Some(\"User is authenticated but not connected.\")"
+                .into(),
+        );
+        assert!(matches!(error, CoreError::Imap(_)));
+    }
+
+    #[test]
+    fn ordinary_xoauth2_rejection_still_requires_reauth() {
+        let error = super::xoauth2_error("authentication failed".into());
+        assert!(matches!(error, CoreError::Auth(_)));
+    }
 
     #[test]
     fn uid_set_compresses() {

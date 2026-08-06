@@ -27,6 +27,12 @@
     "hint": "“跟随系统”将使用您设备的语言。",
     "system": "跟随系统"
   },
+  "calendarWeekStart": {
+    "label": "每周开始于",
+    "hint": "选择日历周视图和月视图中显示的第一天。",
+    "sunday": "星期日",
+    "monday": "星期一"
+  },
   "undoSend": {
     "label": "撤销发送窗口",
     "hint": "发送后可用 Z 撤销的时长。",

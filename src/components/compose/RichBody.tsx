@@ -8,9 +8,9 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { captureOutsideSelection } from "../../lib/selection";
-import { textToHtml } from "../../lib/richtext";
+import { stripFormatting, textToHtml } from "../../lib/richtext";
 import { activeMention } from "../../lib/mentions";
-import { addressName } from "../../lib/format";
+import { addressName, IS_MAC } from "../../lib/format";
 import { call } from "../../ipc/commands";
 import type { Address } from "../../ipc/types";
 
@@ -88,6 +88,8 @@ export const RichBody = forwardRef<
   // Selection captured when a popover opens (inputs steal focus, so we restore
   // the editor's range before applying the command).
   const savedRangeRef = useRef<Range | null>(null);
+  // Set by cmd/ctrl+shift+V so the paste that follows drops its formatting.
+  const pastePlainRef = useRef(false);
   const [empty, setEmpty] = useState(true);
   const [active, setActive] = useState<Record<string, boolean>>({});
   const [linkOpen, setLinkOpen] = useState(false);
@@ -129,10 +131,72 @@ export const RichBody = forwardRef<
     onChange(el.innerHTML);
   }, [onChange, refreshEmpty]);
 
+  /**
+   * "Convert to plain text": drop the formatting of the selection, or of the
+   * whole body when nothing is selected. execCommand("removeFormat") only
+   * unwraps inline styling, so the structural markup (tables, lists, quotes,
+   * headings, pasted <div> soup) is flattened by re-serialising the range
+   * through `stripFormatting`, which keeps text, images, mention chips and
+   * links.
+   */
+  const clearFormatting = useCallback(() => {
+    const el = elRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = document.getSelection();
+    if (!sel) return;
+    const range =
+      sel.rangeCount && el.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+
+    const all = document.createRange();
+    all.selectNodeContents(el);
+    // Nothing selected, or a selection covering everything: take the whole
+    // body, so any block wrapper the content sits in goes too.
+    const whole =
+      !range ||
+      range.collapsed ||
+      (range.compareBoundaryPoints(Range.START_TO_START, all) <= 0 &&
+        range.compareBoundaryPoints(Range.END_TO_END, all) >= 0);
+    if (whole) {
+      sel.removeAllRanges();
+      sel.addRange(all);
+    } else {
+      // Unwrap the inline formatting first: it splits the <b>/<span> the
+      // selection sits inside, so the flattened text isn't re-inserted into a
+      // still-styled parent.
+      document.execCommand("removeFormat", false);
+    }
+
+    const live = sel.rangeCount ? sel.getRangeAt(0) : all;
+    const holder = document.createElement("div");
+    holder.appendChild(live.cloneContents());
+    const html = stripFormatting(holder.innerHTML);
+    // insertHTML rather than a DOM swap, so ⌘Z still undoes the whole thing.
+    if (!document.execCommand("insertHTML", false, html || "<br>")) {
+      const tpl = document.createElement("template");
+      tpl.innerHTML = html;
+      const last = tpl.content.lastChild;
+      live.deleteContents();
+      live.insertNode(tpl.content);
+      const after = document.createRange();
+      if (last) after.setStartAfter(last);
+      else after.setStart(live.startContainer, live.startOffset);
+      after.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(after);
+    }
+    refreshActive();
+    emit();
+  }, [emit]);
+
   const exec = useCallback(
-    (cmd: Cmd | "blockquote" | "image") => {
+    (cmd: Cmd | "blockquote" | "image" | "clearFormat") => {
       const el = elRef.current;
       if (!el) return;
+      if (cmd === "clearFormat") {
+        clearFormatting();
+        return;
+      }
       // Text selected in the thread above (message body or its iframe) wins:
       // "select part of the previous email, press quote" inserts it as a
       // quotation. Read before focus() - focusing moves the doc selection.
@@ -177,8 +241,58 @@ export const RichBody = forwardRef<
       refreshActive();
       emit();
     },
-    [emit],
+    [emit, clearFormatting],
   );
+
+  /** Formatting keyboard shortcuts (⌘/Ctrl + B, I, U, …). WebKitGTK, which the
+   *  Linux build runs on, ships no default editing keybindings for a
+   *  contenteditable, and the app's global registry would otherwise swallow the
+   *  combos (⌘K opens the palette). So bind them here and stop the event. */
+  const handleShortcut = (e: React.KeyboardEvent): boolean => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod || e.altKey) return false;
+    // Layout independent where possible: `code` keeps ⌘⇧7 working on layouts
+    // where shift+7 is not "&".
+    const code = (e.nativeEvent as KeyboardEvent).code;
+    const key = e.key.toLowerCase();
+
+    let cmd: Cmd | "blockquote" | null = null;
+    if (!e.shiftKey) {
+      if (key === "b") cmd = "bold";
+      else if (key === "i") cmd = "italic";
+      else if (key === "u") cmd = "underline";
+      else if (key === "k") {
+        openLink();
+        return true;
+      } else if (key === "z") {
+        // Without this the global registry's ⌘Z would undo the last triage
+        // action instead of the last thing typed here.
+        document.execCommand("undo", false);
+        refreshActive();
+        emit();
+        return true;
+      } else if (key === "\\" || code === "Backslash") {
+        clearFormatting();
+        return true;
+      }
+    } else if (key === "v") {
+      // ⌘⇧V: let the paste through, but strip its formatting (below).
+      pastePlainRef.current = true;
+      window.setTimeout(() => {
+        pastePlainRef.current = false;
+      }, 500);
+      return false;
+    } else {
+      // Shifted combos, matching Gmail: ⌘⇧X strike, ⌘⇧7/8 lists, ⌘⇧9 quote.
+      if (key === "x") cmd = "strikeThrough";
+      else if (code === "Digit7" || key === "7") cmd = "insertOrderedList";
+      else if (code === "Digit8" || key === "8") cmd = "insertUnorderedList";
+      else if (code === "Digit9" || key === "9") cmd = "blockquote";
+    }
+    if (!cmd) return false;
+    exec(cmd);
+    return true;
+  };
 
   const refreshActive = () => {
     setActive({
@@ -537,11 +651,19 @@ export const RichBody = forwardRef<
     emit();
   };
 
-  const buttons: { cmd: Cmd | "blockquote" | "image"; label: React.ReactNode; title: string }[] = [
-    { cmd: "bold", label: <span className="font-bold">B</span>, title: t("compose:fmt.bold") },
-    { cmd: "italic", label: <span className="italic">I</span>, title: t("compose:fmt.italic") },
-    { cmd: "underline", label: <span className="underline">U</span>, title: t("compose:fmt.underline") },
-    { cmd: "strikeThrough", label: <span className="line-through">S</span>, title: t("compose:fmt.strike") },
+  // Tooltips carry the shortcut, so the bindings are discoverable.
+  const M = IS_MAC ? "⌘" : "Ctrl+";
+  const S = IS_MAC ? "⇧" : "Shift+";
+  const buttons: {
+    cmd: Cmd | "blockquote" | "image" | "clearFormat";
+    label: React.ReactNode;
+    title: string;
+    hint?: string;
+  }[] = [
+    { cmd: "bold", label: <span className="font-bold">B</span>, title: t("compose:fmt.bold"), hint: `${M}B` },
+    { cmd: "italic", label: <span className="italic">I</span>, title: t("compose:fmt.italic"), hint: `${M}I` },
+    { cmd: "underline", label: <span className="underline">U</span>, title: t("compose:fmt.underline"), hint: `${M}U` },
+    { cmd: "strikeThrough", label: <span className="line-through">S</span>, title: t("compose:fmt.strike"), hint: `${M}${S}X` },
     {
       cmd: "insertUnorderedList",
       label: (
@@ -551,6 +673,7 @@ export const RichBody = forwardRef<
         </svg>
       ),
       title: t("compose:fmt.bullets"),
+      hint: `${M}${S}8`,
     },
     {
       cmd: "blockquote",
@@ -560,6 +683,7 @@ export const RichBody = forwardRef<
         </svg>
       ),
       title: t("compose:fmt.quote"),
+      hint: `${M}${S}9`,
     },
     {
       cmd: "image",
@@ -569,6 +693,18 @@ export const RichBody = forwardRef<
         </svg>
       ),
       title: t("compose:fmt.image"),
+    },
+    {
+      cmd: "clearFormat",
+      // "Tx": the usual mark for stripping formatting.
+      label: (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M3 6V5h11v1" /><path d="M8.5 5v14" /><path d="M6 19h5" />
+          <path d="M15.5 11.5l6 7" /><path d="M21.5 11.5l-6 7" />
+        </svg>
+      ),
+      title: t("compose:fmt.clear"),
+      hint: `${M}\\`,
     },
   ];
 
@@ -581,7 +717,7 @@ export const RichBody = forwardRef<
             key={b.cmd}
             type="button"
             tabIndex={-1}
-            title={b.title}
+            title={b.hint ? `${b.title} (${b.hint})` : b.title}
             aria-label={b.title}
             // mousedown, so the editor selection is never lost
             onMouseDown={(e) => {
@@ -602,7 +738,7 @@ export const RichBody = forwardRef<
         <button
           type="button"
           tabIndex={-1}
-          title={t("compose:fmt.link")}
+          title={`${t("compose:fmt.link")} (${M}K)`}
           aria-label={t("compose:fmt.link")}
           data-testid="fmt-link"
           onMouseDown={(e) => {
@@ -663,6 +799,13 @@ export const RichBody = forwardRef<
           if (linkOpen) setLinkOpen(false);
         }}
         onKeyDown={(e) => {
+          // Formatting combos win over everything (and over the global
+          // registry: stopPropagation keeps ⌘K out of the command palette).
+          if (handleShortcut(e)) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           // The "@" mention menu grabs navigation keys first (before the snippet
           // Enter/Tab handling and the editor's own newline/caret moves).
           if (mentionOpen && !(e.nativeEvent as KeyboardEvent).isComposing) {
@@ -727,6 +870,21 @@ export const RichBody = forwardRef<
           onBlur?.();
         }}
         onPaste={(e) => {
+          // ⌘⇧V ("paste and match style"): keep the text, drop everything else.
+          // Doing it here rather than trusting the engine keeps the behaviour
+          // identical on WebKitGTK, where the combo pastes rich HTML anyway.
+          const plain = e.clipboardData?.getData("text/plain") ?? "";
+          if (pastePlainRef.current && plain) {
+            pastePlainRef.current = false;
+            e.preventDefault();
+            const sel = document.getSelection();
+            if (sel && sel.rangeCount) {
+              replaceRangeWithText(sel.getRangeAt(0), sel, plain);
+              emit();
+            }
+            return;
+          }
+          pastePlainRef.current = false;
           // Pasted images (screenshots) land inline.
           const item = [...(e.clipboardData?.items ?? [])].find((i) =>
             i.type.startsWith("image/"),

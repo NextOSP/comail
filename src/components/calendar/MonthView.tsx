@@ -2,7 +2,13 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import type { CalendarEvent } from "../../ipc/types";
-import { DAY_MS, monthGridDays, startOfDayMs, startOfMonth } from "../../lib/calendarGrid";
+import {
+  DAY_MS,
+  monthGridDays,
+  startOfDayMs,
+  startOfMonth,
+  type CalendarWeekStart,
+} from "../../lib/calendarGrid";
 import { useCalendarEvents } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { eventColorStyles, useCalendarColorMap } from "./calendarColor";
@@ -15,13 +21,22 @@ function isCancelled(ev: CalendarEvent): boolean {
 
 /** Month layout of the full-screen calendar (`m` toggles it). 42 fixed cells;
  *  chips open the detail popover, a day (or its "+k more") jumps to that week. */
-export function MonthView({ anchor }: { anchor: number }) {
+export function MonthView({
+  anchor,
+  weekStartsOn,
+}: {
+  anchor: number;
+  weekStartsOn: CalendarWeekStart;
+}) {
   const { t } = useTranslation();
   const set = useUi((s) => s.set);
 
   const monthStart = startOfMonth(anchor);
   const month = new Date(monthStart).getMonth();
-  const cells = useMemo(() => monthGridDays(monthStart), [monthStart]);
+  const cells = useMemo(
+    () => monthGridDays(monthStart, weekStartsOn),
+    [monthStart, weekStartsOn],
+  );
   const rangeEnd = cells[cells.length - 1] + DAY_MS;
   const { data: events } = useCalendarEvents(cells[0], rangeEnd);
 
@@ -52,7 +67,7 @@ export function MonthView({ anchor }: { anchor: number }) {
 
   return (
     <div className="co-fade-in flex min-h-0 flex-1 flex-col" data-testid="calendar-month">
-      {/* weekday header (Monday-based, from the grid's first week) */}
+      {/* Weekday header follows the configured first day of the week. */}
       <div className="co-hairline-b grid shrink-0 grid-cols-7">
         {cells.slice(0, 7).map((day) => (
           <div

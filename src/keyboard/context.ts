@@ -447,6 +447,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     void call("set_settings", {
       settings: {
         language: "system",
+        calendarWeekStart: "monday",
         undoSendSeconds: 10,
         loadRemoteImages: false,
         aiBaseUrl: "",

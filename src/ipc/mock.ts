@@ -1427,6 +1427,7 @@ const folders: FolderInfo[] = [
 const DEFAULT_MOCK_SETTINGS: Settings = {
   theme: "system",
   language: "system",
+  calendarWeekStart: "monday",
   undoSendSeconds: 10,
   loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",

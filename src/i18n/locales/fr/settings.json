@@ -27,6 +27,12 @@
     "hint": "Système suit la langue de votre appareil.",
     "system": "Système"
   },
+  "calendarWeekStart": {
+    "label": "Début de la semaine",
+    "hint": "Choisissez le premier jour affiché dans les vues semaine et mois du calendrier.",
+    "sunday": "Dimanche",
+    "monday": "Lundi"
+  },
   "undoSend": {
     "label": "Délai d’annulation d’envoi",
     "hint": "Durée pendant laquelle un envoi peut être annulé avec Z.",

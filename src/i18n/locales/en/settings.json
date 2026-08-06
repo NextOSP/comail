@@ -36,6 +36,12 @@
     "hint": "System follows your device language.",
     "system": "System"
   },
+  "calendarWeekStart": {
+    "label": "Start week on",
+    "hint": "Choose the first day shown in calendar week and month views.",
+    "sunday": "Sunday",
+    "monday": "Monday"
+  },
   "undoSend": {
     "label": "Undo send window",
     "hint": "How long a send can be cancelled with Z.",

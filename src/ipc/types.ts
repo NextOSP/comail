@@ -363,6 +363,8 @@ export interface Settings {
   theme: "snow" | "carbon" | "holiday" | "system";
   /** UI language: "system" follows the OS locale, otherwise a code like "en". */
   language: string;
+  /** First day shown in calendar week and month views. */
+  calendarWeekStart: "sunday" | "monday";
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;

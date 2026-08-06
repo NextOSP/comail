@@ -97,6 +97,87 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
+// Line-break / cell markers used while flattening. Neither is whitespace, so a
+// blanket whitespace collapse can run without eating the structure.
+const BR_MARK = "\x01";
+const CELL_MARK = "\x02";
+
+const BLOCK_TAGS =
+  "div|p|h[1-6]|ul|ol|li|tr|table|thead|tbody|tfoot|blockquote|pre|section|article|aside|header|footer|address|dl|dt|dd|hr|figure|figcaption|form|fieldset";
+
+/** Rebuild an <img> tag with only the attributes that carry content, dropping
+ *  inline sizing/styling. */
+function plainImg(tag: string): string {
+  const src = /\bsrc\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? "";
+  const alt = /\balt\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? "";
+  if (!src) return "";
+  const altAttr = alt ? ` alt="${escapeHtml(decodeEntities(alt))}"` : "";
+  return `<img src="${escapeHtml(decodeEntities(src))}"${altAttr}>`;
+}
+
+/**
+ * Strip every formatting construct from `html`, keeping the text and its line
+ * structure. Tables, lists, quotes, headings, fonts, colors and inline styles
+ * all collapse to plain lines separated by <br>; table cells stay tab-separated
+ * on their row's line.
+ *
+ * Images, "@" mention chips and links survive: they are content, not
+ * formatting (a link keeps its href and its text, losing any markup inside).
+ */
+export function stripFormatting(html: string): string {
+  if (!html) return "";
+
+  // Content we hand back untouched, parked behind \x00<n>\x00 placeholders so
+  // the tag-stripping pass below can't see it.
+  const kept: string[] = [];
+  const keep = (s: string) => `\x00${kept.push(s) - 1}\x00`;
+
+  let s = html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, "");
+
+  s = s.replace(/<img\b[^>]*>/gi, (m) => keep(plainImg(m)));
+  s = s.replace(
+    /<span\b[^>]*class="[^"]*co-mention[^"]*"[^>]*>[\s\S]*?<\/span>/gi,
+    (m) => keep(m),
+  );
+  s = s.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_, attrs: string, inner: string) => {
+    const href = /\bhref\s*=\s*"([^"]*)"/i.exec(attrs)?.[1] ?? "";
+    // Inner markup goes, inner text (and any kept placeholder) stays.
+    const text = inner.replace(/<[^>]+>/g, "");
+    if (!href || !text.trim()) return text;
+    return keep(
+      `<a href="${escapeHtml(decodeEntities(href))}">${escapeHtml(decodeEntities(text)).trim()}</a>`,
+    );
+  });
+
+  s = s.replace(/<br\s*\/?>/gi, BR_MARK);
+  s = s.replace(/<\/(td|th)>/gi, CELL_MARK);
+  // A whole run of adjacent block boundaries ("</li><li>", "</div><div>") is
+  // one line break, not one per tag - only an explicit empty block leaves a
+  // blank line, because its <br> already became a marker above.
+  s = s.replace(new RegExp(`(?:\\s*</?(?:${BLOCK_TAGS})\\b[^>]*>\\s*)+`, "gi"), BR_MARK);
+  s = s.replace(/<[^>]+>/g, "");
+  s = decodeEntities(s);
+  // Source line breaks and indentation are formatting too.
+  s = s.replace(/\s+/g, " ");
+
+  const text = s
+    .split(BR_MARK)
+    .map((line) => line.split(CELL_MARK).join("\t").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  let out = escapeHtml(text).replace(/\n/g, "<br>");
+  // Kept links can themselves hold an image/mention placeholder, so restore
+  // until nothing is left parked.
+  for (let pass = 0; pass < 3 && out.includes("\x00"); pass += 1) {
+    out = out.replace(/\x00(\d+)\x00/g, (_, n: string) => kept[Number(n)] ?? "");
+  }
+  return out;
+}
+
 /** True when the HTML has no visible content (text or image). */
 export function isHtmlEmpty(html: string): boolean {
   if (!html) return true;

@@ -40,9 +40,11 @@ mod tests {
         assert!(d.notifications_enabled);
         assert!(d.auto_advance);
         assert!(d.auto_labels_enabled);
+        assert_eq!(d.calendar_week_start, "monday");
 
         let mut s = d.clone();
         s.theme = "carbon".into();
+        s.calendar_week_start = "sunday".into();
         s.notifications_enabled = false;
         s.signature_list.push(crate::models::Signature {
             id: "a".into(),
@@ -72,6 +74,7 @@ mod tests {
 
         let back = get(&c).unwrap();
         assert_eq!(back.theme, "carbon");
+        assert_eq!(back.calendar_week_start, "sunday");
         assert!(!back.notifications_enabled);
         assert_eq!(back.signature_list.len(), 1);
         assert_eq!(back.signature_list[0].html, "<b>Dean</b>");
@@ -120,6 +123,7 @@ mod tests {
         assert_eq!(s.theme, "snow");
         assert_eq!(s.undo_send_seconds, 20);
         assert!(s.load_remote_images);
+        assert_eq!(s.calendar_week_start, "monday");
         // serde defaults for everything added since
         assert!(s.notifications_enabled);
         assert!(s.auto_advance);

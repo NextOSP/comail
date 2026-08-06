@@ -27,6 +27,12 @@
     "hint": "Hệ thống theo ngôn ngữ thiết bị của bạn.",
     "system": "Hệ thống"
   },
+  "calendarWeekStart": {
+    "label": "Bắt đầu tuần vào",
+    "hint": "Chọn ngày đầu tiên hiển thị trong chế độ xem tuần và tháng của lịch.",
+    "sunday": "Chủ nhật",
+    "monday": "Thứ hai"
+  },
   "undoSend": {
     "label": "Khoảng thời gian hoàn tác gửi",
     "hint": "Thời gian có thể hủy gửi bằng phím Z.",

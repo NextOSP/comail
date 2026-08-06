@@ -73,6 +73,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
 const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   language: "system",
+  calendarWeekStart: "monday",
   undoSendSeconds: 10,
   loadRemoteImages: false,
   aiBaseUrl: "",
@@ -341,6 +342,11 @@ export function SettingsPanel() {
     },
     {
       tab: "general",
+      label: t("settings:calendarWeekStart.label"),
+      keywords: "calendar week start first day sunday monday",
+    },
+    {
+      tab: "general",
       label: t("settings:undoSend.label"),
       keywords: "undo send delay cancel",
     },
@@ -594,6 +600,21 @@ export function SettingsPanel() {
                   </option>
                 ))}
               </Select>
+            </SettingRow>
+            <SettingRow
+              label={t("settings:calendarWeekStart.label")}
+              hint={t("settings:calendarWeekStart.hint")}
+            >
+              <Segmented
+                value={s.calendarWeekStart}
+                options={(["sunday", "monday"] as const).map((day) => ({
+                  value: day,
+                  label: t(`settings:calendarWeekStart.${day}`),
+                }))}
+                onChange={(calendarWeekStart) =>
+                  void updateSettings({ calendarWeekStart })
+                }
+              />
             </SettingRow>
             <SettingRow
               label={t("settings:undoSend.label")}

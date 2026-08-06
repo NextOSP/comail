@@ -622,6 +622,9 @@ pub struct Settings {
     /// UI language: "system" follows the OS locale, otherwise a code like "en".
     #[serde(default = "default_language")]
     pub language: String,
+    /// First day shown in calendar week and month views: "sunday" | "monday".
+    #[serde(default = "default_calendar_week_start")]
+    pub calendar_week_start: String,
     pub undo_send_seconds: i64,
     pub load_remote_images: bool,
     #[serde(default = "default_ai_base_url")]
@@ -852,6 +855,9 @@ fn default_embedding_model() -> String {
 fn default_language() -> String {
     "system".into()
 }
+fn default_calendar_week_start() -> String {
+    "monday".into()
+}
 fn default_ai_base_url() -> String {
     crate::ai::DEFAULT_BASE_URL.into()
 }
@@ -879,6 +885,7 @@ impl Default for Settings {
         Settings {
             theme: "system".into(),
             language: "system".into(),
+            calendar_week_start: default_calendar_week_start(),
             undo_send_seconds: 10,
             load_remote_images: true,
             ai_base_url: default_ai_base_url(),

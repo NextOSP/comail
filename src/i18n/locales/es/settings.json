@@ -27,6 +27,12 @@
     "hint": "Sistema usa el idioma de tu dispositivo.",
     "system": "Sistema"
   },
+  "calendarWeekStart": {
+    "label": "Comenzar la semana en",
+    "hint": "Elige el primer día que se muestra en las vistas semanal y mensual del calendario.",
+    "sunday": "Domingo",
+    "monday": "Lunes"
+  },
   "undoSend": {
     "label": "Ventana para deshacer el envío",
     "hint": "Cuánto tiempo se puede cancelar un envío con Z.",

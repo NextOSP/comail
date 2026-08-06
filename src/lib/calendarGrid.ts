@@ -10,6 +10,8 @@ export const HOUR_PX = 48;
 /** Width of the hour-label gutter left of the day columns. */
 export const GUTTER_PX = 56;
 
+export type CalendarWeekStart = "sunday" | "monday";
+
 /** Round minutes to the nearest `step` (default 15-minute grid). */
 export function snapMinutes(minutes: number, step = 15): number {
   return Math.round(minutes / step) * step;
@@ -32,10 +34,11 @@ export function startOfDayMs(ms: number): number {
   return d.getTime();
 }
 
-/** Monday-based week start (00:00 of the week's Monday). */
-export function startOfWeekMs(ms: number): number {
+/** Week start at local 00:00, defaulting to Monday for existing users. */
+export function startOfWeekMs(ms: number, weekStartsOn: CalendarWeekStart = "monday"): number {
   const d = new Date(startOfDayMs(ms));
-  const shift = (d.getDay() + 6) % 7;
+  const firstDay = weekStartsOn === "sunday" ? 0 : 1;
+  const shift = (d.getDay() - firstDay + 7) % 7;
   d.setDate(d.getDate() - shift);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
@@ -60,10 +63,13 @@ export function addMonths(ms: number, delta: number): number {
   return d.getTime();
 }
 
-/** The 42 day-start timestamps (6 Monday-based weeks) covering `ms`'s month. */
-export function monthGridDays(ms: number): number[] {
+/** The 42 day-start timestamps (6 weeks) covering `ms`'s month. */
+export function monthGridDays(
+  ms: number,
+  weekStartsOn: CalendarWeekStart = "monday",
+): number[] {
   const first = startOfMonth(ms);
-  const gridStart = startOfWeekMs(first);
+  const gridStart = startOfWeekMs(first, weekStartsOn);
   const days: number[] = [];
   const d = new Date(gridStart);
   for (let i = 0; i < 42; i++) {

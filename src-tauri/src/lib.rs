@@ -217,6 +217,23 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // Remember the main window's geometry across restarts. VISIBLE is
+        // deliberately left out of the flags: the window launches hidden
+        // (tauri.conf `visible: false`) and the frontend reveals it, so a
+        // restored "hidden" state would keep it invisible forever. The intro's
+        // cinema backdrop is a transient full-screen window and must never be
+        // saved or restored.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED
+                        | tauri_plugin_window_state::StateFlags::FULLSCREEN,
+                )
+                .with_denylist(&["cinema-backdrop"])
+                .build(),
+        )
         // Single-instance must be registered before deep-link so a mailto click
         // while the app runs focuses the existing window instead of spawning a
         // second copy; the forwarded argv carries the link on Linux/Windows.

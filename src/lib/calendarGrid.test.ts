@@ -63,6 +63,12 @@ describe("startOfDayMs / startOfWeekMs / startOfMonth", () => {
     expect(startOfWeekMs(at(2026, 6, 12, 23))).toBe(at(2026, 6, 6)); // Sunday belongs to the same week
   });
 
+  it("finds the Sunday of the week when configured", () => {
+    expect(startOfWeekMs(FRI, "sunday")).toBe(at(2026, 6, 5)); // Sun Jul 5
+    expect(startOfWeekMs(at(2026, 6, 5, 5), "sunday")).toBe(at(2026, 6, 5));
+    expect(startOfWeekMs(at(2026, 6, 11, 23), "sunday")).toBe(at(2026, 6, 5));
+  });
+
   it("finds the first of the month", () => {
     expect(startOfMonth(at(2026, 6, 31, 12))).toBe(at(2026, 6, 1));
     expect(startOfMonth(at(2026, 6, 1))).toBe(at(2026, 6, 1));
@@ -94,6 +100,13 @@ describe("monthGridDays", () => {
     expect(days[0]).toBe(at(2026, 5, 29)); // Mon Jun 29 (Jul 1 2026 is a Wednesday)
     expect(new Date(days[0]).getDay()).toBe(1);
     for (const d of days) expect(new Date(d).getHours()).toBe(0);
+  });
+
+  it("starts on Sunday when configured", () => {
+    const days = monthGridDays(at(2026, 6, 10), "sunday");
+    expect(days).toHaveLength(42);
+    expect(days[0]).toBe(at(2026, 5, 28)); // Sun Jun 28
+    expect(new Date(days[0]).getDay()).toBe(0);
   });
 
   it("covers every day of the month exactly once", () => {

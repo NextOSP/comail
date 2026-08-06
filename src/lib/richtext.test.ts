@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlToText, isHtmlEmpty, textToHtml } from "./richtext";
+import { htmlToText, isHtmlEmpty, stripFormatting, textToHtml } from "./richtext";
 
 describe("textToHtml", () => {
   it("escapes markup and keeps line breaks", () => {
@@ -53,6 +53,57 @@ describe("htmlToText", () => {
     const table =
       "<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table>";
     expect(htmlToText(table)).toBe("a\tb\nc\td");
+  });
+});
+
+describe("stripFormatting", () => {
+  it("drops inline styling but keeps the text", () => {
+    expect(
+      stripFormatting('<b>bold</b> and <span style="color:red">red</span>'),
+    ).toBe("bold and red");
+  });
+
+  it("flattens blocks to line breaks", () => {
+    expect(stripFormatting("<div>one</div><div>two</div>")).toBe("one<br>two");
+    expect(stripFormatting("<h1>Title</h1><p>body</p>")).toBe("Title<br>body");
+  });
+
+  it("unwraps lists and quotes without markers", () => {
+    expect(stripFormatting("<ul><li>one</li><li>two</li></ul>")).toBe("one<br>two");
+    expect(stripFormatting("<blockquote>quoted</blockquote>")).toBe("quoted");
+  });
+
+  it("turns a table into tab-separated lines", () => {
+    const table =
+      "<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table>";
+    expect(stripFormatting(table)).toBe("a\tb<br>c\td");
+  });
+
+  it("collapses source indentation and runs of blank lines", () => {
+    expect(stripFormatting("<div>\n  hello   world\n</div>")).toBe("hello world");
+    expect(stripFormatting("a<div><br></div><div><br></div><div><br></div>b")).toBe(
+      "a<br><br>b",
+    );
+  });
+
+  it("keeps links, images and mention chips", () => {
+    expect(stripFormatting('<b><a href="https://x.dev"><i>docs</i></a></b>')).toBe(
+      '<a href="https://x.dev">docs</a>',
+    );
+    expect(
+      stripFormatting('<p style="margin:0"><img src="cid:1" width="400" alt="chart"></p>'),
+    ).toBe('<img src="cid:1" alt="chart">');
+    const chip = '<span class="co-mention" contenteditable="false" data-email="a@b.c">@Ann</span>';
+    expect(stripFormatting(`<b>${chip} hi</b>`)).toBe(`${chip} hi`);
+  });
+
+  it("escapes text that looks like markup", () => {
+    expect(stripFormatting("<div>a &lt; b &amp; c</div>")).toBe("a &lt; b &amp; c");
+  });
+
+  it("returns empty for empty input", () => {
+    expect(stripFormatting("")).toBe("");
+    expect(stripFormatting("<div><br></div>")).toBe("");
   });
 });
 

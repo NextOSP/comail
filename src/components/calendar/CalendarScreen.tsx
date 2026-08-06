@@ -15,7 +15,7 @@ import {
   startOfMonth,
   startOfWeekMs,
 } from "../../lib/calendarGrid";
-import { useCalendarEvents, useMoveEvent } from "../../queries/hooks";
+import { useCalendarEvents, useMoveEvent, useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { eventColorStyles, useCalendarColorMap } from "./calendarColor";
 import { MonthView } from "./MonthView";
@@ -85,10 +85,12 @@ export function CalendarScreen() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const moveEvent = useMoveEvent();
+  const { data: settings } = useSettings();
+  const weekStartsOn = settings?.calendarWeekStart ?? "monday";
 
   const todayStart = startOfDayMs(Date.now());
   const anchor = focusDay ?? todayStart;
-  const weekStart = startOfWeekMs(anchor);
+  const weekStart = startOfWeekMs(anchor, weekStartsOn);
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => weekStart + i * DAY_MS),
     [weekStart],
@@ -228,7 +230,7 @@ export function CalendarScreen() {
       </header>
 
       {view === "month" ? (
-        <MonthView anchor={anchor} />
+        <MonthView anchor={anchor} weekStartsOn={weekStartsOn} />
       ) : (
         <>
           {/* day headers + all-day row */}

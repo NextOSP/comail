@@ -71,6 +71,7 @@
     "strike": "删除线",
     "bullets": "项目符号列表",
     "quote": "引用",
+    "clear": "清除格式",
     "image": "插入图片",
     "link": "插入链接",
     "linkPlaceholder": "https://example.com",

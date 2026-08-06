@@ -72,6 +72,7 @@
     "strike": "Strikethrough",
     "bullets": "Bulleted list",
     "quote": "Quote",
+    "clear": "Clear formatting",
     "image": "Insert image",
     "link": "Insert link",
     "linkPlaceholder": "https://example.com",
