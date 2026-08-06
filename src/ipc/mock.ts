@@ -2617,6 +2617,13 @@ export async function mockInvoke(
       throw new Error(`Message ${a.messageId} not found`);
     }
 
+    case "thread_unsubscribe_message": {
+      const t = threads.find((x) => x.id === a.threadId);
+      const withHeader = (t?.messages ?? []).filter((m) => m.listUnsubscribe);
+      if (withHeader.length === 0) return delay(null);
+      return delay(withHeader.reduce((x, y) => (y.date >= x.date ? y : x)).id);
+    }
+
     case "unsubscribe_message": {
       for (const t of threads) {
         const m = t.messages.find((x) => x.id === a.messageId);

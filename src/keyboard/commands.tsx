@@ -7,12 +7,12 @@ import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { subscribeEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
-import type { Account, Address, MessageDetail, Settings, ThreadDetail } from "../ipc/types";
+import type { Account, Address, Settings, ThreadDetail } from "../ipc/types";
 import { addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
 import { normalizeSyncStatus } from "../lib/syncStatus";
 import { parsePartialAiSummary } from "../lib/summaryStream";
-import { latestUnsubscribeMessage, unsubscribeFromMessage } from "../lib/unsubscribe";
+import { latestUnsubscribeMessage, unsubscribeThread } from "../lib/unsubscribe";
 import { findCachedSummary } from "../queries/actions";
 import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
@@ -96,23 +96,24 @@ function editableFocused(): boolean {
 
 // ------------------------------------------------------------- Unsubscribe
 
-/** Latest message carrying a List-Unsubscribe header for the focused/open thread. */
-function unsubscribeMessage(ctx: CommandCtx): MessageDetail | null {
+/**
+ * Whether to offer "Unsubscribe" for the focused/open thread. The cached thread
+ * detail can only rule the command out, never in: an unopened thread has no
+ * detail cached at all, so absence of a header there means "not known yet".
+ * The backend gives the real answer when the command runs.
+ */
+function canUnsubscribe(ctx: CommandCtx): boolean {
   const threadId = ctx.targets[0];
-  if (threadId == null) return null;
+  if (threadId == null) return false;
   const detail = queryClient.getQueryData<ThreadDetail>(["thread", threadId]);
-  if (!detail) return null;
-  return latestUnsubscribeMessage(detail.messages);
+  if (!detail) return true;
+  return latestUnsubscribeMessage(detail.messages) != null;
 }
 
 function runUnsubscribe(ctx: CommandCtx) {
-  const push = useUi.getState().pushToast;
-  const msg = unsubscribeMessage(ctx);
-  if (!msg) {
-    push({ kind: "info", message: i18n.t("commands:toast.noUnsubscribeLink") });
-    return;
-  }
-  void unsubscribeFromMessage(msg);
+  const threadId = ctx.targets[0];
+  if (threadId == null) return;
+  void unsubscribeThread(threadId);
 }
 
 // ----------------------------------------------------------- Sender search
@@ -498,7 +499,7 @@ export const ALL_COMMANDS: Command[] = [
     keys: [],
     shortcut: displayShortcut("mod+u"),
     section: "Triage",
-    when: (ctx) => noPanel(ctx) && ctx.hasTargets && unsubscribeMessage(ctx) != null,
+    when: (ctx) => noPanel(ctx) && ctx.hasTargets && canUnsubscribe(ctx),
     run: runUnsubscribe,
   },
   {

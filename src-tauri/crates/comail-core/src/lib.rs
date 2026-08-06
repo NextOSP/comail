@@ -807,6 +807,57 @@ impl Core {
         Ok(detail)
     }
 
+    /// Newest message of `thread_id` that can be unsubscribed from, or None
+    /// when the thread genuinely offers no list unsubscribe.
+    ///
+    /// The stored column alone is not enough to answer this: mail synced before
+    /// List-Unsubscribe joined the IMAP header fetch has NULL there even when
+    /// the cached raw message carries the header. So on a miss, re-read the
+    /// raws we already have on disk (newest first) and persist the first header
+    /// found, rather than telling the user there is no unsubscribe link.
+    pub async fn thread_unsubscribe_message(&self, thread_id: i64) -> Result<Option<i64>> {
+        if let Some(id) = self
+            .db
+            .read(move |conn| repo::messages::thread_unsubscribe_message(conn, thread_id))
+            .await?
+        {
+            return Ok(Some(id));
+        }
+        let candidates = self
+            .db
+            .read(move |conn| repo::messages::thread_unsubscribe_candidates(conn, thread_id))
+            .await?;
+        for (id, raw_path) in candidates {
+            let Ok(raw) = tokio::fs::read(&raw_path).await else {
+                continue;
+            };
+            let Ok(headers) = crate::mime::parse_header_block(&raw) else {
+                continue;
+            };
+            let Some(list_unsubscribe) = headers.list_unsubscribe else {
+                continue;
+            };
+            let post = headers.list_unsubscribe_post;
+            self.db
+                .write(move |conn| {
+                    repo::messages::set_list_unsubscribe(
+                        conn,
+                        id,
+                        &list_unsubscribe,
+                        post.as_deref(),
+                    )
+                })
+                .await?;
+            tracing::info!(
+                message_id = id,
+                thread_id,
+                "recovered List-Unsubscribe from raw"
+            );
+            return Ok(Some(id));
+        }
+        Ok(None)
+    }
+
     /// Unsubscribe from the list a message came from, preferring the RFC 8058
     /// one-click HTTPS POST, then the RFC 2369 mailto: (sent immediately over
     /// SMTP), and finally handing the URL back for the browser. The returned

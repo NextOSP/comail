@@ -125,6 +125,18 @@ pub async fn get_body(state: State<'_, AppState>, message_id: i64) -> CmdResult<
 }
 
 #[tauri::command]
+pub async fn thread_unsubscribe_message(
+    state: State<'_, AppState>,
+    thread_id: i64,
+) -> CmdResult<Option<i64>> {
+    state
+        .core
+        .thread_unsubscribe_message(thread_id)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
 pub async fn unsubscribe_message(
     state: State<'_, AppState>,
     message_id: i64,

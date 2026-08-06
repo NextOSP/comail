@@ -278,6 +278,51 @@ pub fn store_body(
     Ok(())
 }
 
+/// Newest non-draft message of a thread that carries a List-Unsubscribe
+/// header, if any.
+pub fn thread_unsubscribe_message(conn: &Connection, thread_id: i64) -> Result<Option<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT id FROM messages
+         WHERE thread_id = ?1 AND is_draft = 0 AND list_unsubscribe IS NOT NULL
+         ORDER BY date DESC LIMIT 1",
+    )?;
+    Ok(stmt
+        .query_row(params![thread_id], |r| r.get(0))
+        .optional()?)
+}
+
+/// Thread messages with no stored List-Unsubscribe but a raw MIME file on
+/// disk, newest first. Mail synced before the header was part of the IMAP
+/// header fetch has a NULL column even when the raw carries the header, so
+/// these rows are worth re-reading once before reporting "no unsubscribe link".
+pub fn thread_unsubscribe_candidates(
+    conn: &Connection,
+    thread_id: i64,
+) -> Result<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, raw_path FROM messages
+         WHERE thread_id = ?1 AND is_draft = 0
+           AND list_unsubscribe IS NULL AND raw_path IS NOT NULL
+         ORDER BY date DESC",
+    )?;
+    let rows = stmt.query_map(params![thread_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+/// Persist a List-Unsubscribe pair recovered from a cached raw message.
+pub fn set_list_unsubscribe(
+    conn: &Connection,
+    id: i64,
+    list_unsubscribe: &str,
+    list_unsubscribe_post: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE messages SET list_unsubscribe = ?2, list_unsubscribe_post = ?3 WHERE id = ?1",
+        params![id, list_unsubscribe, list_unsubscribe_post],
+    )?;
+    Ok(())
+}
+
 /// Requeue selective bodies that an older decoder persisted before undoing
 /// their MIME transfer encoding. These rows are otherwise permanently stuck
 /// at `cached`, so merely fixing the decoder would never revisit them.
@@ -1060,6 +1105,62 @@ mod tests {
         let mut sorted = dates.clone();
         sorted.sort_unstable();
         assert_eq!(dates, sorted);
+    }
+
+    /// A thread whose rows predate the List-Unsubscribe header fetch offers no
+    /// stored header, but its cached raws are candidates for recovery; once one
+    /// is backfilled it becomes the thread's unsubscribe target.
+    #[test]
+    fn unsubscribe_target_falls_back_to_raw_candidates() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let (thread_id, msg_id) = testutil::seed_message(&c, "news@test.dev", "Weekly", false);
+        assert_eq!(thread_unsubscribe_message(&c, thread_id).unwrap(), None);
+        // No raw on disk yet: nothing to re-read.
+        assert!(
+            thread_unsubscribe_candidates(&c, thread_id)
+                .unwrap()
+                .is_empty()
+        );
+
+        store_body(
+            &c,
+            msg_id,
+            Some("hi"),
+            None,
+            Some("/cache/x.eml"),
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            thread_unsubscribe_candidates(&c, thread_id).unwrap(),
+            vec![(msg_id, "/cache/x.eml".to_string())]
+        );
+
+        set_list_unsubscribe(
+            &c,
+            msg_id,
+            "<https://x.dev/u>",
+            Some("List-Unsubscribe=One-Click"),
+        )
+        .unwrap();
+        assert_eq!(
+            thread_unsubscribe_message(&c, thread_id).unwrap(),
+            Some(msg_id)
+        );
+        // Backfilled rows drop out of the candidate list.
+        assert!(
+            thread_unsubscribe_candidates(&c, thread_id)
+                .unwrap()
+                .is_empty()
+        );
+        let d = detail(&c, msg_id).unwrap();
+        assert_eq!(d.list_unsubscribe.as_deref(), Some("<https://x.dev/u>"));
+        assert_eq!(
+            d.list_unsubscribe_post.as_deref(),
+            Some("List-Unsubscribe=One-Click")
+        );
     }
 
     #[test]

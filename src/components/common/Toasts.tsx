@@ -30,28 +30,36 @@ export function Toasts() {
             key={t.id}
             role={isError ? "alert" : "status"}
             aria-live={isError ? "assertive" : "polite"}
-            className={`co-toast-in pointer-events-auto relative flex max-w-[min(30rem,92vw)] items-start gap-2.5 overflow-hidden rounded-lg border py-2.5 pr-2 pl-3.5 text-[13px] text-ink ${
+            className={`co-toast-in pointer-events-auto relative flex max-w-[min(30rem,92vw)] items-center gap-2.5 overflow-hidden rounded-xl border py-2 pr-1.5 pl-3 text-[13px] text-ink ${
               isError ? "border-danger/35 bg-danger/[0.06]" : "border-hairline bg-bg1"
             }`}
             style={{ boxShadow: "var(--elev-2)" }}
           >
-            {isError && (
-              <svg
-                className="mt-px size-4 shrink-0 text-danger"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 8v5" />
-                <path d="M12 16.5v.01" />
-              </svg>
-            )}
-            <span className="min-w-0 break-words leading-snug">
+            <svg
+              className={`size-4 shrink-0 self-start ${isError ? "text-danger" : "text-ink-faint"}`}
+              style={{ marginTop: "0.1875rem" }}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <circle cx="12" cy="12" r="10" />
+              {isError ? (
+                <>
+                  <path d="M12 8v5" />
+                  <path d="M12 16.5v.01" />
+                </>
+              ) : (
+                <>
+                  <path d="M12 11.5v5" />
+                  <path d="M12 7.5v.01" />
+                </>
+              )}
+            </svg>
+            <span className="min-w-0 grow break-words py-0.5 leading-snug">
               {t.countdown ? t.message.replace("{s}", String(remaining)) : t.message}
             </span>
             {t.secondaryLabel && (
@@ -77,11 +85,23 @@ export function Toasts() {
               </button>
             )}
             <button
-              className="rounded-md px-1.5 py-1 text-ink-faint hover:bg-bg2 hover:text-ink-muted"
+              // Icon rather than the "✕" glyph: the character renders at a
+              // different weight and baseline per platform font.
+              className="grid size-6 shrink-0 self-start place-items-center rounded-md text-ink-faint hover:bg-bg2 hover:text-ink-muted"
               onClick={() => dismiss(t.id)}
               aria-label={tr("common:action.dismiss")}
             >
-              ✕
+              <svg
+                className="size-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
             </button>
             {t.countdown && (
               // Thin progress bar draining along the bottom edge.

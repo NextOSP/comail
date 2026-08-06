@@ -784,6 +784,10 @@ export interface Commands {
   }): Promise<ThreadPage>;
   get_thread(args: { threadId: number }): Promise<ThreadDetail>;
   get_body(args: { messageId: number }): Promise<MessageDetail>;
+  /** Newest message of the thread that can be unsubscribed from, or null when
+   *  the thread really offers none. Recovers the header from the cached raw
+   *  message for mail synced before it was fetched. */
+  thread_unsubscribe_message(args: { threadId: number }): Promise<number | null>;
   /** Unsubscribe from the list this message came from (RFC 8058 one-click
    *  POST, mailto: send, or hand back a URL for the browser). */
   unsubscribe_message(args: { messageId: number }): Promise<UnsubscribeOutcome>;
