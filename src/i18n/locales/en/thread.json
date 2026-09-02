@@ -41,6 +41,8 @@
   "sendFailedHint": "This message hasn't been sent yet and will keep retrying automatically. If it keeps failing, sign in to the account again.",
   "msgTo": "to",
   "msgCc": "cc",
+  "addRule": "Add rule",
+  "addRuleForDomain": "Create a split rule for @{{domain}}",
   "details": {
     "toggle": "Show details",
     "from": "from",

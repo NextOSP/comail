@@ -40,6 +40,8 @@
   "sendFailedHint": "此邮件尚未发送，将自动重试。如果持续失败，请重新登录该账户。",
   "msgTo": "收件人",
   "msgCc": "抄送",
+  "addRule": "添加规则",
+  "addRuleForDomain": "为 @{{domain}} 创建分类规则",
   "details": {
     "toggle": "显示详细信息",
     "from": "发件人",

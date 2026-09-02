@@ -7,7 +7,7 @@ import type { Label, SplitRule, SplitRuleQuery } from "../../ipc/types";
 import { mergeTabOrder } from "../../lib/splitOrder";
 import { queryClient } from "../../queries/client";
 import { useLabels, useSplits } from "../../queries/hooks";
-import { SPLIT_IMPORTANT, useUi } from "../../stores/ui";
+import { SPLIT_IMPORTANT, useUi, type SplitRulePrefill } from "../../stores/ui";
 import {
   BusyLabel,
   ChipInput,
@@ -21,6 +21,10 @@ import {
 } from "./panelKit";
 
 type Automated = "any" | "automated" | "human";
+
+type SplitEditor =
+  | { kind: "new"; prefill?: SplitRulePrefill }
+  | { kind: "edit"; rule: SplitRule };
 
 const DEFAULT_AUTO_LABEL_KEYWORDS = [
   "ComailAutoMarketing",
@@ -89,9 +93,13 @@ export function SplitsPanel() {
 export function SplitInboxSection() {
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
+  const splitRulePrefill = useUi((s) => s.splitRulePrefill);
+  const set = useUi((s) => s.set);
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
-  const [editing, setEditing] = useState<SplitRule | "new" | null>(null);
+  const [editing, setEditing] = useState<SplitEditor | null>(() =>
+    splitRulePrefill ? { kind: "new", prefill: splitRulePrefill } : null,
+  );
   const [relabeling, setRelabeling] = useState(false);
   const [restoringDefaults, setRestoringDefaults] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -105,6 +113,14 @@ export function SplitInboxSection() {
         (keyword) => !labels.some((label) => label.isAuto && label.keyword === keyword),
       ).length
     : 0;
+
+  // Opening Settings from a message carries a one-shot form prefill. Consume
+  // it here so cancelling or reopening Settings can never resurrect it.
+  useEffect(() => {
+    if (!splitRulePrefill) return;
+    setEditing({ kind: "new", prefill: splitRulePrefill });
+    set({ splitRulePrefill: null });
+  }, [set, splitRulePrefill]);
 
   const relabel = async () => {
     if (relabeling) return;
@@ -192,7 +208,13 @@ export function SplitInboxSection() {
     <section className="flex flex-col">
       {editing != null ? (
         <SplitForm
-          rule={editing === "new" ? null : editing}
+          key={
+            editing.kind === "edit"
+              ? `edit-${editing.rule.id}`
+              : `new-${editing.prefill?.senders.join(",") ?? "blank"}`
+          }
+          rule={editing.kind === "edit" ? editing.rule : null}
+          prefill={editing.kind === "new" ? editing.prefill : undefined}
           nextPosition={items.length}
           onDone={() => setEditing(null)}
         />
@@ -237,7 +259,7 @@ export function SplitInboxSection() {
                   )}
                 </button>
               )}
-              <button className={primaryBtnCls} onClick={() => setEditing("new")}>
+              <button className={primaryBtnCls} onClick={() => setEditing({ kind: "new" })}>
                 {t("settings:splits.new")}
               </button>
             </div>
@@ -318,7 +340,7 @@ export function SplitInboxSection() {
                   <>
                     <button
                       className="rounded-md border border-hairline px-2.5 py-1 text-[12px] text-ink-muted hover:bg-bg2"
-                      onClick={() => setEditing(it.rule)}
+                      onClick={() => setEditing({ kind: "edit", rule: it.rule })}
                     >
                       {t("settings:splits.edit")}
                     </button>
@@ -408,10 +430,12 @@ function LabeledChips({
 
 function SplitForm({
   rule,
+  prefill,
   nextPosition,
   onDone,
 }: {
   rule: SplitRule | null;
+  prefill?: SplitRulePrefill;
   nextPosition: number;
   onDone: () => void;
 }) {
@@ -420,8 +444,10 @@ function SplitForm({
   const { data: labels } = useLabels();
   const autoLabels = (labels ?? []).filter((l) => l.isAuto);
   const userLabels = (labels ?? []).filter((l) => !l.isAuto);
-  const [name, setName] = useState(rule?.name ?? "");
-  const [senders, setSenders] = useState<string[]>(rule?.query.senders ?? []);
+  const [name, setName] = useState(rule?.name ?? prefill?.name ?? "");
+  const [senders, setSenders] = useState<string[]>(
+    rule?.query.senders ?? prefill?.senders ?? [],
+  );
   const [excludeSenders, setExcludeSenders] = useState<string[]>(rule?.query.excludeSenders ?? []);
   const [recipients, setRecipients] = useState<string[]>(rule?.query.recipients ?? []);
   const [subjects, setSubjects] = useState<string[]>(rule?.query.subjectContains ?? []);

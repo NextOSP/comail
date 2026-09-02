@@ -30,6 +30,12 @@ export type SettingsTab =
   | "accounts"
   | "sync";
 
+/** One-shot defaults used when an email opens the new split-rule form. */
+export interface SplitRulePrefill {
+  name: string;
+  senders: string[];
+}
+
 export interface ToastItem {
   id: number;
   message: string;
@@ -120,6 +126,8 @@ interface UiState {
   settingsTab: SettingsTab | null;
   /** thread id the quick-split popover targets; null = closed */
   splitTarget: number | null;
+  /** one-shot defaults for a new rule opened from an email; consumed by the split editor */
+  splitRulePrefill: SplitRulePrefill | null;
   /** show the add-account (onboarding) form as a modal on demand */
   addAccountOpen: boolean;
   composer: ComposerState | null;
@@ -248,6 +256,7 @@ export const useUi = create<UiState>((set, get) => ({
   panel: null,
   settingsTab: null,
   splitTarget: null,
+  splitRulePrefill: null,
   addAccountOpen: false,
   composer: null,
   composerDirty: false,

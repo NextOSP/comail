@@ -40,6 +40,8 @@
   "sendFailedHint": "Ce message n'a pas encore été envoyé et sera réessayé automatiquement. Si l'échec persiste, reconnectez-vous au compte.",
   "msgTo": "à",
   "msgCc": "cc",
+  "addRule": "Ajouter une règle",
+  "addRuleForDomain": "Créer une règle de tri pour @{{domain}}",
   "details": {
     "toggle": "Afficher les détails",
     "from": "de",

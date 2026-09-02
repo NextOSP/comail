@@ -40,6 +40,8 @@
   "sendFailedHint": "Thư này chưa được gửi và sẽ tự động thử lại. Nếu vẫn thất bại, hãy đăng nhập lại tài khoản.",
   "msgTo": "đến",
   "msgCc": "cc",
+  "addRule": "Thêm quy tắc",
+  "addRuleForDomain": "Tạo quy tắc phân loại cho @{{domain}}",
   "details": {
     "toggle": "Xem chi tiết",
     "from": "từ",

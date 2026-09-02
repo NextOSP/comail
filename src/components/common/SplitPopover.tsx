@@ -6,6 +6,7 @@ import { errorMessage } from "../../ipc/errors";
 import { queryClient } from "../../queries/client";
 import { findCachedSummary } from "../../queries/actions";
 import { useAccounts, useSplits } from "../../queries/hooks";
+import { domainSplitPrefill } from "../../lib/splitPrefill";
 import { useUi } from "../../stores/ui";
 
 /** Quick "split by sender / domain" popover (palette: Split by sender). */
@@ -50,8 +51,8 @@ export function SplitPopover() {
     return null;
   }
 
-  const email = sender.email.toLowerCase();
-  const domain = email.split("@")[1] ?? "";
+  const email = sender.email.trim().toLowerCase();
+  const domainPrefill = domainSplitPrefill(email);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["splits"] });
@@ -118,15 +119,15 @@ export function SplitPopover() {
       sub: t("inbox:splitPopover.tabName", { name: sender.name || email.split("@")[0] }),
       run: () => create(sender.name || email.split("@")[0], email),
     },
-    ...(domain
+    ...(domainPrefill
       ? [
           {
             key: "domain",
-            title: t("inbox:splitPopover.fromDomain", { domain }),
+            title: t("inbox:splitPopover.fromDomain", { domain: domainPrefill.domain }),
             sub: t("inbox:splitPopover.tabName", {
-              name: domain.replace(/\.(com|org|net|io|dev)$/i, ""),
+              name: domainPrefill.name,
             }),
-            run: () => create(domain.replace(/\.(com|org|net|io|dev)$/i, ""), `@${domain}`),
+            run: () => create(domainPrefill.name, domainPrefill.sender),
           },
         ]
       : []),
@@ -138,13 +139,15 @@ export function SplitPopover() {
             sub: matchedRule.name,
             run: () => exclude(email),
           },
-          ...(domain
+          ...(domainPrefill
             ? [
                 {
                   key: "exclude-domain",
-                  title: t("inbox:splitPopover.excludeDomain", { domain }),
+                  title: t("inbox:splitPopover.excludeDomain", {
+                    domain: domainPrefill.domain,
+                  }),
                   sub: matchedRule.name,
-                  run: () => exclude(`@${domain}`),
+                  run: () => exclude(domainPrefill.sender),
                 },
               ]
             : []),

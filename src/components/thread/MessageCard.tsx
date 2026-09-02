@@ -9,6 +9,7 @@ import { useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import type { Address, AttachmentMeta, MessageDetail } from "../../ipc/types";
 import { addressName, formatSize, longTime, relativeTime } from "../../lib/format";
+import { domainSplitPrefill } from "../../lib/splitPrefill";
 import { adaptDocumentForDarkMode, fixInvisibleText } from "../../lib/emailDark";
 import {
   splitQuotedHtml,
@@ -117,6 +118,13 @@ export function MessageCard({
   // Return-Path or DKIM d=) does NOT align with the From: domain - mailing
   // lists, ESPs, send-on-behalf, and mail whose From: is spoofed.
   const viaDomain = message.via ? (message.via.split("@")[1] ?? message.via) : null;
+  // Split rules match the visible From address, not the potentially different
+  // transmitting party in `via`. Outgoing mail and drafts do not offer this
+  // action because they would create a rule for the user's own address.
+  const splitPrefill =
+    !message.isOutgoing && !message.isDraft
+      ? domainSplitPrefill(message.from.email)
+      : null;
 
   if (!expanded) {
     return (
@@ -211,6 +219,27 @@ export function MessageCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {splitPrefill && (
+            <button
+              type="button"
+              className="rounded-md border border-hairline px-2 py-1 text-[11.5px] font-medium text-ink-muted hover:border-accent/50 hover:bg-bg2 hover:text-accent"
+              title={t("thread:addRuleForDomain", { domain: splitPrefill.domain })}
+              aria-label={t("thread:addRuleForDomain", { domain: splitPrefill.domain })}
+              onClick={(event) => {
+                event.stopPropagation();
+                useUi.getState().set({
+                  panel: "settings",
+                  settingsTab: "splits",
+                  splitRulePrefill: {
+                    name: splitPrefill.name,
+                    senders: [splitPrefill.sender],
+                  },
+                });
+              }}
+            >
+              {t("thread:addRule")}
+            </button>
+          )}
           {message.isDraft && !isSendPending && (
             <button
               type="button"

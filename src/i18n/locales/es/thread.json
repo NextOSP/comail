@@ -40,6 +40,8 @@
   "sendFailedHint": "Este mensaje aún no se ha enviado y seguirá reintentándose automáticamente. Si sigue fallando, vuelve a iniciar sesión en la cuenta.",
   "msgTo": "para",
   "msgCc": "cc",
+  "addRule": "Añadir regla",
+  "addRuleForDomain": "Crear una regla de división para @{{domain}}",
   "details": {
     "toggle": "Mostrar detalles",
     "from": "de",
