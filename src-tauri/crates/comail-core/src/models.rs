@@ -718,6 +718,10 @@ pub struct SplitRule {
     /// `pending`); with no AI available it never matches.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai: Option<AiCheck>,
+    /// Badge counts every conversation in the tab instead of only the unread
+    /// ones, so a split that is fully read still shows its size.
+    #[serde(default)]
+    pub count_all: bool,
 }
 
 /// A yes/no question answered by the decision model (or chat fallback).

@@ -673,6 +673,7 @@ function SplitForm({
   );
   // "" = the rule is its own tab; otherwise a route key routed into an existing tab.
   const [target, setTarget] = useState<string>(rule?.target ?? "");
+  const [countAll, setCountAll] = useState(rule?.countAll === true);
   const [busy, setBusy] = useState(false);
   // Optional AI check (decision model): with no condition it alone decides.
   const [aiInstruction, setAiInstruction] = useState(rule?.ai?.instruction ?? "");
@@ -770,6 +771,8 @@ function SplitForm({
           ai: hasAi
             ? { instruction: aiInstruction.trim(), minConfidence: aiMin }
             : null,
+          // A targeted rule owns no tab, so the flag would be dead state.
+          countAll: target ? false : countAll,
         },
       });
       // Routing an existing rule elsewhere removes its tab; don't leave the
@@ -965,6 +968,18 @@ function SplitForm({
         hasCondition={hasCondition}
         feature="splits"
       />
+      {/* Only a rule that owns a tab has a badge to change; a targeted rule's
+          mail is counted by the tab it routes into. */}
+      {!target && (
+        <div className="self-start">
+          <Checkbox
+            checked={countAll}
+            onChange={setCountAll}
+            label={t("settings:splits.countAllLabel")}
+            hint={t("settings:splits.countAllHint")}
+          />
+        </div>
+      )}
       <FormField label={t("settings:splits.targetLabel")}>
         <Select
           className="self-start"

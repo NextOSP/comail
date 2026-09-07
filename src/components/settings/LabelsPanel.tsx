@@ -99,6 +99,7 @@ export function LabelsSection({
             query: {},
             condition: { kind: "label", id: label.id },
             target: null,
+            countAll: false,
           },
         });
       } else if (!on && existing) {
