@@ -416,6 +416,10 @@ pub struct SplitRule {
     /// `"other"`, or `"label:<id>"` to drop matches into an existing tab.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// Badge counts every conversation in the tab instead of only the unread
+    /// ones, so a split that is fully read still shows its size.
+    #[serde(default)]
+    pub count_all: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

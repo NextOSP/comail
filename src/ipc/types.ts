@@ -262,6 +262,9 @@ export interface SplitRule {
   /** Where matching mail is routed: undefined/null = the rule is its own tab;
    *  otherwise a route key "important" | "other" | "label:<id>". */
   target?: string | null;
+  /** Badge every conversation in the tab instead of only the unread ones, so a
+   *  split that has been fully read still shows its size. Defaults to false. */
+  countAll?: boolean;
 }
 
 export interface FolderInfo {
@@ -833,7 +836,12 @@ export interface Commands {
 
   list_splits(args: Record<string, never>): Promise<SplitRule[]>;
   save_split(args: {
-    split: Omit<SplitRule, "id"> & { id: number | null };
+    // `countAll` is required, not optional as on SplitRule: a save rewrites the
+    // whole row, so a caller that omits it silently turns the flag back off.
+    split: Omit<SplitRule, "id" | "countAll"> & {
+      id: number | null;
+      countAll: boolean;
+    };
   }): Promise<SplitRule>;
   delete_split(args: { splitId: number }): Promise<void>;
   /** First rule (position order) matching the thread; null when routed by AI/heuristic. */

@@ -2842,9 +2842,9 @@ export async function mockInvoke(
 
       const splitsMap: Record<string, number> = {};
       for (const r of splits) {
-        splitsMap[String(r.id)] = unreadInbox.filter((t) =>
-          inSplit(t, r.id),
-        ).length;
+        // A split can badge everything it holds instead of unread only.
+        const source = r.countAll ? pool.filter(inInbox) : unreadInbox;
+        splitsMap[String(r.id)] = source.filter((t) => inSplit(t, r.id)).length;
       }
       const labelsMap: Record<string, number> = {};
       for (const l of labels) {

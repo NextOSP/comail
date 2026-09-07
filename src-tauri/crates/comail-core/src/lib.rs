@@ -3478,11 +3478,20 @@ impl Core {
         position: i64,
         query: SplitRuleQuery,
         target: Option<String>,
+        count_all: bool,
     ) -> Result<SplitRule> {
         let saved = self
             .db
             .write(move |conn| {
-                repo::splits::save(conn, id, &name, position, &query, target.as_deref())
+                repo::splits::save(
+                    conn,
+                    id,
+                    &name,
+                    position,
+                    &query,
+                    target.as_deref(),
+                    count_all,
+                )
             })
             .await?;
         // Rules changed: re-resolve every thread and drop the AI cache so edited

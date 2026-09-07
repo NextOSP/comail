@@ -714,6 +714,9 @@ pub struct SplitInput {
     /// Route key matching mail is sent to, or `None` for a self-tab split.
     #[serde(default)]
     pub target: Option<String>,
+    /// Badge every conversation in the tab, not just the unread ones.
+    #[serde(default)]
+    pub count_all: bool,
 }
 
 #[tauri::command]
@@ -731,6 +734,7 @@ pub async fn save_split(state: State<'_, AppState>, split: SplitInput) -> CmdRes
             split.position,
             split.query,
             split.target,
+            split.count_all,
         )
         .await
         .map_err(err)
