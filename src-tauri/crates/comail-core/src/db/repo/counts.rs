@@ -134,10 +134,15 @@ pub fn unread_counts(
 
     let mut splits_map = HashMap::new();
     for sp in splits {
-        let n = Q::unread(account_id)
-            .inbox()
-            .routed_split(sp.id)
-            .run(conn)?;
+        // A split can opt out of the unread filter so its badge shows how much
+        // the tab holds even once everything in it has been read. Every other
+        // tab, and every split by default, still badges unread only.
+        let base = if sp.count_all {
+            Q::any(account_id)
+        } else {
+            Q::unread(account_id)
+        };
+        let n = base.inbox().routed_split(sp.id).run(conn)?;
         splits_map.insert(sp.id.to_string(), n);
     }
 
@@ -303,6 +308,7 @@ mod tests {
                 ..Default::default()
             },
             target: None,
+            count_all: false,
         };
         let label = Label {
             id: 5,
@@ -316,5 +322,38 @@ mod tests {
         let c = unread_counts(&conn, Some(1), &[split], &[label]).unwrap();
         assert_eq!(c.splits["7"], 1);
         assert_eq!(c.labels["5"], 1);
+    }
+
+    #[test]
+    fn count_all_split_badges_read_conversations_too() {
+        let conn = test_db();
+        seed_thread(&conn, 1, 1, false); // unread
+        seed_thread(&conn, 2, 0, false); // read
+        conn.execute(
+            "UPDATE threads SET routed_tab = 'split:7' WHERE id IN (1, 2)",
+            [],
+        )
+        .unwrap();
+
+        let mut split = SplitRule {
+            id: 7,
+            name: "s".into(),
+            position: 0,
+            query: SplitRuleQuery::default(),
+            target: None,
+            count_all: false,
+        };
+
+        let unread_only = unread_counts(&conn, None, std::slice::from_ref(&split), &[]).unwrap();
+        assert_eq!(unread_only.splits["7"], 1, "default stays unread-only");
+
+        split.count_all = true;
+        let all = unread_counts(&conn, None, std::slice::from_ref(&split), &[]).unwrap();
+        assert_eq!(all.splits["7"], 2, "count_all includes the read thread");
+
+        // The opt-in is per split: the shared inbox/Important/Other badges are
+        // untouched by it.
+        assert_eq!(all.inbox, unread_only.inbox);
+        assert_eq!(all.important, unread_only.important);
     }
 }

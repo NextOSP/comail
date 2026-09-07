@@ -9,6 +9,7 @@ fn from_row(row: &Row) -> rusqlite::Result<SplitRule> {
         position: row.get("position")?,
         query: serde_json::from_str(&row.get::<_, String>("query_json")?).unwrap_or_default(),
         target: row.get::<_, Option<String>>("target").unwrap_or(None),
+        count_all: row.get::<_, i64>("count_all").unwrap_or(0) != 0,
     })
 }
 
@@ -32,20 +33,23 @@ pub fn save(
     position: i64,
     query: &SplitRuleQuery,
     target: Option<&str>,
+    count_all: bool,
 ) -> Result<SplitRule> {
     let qjson = serde_json::to_string(query)?;
     let id = match id {
         Some(id) => {
             conn.execute(
-                "UPDATE split_rules SET name=?2, position=?3, query_json=?4, target=?5 WHERE id=?1",
-                params![id, name, position, qjson, target],
+                "UPDATE split_rules SET name=?2, position=?3, query_json=?4, target=?5,
+                        count_all=?6 WHERE id=?1",
+                params![id, name, position, qjson, target, count_all],
             )?;
             id
         }
         None => {
             conn.execute(
-                "INSERT INTO split_rules (name, position, query_json, target) VALUES (?1,?2,?3,?4)",
-                params![name, position, qjson, target],
+                "INSERT INTO split_rules (name, position, query_json, target, count_all)
+                 VALUES (?1,?2,?3,?4,?5)",
+                params![name, position, qjson, target, count_all],
             )?;
             conn.last_insert_rowid()
         }
@@ -74,8 +78,17 @@ mod tests {
             is_automated: Some(true),
             ..Default::default()
         };
-        let a = save(&c, None, "GitHub", 1, &q, Some("label:3")).unwrap();
-        let b = save(&c, None, "First", 0, &SplitRuleQuery::default(), None).unwrap();
+        let a = save(&c, None, "GitHub", 1, &q, Some("label:3"), true).unwrap();
+        let b = save(
+            &c,
+            None,
+            "First",
+            0,
+            &SplitRuleQuery::default(),
+            None,
+            false,
+        )
+        .unwrap();
 
         // ordered by position
         let listed = list(&c).unwrap();
@@ -92,11 +105,22 @@ mod tests {
         );
         assert_eq!(got.query.is_automated, Some(true));
         assert_eq!(got.target.as_deref(), Some("label:3"));
+        assert!(got.count_all);
 
-        let updated = save(&c, Some(a.id), "GH", 2, &SplitRuleQuery::default(), None).unwrap();
+        let updated = save(
+            &c,
+            Some(a.id),
+            "GH",
+            2,
+            &SplitRuleQuery::default(),
+            None,
+            false,
+        )
+        .unwrap();
         assert_eq!(updated.name, "GH");
         assert!(updated.query.senders.is_none());
         assert_eq!(updated.target, None);
+        assert!(!updated.count_all);
 
         delete(&c, a.id).unwrap();
         assert!(get(&c, a.id).unwrap().is_none());

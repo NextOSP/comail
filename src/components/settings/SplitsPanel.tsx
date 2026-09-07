@@ -458,6 +458,7 @@ function SplitForm({
   const [hasAttachment, setHasAttachment] = useState(rule?.query.hasAttachment === true);
   // "" = the rule is its own tab; otherwise a route key routed into an existing tab.
   const [target, setTarget] = useState<string>(rule?.target ?? "");
+  const [countAll, setCountAll] = useState(rule?.countAll === true);
   const [busy, setBusy] = useState(false);
 
   const hasCondition =
@@ -490,6 +491,8 @@ function SplitForm({
           position: rule?.position ?? nextPosition,
           query,
           target: target || null,
+          // A targeted rule owns no tab, so the flag would be dead state.
+          countAll: target ? false : countAll,
         },
       });
       // Routing an existing rule elsewhere removes its tab; don't leave the
@@ -618,6 +621,22 @@ function SplitForm({
         />
         <span className="text-[12.5px] text-ink">{t("settings:splits.hasAttachmentLabel")}</span>
       </label>
+      {/* Only a rule that owns a tab has a badge to change; a targeted rule's
+          mail is counted by the tab it routes into. */}
+      {!target && (
+        <>
+          <label className="flex cursor-pointer items-center gap-2 self-start">
+            <input
+              type="checkbox"
+              checked={countAll}
+              onChange={(e) => setCountAll(e.target.checked)}
+              className="size-4 accent-accent"
+            />
+            <span className="text-[12.5px] text-ink">{t("settings:splits.countAllLabel")}</span>
+          </label>
+          <p className="-mt-1 text-[11.5px] text-ink-faint">{t("settings:splits.countAllHint")}</p>
+        </>
+      )}
       <FormField label={t("settings:splits.targetLabel")}>
         <Select
           className="self-start"

@@ -317,6 +317,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&format!("label:{auto_id}")),
+            false,
         )
         .unwrap();
 
