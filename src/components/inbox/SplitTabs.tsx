@@ -86,7 +86,13 @@ function SplitTab({
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={(event) => {
+        // Pointer focus would survive our Tab/J/K shortcuts and make Enter
+        // activate this tab instead of opening the selected thread. Preserve
+        // focus for keyboard/assistive activation (detail === 0).
+        if (event.detail > 0) event.currentTarget.blur();
+        onClick();
+      }}
       tabIndex={-1}
       className={`relative flex items-center gap-1.5 px-3 pt-2.5 pb-2 text-[13px] transition-colors ${
         active ? "font-semibold text-ink" : "text-ink-faint hover:text-ink-muted"
