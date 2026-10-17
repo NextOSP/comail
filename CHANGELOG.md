@@ -9,6 +9,22 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.32] - 2026-10-18
+
+### Added
+
+- **Discard a draft any time.** The composer has a Discard button and a
+  `Cmd/Ctrl+Shift+Backspace` shortcut, so a saved draft can be thrown away even
+  without unsaved edits.
+- **Delete draft** button on draft cards in a conversation.
+
+### Fixed
+
+- Trash in the Drafts view deletes only the drafts. The thread they reply to
+  stays where it is instead of going to Trash with them.
+- The From picker and other native dropdowns are readable on Windows and Linux
+  (options use the theme's own colors instead of near-white text on white).
+
 ## [0.2.31] - 2026-10-18
 
 ### Added
@@ -393,7 +409,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.31...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.32...HEAD
+[0.2.32]: https://github.com/NextOSP/comail/releases/tag/v0.2.32
 [0.2.31]: https://github.com/NextOSP/comail/releases/tag/v0.2.31
 [0.2.30]: https://github.com/NextOSP/comail/releases/tag/v0.2.30
 [0.2.29]: https://github.com/NextOSP/comail/releases/tag/v0.2.29
