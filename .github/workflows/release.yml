@@ -32,11 +32,10 @@ jobs:
             # `app` produces Comail.app plus the .app.tar.gz updater artifact;
             # without an explicit list the config's Linux-only targets apply
             # and macOS bundles nothing.
-            # `--verbose` is load-bearing: without it tauri-bundler (2.11-2.12)
-            # runs actool with its output streams redirected, and compiling the
-            # Icon Composer `icons/Icon.icon` then fails with "Bad file
-            # descriptor" ("failed to run actool"). Drop it once tauri fixes that.
-            args: "--target universal-apple-darwin --bundles app,dmg --verbose"
+            # The --config overlay comes from scripts/macos-app-icon.sh (step
+            # below): tauri-bundler can't run actool on Icon.icon reliably, so
+            # the icon is precompiled and shipped as Assets.car.
+            args: "--target universal-apple-darwin --bundles app,dmg --config src-tauri/gen/app-icon/tauri.icon.conf.json"
           - name: windows-x64
             runner: windows-latest
             # NSIS setup.exe only: one installer per OS keeps the release
@@ -135,6 +134,10 @@ jobs:
             echo "__APW__"
             echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
           } >> "$GITHUB_ENV"
+
+      - name: Precompile macOS app icon
+        if: matrix.runner == 'macos-26'
+        run: bash scripts/macos-app-icon.sh
 
       - name: Build and release
         uses: tauri-apps/tauri-action@v1
