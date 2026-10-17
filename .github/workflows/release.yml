@@ -32,7 +32,11 @@ jobs:
             # `app` produces Comail.app plus the .app.tar.gz updater artifact;
             # without an explicit list the config's Linux-only targets apply
             # and macOS bundles nothing.
-            args: "--target universal-apple-darwin --bundles app,dmg"
+            # `--verbose` is load-bearing: without it tauri-bundler (2.11-2.12)
+            # runs actool with its output streams redirected, and compiling the
+            # Icon Composer `icons/Icon.icon` then fails with "Bad file
+            # descriptor" ("failed to run actool"). Drop it once tauri fixes that.
+            args: "--target universal-apple-darwin --bundles app,dmg --verbose"
           - name: windows-x64
             runner: windows-latest
             # NSIS setup.exe only: one installer per OS keeps the release

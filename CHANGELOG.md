@@ -9,6 +9,16 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-10-18
+
+### Fixed
+
+- **macOS builds are back.** The macOS build of v0.2.31 and v0.2.32 failed
+  while compiling the new app icon, so those releases shipped only Windows and
+  Linux installers and Macs were not offered the update. This release includes
+  the macOS `.dmg` and the auto-update, with everything from v0.2.31 and
+  v0.2.32.
+
 ## [0.2.32] - 2026-10-18
 
 ### Added
@@ -409,7 +419,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.32...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.33...HEAD
+[0.2.33]: https://github.com/NextOSP/comail/releases/tag/v0.2.33
 [0.2.32]: https://github.com/NextOSP/comail/releases/tag/v0.2.32
 [0.2.31]: https://github.com/NextOSP/comail/releases/tag/v0.2.31
 [0.2.30]: https://github.com/NextOSP/comail/releases/tag/v0.2.30
