@@ -102,5 +102,6 @@
   "teamsMeetingTitle": "Cuộc họp Microsoft Teams",
   "teamsMeetingJoin": "Tham gia cuộc họp ngay",
   "teamsMeetingAdded": "Đã thêm liên kết cuộc họp Teams",
-  "teamsMeetingError": "Không thể tạo cuộc họp Teams: {{error}}"
+  "teamsMeetingError": "Không thể tạo cuộc họp Teams: {{error}}",
+  "discardDraft": "Hủy bản nháp"
 }

@@ -135,6 +135,40 @@ export async function undoLastAction(): Promise<boolean> {
   }
 }
 
+/**
+ * Delete drafts by message id. Only the drafts go: the rest of each thread
+ * (the mail being replied to) stays where it is. Throws on the first failure.
+ */
+export async function deleteDrafts(draftIds: number[]): Promise<void> {
+  if (draftIds.length === 0) return;
+  const gone = new Set(draftIds);
+  try {
+    for (const draftId of draftIds) await call("delete_draft", { draftId });
+  } finally {
+    queryClient.setQueriesData<ThreadDetail>({ queryKey: ["thread"] }, (detail) =>
+      detail
+        ? { ...detail, messages: detail.messages.filter((m) => !gone.has(m.id)) }
+        : detail,
+    );
+    refetchLists();
+    void queryClient.invalidateQueries({ queryKey: ["thread"] });
+  }
+}
+
+/** Delete every draft in the given threads (the Drafts view's trash). */
+export async function deleteThreadDrafts(threadIds: number[]): Promise<number> {
+  const details = await Promise.all(
+    threadIds.map(
+      (threadId) =>
+        queryClient.getQueryData<ThreadDetail>(["thread", threadId]) ??
+        call("get_thread", { threadId }),
+    ),
+  );
+  const draftIds = details.flatMap((d) => d.messages.filter((m) => m.isDraft).map((m) => m.id));
+  await deleteDrafts(draftIds);
+  return draftIds.length;
+}
+
 /** Look up a thread summary anywhere in the cache. */
 export function findCachedSummary(threadId: number): ThreadSummary | undefined {
   const detail = queryClient.getQueryData<ThreadDetail>(["thread", threadId]);

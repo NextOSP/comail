@@ -144,5 +144,9 @@
     }
   },
   "unsubscribe": "Hủy đăng ký",
-  "unsubscribeTitle": "Hủy đăng ký khỏi danh sách của người gửi này"
+  "unsubscribeTitle": "Hủy đăng ký khỏi danh sách của người gửi này",
+  "deleteDraft": "Xóa bản nháp",
+  "draftDeleted": "Đã xóa bản nháp",
+  "draftsDeleted_one": "Đã xóa {{count}} bản nháp",
+  "draftsDeleted_other": "Đã xóa {{count}} bản nháp"
 }

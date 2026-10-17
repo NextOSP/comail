@@ -144,5 +144,9 @@
     }
   },
   "unsubscribe": "Cancelar suscripción",
-  "unsubscribeTitle": "Cancelar la suscripción a la lista de este remitente"
+  "unsubscribeTitle": "Cancelar la suscripción a la lista de este remitente",
+  "deleteDraft": "Eliminar borrador",
+  "draftDeleted": "Borrador eliminado",
+  "draftsDeleted_one": "{{count}} borrador eliminado",
+  "draftsDeleted_other": "{{count}} borradores eliminados"
 }

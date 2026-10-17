@@ -144,5 +144,9 @@
     }
   },
   "unsubscribe": "Se désabonner",
-  "unsubscribeTitle": "Se désabonner de la liste de cet expéditeur"
+  "unsubscribeTitle": "Se désabonner de la liste de cet expéditeur",
+  "deleteDraft": "Supprimer le brouillon",
+  "draftDeleted": "Brouillon supprimé",
+  "draftsDeleted_one": "{{count}} brouillon supprimé",
+  "draftsDeleted_other": "{{count}} brouillons supprimés"
 }

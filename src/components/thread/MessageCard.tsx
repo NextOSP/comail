@@ -21,7 +21,7 @@ import { dispatchKeyboardEvent, reclaimIframeFocus } from "../../keyboard/regist
 import { fileKind } from "../../lib/fileKind";
 import { AttachmentThumb } from "./viewer/AttachmentThumb";
 import { Icon } from "../ui/Icon";
-import { Button } from "../ui/Button";
+import { Button, IconButton } from "../ui/Button";
 
 /** Clean, vertically-centered three-dot glyph for the "show trimmed content"
  *  toggle (the raw "⋯" character renders as a cramped, off-center box). */
@@ -54,12 +54,14 @@ export function MessageCard({
   focused,
   onToggle,
   onEditDraft,
+  onDeleteDraft,
 }: {
   message: MessageDetail;
   expanded: boolean;
   focused: boolean;
   onToggle: () => void;
   onEditDraft?: () => void;
+  onDeleteDraft?: () => void;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -186,6 +188,16 @@ export function MessageCard({
             >
               {t("thread:editDraft")}
             </button>
+          )}
+          {message.isDraft && !isSendPending && onDeleteDraft && (
+            <IconButton
+              icon="trash"
+              label={t("thread:deleteDraft")}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDeleteDraft();
+              }}
+            />
           )}
           {hasFile && <PaperclipIcon />}
           <time className="text-xs whitespace-nowrap text-ink-faint">{longTime(message.date)}</time>

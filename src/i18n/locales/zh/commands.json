@@ -91,7 +91,8 @@
     "aiProofread": "校对",
     "calendarDay": "日历：日视图",
     "calendarWeekView": "日历：周视图",
-    "calendarSidebar": "日历：显示/隐藏侧边栏"
+    "calendarSidebar": "日历：显示/隐藏侧边栏",
+    "discardDraft": "丢弃草稿"
   },
   "toast": {
     "noVerificationCode": "最近 30 分钟内没有验证码",

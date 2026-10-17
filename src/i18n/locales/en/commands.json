@@ -91,7 +91,8 @@
     "aiProofread": "Proofread",
     "calendarDay": "Calendar: Day view",
     "calendarWeekView": "Calendar: Week view",
-    "calendarSidebar": "Calendar: Toggle sidebar"
+    "calendarSidebar": "Calendar: Toggle sidebar",
+    "discardDraft": "Discard draft"
   },
   "toast": {
     "noVerificationCode": "No verification code in the last 30 minutes",

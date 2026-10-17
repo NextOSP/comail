@@ -102,5 +102,6 @@
   "teamsMeetingTitle": "Microsoft Teams meeting",
   "teamsMeetingJoin": "Join the meeting now",
   "teamsMeetingAdded": "Teams meeting link added",
-  "teamsMeetingError": "Couldn't create Teams meeting: {{error}}"
+  "teamsMeetingError": "Couldn't create Teams meeting: {{error}}",
+  "discardDraft": "Discard draft"
 }

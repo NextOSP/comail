@@ -144,5 +144,9 @@
     }
   },
   "unsubscribe": "Unsubscribe",
-  "unsubscribeTitle": "Unsubscribe from this sender's list"
+  "unsubscribeTitle": "Unsubscribe from this sender's list",
+  "deleteDraft": "Delete draft",
+  "draftDeleted": "Draft deleted",
+  "draftsDeleted_one": "{{count}} draft deleted",
+  "draftsDeleted_other": "{{count}} drafts deleted"
 }

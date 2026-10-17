@@ -7,7 +7,7 @@ import { errorMessage } from "../../ipc/errors";
 import { call } from "../../ipc/commands";
 import { MOCK_MODE } from "../../ipc/mock";
 import { subscribeEvent } from "../../ipc/events";
-import type { Address, AiDraftAction, DraftAttachment, MessageDetail, Snippet, ThreadDetail } from "../../ipc/types";
+import type { Address, AiDraftAction, DraftAttachment, MessageDetail, Snippet } from "../../ipc/types";
 import { RecipientField } from "./RecipientField";
 import { onComposerAction } from "../../keyboard/commands";
 import { advanceAfter, buildCommandContext } from "../../keyboard/context";
@@ -24,7 +24,7 @@ import {
 } from "../../lib/signatures";
 import { playSound } from "../../lib/sound";
 import { RichBody, type RichBodyHandle } from "./RichBody";
-import { performThreadAction } from "../../queries/actions";
+import { deleteDrafts, performThreadAction } from "../../queries/actions";
 import { queryClient } from "../../queries/client";
 import { useAccounts, useSettings, useSnippets } from "../../queries/hooks";
 import { useUi, type ComposerState } from "../../stores/ui";
@@ -728,6 +728,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       else if (action === "attach") void attachFiles();
       else if (action === "share_availability") useUi.getState().set({ availabilityOpen: true });
       else if (action === "proofread") void runProofread();
+      else if (action === "discard") set({ composerConfirmOpen: true });
       else if (action === "quote_selection") {
         if (text) {
           markDirty();
@@ -787,7 +788,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const discard = async () => {
     if (draftId != null) {
       try {
-        await call("delete_draft", { draftId });
+        await deleteDrafts([draftId]);
       } catch (err) {
         pushToast({
           kind: "error",
@@ -795,13 +796,6 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
         });
         return;
       }
-      queryClient.setQueriesData<ThreadDetail>({ queryKey: ["thread"] }, (detail) =>
-        detail
-          ? { ...detail, messages: detail.messages.filter((message) => message.id !== draftId) }
-          : detail,
-      );
-      void queryClient.invalidateQueries({ queryKey: ["threads"] });
-      void queryClient.invalidateQueries({ queryKey: ["thread"] });
     }
     closeComposer();
   };
@@ -1216,6 +1210,15 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             {t("compose:footerHints", { mod: MOD_LABEL })}
           </span>
           <div className="grow" />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="trash"
+            onClick={() => set({ composerConfirmOpen: true })}
+            title={`${t("compose:discardDraft")} (${MOD_LABEL}⇧⌫)`}
+          >
+            {t("compose:discard")}
+          </Button>
           {!state.initial && accountSigs.length > 0 && (
             <button
               type="button"

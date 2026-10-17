@@ -3,6 +3,7 @@
 
 import i18n from "../i18n";
 import { call } from "../ipc/commands";
+import { errorMessage } from "../ipc/errors";
 import type {
   ActionKind,
   ComposeMode,
@@ -14,6 +15,7 @@ import type {
 } from "../ipc/types";
 import { inboxTabOrder } from "../lib/splitOrder";
 import {
+  deleteThreadDrafts,
   findCachedSummary,
   performThreadAction,
   undoLastAction,
@@ -171,6 +173,26 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         useUi.getState().openThread(null);
       }
       advanceAfter(targets);
+    }
+    // In Drafts, trash means "delete these drafts": the thread they reply to
+    // stays put instead of going to Trash with them.
+    if (kind === "trash" && ui.view === "drafts") {
+      if (ui.selection.length > 0) ui.clearSelection();
+      void deleteThreadDrafts(targets)
+        .then((n) =>
+          useUi.getState().pushToast({
+            kind: "info",
+            message: i18n.t("thread:draftsDeleted", { count: n }),
+            durationMs: 2500,
+          }),
+        )
+        .catch((err: unknown) =>
+          useUi.getState().pushToast({
+            kind: "error",
+            message: i18n.t("compose:discardFailed", { detail: errorMessage(err) }),
+          }),
+        );
+      return;
     }
     void performThreadAction(kind, targets, params);
     if (ui.selection.length > 0) ui.clearSelection();

@@ -91,7 +91,8 @@
     "aiProofread": "Revisar",
     "calendarDay": "Calendario: vista de día",
     "calendarWeekView": "Calendario: vista de semana",
-    "calendarSidebar": "Calendario: mostrar/ocultar barra lateral"
+    "calendarSidebar": "Calendario: mostrar/ocultar barra lateral",
+    "discardDraft": "Descartar borrador"
   },
   "toast": {
     "noVerificationCode": "No hay códigos de verificación de los últimos 30 minutos",

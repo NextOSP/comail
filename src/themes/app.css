@@ -139,6 +139,14 @@ body {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+/* Native <select> popups (Windows, WebKitGTK) paint options on the OS menu
+   surface but inherit the select's text color, so a faint or light-on-dark
+   select left its list unreadable. Give options the theme's own surface. */
+select option {
+  background-color: var(--bg1);
+  color: var(--text);
+}
+
 /* Scrollbars: quiet */
 * {
   scrollbar-width: thin;

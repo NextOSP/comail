@@ -30,6 +30,7 @@ export type ComposerAction =
   | "share_availability"
   | "ai"
   | "proofread"
+  | "discard"
   | "quote_selection";
 
 /** Optional payload some actions carry (e.g. the text to quote). */
@@ -865,6 +866,15 @@ export const ALL_COMMANDS: Command[] = [
     section: "Compose",
     when: (ctx) => ctx.composerOpen,
     run: () => fireComposerAction("attach"),
+  },
+  {
+    id: "discard-draft",
+    titleKey: "commands:title.discardDraft",
+    aliases: ["delete draft", "throw away", "cancel draft"],
+    keys: ["mod+shift+backspace"],
+    section: "Compose",
+    when: (ctx) => ctx.composerOpen,
+    run: () => fireComposerAction("discard"),
   },
 
   // ------------------------------------------------------------------- AI

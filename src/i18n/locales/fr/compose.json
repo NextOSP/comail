@@ -102,5 +102,6 @@
   "teamsMeetingTitle": "Réunion Microsoft Teams",
   "teamsMeetingJoin": "Rejoindre la réunion maintenant",
   "teamsMeetingAdded": "Lien de la réunion Teams ajouté",
-  "teamsMeetingError": "Impossible de créer la réunion Teams : {{error}}"
+  "teamsMeetingError": "Impossible de créer la réunion Teams : {{error}}",
+  "discardDraft": "Supprimer le brouillon"
 }

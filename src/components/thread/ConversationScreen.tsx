@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { calendarPrefill } from "../../lib/calendarSuggestion";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
-import { performThreadAction } from "../../queries/actions";
+import { deleteDrafts, performThreadAction } from "../../queries/actions";
 import { useThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 
@@ -264,6 +264,20 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
       });
     }
   };
+
+  const deleteDraft = async (draftId: number) => {
+    const ui = useUi.getState();
+    try {
+      await deleteDrafts([draftId]);
+      if (ui.editingDraftId === draftId) ui.closeComposer();
+      ui.pushToast({ kind: "info", message: t("thread:draftDeleted"), durationMs: 2500 });
+    } catch (err) {
+      ui.pushToast({
+        kind: "error",
+        message: t("compose:discardFailed", { detail: errorMessage(err) }),
+      });
+    }
+  };
   // Expansion follows explicit toggles, the last message, and unread state -   // NOT the selection, so hovering to pick a reply target never expands or
   // collapses a message. Keyboard nav (N/P) expands its target via the effect
   // below ("expand next/previous").
@@ -346,6 +360,7 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
                 focused={selectedId === m.id}
                 expanded={isExpanded(m.id, m.isRead)}
                 onEditDraft={m.isDraft ? () => void editDraft(m.id) : undefined}
+                onDeleteDraft={m.isDraft ? () => void deleteDraft(m.id) : undefined}
                 onToggle={() => {
                   selectMessage(m.id);
                   setOverrides((o) => ({ ...o, [m.id]: !isExpanded(m.id, m.isRead) }));

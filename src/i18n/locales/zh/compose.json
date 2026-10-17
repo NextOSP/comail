@@ -102,5 +102,6 @@
   "teamsMeetingTitle": "Microsoft Teams 会议",
   "teamsMeetingJoin": "立即加入会议",
   "teamsMeetingAdded": "已添加 Teams 会议链接",
-  "teamsMeetingError": "无法创建 Teams 会议：{{error}}"
+  "teamsMeetingError": "无法创建 Teams 会议：{{error}}",
+  "discardDraft": "丢弃草稿"
 }

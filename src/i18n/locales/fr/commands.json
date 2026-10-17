@@ -91,7 +91,8 @@
     "aiProofread": "Relire",
     "calendarDay": "Calendrier : vue jour",
     "calendarWeekView": "Calendrier : vue semaine",
-    "calendarSidebar": "Calendrier : afficher/masquer la barre latérale"
+    "calendarSidebar": "Calendrier : afficher/masquer la barre latérale",
+    "discardDraft": "Supprimer le brouillon"
   },
   "toast": {
     "noVerificationCode": "Aucun code de vérification depuis 30 minutes",

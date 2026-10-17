@@ -102,5 +102,6 @@
   "teamsMeetingTitle": "Reunión de Microsoft Teams",
   "teamsMeetingJoin": "Unirse a la reunión ahora",
   "teamsMeetingAdded": "Enlace de la reunión de Teams añadido",
-  "teamsMeetingError": "No se pudo crear la reunión de Teams: {{error}}"
+  "teamsMeetingError": "No se pudo crear la reunión de Teams: {{error}}",
+  "discardDraft": "Descartar borrador"
 }

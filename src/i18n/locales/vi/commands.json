@@ -91,7 +91,8 @@
     "aiProofread": "Soát lỗi",
     "calendarDay": "Lịch: Xem theo ngày",
     "calendarWeekView": "Lịch: Xem theo tuần",
-    "calendarSidebar": "Lịch: Ẩn/hiện thanh bên"
+    "calendarSidebar": "Lịch: Ẩn/hiện thanh bên",
+    "discardDraft": "Hủy bản nháp"
   },
   "toast": {
     "noVerificationCode": "Không có mã xác minh nào trong 30 phút qua",
