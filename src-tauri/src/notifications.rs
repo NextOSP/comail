@@ -8,6 +8,7 @@
 use comail_core::{Core, NotificationOutboxItem, RoutedTab};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Runtime};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_notification::NotificationExt;
 use tokio::time::MissedTickBehavior;
 
@@ -15,7 +16,8 @@ const POLL_INTERVAL: Duration = Duration::from_secs(3);
 const DISPATCH_BATCH: i64 = 16;
 const MAX_RETRY_DELAY_MS: i64 = 5 * 60 * 1_000;
 /// How long to hold a notification while its thread awaits AI routing before
-/// giving up and delivering anyway (better to over-notify than lose mail).
+/// giving up and scoping against the thread's Important/Other fallback bucket
+/// (the tab the list shows it under meanwhile).
 const MAX_ROUTING_WAIT_MS: i64 = 30_000;
 /// How far out a still-routing notification is deferred between re-checks.
 const ROUTING_RECHECK_MS: i64 = 3_000;
@@ -72,11 +74,13 @@ async fn delivery_decision(
                 Decision::Suppress("out of notification scope")
             }
         }
-        Ok(Some(RoutedTab::Pending)) => {
+        Ok(Some(RoutedTab::Pending { fallback })) => {
             if now - item.created_at < MAX_ROUTING_WAIT_MS {
                 Decision::Defer(now + ROUTING_RECHECK_MS)
-            } else {
+            } else if scope_allows(scope, tabs, &fallback) {
                 Decision::Deliver
+            } else {
+                Decision::Suppress("out of notification scope")
             }
         }
         Ok(None) => Decision::Suppress("thread no longer present"),
@@ -124,6 +128,25 @@ async fn dispatch_due<R: Runtime>(app: &AppHandle<R>, core: &Core) {
     };
 
     for item in due {
+        // A one-time code is time-critical: copy it straight away (Universal
+        // Clipboard offers it on the user's iPhone/iPad too) and announce it
+        // whatever tab the mail lands in.
+        let code = if settings.copy_verification_codes || notifications_enabled {
+            core.message_verification_code(item.message_id)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        if let Some(code) = &code {
+            if settings.copy_verification_codes && first_copy(item.message_id) {
+                if let Err(error) = app.clipboard().write_text(code.clone()) {
+                    tracing::warn!(outbox_id = item.id, %error, "copying verification code failed");
+                }
+            }
+        }
+
         // Master switch off: claim and suppress so the row reaches a terminal
         // state instead of being re-listed every cycle.
         if !notifications_enabled {
@@ -139,7 +162,12 @@ async fn dispatch_due<R: Runtime>(app: &AppHandle<R>, core: &Core) {
 
         // Apply the user's scope before claiming, so waiting for a thread's tab
         // to resolve never consumes a delivery attempt.
-        match delivery_decision(core, &item, &scope, &tabs, now_ms()).await {
+        let decision = if code.is_some() {
+            Decision::Deliver
+        } else {
+            delivery_decision(core, &item, &scope, &tabs, now_ms()).await
+        };
+        match decision {
             Decision::Deliver => {}
             Decision::Defer(not_before) => {
                 if let Err(error) = core.defer_notification_delivery(item.id, not_before).await {
@@ -168,7 +196,10 @@ async fn dispatch_due<R: Runtime>(app: &AppHandle<R>, core: &Core) {
             }
         }
 
-        let (title, body) = notification_copy(&item);
+        let (title, body) = match &code {
+            Some(code) => code_notification_copy(&item, code, settings.copy_verification_codes),
+            None => notification_copy(&item),
+        };
         match app.notification().builder().title(title).body(body).show() {
             Ok(()) => match core.mark_notification_delivered(item.id).await {
                 Ok(true) => {}
@@ -225,6 +256,35 @@ fn notification_copy(item: &NotificationOutboxItem) -> (String, String) {
         .unwrap_or("New message")
         .to_owned();
     (title, body)
+}
+
+/// True the first time a message's code is seen, so a notification retry
+/// doesn't clobber whatever the user copied since.
+fn first_copy(message_id: i64) -> bool {
+    static COPIED: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+    let mut copied = COPIED.lock().unwrap_or_else(|e| e.into_inner());
+    if copied.contains(&message_id) {
+        return false;
+    }
+    if copied.len() >= 64 {
+        copied.remove(0);
+    }
+    copied.push(message_id);
+    true
+}
+
+fn code_notification_copy(
+    item: &NotificationOutboxItem,
+    code: &str,
+    copied: bool,
+) -> (String, String) {
+    let (sender, _) = notification_copy(item);
+    let body = if copied {
+        format!("{sender} · Copied to clipboard")
+    } else {
+        sender
+    };
+    (format!("Verification code {code}"), body)
 }
 
 fn nonempty(value: Option<&str>) -> Option<&str> {

@@ -13,6 +13,7 @@ import { activeMention } from "../../lib/mentions";
 import { addressName, IS_MAC } from "../../lib/format";
 import { call } from "../../ipc/commands";
 import type { Address } from "../../ipc/types";
+import { Button } from "../ui/Button";
 
 export interface RichBodyHandle {
   focus(): void;
@@ -724,7 +725,7 @@ export const RichBody = forwardRef<
               e.preventDefault();
               exec(b.cmd);
             }}
-            className={`flex size-6.5 items-center justify-center rounded-md text-[12px] transition-colors ${
+            className={`flex size-6.5 items-center justify-center rounded-control text-sm transition-colors ${
               active[b.cmd]
                 ? "bg-accent/15 text-accent"
                 : "text-ink-faint hover:bg-bg2 hover:text-ink"
@@ -745,7 +746,7 @@ export const RichBody = forwardRef<
             e.preventDefault();
             openLink();
           }}
-          className={`flex size-6.5 items-center justify-center rounded-md transition-colors ${
+          className={`flex size-6.5 items-center justify-center rounded-control transition-colors ${
             linkOpen ? "bg-accent/15 text-accent" : "text-ink-faint hover:bg-bg2 hover:text-ink"
           }`}
         >
@@ -757,7 +758,7 @@ export const RichBody = forwardRef<
 
         {linkOpen && (
           <div
-            className="absolute top-9 left-0 z-20 flex items-center gap-1.5 rounded-lg border border-hairline bg-bg0 p-1.5 shadow-lg"
+            className="co-pop-in absolute top-9 left-0 z-20 flex items-center gap-1.5 rounded-card border border-hairline bg-bg1 p-1 shadow-elev-2"
             data-testid="link-popover"
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -770,15 +771,15 @@ export const RichBody = forwardRef<
                 else if (e.key === "Escape") { e.preventDefault(); setLinkOpen(false); }
               }}
               placeholder={t("compose:fmt.linkPlaceholder")}
-              className="h-7 w-56 rounded-md border border-hairline bg-bg1 px-2 text-[13px] text-ink outline-none focus:border-accent"
+              className="h-7 w-56 rounded-control border border-hairline bg-bg0 px-2 text-base text-ink outline-none focus:border-accent"
             />
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onMouseDown={(e) => { e.preventDefault(); applyLink(); }}
-              className="h-7 rounded-md bg-accent px-2.5 text-[12.5px] font-medium text-white hover:opacity-90"
             >
               {t("compose:fmt.linkApply")}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -915,15 +916,15 @@ export const RichBody = forwardRef<
           container can't clip it). mousedown commits before the editor blurs. */}
       {mentionOpen && mention && (
         <div
-          className="fixed z-30 min-w-64 rounded-lg border border-hairline bg-bg1 p-1"
-          style={{ left: mention.left, top: mention.top, boxShadow: "var(--elev-2)" }}
+          className="co-pop-in fixed z-30 min-w-64 rounded-card border border-hairline bg-bg1 p-1 shadow-elev-2"
+          style={{ left: mention.left, top: mention.top }}
           data-testid="mention-menu"
         >
           {hits.map((s, i) => (
             <button
               key={s.email}
               type="button"
-              className={`flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left ${
+              className={`flex w-full items-baseline gap-2 rounded-control px-2.5 py-1.5 text-left ${
                 i === mentionCursor ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
               }`}
               onMouseDown={(e) => {
@@ -932,8 +933,8 @@ export const RichBody = forwardRef<
               }}
               onMouseMove={() => setMentionCursor(i)}
             >
-              <span className="text-[13px] text-ink">{addressName(s)}</span>
-              <span className="truncate text-[11.5px] text-ink-faint">{s.email}</span>
+              <span className="text-base text-ink">{addressName(s)}</span>
+              <span className="truncate text-xs text-ink-faint">{s.email}</span>
             </button>
           ))}
         </div>

@@ -518,16 +518,30 @@ async fn send_action(
     // mail-parser strips angle brackets from Message-IDs; store the same form
     // so the Sent-folder sync dedupes against this row instead of duplicating.
     let msg_id_bare = msg_id.trim_matches(['<', '>']).to_string();
+    // The Sent-folder sync dedupes this row by Message-ID and never harvests
+    // it, so record the recipients here or frequent contacts never rank up.
+    let sent_to: Vec<Address> = detail
+        .to
+        .iter()
+        .chain(detail.cc.iter())
+        .chain(bcc.iter())
+        .cloned()
+        .collect();
+    let account_id = config.id;
     let thread_id = ctx
         .db
         .write(move |conn| {
             let tx = conn.transaction()?;
+            let sent_at = now_ms();
             tx.execute(
                 "UPDATE messages SET is_draft = 0, is_outgoing = 1, is_read = 1,
                         message_id = ?2, folder_id = COALESCE(?3, folder_id), uid = NULL, date = ?4
                  WHERE id = ?1",
-                rusqlite::params![draft_id, msg_id_bare, sent_folder_id, now_ms()],
+                rusqlite::params![draft_id, msg_id_bare, sent_folder_id, sent_at],
             )?;
+            for a in &sent_to {
+                repo::contacts::harvest(&tx, account_id, a, true, sent_at)?;
+            }
             tx.execute(
                 "DELETE FROM drafts_meta WHERE message_id = ?1",
                 rusqlite::params![draft_id],

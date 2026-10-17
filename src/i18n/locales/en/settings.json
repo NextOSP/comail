@@ -1,17 +1,23 @@
 {
   "title": "Settings",
   "section": {
-    "preferences": "Preferences",
     "stats": "Stats",
     "ai": "AI",
-    "aiAutomation": "AI Automations",
+    "aiAutomation": "Rules & automations",
     "ragSearch": "RAG Search",
     "oauthApps": "OAuth apps",
     "accounts": "Accounts",
     "splitInbox": "Split inbox",
     "snippets": "Snippets",
     "labels": "Labels",
-    "sync": "Sync"
+    "sync": "Sync",
+    "appearance": "Appearance",
+    "notifications": "Notifications",
+    "reading": "Reading",
+    "compose": "Composing",
+    "calendar": "Calendar",
+    "about": "About",
+    "mcp": "AI clients (MCP)"
   },
   "navigation": {
     "general": "General",
@@ -28,7 +34,6 @@
     "hint": "Snow is light, Carbon is dark.",
     "snow": "Snow",
     "carbon": "Carbon",
-    "holiday": "Holiday",
     "system": "System"
   },
   "language": {
@@ -121,6 +126,16 @@
     "providerLabel": "Provider",
     "providerHint": "Presets fill the base URL; pick Custom endpoint to use any OpenAI-compatible URL. Local servers need no API key.",
     "customProvider": "Custom endpoint",
+    "appleReady": "Ready · on-device, nothing leaves this Mac",
+    "appleProviderHint": "Runs Apple's on-device model: private, free, and works offline. No API key needed. Its small context window means long threads are trimmed, and Ask answers in one pass without follow-up searches.",
+    "appleState": {
+      "available": "Ready · on-device, nothing leaves this Mac",
+      "deviceNotEligible": "Needs a Mac with Apple silicon",
+      "notEnabled": "Turn on Apple Intelligence in System Settings › Apple Intelligence & Siri",
+      "modelNotReady": "The model is still downloading - check back in a few minutes",
+      "osTooOld": "Needs macOS 26 or later",
+      "unsupported": "Not available in this build"
+    },
     "tiersSection": "Model tiers",
     "tiersIntro": "Point each tier at a model on the provider above. Leave a tier blank to use the default model.",
     "tier": {
@@ -142,10 +157,10 @@
     "routeSummarizeHint": "Thread summaries - fast and cheap is usually enough.",
     "routeVoice": "Learn writing voice",
     "routeVoiceHint": "Occasional background task that distils your style.",
-    "categorizeSection": "AI mail automations",
-    "categorizeIntro": "Describe complex mail in plain language, then choose exactly what Comail may do. One message can trigger several ordered actions.",
-    "categorizeLabel": "Run AI automations",
-    "categorizeHint": "Checks new mail that no deterministic split rule catches. The AI only matches your workflows; Comail executes the actions you explicitly configure.",
+    "categorizeSection": "AI categories",
+    "categorizeIntro": "Sort mail that no split rule catches into Marketing, News, Social and Pitch. Uses the decision model when one is set, otherwise the chat model.",
+    "categorizeLabel": "Sort with AI",
+    "categorizeHint": "Off uses the built-in header rules. Your rules below run either way.",
     "categoryPromptLabel": "Fallback category sorting",
     "categoryPromptPlaceholder": "Describe your categories, e.g.\nMarketing: promotions, sales, product blasts.\nNews: newsletters and digests I subscribed to.\nSocial: LinkedIn, X, Facebook, Reddit, YouTube.\nPitch: cold outreach asking for my time.",
     "categoryPromptHint": "Optional. Leave blank to keep the built-in Marketing, News, Social, and Pitch category definitions.",
@@ -189,9 +204,9 @@
       "edit": "Edit",
       "delete": "Delete",
       "reallyDelete": "Delete?",
-      "add": "+ New automation",
-      "emptyTitle": "No custom automations yet",
-      "emptyHint": "Category sorting still works. Add an automation to combine tab routing, labels, mailbox actions, and local annotations."
+      "add": "New rule",
+      "emptyTitle": "No rules yet",
+      "emptyHint": "Rules run on new mail: match with a condition, an AI check, or both, then label, route, archive and more."
     },
     "usage": {
       "section": "AI usage",
@@ -210,6 +225,14 @@
       "dayTitle": "{{date}}: {{tokens}} tokens across {{requests}} requests",
       "less": "Less",
       "more": "More"
+    },
+    "modelTag": {
+      "fast": "Fast: priority processing (costs more)",
+      "nitro": "Nitro: route to the highest-throughput providers",
+      "floor": "Floor: route to the cheapest providers",
+      "exacto": "Exacto: providers best at reliable tool calls",
+      "flex": "Flex: cheaper, slower processing",
+      "thinking": "Thinking: turn on deeper reasoning"
     }
   },
   "oauth": {
@@ -277,7 +300,22 @@
     "signInGoogle": "Sign in with Google",
     "waitingMicrosoft": "Waiting for Microsoft…",
     "cancelWaiting": "{{waiting}} (click to cancel)",
-    "signInMicrosoft": "Sign in with Microsoft"
+    "signInMicrosoft": "Sign in with Microsoft",
+    "listTitle": "Connected accounts",
+    "edit": "Edit",
+    "editTitle": "Edit account",
+    "editHint": "Changes apply after you save.",
+    "nameLabel": "Display name",
+    "nameHint": "Shown on inbox rows to tell accounts apart.",
+    "colorLabel": "Color",
+    "themeLabel": "Theme",
+    "dangerTitle": "Remove account",
+    "dangerHint": "Stops syncing and deletes this account's mail from this Mac. Mail on the server is not affected.",
+    "save": "Save",
+    "saved": "Account updated",
+    "cancel": "Cancel",
+    "via": "{{provider}}",
+    "statusOk": "Connected"
   },
   "snippets": {
     "title": "Snippets",
@@ -365,6 +403,64 @@
     "target": {
       "ownTab": "Its own tab"
     },
+    "mode": {
+      "simple": "Simple",
+      "advanced": "Advanced",
+      "simpleHint": "All filled fields must match.",
+      "advancedHint": "Combine conditions with all / any / not."
+    },
+    "cond": {
+      "all": "All",
+      "any": "Any",
+      "ofTheseHint": "of these must match",
+      "not": "not",
+      "notHint": "Match when this is NOT true",
+      "and": "and",
+      "or": "or",
+      "addCondition": "Condition",
+      "addGroup": "Group",
+      "remove": "Remove",
+      "field": "Field",
+      "op": "Comparison",
+      "value": "Value",
+      "yes": "yes",
+      "no": "no",
+      "fields": {
+        "sender": "Sender",
+        "recipient": "Recipient",
+        "subject": "Subject",
+        "label": "Has label",
+        "isAutomated": "Automated",
+        "hasAttachment": "Has attachment"
+      },
+      "ops": {
+        "contains": "contains",
+        "equals": "is",
+        "startsWith": "starts with",
+        "endsWith": "ends with"
+      },
+      "placeholders": {
+        "sender": "@github.com",
+        "recipient": "@myco.com",
+        "subject": "invoice"
+      },
+      "problems": {
+        "tooDeep": "Too many nested groups.",
+        "tooLarge": "Too many conditions.",
+        "emptyValue": "Fill in every value.",
+        "emptyGroup": "Remove empty groups.",
+        "notMatchable": "Add at least one condition that isn't negated."
+      }
+    },
+    "preview": {
+      "matches_one": "Matches {{count}} of the last {{scanned}} threads",
+      "matches_other": "Matches {{count}} of the last {{scanned}} threads"
+    },
+    "why": {
+      "rule": "In “{{name}}” because {{conditions}}.",
+      "noRule": "No split rule matches this thread; it was sorted automatically.",
+      "ai": "Sorted into {{name}} by its AI check."
+    },
     "addCondition": "Add at least one condition.",
     "saving": "Saving…",
     "saveChanges": "Save changes",
@@ -377,7 +473,14 @@
     "restoredDefaults": "Restored {{count}} default categories",
     "relabel": "Re-run auto labels",
     "relabeling": "Classifying…",
-    "relabeled": "Auto labels applied to {{count}} messages"
+    "relabeled": "Auto labels applied to {{count}} messages",
+    "manyTabs": "{{count}} inbox tabs. More than 7 gets hard to scan; consider routing some rules into an existing tab.",
+    "duplicateName": "Another tab is already named \"{{name}}\".",
+    "duplicateSender": "{{sender}} is already in \"{{name}}\"; whichever rule is higher wins.",
+    "editNamed": "Edit {{name}}",
+    "deleteNamed": "Delete {{name}}",
+    "reorderHandle": "Reorder {{name}}, position {{position}} of {{total}}. Drag, or press Up or Down arrow.",
+    "routesTo": "→ {{target}}"
   },
   "labels": {
     "title": "Labels",
@@ -395,7 +498,15 @@
     "create": "Create label",
     "cancel": "Cancel",
     "saveFailed": "Couldn't save label: {{detail}}",
-    "deleteFailed": "Couldn't delete label: {{detail}}"
+    "deleteFailed": "Couldn't delete label: {{detail}}",
+    "autoApply": "Auto-apply",
+    "autoApplyCount_one": "Auto · {{count}} rule",
+    "autoApplyCount_other": "Auto · {{count}} rules",
+    "autoApplyHint": "Apply this label automatically to new mail that matches a condition or an AI check",
+    "autoRuleName": "Label {{name}}",
+    "showAsTab": "Show {{name}} as an inbox tab",
+    "tab": "Tab",
+    "tabFailed": "Couldn't update the inbox tab: {{detail}}"
   },
   "notifications": {
     "label": "Desktop notifications",
@@ -412,6 +523,10 @@
   "sound": {
     "label": "Sound",
     "hint": "Play a sound on new mail and when sending."
+  },
+  "verificationCodes": {
+    "label": "Copy verification codes",
+    "hint": "When a one-time code arrives, copy it to the clipboard and show it in the notification. On a Mac, Universal Clipboard makes it pasteable on your iPhone and iPad too."
   },
   "dockBadge": {
     "label": "Dock badge",
@@ -430,6 +545,20 @@
   "selectAdvance": {
     "label": "Advance after select",
     "hint": "After selecting a thread with X, move the cursor to the next row. Off toggles in place (Gmail-style)."
+  },
+  "inboxUi": {
+    "label": "Inbox UI",
+    "hint": "Choose how the mail list looks.",
+    "classic": "Classic",
+    "avatar": "Avatar"
+  },
+  "showSenderPhotos": {
+    "label": "Show sender photos and logos",
+    "hint": "Show a photo or company logo next to each sender. Looks each sender up once (Gravatar, the company's official logo, then its site icon) and keeps it on this Mac. Initials are shown otherwise."
+  },
+  "showBundles": {
+    "label": "Show other tabs at the top",
+    "hint": "Bundles Marketing, News, Social and Other into compact rows above your Important mail. Turn off to see only Important here."
   },
   "groupByDate": {
     "label": "Group by date",
@@ -454,7 +583,26 @@
     "deleteConfirm": "Delete?",
     "ai": "AI",
     "aiGenerating": "Generating…",
-    "aiHint": "Generate a signature with AI"
+    "aiHint": "Generate a signature with AI",
+    "nameLabel": "Signature name",
+    "preview": "Preview",
+    "previewGreeting": "Hi Sam,",
+    "previewBody": "Thanks for the update - this all looks good to me.",
+    "previewEmpty": "Your signature will appear here.",
+    "edit": "Edit",
+    "editTitle": "Edit signature",
+    "newTitle": "New signature",
+    "editHint": "Added to the end of emails sent from {{email}}.",
+    "save": "Save signature",
+    "saved": "Signature saved",
+    "cancel": "Cancel",
+    "defaultNewBadge": "New mail",
+    "defaultReplyBadge": "Replies",
+    "emptyHint": "Add one to sign emails from this account automatically.",
+    "untitled": "Untitled",
+    "editorLabel": "Signature",
+    "defaultsTitle": "Defaults",
+    "listTitle": "Signatures · {{email}}"
   },
   "autoLabels": {
     "label": "Auto Labels",
@@ -503,5 +651,264 @@
     "off": "Off",
     "minutes_one": "{{count}} minute before",
     "minutes_other": "{{count}} minutes before"
+  },
+  "groups": {
+    "appearance": "Appearance",
+    "notifications": "Notifications",
+    "mail": "Reading & sending",
+    "models": "Models & provider",
+    "advanced": "Advanced",
+    "theme": "Theme",
+    "font": "Font",
+    "inboxLayout": "Inbox layout",
+    "language": "Language",
+    "alerts": "Alerts",
+    "dockBadge": "Dock badge",
+    "reading": "Reading",
+    "sending": "Sending",
+    "calendarView": "Calendar view"
+  },
+  "page": {
+    "splits": "Split your inbox into tabs by sender, subject or label.",
+    "snippets": "Reusable text you can drop into any message.",
+    "labels": "Organize threads with colored labels.",
+    "ai": "Your writing voice, the model behind AI features, and usage.",
+    "ai_automation": "Sort incoming mail and act on it with rules.",
+    "rag": "Find mail by meaning with a model that runs on your Mac.",
+    "accounts": "Mail accounts and sign-in apps.",
+    "appearance": "Theme, accent color, font and inbox layout.",
+    "notifications": "Desktop alerts, sounds and the dock badge.",
+    "reading": "How messages open and what happens after you act on one.",
+    "compose": "Sending behavior and your signatures.",
+    "calendar": "Calendar view, meeting reminders and connected calendars.",
+    "about": "Version, updates and diagnostics.",
+    "mcp": "Let Claude, ChatGPT, Cursor, VS Code and other AI apps use your mail through MCP."
+  },
+  "rag": {
+    "toggleLabel": "Semantic search",
+    "toggleHint": "Runs a small model on-device to find mail by meaning, not just keywords. Fully offline.",
+    "modelLabel": "Model",
+    "modelHint": "Larger models are more accurate but slower to index.",
+    "indexLabel": "Index",
+    "indexStatus": "{{embedded}} / {{total}} messages indexed",
+    "indexQueued_one": "{{n}} queued",
+    "indexQueued_other": "{{n}} queued",
+    "loadingModel": "Loading model…",
+    "rebuild": "Rebuild",
+    "rebuilding": "Rebuilding…",
+    "reindexToast_one": "Re-indexing {{count}} message…",
+    "reindexToast_other": "Re-indexing {{count}} messages…",
+    "historyLabel": "Search personalization",
+    "historyHint": "Search learns from the results you open, so the mail and people you look for rank higher. Stored only on this device.",
+    "historyClear": "Clear history",
+    "historyCleared": "Search history cleared"
+  },
+  "voice": {
+    "section": "Writing voice",
+    "draftLabel": "Draft in my voice",
+    "draftHint": "AI drafts imitate how you write, learned from your sent mail and similar past replies.",
+    "profileLabel": "Voice profile",
+    "learnedOn": "Learned {{date}}",
+    "notLearned": "Not learned yet - needs some sent mail.",
+    "learn": "Learn my voice",
+    "relearn": "Re-learn my voice",
+    "learning": "Learning…",
+    "learnedToast": "Learned your writing voice",
+    "profilePlaceholder": "Your writing-style profile"
+  },
+  "accent": {
+    "label": "Accent color",
+    "hint": "Used for selection, links and highlights.",
+    "colors": {
+      "violet": "Violet",
+      "blue": "Blue",
+      "teal": "Teal",
+      "green": "Green",
+      "amber": "Amber",
+      "orange": "Orange",
+      "rose": "Rose",
+      "graphite": "Graphite"
+    },
+    "custom": "Custom color"
+  },
+  "font": {
+    "hint": "The typeface used across Comail. Message bodies keep their own fonts.",
+    "system": "System",
+    "custom": "Custom Google Font",
+    "customPlaceholder": "Any Google Font, e.g. Poppins",
+    "apply": "Apply",
+    "browse": "Browse fonts",
+    "loadFailed": "Couldn't load the font \"{{name}}\" from Google Fonts. Using the system font."
+  },
+  "mcp": {
+    "serverGroup": "MCP server",
+    "enable": "Allow AI apps to use comail",
+    "enableHint": "Runs a local MCP server on this computer only (127.0.0.1). Apps need the access token below.",
+    "status": "Status",
+    "running_one": "Running · {{count}} app connected",
+    "running_other": "Running · {{count}} apps connected",
+    "starting": "Starting…",
+    "failed": "Couldn't start",
+    "url": "Server URL",
+    "urlHint": "Streamable HTTP endpoint for MCP clients.",
+    "port": "Port",
+    "portHint": "Change only if another app uses this port. Re-add your AI apps afterwards.",
+    "portInvalid": "Port must be a number between 1024 and 65535.",
+    "token": "Access token",
+    "tokenHint": "Sent by AI apps as a Bearer token. Anyone with it can read your mail on this computer.",
+    "show": "Show",
+    "hide": "Hide",
+    "copy": "Copy",
+    "copied": "{{what}} copied",
+    "regenerate": "Regenerate",
+    "regenerateConfirm": "Disconnect all apps?",
+    "tokenRegenerated": "New token created. Add your AI apps again.",
+    "permissionsGroup": "What AI apps can do",
+    "permissionsIntro": "Changes apply immediately to connected apps.",
+    "allowRead": "Search and read mail",
+    "allowReadHint": "Search, threads, contacts, labels, calendar and verification codes.",
+    "alwaysOn": "Always on",
+    "allowDrafts": "Write drafts",
+    "allowDraftsHint": "Create, edit and delete drafts for you to review. Never sends.",
+    "allowActions": "Organize mail",
+    "allowActionsHint": "Archive, trash, label, move, snooze, star and mark read.",
+    "allowSend": "Send mail",
+    "allowSendHint": "Send drafts. Your undo-send delay still applies. Only enable if you trust the app.",
+    "clientsIntro": "One click for apps installed on this computer; others get a config to paste.",
+    "add": "Add",
+    "method": {
+      "command": "Runs claude mcp add for you",
+      "deeplink": "Opens the app to confirm",
+      "write": "Adds comail to the app's config file",
+      "copy": "Paste this config into the app",
+      "tunnel": "Needs a tunnel; copy the steps"
+    },
+    "activityGroup": "Recent activity",
+    "activityEmpty": "No AI app has used comail yet.",
+    "onThisComputer": "On this computer",
+    "otherApps": "Other AI apps",
+    "showMore_one": "Show {{count}} more",
+    "showMore_other": "Show {{count}} more",
+    "hideMore": "Show less",
+    "open": "Open",
+    "added": "Added",
+    "config": "Config",
+    "rulesGroup": "Your rules for AI apps",
+    "rulesIntro": "comail already tells AI apps how to search, write drafts and stay safe. Add anything specific to you.",
+    "rulesPlaceholder": "e.g.\nSign emails as Dean.\nReply in Vietnamese to Vietnamese senders.\nNever email anyone at competitor.com.",
+    "rulesHint": "Applies to new sessions. Apps also get ready-made prompts: catch up, triage inbox, find an email, summarize a thread, draft a reply, verification code (in Claude Code: /mcp__comail__catch_up)."
+  },
+  "rules": {
+    "section": "Rules",
+    "intro": "Run actions on new mail: match it with a condition, an AI check, or both. Rules run once per message, on mail from the last 3 days.",
+    "newTitle": "New rule",
+    "editTitle": "Edit rule",
+    "editorHint": "A condition is checked locally and instantly. An AI check asks the decision model a yes/no question.",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Vendor invoices",
+    "describeLabel": "Describe it in plain language",
+    "draftIt": "Draft rule",
+    "draftHint": "Fills in the AI check and actions; review them below.",
+    "when": "When",
+    "useCondition": "Match a condition",
+    "useConditionHint": "Sender, recipient, subject, label, automated, attachment. Combine with AND / OR / NOT.",
+    "aiCheckLabel": "AI check",
+    "optional": "(optional)",
+    "aiCheckPlaceholder": "It is an invoice or receipt from a vendor",
+    "aiCheckBoth": "Only emails that pass the condition are checked.",
+    "aiCheckSummary": "AI: {{text}}",
+    "answeredByDecision": "Answered by the decision model {{model}}.",
+    "answeredByChat": "Answered by {{model}} (no decision model set).",
+    "answeredByNone": "No AI is set up, so this check counts as “no”. Conditions still work.",
+    "then": "Then",
+    "actionKind": "Action",
+    "actionValue": "Action target",
+    "pickLabel": "Choose a label…",
+    "pickTab": "Choose a tab…",
+    "notePlaceholder": "Note to append",
+    "removeAction": "Remove {{action}}",
+    "addAction": "Add action",
+    "needName": "Give the rule a name.",
+    "needMatch": "Add a condition or an AI check.",
+    "needActions": "Add at least one complete action.",
+    "save": "Save rule",
+    "fixCondition": "Finish the condition above.",
+    "aiCheckOnly_rules": "Every new email is checked.",
+    "aiCheckOnly_splits": "Every incoming email is checked; it waits a moment before landing in a tab.",
+    "aiCheckHint_rules": "Leave empty to match on the condition alone, with no model involved.",
+    "aiCheckHint_splits": "Optional. Add a yes/no question for the AI. With no condition, the AI alone decides what lands in this tab.",
+    "answeredByDecisionThenChat": "Answered by {{model}}, or {{chat}} if it's unavailable.",
+    "ownConfidence": "Own confidence bar (default {{pct}}%)",
+    "ownConfidenceLabel": "Minimum confidence for this check"
+  },
+  "decision": {
+    "section": "Decision model",
+    "intro": "Typed yes/no and pick-one answers for AI categories and the AI checks in rules and splits, from TypeSafe Jev, OpenAI's Decisions API or a compatible endpoint. Everything keeps working without them: Comail asks the chat model (API, local or Apple on-device), and with no AI at all, conditions and built-in sorting still run.",
+    "providerLabel": "Provider",
+    "provider": {
+      "off": "Off",
+      "openrouter": "OpenRouter: TypeSafe Jev and others",
+      "openai": "OpenAI Decisions API",
+      "custom": "Custom endpoint"
+    },
+    "urlLabel": "Endpoint",
+    "formatLabel": "Format",
+    "format": {
+      "openrouter": "OpenRouter / Jev",
+      "openai": "OpenAI"
+    },
+    "modelLabel": "Model",
+    "keyLabel": "API key",
+    "keyPlaceholder": "Empty reuses your AI key",
+    "keySaved": "Decision API key saved",
+    "keyCleared": "Decision API key removed",
+    "confidenceLabel": "Minimum confidence",
+    "confidenceHint": "Answers below this count as “no”, so uncertain mail stays where it is.",
+    "testOk": "Reachable: {{model}} answered in {{ms}} ms ({{pct}}% sure)",
+    "chainLabel": "Providers",
+    "chainHint": "Tried top to bottom. If one is down or out of credit, the next one answers.",
+    "chainEmpty": "No decision model. AI checks and categories use the chat model below.",
+    "addProvider": "Add provider",
+    "addBackup": "Add backup",
+    "primary": "Primary",
+    "backupN": "Backup {{n}}",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "remove": "Remove provider",
+    "testAll": "Test providers",
+    "testFailedOne": "Unreachable: {{detail}}",
+    "keyPlaceholderOpenai": "OpenAI API key",
+    "useForLabel": "Use decision models for",
+    "useForHint": "Turn one off to have that feature ask the chat model instead.",
+    "useFor": {
+      "categories": "Categories",
+      "rules": "Rule AI checks",
+      "splits": "Split AI checks"
+    },
+    "chatFallbackLabel": "Fall back to the chat model",
+    "chatFallbackHint": "When every provider fails, {{model}} answers instead. Off: unanswered mail waits and retries.",
+    "chatFallbackNone": "No chat model is set up, so with every provider down, mail waits and retries.",
+    "onDevice": "Apple Intelligence (on-device)",
+    "noAiLabel": "Without AI",
+    "noAiHint": "With no provider and no chat model: AI checks count as “no”, built-in categories use header rules, and conditions work as usual. Nothing gets stuck.",
+    "noAiActive": "Active now",
+    "noAiStandby": "Standby"
+  },
+  "categories": {
+    "section": "Categories",
+    "intro": "What the AI sorts mail into. Describe each one so the model knows what belongs there, or add your own.",
+    "custom": "Custom",
+    "add": "Add category",
+    "create": "Add category",
+    "namePlaceholder": "e.g. Receipts",
+    "descriptionPlaceholder": "What belongs here, e.g. order confirmations and receipts after a purchase",
+    "descriptionLabel": "Description of {{name}} for the AI",
+    "needsAi": "Custom categories need a decision or chat model.",
+    "builtin": {
+      "ComailAutoMarketing": "Promotional blasts, sales, discounts, product announcements and other bulk marketing.",
+      "ComailAutoNews": "Newsletters, digests and periodical updates you subscribed to.",
+      "ComailAutoSocial": "Notifications from social networks and community platforms.",
+      "ComailAutoPitch": "Cold outreach from a person asking for your time."
+    }
   }
 }

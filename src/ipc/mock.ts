@@ -10,6 +10,10 @@ import type {
   AiAutomationPlan,
   AiStatus,
   AiUsageStats,
+  McpCall,
+  McpClientInfo,
+  McpInstallResult,
+  McpStatus,
   AskCitation,
   AskResult,
   AttachmentMeta,
@@ -22,11 +26,17 @@ import type {
   FolderInfo,
   Label,
   MessageDetail,
+  RuleCondition,
+  RuleTrace,
   PerformActionArgs,
   QueueSendArgs,
   QueueSendResult,
   SaveDraftArgs,
   SearchArgs,
+  SearchChip,
+  SearchExplain,
+  SearchHit,
+  SearchResults,
   Settings,
   Snippet,
   SplitRule,
@@ -34,8 +44,16 @@ import type {
   ThreadDetail,
   ThreadPage,
   ThreadSummary,
+  VerificationCode,
   View,
 } from "./types";
+import {
+  type ConditionSubject,
+  evaluate as evaluateCondition,
+  isMatchable,
+  matches as conditionMatches,
+  queryToCondition,
+} from "../lib/ruleCondition";
 
 export const MOCK_MODE =
   typeof window !== "undefined" &&
@@ -308,6 +326,19 @@ addThread(1, "Q3 roadmap review - final deck", [
     body: "Hey B.D.,\n\nAttached is the final deck for tomorrow's roadmap review. I folded in your notes on the sync-engine milestones and pushed the billing work to Q4.\n\nTwo things I'd still like your eyes on:\n\n1. Slide 7 - the headcount ask. Is two backend hires realistic, or should we frame it as one hire plus contractor budget?\n2. Slide 11 - I used your latency numbers from the March benchmark. Are those still current?\n\nIf you can get me comments by 6pm I'll lock it tonight.\n\nAna",
     attachments: [
       { name: "q3-roadmap-v4.pdf", mime: "application/pdf", size: 2_431_022 },
+      {
+        name: "q3-roadmap-v4.pptx",
+        mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        size: 6_802_114,
+      },
+      {
+        name: "headcount-model.xlsx",
+        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size: 48_210,
+      },
+      { name: "latency-benchmark.png", mime: "image/png", size: 412_876 },
+      { name: "sync-traces.log", mime: "text/plain", size: 18_334 },
+      { name: "brand-assets.zip", mime: "application/zip", size: 31_400_118 },
     ],
   },
 ]);
@@ -1172,9 +1203,16 @@ function applyMockAutomations() {
       m.localSubjectPrefix = "";
       m.automationNote = null;
     });
-    if (!settings.aiCategorize) continue;
     for (const rule of settings.aiAutomationRules.filter((r) => r.enabled)) {
-      if (!mockAutomationMatches(t, rule.name, rule.instruction)) continue;
+      // Condition first (the rule decision API), then the AI instruction.
+      if (rule.condition && !conditionMatches(rule.condition, mockConditionSubject(t)))
+        continue;
+      if (!rule.condition && !rule.instruction.trim()) continue;
+      if (
+        rule.instruction.trim() &&
+        !mockAutomationMatches(t, rule.name, rule.instruction)
+      )
+        continue;
       for (const action of rule.actions) {
         switch (action.kind) {
           case "route_to":
@@ -1426,8 +1464,13 @@ const folders: FolderInfo[] = [
 
 const DEFAULT_MOCK_SETTINGS: Settings = {
   theme: "system",
+  accentColor: "violet",
+  fontFamily: "",
   language: "system",
   calendarWeekStart: "monday",
+  inboxUi: "classic",
+  showSenderPhotos: true,
+  showBundles: true,
   undoSendSeconds: 10,
   loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",
@@ -1453,12 +1496,30 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   notificationScope: "important",
   notificationTabs: [],
   soundEnabled: true,
+  copyVerificationCodes: true,
   autoAdvance: true,
   selectAdvance: true,
   autoLabelsEnabled: true,
   aiCategorize: false,
   aiCategoryPrompt: "",
   aiAutomationRules: [],
+  decisionProvider: "off",
+  decisionBaseUrl: "",
+  decisionFormat: "openrouter",
+  decisionModel: "",
+  decisionMinConfidence: 0.6,
+  decisionBackups: [],
+  decisionUseCategories: true,
+  decisionUseRules: true,
+  decisionUseSplits: true,
+  decisionChatFallback: true,
+  aiCategoryDescriptions: {},
+  mcpEnabled: false,
+  mcpPort: 47823,
+  mcpAllowDrafts: true,
+  mcpAllowSend: false,
+  mcpAllowActions: false,
+  mcpInstructions: "",
   aiTierCategorize: "instant",
   groupByDate: true,
   contactSuggestAllAccounts: false,
@@ -1620,6 +1681,82 @@ const calendarEvents: CalendarEvent[] = (
       status: "CONFIRMED",
       method: "REQUEST",
     },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Design review - calendar refresh",
+      location: "Studio",
+      organizer: "bd@northbeam.com",
+      isLocal: true,
+      calendarId: 9001,
+      startsAt: startOfToday + 10 * H,
+      endsAt: startOfToday + 11.5 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Focus time",
+      location: null,
+      organizer: "bd@northbeam.com",
+      isLocal: true,
+      calendarId: 9002,
+      startsAt: startOfToday + 10.5 * H,
+      endsAt: startOfToday + 12 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Vendor demo - observability",
+      location: "Zoom",
+      organizer: "sales@obsly.io",
+      joinUrl: "https://zoom.us/j/123456789",
+      rsvpStatus: "TENTATIVE",
+      calendarId: 9001,
+      startsAt: startOfToday + D + 13 * H,
+      endsAt: startOfToday + D + 14 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Quarterly all-hands",
+      location: "Main hall",
+      organizer: "ceo@northbeam.com",
+      rsvpStatus: "DECLINED",
+      calendarId: 9001,
+      startsAt: startOfToday + 2 * D + 15 * H,
+      endsAt: startOfToday + 2 * D + 16 * H,
+      allDay: false,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
+    {
+      id: id(),
+      accountId: 1,
+      messageId: null,
+      summary: "Offsite - Lisbon",
+      location: "Lisbon",
+      organizer: null,
+      isLocal: true,
+      calendarId: 9002,
+      startsAt: startOfToday + D,
+      endsAt: startOfToday + 4 * D,
+      allDay: true,
+      status: "CONFIRMED",
+      method: "REQUEST",
+    },
   ] satisfies EventSeed[]
 ).map((e) => ({
   description: null,
@@ -1632,8 +1769,32 @@ const calendarEvents: CalendarEvent[] = (
   ...e,
 }));
 
-// Connected CalDAV calendars (empty until connect_calendar is called in dev).
-const mockCalendars: Calendar[] = [];
+// Connected CalDAV calendars: two seeded so the calendar views show colors
+// and the sidebar's calendar list in dev; connect_calendar adds more.
+const mockCalendars: Calendar[] = [
+  {
+    id: 9001,
+    accountId: 1,
+    url: "https://caldav.example.com/work/",
+    displayName: "Work",
+    color: "#3b82f6",
+    readOnly: false,
+    enabled: true,
+    isDefault: true,
+    lastSyncedAt: null,
+  },
+  {
+    id: 9002,
+    accountId: 1,
+    url: "https://caldav.example.com/personal/",
+    displayName: "Personal",
+    color: "#16a34a",
+    readOnly: false,
+    enabled: true,
+    isDefault: false,
+    lastSyncedAt: null,
+  },
+];
 
 // Attach the CRDT walkthrough invite to Elena's "Calendar invite sent"
 // message so the thread invite card (RSVP) renders in mock mode.
@@ -1723,7 +1884,18 @@ function threadSender(t: MockThread): Address {
     .from;
 }
 
+/** Split gate + AI check, mirroring Rust `decide::gate` / `decide_with_answers`. */
+function mockSplitPasses(t: MockThread, rule: SplitRule): boolean {
+  const cond = rule.condition ?? queryToCondition(rule.query);
+  const gate = isMatchable(cond)
+    ? conditionMatches(cond, mockConditionSubject(t))
+    : !!rule.ai;
+  if (!gate) return false;
+  return rule.ai ? mockAutomationMatches(t, rule.name, rule.ai.instruction) : true;
+}
+
 function matchesSplitRule(t: MockThread, rule: SplitRule): boolean {
+  if (rule.condition || rule.ai) return mockSplitPasses(t, rule);
   const sender = threadSender(t);
   const email = sender.email.toLowerCase();
   const q = rule.query;
@@ -2082,6 +2254,9 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
   let beforeDate: number | null = null;
   const terms: string[] = [];
   const fieldFilters: FieldFilter[] = [];
+  // `label:` values resolved to ids by folded name (or a unique prefix);
+  // -1 for an unknown label, which matches nothing.
+  const labelIds: number[] = [];
 
   for (const tok of tokenizeQuery(args.query)) {
     const lower = tok.toLowerCase();
@@ -2103,6 +2278,14 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
       }
       const phrase = stripQuotes(rest);
       if (phrase) fieldFilters.push({ field, phrase, caseSensitive });
+    } else if (lower.startsWith("label:")) {
+      const want = foldText(stripQuotes(tok.slice(6))).replace(/[^a-z0-9]/g, "");
+      if (want) {
+        const key = (n: string) => foldText(n).replace(/[^a-z0-9]/g, "");
+        const exactLabel = labels.find((l) => key(l.name) === want);
+        const prefixed = labels.filter((l) => key(l.name).startsWith(want));
+        labelIds.push(exactLabel?.id ?? (prefixed.length === 1 ? prefixed[0].id : -1));
+      }
     } else if (lower.startsWith("from:")) fromFilter = lower.slice(5);
     else if (lower === "is:unread") unreadOnly = true;
     else if (lower === "is:starred") starredOnly = true;
@@ -2167,6 +2350,7 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
     if (unreadOnly && s.unreadCount === 0) continue;
     if (starredOnly && !s.isStarred) continue;
     if (attachOnly && !s.hasAttachments) continue;
+    if (!labelIds.every((id) => s.labels.includes(id))) continue;
     if (fromFilter) {
       const hit = t.messages.some(
         (m) =>
@@ -2203,6 +2387,117 @@ function searchThreads(args: SearchArgs): ThreadSummary[] {
     exact.push(s);
   }
   return exact.length > 0 ? exact : loose;
+}
+
+/** The `search` command's response: ranked threads plus why each matched
+ *  and the parsed query. Mirrors comail-core's tiers at mock fidelity. */
+function mockSearchResults(args: SearchArgs): SearchResults {
+  const threadsOut = searchThreads(args);
+  const explain = mockExplain(args.query);
+  const terms = explain.terms.map(foldText);
+  const hits = threadsOut.map((t): SearchHit => {
+    if (terms.length === 0) return { threadId: t.id, tier: 1, reason: "filter" };
+    const subject = foldText(t.subject);
+    if (terms.every((term) => subject.includes(term)))
+      return { threadId: t.id, tier: 1, reason: "subject" };
+    const from = foldText(t.participants.map((p) => `${p.name ?? ""} ${p.email}`).join(" "));
+    if (terms.every((term) => from.includes(term)))
+      return { threadId: t.id, tier: 1, reason: "sender" };
+    const all = foldText(`${t.subject} ${t.snippet}`);
+    return terms.every((term) => all.includes(term))
+      ? { threadId: t.id, tier: 3, reason: "content" }
+      : { threadId: t.id, tier: 4, reason: "partial" };
+  });
+  const order = [...hits.keys()].sort((x, y) => hits[x].tier - hits[y].tier);
+  return {
+    threads: order.map((i) => threadsOut[i]),
+    hits: order.map((i) => hits[i]),
+    explain,
+  };
+}
+
+const MOCK_OPERATORS = [
+  "from", "to", "label", "in", "is", "has", "subject", "body", "exclude",
+  "after", "before", "between", "last", "older_than", "sort",
+];
+
+/** Mock `explain_search`: chips for recognised operators, a warning for a
+ *  misspelt one (one edit away, e.g. `lable:`) or an unknown label. */
+function mockExplain(query: string): SearchExplain {
+  const out: SearchExplain = {
+    chips: [],
+    warnings: [],
+    terms: [],
+    afterMs: null,
+    beforeMs: null,
+    sort: "relevance",
+  };
+  const re = /(-?)([A-Za-z_]+:)?("([^"]*)"?|\S+)?/g;
+  for (const m of query.matchAll(re)) {
+    const raw = m[0];
+    if (!raw.trim()) continue;
+    const start = m.index ?? 0;
+    const end = start + raw.length;
+    const key = (m[2] ?? "").slice(0, -1).toLowerCase();
+    const value = m[4] ?? m[3] ?? "";
+    if (m[1] && !key) {
+      if (value) out.chips.push({ kind: "exclude", value, start, end });
+      continue;
+    }
+    if (!key) {
+      if (value) out.terms.push(value.toLowerCase());
+      continue;
+    }
+    if (!value) continue;
+    const kind = key === "newer_than" ? "last" : key;
+    if (MOCK_OPERATORS.includes(kind)) {
+      if (kind === "label") {
+        const want = foldText(value).replace(/[^a-z0-9]/g, "");
+        const hit = labels.find((l) => foldText(l.name).replace(/[^a-z0-9]/g, "").startsWith(want));
+        if (!hit) {
+          out.warnings.push({ kind: "unknown_label", token: value, suggestion: null, start, end });
+          continue;
+        }
+        out.chips.push({ kind: "label", value: hit.name, start, end });
+        continue;
+      }
+      if (kind === "sort") out.sort = value === "oldest" ? "oldest" : value === "newest" ? "newest" : "relevance";
+      if (kind === "last") {
+        const ms = parseRelative(value.toLowerCase());
+        if (ms != null) out.afterMs = Date.now() - ms;
+      }
+      out.chips.push({ kind: kind as SearchChip["kind"], value, start, end });
+      continue;
+    }
+    const near = MOCK_OPERATORS.find((op) => op.startsWith(key) || editDistance1(op, key));
+    if (near) {
+      out.warnings.push({
+        kind: "unknown_operator",
+        token: raw,
+        suggestion: `${near}:${value}`,
+        start,
+        end,
+      });
+    } else {
+      out.terms.push(raw.toLowerCase());
+    }
+  }
+  return out;
+}
+
+/** True when `a` and `b` differ by at most one edit or one adjacent swap. */
+function editDistance1(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) {
+    return (
+      a.slice(i + 1) === b.slice(i + 1) ||
+      (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2))
+    );
+  }
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -2737,7 +3032,14 @@ export async function mockInvoke(
       );
 
     case "search":
-      return delay(searchThreads(a.args as SearchArgs), 60);
+      return delay(mockSearchResults(a.args as SearchArgs), 60);
+
+    case "explain_search":
+      return delay(mockExplain((a.query as string) ?? ""), 5);
+
+    case "record_search_open":
+    case "clear_search_history":
+      return delay(undefined);
 
     case "warm_search_embedding":
       return delay(undefined);
@@ -2797,25 +3099,44 @@ export async function mockInvoke(
     }
 
     case "find_matching_split": {
-      // Sender-only approximation of the backend matcher: excludes veto,
-      // then the first rule (position order) with a matching sender wins.
       const t = threads.find((x) => x.id === a.threadId);
       if (!t) return delay(null);
-      const froms = t.messages
-        .filter((m) => !m.isDraft && !m.isOutgoing)
-        .map((m) => m.from.email.toLowerCase());
-      const hit = [...splits]
-        .sort((x, y) => x.position - y.position || x.id - y.id)
-        .find((s) => {
-          const excluded = (s.query.excludeSenders ?? []).some((n) =>
-            froms.some((f) => f.includes(n.toLowerCase())),
-          );
-          if (excluded) return false;
-          return (s.query.senders ?? []).some((n) =>
-            froms.some((f) => f.includes(n.toLowerCase())),
-          );
-        });
-      return delay(hit ? { ...hit, query: { ...hit.query } } : null);
+      const hit = mockDecide(t).find((r) => r.matched);
+      const rule = hit && splits.find((s) => s.id === hit.splitId);
+      return delay(rule ? { ...rule, query: { ...rule.query } } : null);
+    }
+
+    case "explain_route": {
+      const t = threads.find((x) => x.id === a.threadId);
+      const rules = t ? mockDecide(t) : [];
+      const hit = rules.find((r) => r.matched);
+      const rule = hit && splits.find((s) => s.id === hit.splitId);
+      return delay({
+        current: t?.routedTab ?? null,
+        decision: {
+          route: rule ? (rule.target ?? `split:${rule.id}`) : null,
+          matchedSplit: rule?.id ?? null,
+          rules,
+        },
+      });
+    }
+
+    case "preview_split_condition": {
+      const cond = a.condition as RuleCondition;
+      const recent = [...threads]
+        .sort((x, y) => lastDate(y) - lastDate(x))
+        .slice(0, 2000);
+      const hits = recent.filter((t) => conditionMatches(cond, mockConditionSubject(t)));
+      return delay({
+        total: hits.length,
+        scanned: recent.length,
+        samples: hits.slice(0, (a.limit as number | undefined) ?? 5).map((t) => ({
+          id: t.id,
+          subject: t.subject,
+          fromAddr: t.messages[t.messages.length - 1]?.from.email ?? "",
+          lastMessageAt: lastDate(t),
+        })),
+      });
     }
 
     case "reorder_tabs": {
@@ -2863,6 +3184,7 @@ export async function mockInvoke(
             .length,
           snoozed: pool.filter((t) => inView(t, "snoozed") && isUnread(t))
             .length,
+          spam: pool.filter((t) => inView(t, "spam") && isUnread(t)).length,
           drafts: pool.filter((t) => inView(t, "drafts")).length,
         },
       });
@@ -2990,6 +3312,9 @@ export async function mockInvoke(
         })),
       );
 
+    case "sender_avatar":
+      // No network in the browser mock: everyone gets initials.
+      return null;
     case "get_settings":
       return delay({ ...settings });
 
@@ -3185,26 +3510,175 @@ export async function mockInvoke(
     case "cinema_close":
       return delay(undefined, 10);
 
+    case "mcp_status":
+      return delay<McpStatus>(
+        {
+          running: settings.mcpEnabled,
+          port: settings.mcpPort,
+          url: `http://127.0.0.1:${settings.mcpPort}/mcp`,
+          error: null,
+          clientCount: settings.mcpEnabled ? 1 : 0,
+        },
+        40,
+      );
+
+    case "mcp_get_token":
+    case "mcp_regenerate_token":
+      return delay("mock-mcp-token-0123456789abcdef", 40);
+
+    case "mcp_activity":
+      return delay<McpCall[]>(
+        settings.mcpEnabled
+          ? [
+              { at: Date.now() - 60_000, client: "claude-code", tool: "search_emails", ok: true, error: null },
+              { at: Date.now() - 45_000, client: "claude-code", tool: "get_thread", ok: true, error: null },
+            ]
+          : [],
+        40,
+      );
+
+    case "mcp_list_clients":
+      return delay<McpClientInfo[]>(
+        [
+          ["claude-code", "Claude Code", "command", true, "shell"],
+          ["claude-desktop", "Claude Desktop", "write", true, "json"],
+          ["cursor", "Cursor", "deeplink", true, "json"],
+          ["vscode", "VS Code", "deeplink", true, "json"],
+          ["vscode-insiders", "VS Code Insiders", "deeplink", false, "json"],
+          ["windsurf", "Windsurf", "write", false, "json"],
+          ["codex", "Codex CLI", "write", true, "toml"],
+          ["gemini", "Gemini CLI", "write", false, "json"],
+          ["opencode", "opencode", "write", false, "json"],
+          ["lmstudio", "LM Studio", "deeplink", false, "json"],
+          ["zed", "Zed", "copy", false, "json"],
+          ["cline", "Cline", "copy", false, "json"],
+          ["continue", "Continue", "copy", false, "yaml"],
+          ["goose", "Goose", "copy", false, "yaml"],
+          ["chatgpt", "ChatGPT", "copy", true, "text"],
+          ["generic", "Other MCP client", "copy", false, "json"],
+        ].map(([id, name, method, detected, snippetLang]) => ({
+          id,
+          name,
+          method,
+          detected,
+          configPath: null,
+          snippetLang,
+        })) as McpClientInfo[],
+        60,
+      );
+
+    case "mcp_client_snippet":
+      return delay(
+        JSON.stringify(
+          {
+            mcpServers: {
+              comail: {
+                url: `http://127.0.0.1:${settings.mcpPort}/mcp`,
+                headers: { Authorization: "Bearer mock-mcp-token-0123456789abcdef" },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+        40,
+      );
+
+    case "mcp_install_client":
+      return delay<McpInstallResult>(
+        { ok: true, message: "Added (mock)", path: null, openUrl: null },
+        200,
+      );
+
     case "ai_status":
       return delay<AiStatus>(
         {
           configured: true,
           model: settings.aiModel || "mock/gpt",
           baseUrl: settings.aiBaseUrl,
+          appleIntelligence: "available",
+          decisionConfigured: settings.decisionProvider !== "off",
+          decisionModel:
+            settings.decisionProvider === "off"
+              ? ""
+              : settings.decisionModel ||
+                (settings.decisionProvider === "openai"
+                  ? "gpt-6-luna"
+                  : "typesafe/jev-1.14"),
         },
         80,
       );
 
+    case "latest_verification_code":
+      return delay<VerificationCode | null>(
+        {
+          code: "482913",
+          messageId: 1,
+          threadId: 1,
+          sender: "Acme",
+          subject: "Your Acme verification code",
+          receivedAt: Date.now() - 60_000,
+        },
+        40,
+      );
+
     case "set_ai_key":
+    case "set_decision_key":
       return delay(undefined, 150);
+
+    case "test_decision_provider": {
+      const chain = [
+        {
+          provider: settings.decisionProvider,
+          model: settings.decisionModel,
+        },
+        ...settings.decisionBackups,
+      ].filter((e) => e.provider !== "off");
+      // The mock pretends Jev is down so the fallback path is visible.
+      return delay(
+        chain.map((e, i) => {
+          const model =
+            e.model ||
+            (e.provider === "openai" ? "gpt-6-luna" : "typesafe/jev-1.14");
+          const down = i === 0 && chain.length > 1;
+          return {
+            provider: e.provider,
+            model,
+            ok: !down,
+            latencyMs: down ? 0 : 142 + i * 60,
+            probability: down ? 0 : 0.97,
+            error: down ? "decision api error 503: service unavailable" : "",
+          };
+        }),
+        300,
+      );
+    }
+
+    case "create_category": {
+      const created: Label = {
+        id: id(),
+        name: String(a.name),
+        color: String(a.color),
+        position: 1000 + labels.filter((l) => l.isAuto).length,
+        keyword: `ComailAutoC${String(a.name).replace(/[^A-Za-z0-9]+/g, "_")}`,
+        isAuto: true,
+      };
+      labels.push(created);
+      if (String(a.description).trim())
+        settings.aiCategoryDescriptions = {
+          ...settings.aiCategoryDescriptions,
+          [created.keyword]: String(a.description).trim(),
+        };
+      return delay({ ...created });
+    }
 
     case "ai_list_models":
       return delay(
         [
-          "anthropic/claude-sonnet",
+          "anthropic/claude-sonnet-5.5",
           "mock/gpt",
-          "openai/gpt-4o-mini",
-          "openai/gpt-4o",
+          "openai/gpt-6-luna",
+          "openai/gpt-6.1-sol",
         ],
         200,
       );
@@ -3392,6 +3866,31 @@ export async function mockInvoke(
       );
     }
 
+    case "ai_draft_actions": {
+      // Suggest an event when the draft mentions a day or time, so the
+      // calendar chip is visible in dev.
+      const draft = (a.draft as string) ?? "";
+      if (!/\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*day\b|\btomorrow\b|\b\d{1,2}(:\d{2})?\s?(am|pm)\b/i.test(draft)) {
+        return delay([], 600);
+      }
+      const d = new Date(Date.now() + 86_400_000);
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      return delay(
+        [
+          {
+            kind: "create_event",
+            title: "Follow-up call",
+            start: `${day}T15:00`,
+            end: `${day}T15:30`,
+            allDay: false,
+            location: null,
+            description: null,
+          },
+        ],
+        600,
+      );
+    }
+
     case "ai_proofread": {
       // Naive copy-edit so the flow is visible in dev: fix a few classic
       // typos, double spaces, and lowercase standalone "i".
@@ -3457,9 +3956,9 @@ export async function mockInvoke(
 }
 
 // Tiny embedded fixtures so the preview modal demos every payload kind in a
-// plain browser: a valid one-page PDF and a 320x200 gradient PNG.
+// plain browser: a valid six-page PDF and a 320x200 gradient PNG.
 const MOCK_PDF_B64 =
-  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgMzk2XSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA3MiA+PgpzdHJlYW0KQlQgL0YxIDI4IFRmIDcyIDMwMCBUZCAoQ29tYWlsIFBERiBwcmV2aWV3KSBUaiAwIC00MCBUZCAocGFnZSBvbmUpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBuIAowMDAwMDAwMzYzIDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNDMzCiUlRU9G";
+  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUiA1IDAgUiA3IDAgUiA5IDAgUiAxMSAwIFIgMTMgMCBSXSAvQ291bnQgNiA+PgplbmRvYmoKMyAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSAxNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA3NjkgPj4Kc3RyZWFtCkJUIC9GMSAzMCBUZiA3MiA3MDAgVGQgKFEzIFJvYWRtYXAgUmV2aWV3KSBUaiBFVCBCVCAvRjEgMTQgVGYgNzIgNjYwIFRkIChQYWdlIDEgb2YgNiAtIENvbWFpbCBtb2NrIFBERikgVGogRVQgMC40NCAwLjMwIDAuNzEgcmcgNzIgNjAwIDQ2OCA2IHJlIGYgQlQgL0YxIDEyIFRmIDcyIDU2MCBUZCAoLSBMaW5lIGl0ZW0gMSBmb3Igc2VjdGlvbiAxKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNTMyIFRkICgtIExpbmUgaXRlbSAyIGZvciBzZWN0aW9uIDEpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA1MDQgVGQgKC0gTGluZSBpdGVtIDMgZm9yIHNlY3Rpb24gMSkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDQ3NiBUZCAoLSBMaW5lIGl0ZW0gNCBmb3Igc2VjdGlvbiAxKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNDQ4IFRkICgtIExpbmUgaXRlbSA1IGZvciBzZWN0aW9uIDEpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA0MjAgVGQgKC0gTGluZSBpdGVtIDYgZm9yIHNlY3Rpb24gMSkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDM5MiBUZCAoLSBMaW5lIGl0ZW0gNyBmb3Igc2VjdGlvbiAxKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzY0IFRkICgtIExpbmUgaXRlbSA4IGZvciBzZWN0aW9uIDEpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzMzYgVGQgKC0gTGluZSBpdGVtIDkgZm9yIHNlY3Rpb24gMSkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDMwOCBUZCAoLSBMaW5lIGl0ZW0gMTAgZm9yIHNlY3Rpb24gMSkgVGogRVQgQlQgL0YxIDEwIFRmIDI5MCA0MCBUZCAoMSkgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgL01lZGlhQm94IFswIDAgNjEyIDc5Ml0gL0NvbnRlbnRzIDYgMCBSIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDE1IDAgUiA+PiA+PiA+PgplbmRvYmoKNiAwIG9iago8PCAvTGVuZ3RoIDc3NCA+PgpzdHJlYW0KQlQgL0YxIDMwIFRmIDcyIDcwMCBUZCAoU3luYyBlbmdpbmUgbWlsZXN0b25lcykgVGogRVQgQlQgL0YxIDE0IFRmIDcyIDY2MCBUZCAoUGFnZSAyIG9mIDYgLSBDb21haWwgbW9jayBQREYpIFRqIEVUIDAuNDQgMC4zMCAwLjcxIHJnIDcyIDYwMCA0NjggNiByZSBmIEJUIC9GMSAxMiBUZiA3MiA1NjAgVGQgKC0gTGluZSBpdGVtIDEgZm9yIHNlY3Rpb24gMikgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDUzMiBUZCAoLSBMaW5lIGl0ZW0gMiBmb3Igc2VjdGlvbiAyKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNTA0IFRkICgtIExpbmUgaXRlbSAzIGZvciBzZWN0aW9uIDIpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA0NzYgVGQgKC0gTGluZSBpdGVtIDQgZm9yIHNlY3Rpb24gMikgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDQ0OCBUZCAoLSBMaW5lIGl0ZW0gNSBmb3Igc2VjdGlvbiAyKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNDIwIFRkICgtIExpbmUgaXRlbSA2IGZvciBzZWN0aW9uIDIpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzOTIgVGQgKC0gTGluZSBpdGVtIDcgZm9yIHNlY3Rpb24gMikgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDM2NCBUZCAoLSBMaW5lIGl0ZW0gOCBmb3Igc2VjdGlvbiAyKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzM2IFRkICgtIExpbmUgaXRlbSA5IGZvciBzZWN0aW9uIDIpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzMDggVGQgKC0gTGluZSBpdGVtIDEwIGZvciBzZWN0aW9uIDIpIFRqIEVUIEJUIC9GMSAxMCBUZiAyOTAgNDAgVGQgKDIpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKNyAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA4IDAgUiAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSAxNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjggMCBvYmoKPDwgL0xlbmd0aCA3NjUgPj4Kc3RyZWFtCkJUIC9GMSAzMCBUZiA3MiA3MDAgVGQgKEhlYWRjb3VudCBhc2spIFRqIEVUIEJUIC9GMSAxNCBUZiA3MiA2NjAgVGQgKFBhZ2UgMyBvZiA2IC0gQ29tYWlsIG1vY2sgUERGKSBUaiBFVCAwLjQ0IDAuMzAgMC43MSByZyA3MiA2MDAgNDY4IDYgcmUgZiBCVCAvRjEgMTIgVGYgNzIgNTYwIFRkICgtIExpbmUgaXRlbSAxIGZvciBzZWN0aW9uIDMpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA1MzIgVGQgKC0gTGluZSBpdGVtIDIgZm9yIHNlY3Rpb24gMykgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDUwNCBUZCAoLSBMaW5lIGl0ZW0gMyBmb3Igc2VjdGlvbiAzKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNDc2IFRkICgtIExpbmUgaXRlbSA0IGZvciBzZWN0aW9uIDMpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA0NDggVGQgKC0gTGluZSBpdGVtIDUgZm9yIHNlY3Rpb24gMykgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDQyMCBUZCAoLSBMaW5lIGl0ZW0gNiBmb3Igc2VjdGlvbiAzKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzkyIFRkICgtIExpbmUgaXRlbSA3IGZvciBzZWN0aW9uIDMpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzNjQgVGQgKC0gTGluZSBpdGVtIDggZm9yIHNlY3Rpb24gMykgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDMzNiBUZCAoLSBMaW5lIGl0ZW0gOSBmb3Igc2VjdGlvbiAzKSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzA4IFRkICgtIExpbmUgaXRlbSAxMCBmb3Igc2VjdGlvbiAzKSBUaiBFVCBCVCAvRjEgMTAgVGYgMjkwIDQwIFRkICgzKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjkgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgMTAgMCBSIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDE1IDAgUiA+PiA+PiA+PgplbmRvYmoKMTAgMCBvYmoKPDwgL0xlbmd0aCA3NzAgPj4Kc3RyZWFtCkJUIC9GMSAzMCBUZiA3MiA3MDAgVGQgKExhdGVuY3kgYmVuY2htYXJrcykgVGogRVQgQlQgL0YxIDE0IFRmIDcyIDY2MCBUZCAoUGFnZSA0IG9mIDYgLSBDb21haWwgbW9jayBQREYpIFRqIEVUIDAuNDQgMC4zMCAwLjcxIHJnIDcyIDYwMCA0NjggNiByZSBmIEJUIC9GMSAxMiBUZiA3MiA1NjAgVGQgKC0gTGluZSBpdGVtIDEgZm9yIHNlY3Rpb24gNCkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDUzMiBUZCAoLSBMaW5lIGl0ZW0gMiBmb3Igc2VjdGlvbiA0KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNTA0IFRkICgtIExpbmUgaXRlbSAzIGZvciBzZWN0aW9uIDQpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA0NzYgVGQgKC0gTGluZSBpdGVtIDQgZm9yIHNlY3Rpb24gNCkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDQ0OCBUZCAoLSBMaW5lIGl0ZW0gNSBmb3Igc2VjdGlvbiA0KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNDIwIFRkICgtIExpbmUgaXRlbSA2IGZvciBzZWN0aW9uIDQpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzOTIgVGQgKC0gTGluZSBpdGVtIDcgZm9yIHNlY3Rpb24gNCkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDM2NCBUZCAoLSBMaW5lIGl0ZW0gOCBmb3Igc2VjdGlvbiA0KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzM2IFRkICgtIExpbmUgaXRlbSA5IGZvciBzZWN0aW9uIDQpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzMDggVGQgKC0gTGluZSBpdGVtIDEwIGZvciBzZWN0aW9uIDQpIFRqIEVUIEJUIC9GMSAxMCBUZiAyOTAgNDAgVGQgKDQpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKMTEgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgMTIgMCBSIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDE1IDAgUiA+PiA+PiA+PgplbmRvYmoKMTIgMCBvYmoKPDwgL0xlbmd0aCA3NzMgPj4Kc3RyZWFtCkJUIC9GMSAzMCBUZiA3MiA3MDAgVGQgKEJpbGxpbmcgLSBtb3ZlZCB0byBRNCkgVGogRVQgQlQgL0YxIDE0IFRmIDcyIDY2MCBUZCAoUGFnZSA1IG9mIDYgLSBDb21haWwgbW9jayBQREYpIFRqIEVUIDAuNDQgMC4zMCAwLjcxIHJnIDcyIDYwMCA0NjggNiByZSBmIEJUIC9GMSAxMiBUZiA3MiA1NjAgVGQgKC0gTGluZSBpdGVtIDEgZm9yIHNlY3Rpb24gNSkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDUzMiBUZCAoLSBMaW5lIGl0ZW0gMiBmb3Igc2VjdGlvbiA1KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNTA0IFRkICgtIExpbmUgaXRlbSAzIGZvciBzZWN0aW9uIDUpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA0NzYgVGQgKC0gTGluZSBpdGVtIDQgZm9yIHNlY3Rpb24gNSkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDQ0OCBUZCAoLSBMaW5lIGl0ZW0gNSBmb3Igc2VjdGlvbiA1KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNDIwIFRkICgtIExpbmUgaXRlbSA2IGZvciBzZWN0aW9uIDUpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzOTIgVGQgKC0gTGluZSBpdGVtIDcgZm9yIHNlY3Rpb24gNSkgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDM2NCBUZCAoLSBMaW5lIGl0ZW0gOCBmb3Igc2VjdGlvbiA1KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzM2IFRkICgtIExpbmUgaXRlbSA5IGZvciBzZWN0aW9uIDUpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzMDggVGQgKC0gTGluZSBpdGVtIDEwIGZvciBzZWN0aW9uIDUpIFRqIEVUIEJUIC9GMSAxMCBUZiAyOTAgNDAgVGQgKDUpIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKMTMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgMTQgMCBSIC9SZXNvdXJjZXMgPDwgL0ZvbnQgPDwgL0YxIDE1IDAgUiA+PiA+PiA+PgplbmRvYmoKMTQgMCBvYmoKPDwgL0xlbmd0aCA3NjIgPj4Kc3RyZWFtCkJUIC9GMSAzMCBUZiA3MiA3MDAgVGQgKE5leHQgc3RlcHMpIFRqIEVUIEJUIC9GMSAxNCBUZiA3MiA2NjAgVGQgKFBhZ2UgNiBvZiA2IC0gQ29tYWlsIG1vY2sgUERGKSBUaiBFVCAwLjQ0IDAuMzAgMC43MSByZyA3MiA2MDAgNDY4IDYgcmUgZiBCVCAvRjEgMTIgVGYgNzIgNTYwIFRkICgtIExpbmUgaXRlbSAxIGZvciBzZWN0aW9uIDYpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA1MzIgVGQgKC0gTGluZSBpdGVtIDIgZm9yIHNlY3Rpb24gNikgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDUwNCBUZCAoLSBMaW5lIGl0ZW0gMyBmb3Igc2VjdGlvbiA2KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgNDc2IFRkICgtIExpbmUgaXRlbSA0IGZvciBzZWN0aW9uIDYpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiA0NDggVGQgKC0gTGluZSBpdGVtIDUgZm9yIHNlY3Rpb24gNikgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDQyMCBUZCAoLSBMaW5lIGl0ZW0gNiBmb3Igc2VjdGlvbiA2KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzkyIFRkICgtIExpbmUgaXRlbSA3IGZvciBzZWN0aW9uIDYpIFRqIEVUIEJUIC9GMSAxMiBUZiA3MiAzNjQgVGQgKC0gTGluZSBpdGVtIDggZm9yIHNlY3Rpb24gNikgVGogRVQgQlQgL0YxIDEyIFRmIDcyIDMzNiBUZCAoLSBMaW5lIGl0ZW0gOSBmb3Igc2VjdGlvbiA2KSBUaiBFVCBCVCAvRjEgMTIgVGYgNzIgMzA4IFRkICgtIExpbmUgaXRlbSAxMCBmb3Igc2VjdGlvbiA2KSBUaiBFVCBCVCAvRjEgMTAgVGYgMjkwIDQwIFRkICg2KSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjE1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDE2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxNDcgMDAwMDAgbiAKMDAwMDAwMDI3NCAwMDAwMCBuIAowMDAwMDAxMDk0IDAwMDAwIG4gCjAwMDAwMDEyMjEgMDAwMDAgbiAKMDAwMDAwMjA0NiAwMDAwMCBuIAowMDAwMDAyMTczIDAwMDAwIG4gCjAwMDAwMDI5ODkgMDAwMDAgbiAKMDAwMDAwMzExNyAwMDAwMCBuIAowMDAwMDAzOTM5IDAwMDAwIG4gCjAwMDAwMDQwNjggMDAwMDAgbiAKMDAwMDAwNDg5MyAwMDAwMCBuIAowMDAwMDA1MDIyIDAwMDAwIG4gCjAwMDAwMDU4MzYgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSAxNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNTkwNwolJUVPRg==";
 const MOCK_PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAACgElEQVR4nO3VQQ2AAAADsUHQhgiEoo8nGi5pXzOw3PHc77Ztx2YYRmucA7Ku/9FAjQJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJDmAJD2AeZcwR5nq+niwAAAABJRU5ErkJggg==";
 
@@ -3485,10 +3984,12 @@ function mockPreview(attachmentId: number): AttachmentPreview {
         {
           name: "Summary",
           rows: [
-            ["Region", "Q1", "Q2", "Q3"],
-            ["EMEA", "1,204", "1,380", "1,512"],
-            ["Americas", "2,010", "2,144", "2,391"],
-            ["APAC", "845", "930", "1,004"],
+            ["Region", "Q1", "Q2", "Q3", "Q4 (plan)", "YoY", "Owner", "Notes"],
+            ["EMEA", "1,204", "1,380", "1,512", "1,640", "+18%", "Ana Moreau", "Paris office opening pushed to November; hiring two AEs in Berlin"],
+            ["Americas", "2,010", "2,144", "2,391", "2,560", "+22%", "Tom Becker", "Enterprise pipeline strong"],
+            ["APAC", "845", "930", "1,004", "1,120", "+31%", "Mei Lin", "Singapore partner channel ramping"],
+            ["LATAM", "312", "340", "377", "410", "+12%", "Diego Ruiz", ""],
+            ["Total", "4,371", "4,794", "5,284", "5,730", "+21%", "", ""],
           ],
           truncated: false,
         },
@@ -3513,8 +4014,12 @@ function mockPreview(attachmentId: number): AttachmentPreview {
     return {
       kind: "slides",
       slides: [
-        { lines: ["Quarterly review", "Mock deck"] },
-        { lines: ["Slide two", "One bullet", "Another bullet"] },
+        { lines: ["Q3 Roadmap Review", "Northbeam product team", "October 2026"] },
+        { lines: ["Sync engine milestones", "Per-account reconnect gate shipped to beta", "IDLE storms down 94% on flaky networks", "Offline outbox GA in November"] },
+        { lines: ["Headcount ask", "Two backend hires for sync + search", "Alternative: one hire plus contractor budget", "Decision needed by Oct 30"] },
+        { lines: ["Latency benchmarks", "p50 open-thread: 38 ms (was 61 ms)", "p95 search: 140 ms (was 290 ms)"] },
+        { lines: ["Billing - moved to Q4"] },
+        { lines: [] },
       ],
     };
   }
@@ -3524,9 +4029,62 @@ function mockPreview(attachmentId: number): AttachmentPreview {
   ) {
     return {
       kind: "text",
-      text: `Mock preview of ${meta?.filename ?? `attachment ${attachmentId}`}.\n\n${"reconnect: idle timeout, retrying\n".repeat(12)}`,
+      text: Array.from({ length: 140 }, (_, i) => {
+        const ts = `2026-10-17T09:${String(12 + Math.floor(i / 6)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}.${String((i * 137) % 1000).padStart(3, "0")}Z`;
+        return i % 9 === 4
+          ? `${ts} WARN  imap::watcher{account=1 folder="INBOX"} reconnect: idle timeout after 29m59s, retrying with backoff=${(i % 5) + 1}s jitter=${(i * 311) % 3000}ms (gate held by folder="[Gmail]/All Mail")`
+          : `${ts} INFO  sync::engine{account=1} ${["fetched 12 headers", "flags updated", "uidnext=48211", "idle started", "condstore modseq=991823"][i % 5]}`;
+      }).join("\n"),
       truncated: false,
     };
   }
+  if ((meta?.size ?? 0) > 25 * 1024 * 1024) return { kind: "unsupported", reason: "too_large" };
   return { kind: "unsupported", reason: "unsupported_type" };
+}
+
+const lastDate = (t: MockThread) => Math.max(0, ...t.messages.map((m) => m.date));
+
+/** Facts a split condition can test, mirroring Rust `RuleSubject::load`. */
+function mockConditionSubject(t: MockThread): ConditionSubject {
+  const inbound = t.messages
+    .filter((m) => !m.isDraft && !m.isOutgoing)
+    .sort((x, y) => y.date - x.date);
+  return {
+    senders: t.messages.map((m) => m.from.email.toLowerCase()),
+    recipients: t.messages.flatMap((m) => [...m.to, ...m.cc].map((r) => r.email.toLowerCase())),
+    subjects: inbound.map((m) => m.localSubjectPrefix + m.subject),
+    labelIds: t.labels,
+    isAutomated: inbound[0] ? inbound[0].listUnsubscribe != null : null,
+    hasAttachment: t.messages.some((m) => !m.isDraft && m.attachments.length > 0),
+  };
+}
+
+/** Rules in position order up to (and including) the first match. */
+function mockDecide(t: MockThread): RuleTrace[] {
+  const subject = mockConditionSubject(t);
+  const out: RuleTrace[] = [];
+  for (const s of [...splits].sort((x, y) => x.position - y.position || x.id - y.id)) {
+    const cond = s.condition ?? queryToCondition(s.query);
+    const leaves: RuleTrace["leaves"] = [];
+    const walk = (c: RuleCondition) => {
+      if (c.kind === "all" || c.kind === "any") c.of.forEach(walk);
+      else if (c.kind === "not") walk(c.cond);
+      else leaves.push({ condition: c, passed: evaluateCondition(c, subject) });
+    };
+    walk(cond);
+    const matchable = isMatchable(cond);
+    const passed = matchable ? conditionMatches(cond, subject) : !!s.ai;
+    const aiCheck = !!s.ai && passed;
+    const matched = passed && (!s.ai || mockSplitPasses(t, s));
+    out.push({
+      splitId: s.id,
+      name: s.name,
+      matched,
+      matchable: matchable || !!s.ai,
+      leaves,
+      aiCheck,
+    });
+    if (matched) break;
+  }
+  return out;
 }

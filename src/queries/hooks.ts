@@ -2,14 +2,16 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
+  useQueries,
   useQuery,
 } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { onEvent } from "../ipc/events";
-import type { AskCitation, ThreadPage, ThreadSummary, View } from "../ipc/types";
-import { useUi } from "../stores/ui";
+import type { AskCitation, AttachmentPreview, ThreadPage, ThreadSummary, View } from "../ipc/types";
+import type { BundleTab } from "../lib/listItems";
+import { HIDDEN_LOCAL_CALENDAR, useUi } from "../stores/ui";
 import { queryClient } from "./client";
 
 const PAGE_SIZE = 50;
@@ -47,6 +49,45 @@ export function useThreads(
   });
 }
 
+/** First few threads of each tab, for the comfortable list's bundle rows.
+ *  Plain (non-infinite) queries under their own key, so the optimistic updaters
+ *  that walk every ["threads"] page cache never see this shape. */
+export function useInboxBundles(tabs: BundleTab[], accountId: number | null, enabled: boolean) {
+  return useQueries({
+    queries: tabs.map((tab) => ({
+      queryKey: ["bundles", tab.splitId ?? null, tab.labelId ?? null, accountId],
+      queryFn: () =>
+        call("list_threads", {
+          view: "inbox" as View,
+          splitId: tab.splitId ?? null,
+          accountId,
+          labelId: tab.labelId ?? null,
+          folderId: null,
+          cursor: null,
+          limit: 12,
+        }),
+      enabled,
+      staleTime: 5_000,
+    })),
+    combine: bundlePages,
+  });
+}
+
+// Module-level so useQueries keeps the combined array stable between renders.
+const bundlePages = (results: { data?: ThreadPage }[]) => results.map((r) => r.data);
+
+/** Resolved sender picture (data URL) or null; one lookup per address per session. */
+export function useSenderAvatar(email: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["senderAvatar", email.trim().toLowerCase()],
+    queryFn: () => call("sender_avatar", { email }),
+    enabled,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  });
+}
+
 export function flattenThreads(data: { pages: ThreadPage[] } | undefined): ThreadSummary[] {
   return data?.pages.flatMap((p) => p.threads) ?? [];
 }
@@ -71,6 +112,28 @@ export function useThread(threadId: number | null) {
   });
 }
 
+// Preview payloads can be tens of MB (base64 PDFs), so they don't linger long
+// once the viewer moves on; attachments are immutable so they never go stale.
+const PREVIEW_GC_MS = 60_000;
+
+const previewQuery = (attachmentId: number) => ({
+  queryKey: ["attachmentPreview", attachmentId],
+  queryFn: (): Promise<AttachmentPreview> => call("preview_attachment", { attachmentId }),
+  staleTime: Infinity,
+  gcTime: PREVIEW_GC_MS,
+  retry: false,
+});
+
+/** Safe preview payload for one attachment (see comail-core/src/preview.rs). */
+export function useAttachmentPreview(attachmentId: number | null, enabled = true) {
+  return useQuery({ ...previewQuery(attachmentId ?? -1), enabled: enabled && attachmentId != null });
+}
+
+/** Warm a neighbouring attachment so paging through the viewer feels instant. */
+export function prefetchAttachmentPreview(attachmentId: number) {
+  void queryClient.prefetchQuery(previewQuery(attachmentId));
+}
+
 /** Warm the thread cache (hover intent, keyboard selection) so opening it
  *  paints from cache instead of paying the IPC round-trip on click. */
 export function prefetchThread(threadId: number) {
@@ -88,6 +151,18 @@ export function useSearch(query: string, accountId: number | null = null) {
     enabled: query.trim().length > 0,
     placeholderData: keepPreviousData,
     staleTime: 5_000,
+  });
+}
+
+/** Live "what will this search do" summary. Parse-only and cheap, so it runs
+ *  on every keystroke (no debounce) and keeps the last answer on screen. */
+export function useSearchExplain(query: string) {
+  return useQuery({
+    queryKey: ["search-explain", query],
+    queryFn: () => call("explain_search", { query }),
+    enabled: query.trim().length > 0,
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
   });
 }
 
@@ -172,7 +247,22 @@ export function useCalendarEvents(startMs: number, endMs: number, enabled = true
     queryFn: () => call("list_events", { startMs, endMs }),
     enabled,
     staleTime: 30_000,
+    // Paging weeks/months keeps the old range on screen until the new one
+    // lands, instead of flashing an empty grid.
+    placeholderData: keepPreviousData,
   });
+}
+
+/** Calendar-view events minus the calendars hidden in the sidebar. */
+export function useVisibleCalendarEvents(startMs: number, endMs: number, enabled = true) {
+  const query = useCalendarEvents(startMs, endMs, enabled);
+  const hidden = useUi((s) => s.calendarHidden);
+  const data = useMemo(() => {
+    if (!query.data || hidden.length === 0) return query.data;
+    const set = new Set(hidden);
+    return query.data.filter((ev) => !set.has(ev.calendarId ?? HIDDEN_LOCAL_CALENDAR));
+  }, [query.data, hidden]);
+  return { ...query, data };
 }
 
 /** Invite events carried by one message (thread invite card). */

@@ -48,6 +48,15 @@ export function dateGroup(ms: number, now = Date.now()): { key: string; label: s
   return { key, label: d.toLocaleDateString(i18n.language, opts) };
 }
 
+/** Full calendar day for a date heading, e.g. "Tuesday, 8 Jan". */
+export function longDate(ms: number): string {
+  return new Date(ms).toLocaleDateString(i18n.language, {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+  });
+}
+
 /** Long-form timestamp for message headers. */
 export function longTime(ms: number): string {
   return new Date(ms).toLocaleString(i18n.language, {

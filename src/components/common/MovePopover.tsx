@@ -6,6 +6,7 @@ import { buildCommandContext } from "../../keyboard/context";
 import { findCachedSummary, performThreadAction } from "../../queries/actions";
 import { useFolders } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { Modal } from "../ui/Modal";
 
 /** Folder role the current view corresponds to (threads there are filtered out). */
 const VIEW_ROLE: Partial<Record<View, string>> = {
@@ -77,62 +78,56 @@ export function MovePopover() {
   const sel = Math.min(cursor, Math.max(0, filtered.length - 1));
 
   return (
-    <div className="co-overlay flex items-start justify-center pt-[18vh]" onMouseDown={close}>
-      <div
-        className="co-pop-in w-[380px] rounded-xl border border-hairline bg-bg1 p-3"
-        style={{ boxShadow: "var(--elev-2)" }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="px-1 pb-2 text-[12px] font-semibold tracking-wide text-ink-faint uppercase">
-          {t("common:move.title")}
-        </div>
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setCursor(0);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setCursor((c) => Math.min(filtered.length - 1, c + 1));
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setCursor((c) => Math.max(0, c - 1));
-            } else if (e.key === "Enter" && filtered[sel]) {
-              e.preventDefault();
-              pick(filtered[sel]);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              e.stopPropagation();
-              close();
-            }
-          }}
-          placeholder={t("common:move.placeholder")}
-          className="w-full rounded-lg border border-hairline bg-bg0 px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-accent/60"
-        />
-        <div className="mt-1.5 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
-          {filtered.length === 0 && (
-            <p className="px-3 py-4 text-center text-[12.5px] text-ink-faint">
-              {folders ? t("common:move.noMatches") : t("common:move.loading")}
-            </p>
-          )}
-          {filtered.map((f, i) => (
-            <button
-              key={f.id}
-              className={`flex items-center justify-between rounded-lg px-3 py-1.5 text-left text-[13.5px] text-ink ${
-                i === sel ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
-              }`}
-              onMouseMove={() => setCursor(i)}
-              onClick={() => pick(f)}
-            >
-              <span>{folderLabel(f)}</span>
-              {f.role && <span className="text-[11px] text-ink-faint uppercase">{f.role}</span>}
-            </button>
-          ))}
-        </div>
+    <Modal onClose={close} width={380} className="p-3">
+      <div className="px-1 pb-2 text-sm font-semibold tracking-wide text-ink-faint uppercase">
+        {t("common:move.title")}
       </div>
-    </div>
+      <input
+        autoFocus
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setCursor(0);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setCursor((c) => Math.min(filtered.length - 1, c + 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setCursor((c) => Math.max(0, c - 1));
+          } else if (e.key === "Enter" && filtered[sel]) {
+            e.preventDefault();
+            pick(filtered[sel]);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+          }
+        }}
+        placeholder={t("common:move.placeholder")}
+        className="w-full rounded-control border border-hairline bg-bg0 px-3 py-2 text-md text-ink outline-none placeholder:text-ink-faint focus:border-accent/60"
+      />
+      <div className="mt-1.5 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+        {filtered.length === 0 && (
+          <p className="px-3 py-4 text-center text-sm text-ink-faint">
+            {folders ? t("common:move.noMatches") : t("common:move.loading")}
+          </p>
+        )}
+        {filtered.map((f, i) => (
+          <button
+            key={f.id}
+            className={`flex items-center justify-between rounded-control px-3 py-1.5 text-left text-base text-ink ${
+              i === sel ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
+            }`}
+            onMouseMove={() => setCursor(i)}
+            onClick={() => pick(f)}
+          >
+            <span>{folderLabel(f)}</span>
+            {f.role && <span className="text-xs text-ink-faint uppercase">{f.role}</span>}
+          </button>
+        ))}
+      </div>
+    </Modal>
   );
 }

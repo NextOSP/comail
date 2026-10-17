@@ -2,7 +2,7 @@
   "zero": {
     "allDone": "Vous avez tout traité",
     "nothingIn": "Rien dans {{view}} · {{date}}",
-    "hintNextSplit": "division suivante",
+    "hintNextSplit": "onglet suivant",
     "hintCompose": "composer",
     "hintShortcuts": "raccourcis"
   },
@@ -11,11 +11,11 @@
     "other": "Autres"
   },
   "splitPopover": {
-    "title": "Nouvelle division",
+    "title": "Nouvel onglet",
     "fromSender": "Messages de {{email}}",
     "fromDomain": "Tous @{{domain}}",
     "tabName": "onglet : {{name}}",
-    "created": "Division « {{name}} » créée",
+    "created": "Onglet « {{name}} » créé",
     "excludeSender": "Exclure {{email}} de sa règle actuelle",
     "excludeDomain": "Exclure tout le monde @{{domain}} de sa règle actuelle",
     "excluded": "Exclu de « {{name}} »"
@@ -25,5 +25,15 @@
     "recent": "Conversations récentes",
     "noRecent": "Aucune autre conversation",
     "noSubject": "(sans objet)"
+  },
+  "tips": {
+    "done": "pour marquer comme traité",
+    "remind": "pour me le rappeler",
+    "compose": "pour composer",
+    "search": "pour rechercher",
+    "command": "pour toutes les commandes",
+    "dismiss": "Masquer les astuces",
+    "splits": "pour changer d’onglet. Créez les vôtres dans Paramètres › Boîte de réception scindée.",
+    "splitsOpen": "Configurer les onglets"
   }
 }

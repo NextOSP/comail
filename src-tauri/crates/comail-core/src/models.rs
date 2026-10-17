@@ -191,6 +191,8 @@ pub struct MessageDetail {
     pub send_state: Option<String>,
     /// The last delivery error when `send_state` is `"failed"`.
     pub send_error: Option<String>,
+    /// One-time verification code found in received mail (see [`crate::otp`]).
+    pub verification_code: Option<String>,
 }
 
 /// What actually happened when the user asked to unsubscribe - the UI's toast
@@ -404,18 +406,343 @@ pub struct SplitRuleQuery {
     pub has_attachment: Option<bool>,
 }
 
+/// How a text condition compares its value. Both sides are lowercased (and
+/// accent-folded for subjects) before comparing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextOp {
+    Contains,
+    Equals,
+    StartsWith,
+    /// Typically a domain: `endsWith "@github.com"`.
+    EndsWith,
+}
+
+/// A split rule condition: a typed boolean tree over thread facts. Evaluated
+/// in memory by [`crate::route::decide`]. Serialized with a `kind` tag, e.g.
+/// `{"kind":"any","of":[{"kind":"sender","op":"endsWith","value":"@github.com"}]}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RuleCondition {
+    All {
+        of: Vec<RuleCondition>,
+    },
+    Any {
+        of: Vec<RuleCondition>,
+    },
+    Not {
+        cond: Box<RuleCondition>,
+    },
+    /// Any message's From address.
+    Sender {
+        op: TextOp,
+        value: String,
+    },
+    /// Any message's To/Cc address (`contains` also sees display names).
+    Recipient {
+        op: TextOp,
+        value: String,
+    },
+    /// Any inbound message's subject, including a local AI subject prefix.
+    Subject {
+        op: TextOp,
+        value: String,
+    },
+    /// Any message in the thread carries this label.
+    Label {
+        id: i64,
+    },
+    /// The newest inbound message is (or isn't) automated.
+    IsAutomated {
+        value: bool,
+    },
+    HasAttachment {
+        value: bool,
+    },
+}
+
+/// Limits enforced on save so a condition stays cheap to evaluate and editable.
+pub const RULE_MAX_DEPTH: usize = 8;
+pub const RULE_MAX_NODES: usize = 64;
+
+/// Why a condition was rejected on save.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RuleConditionError {
+    TooDeep,
+    TooLarge,
+    EmptyValue,
+    EmptyGroup,
+    UnknownLabel {
+        id: i64,
+    },
+    /// No positive criterion: it would match nothing (or, if allowed, everything).
+    NotMatchable,
+}
+
+impl std::fmt::Display for RuleConditionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooDeep => write!(f, "condition is nested more than {RULE_MAX_DEPTH} levels"),
+            Self::TooLarge => write!(f, "condition has more than {RULE_MAX_NODES} parts"),
+            Self::EmptyValue => write!(f, "a condition has an empty value"),
+            Self::EmptyGroup => write!(f, "a condition group is empty"),
+            Self::UnknownLabel { id } => write!(f, "label {id} does not exist"),
+            Self::NotMatchable => write!(f, "condition needs at least one positive criterion"),
+        }
+    }
+}
+
+impl RuleCondition {
+    pub fn is_leaf(&self) -> bool {
+        !matches!(self, Self::All { .. } | Self::Any { .. } | Self::Not { .. })
+    }
+
+    /// A condition can only match when some leaf is reached through an even
+    /// number of `Not`s. Keeps the legacy guarantees that an empty rule or an
+    /// exclusion-only rule never hijacks all mail.
+    pub fn is_matchable(&self) -> bool {
+        fn positive(c: &RuleCondition, negated: bool) -> bool {
+            match c {
+                RuleCondition::All { of } | RuleCondition::Any { of } => {
+                    of.iter().any(|c| positive(c, negated))
+                }
+                RuleCondition::Not { cond } => positive(cond, !negated),
+                _ => !negated,
+            }
+        }
+        positive(self, false)
+    }
+
+    fn depth(&self) -> usize {
+        match self {
+            Self::All { of } | Self::Any { of } => {
+                1 + of.iter().map(Self::depth).max().unwrap_or(0)
+            }
+            Self::Not { cond } => 1 + cond.depth(),
+            _ => 1,
+        }
+    }
+
+    fn nodes(&self) -> usize {
+        match self {
+            Self::All { of } | Self::Any { of } => 1 + of.iter().map(Self::nodes).sum::<usize>(),
+            Self::Not { cond } => 1 + cond.nodes(),
+            _ => 1,
+        }
+    }
+
+    /// Structural checks for the save path. `user_label_ids` are the ids a
+    /// `Label` leaf may reference (non-auto labels).
+    pub fn validate(&self, user_label_ids: &[i64]) -> Vec<RuleConditionError> {
+        let mut errs = Vec::new();
+        if self.depth() > RULE_MAX_DEPTH {
+            errs.push(RuleConditionError::TooDeep);
+        }
+        if self.nodes() > RULE_MAX_NODES {
+            errs.push(RuleConditionError::TooLarge);
+        }
+        fn walk(c: &RuleCondition, ids: &[i64], errs: &mut Vec<RuleConditionError>) {
+            match c {
+                RuleCondition::All { of } | RuleCondition::Any { of } => {
+                    if of.is_empty() {
+                        errs.push(RuleConditionError::EmptyGroup);
+                    }
+                    of.iter().for_each(|c| walk(c, ids, errs));
+                }
+                RuleCondition::Not { cond } => walk(cond, ids, errs),
+                RuleCondition::Sender { value, .. }
+                | RuleCondition::Recipient { value, .. }
+                | RuleCondition::Subject { value, .. } => {
+                    if value.trim().is_empty() {
+                        errs.push(RuleConditionError::EmptyValue);
+                    }
+                }
+                RuleCondition::Label { id } => {
+                    if !ids.contains(id) {
+                        errs.push(RuleConditionError::UnknownLabel { id: *id });
+                    }
+                }
+                RuleCondition::IsAutomated { .. } | RuleCondition::HasAttachment { .. } => {}
+            }
+        }
+        walk(self, user_label_ids, &mut errs);
+        if !self.is_matchable() {
+            errs.push(RuleConditionError::NotMatchable);
+        }
+        errs.dedup();
+        errs
+    }
+}
+
+impl From<&SplitRuleQuery> for RuleCondition {
+    /// The legacy flat query as a condition tree with identical semantics:
+    /// fields ANDed, list values ORed, blank values ignored, exclusions as a
+    /// veto. An empty query becomes an empty `All`, which is not matchable.
+    fn from(q: &SplitRuleQuery) -> Self {
+        fn texts(
+            vals: &Option<Vec<String>>,
+            mk: fn(String) -> RuleCondition,
+        ) -> Option<RuleCondition> {
+            let of: Vec<RuleCondition> = vals
+                .iter()
+                .flatten()
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| mk(v.clone()))
+                .collect();
+            (!of.is_empty()).then_some(RuleCondition::Any { of })
+        }
+        let mut all = Vec::new();
+        if let Some(c) = texts(&q.exclude_senders, |value| RuleCondition::Sender {
+            op: TextOp::Contains,
+            value,
+        }) {
+            all.push(RuleCondition::Not { cond: Box::new(c) });
+        }
+        if let Some(value) = q.is_automated {
+            all.push(RuleCondition::IsAutomated { value });
+        }
+        if let Some(c) = texts(&q.senders, |value| RuleCondition::Sender {
+            op: TextOp::Contains,
+            value,
+        }) {
+            all.push(c);
+        }
+        if let Some(c) = texts(&q.recipients, |value| RuleCondition::Recipient {
+            op: TextOp::Contains,
+            value,
+        }) {
+            all.push(c);
+        }
+        if let Some(c) = texts(&q.subject_contains, |value| RuleCondition::Subject {
+            op: TextOp::Contains,
+            value,
+        }) {
+            all.push(c);
+        }
+        let labels: Vec<RuleCondition> = q
+            .labels
+            .iter()
+            .flatten()
+            .filter(|id| **id > 0)
+            .map(|&id| RuleCondition::Label { id })
+            .collect();
+        if !labels.is_empty() {
+            all.push(RuleCondition::Any { of: labels });
+        }
+        if let Some(value) = q.has_attachment {
+            all.push(RuleCondition::HasAttachment { value });
+        }
+        RuleCondition::All { of: all }
+    }
+}
+
+/// Where a thread is routed. Serialized as the legacy route-key string
+/// (`"important"`, `"other"`, `"pending"`, `"label:<id>"`, `"split:<id>"`),
+/// which is also what `threads.routed_tab` stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RouteKey {
+    Important,
+    Other,
+    Pending,
+    Label(i64),
+    Split(i64),
+}
+
+impl std::fmt::Display for RouteKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Important => f.write_str("important"),
+            Self::Other => f.write_str("other"),
+            Self::Pending => f.write_str("pending"),
+            Self::Label(id) => write!(f, "label:{id}"),
+            Self::Split(id) => write!(f, "split:{id}"),
+        }
+    }
+}
+
+impl std::str::FromStr for RouteKey {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, String> {
+        let id = |rest: &str| rest.parse::<i64>().ok().filter(|id| *id > 0);
+        match s {
+            "important" => Ok(Self::Important),
+            "other" => Ok(Self::Other),
+            "pending" => Ok(Self::Pending),
+            _ => {
+                if let Some(n) = s.strip_prefix("label:").and_then(id) {
+                    Ok(Self::Label(n))
+                } else if let Some(n) = s.strip_prefix("split:").and_then(id) {
+                    Ok(Self::Split(n))
+                } else {
+                    Err(format!("invalid route key: {s}"))
+                }
+            }
+        }
+    }
+}
+
+impl Serialize for RouteKey {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for RouteKey {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        String::deserialize(d)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SplitRule {
     pub id: i64,
     pub name: String,
     pub position: i64,
+    /// Legacy flat query; still honored when `condition` is unset.
     pub query: SplitRuleQuery,
-    /// Where matching mail is routed. `None` = the rule is its own tab (legacy,
-    /// route key `"split:<id>"`); otherwise a route key: `"important"`,
-    /// `"other"`, or `"label:<id>"` to drop matches into an existing tab.
+    /// Typed condition tree. When set it replaces `query` entirely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
+    pub condition: Option<RuleCondition>,
+    /// Where matching mail is routed. `None` = the rule is its own tab
+    /// (`split:<id>`); otherwise e.g. `important`, `other`, or `label:<id>` to
+    /// drop matches into an existing tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<RouteKey>,
+    /// Optional AI check: when set, a thread must also pass this yes/no
+    /// question (decision model, else chat model). With no condition, the AI
+    /// check alone decides. Evaluated asynchronously (the thread waits as
+    /// `pending`); with no AI available it never matches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai: Option<AiCheck>,
+}
+
+/// A yes/no question answered by the decision model (or chat fallback).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiCheck {
+    pub instruction: String,
+    /// Overrides `Settings::decision_min_confidence` for this check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_confidence: Option<f64>,
+}
+
+impl SplitRule {
+    /// The condition actually evaluated: the typed tree, or the legacy query
+    /// converted to one.
+    pub fn effective_condition(&self) -> RuleCondition {
+        self.condition
+            .clone()
+            .unwrap_or_else(|| RuleCondition::from(&self.query))
+    }
+
+    /// The route key matching threads get.
+    pub fn route_key(&self) -> RouteKey {
+        self.target.unwrap_or(RouteKey::Split(self.id))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -496,6 +823,17 @@ pub struct AiCalendarSuggestion {
     pub description: Option<String>,
 }
 
+/// A follow-up the AI proposes after drafting an email, for the user to
+/// confirm with one click. Internally tagged by `kind`, so it reaches the
+/// frontend as a discriminated union (`{ kind: "create_event", title, ... }`)
+/// and new kinds can be added without breaking older ones.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AiDraftAction {
+    /// The draft or thread pins down a meeting, call, or deadline.
+    CreateEvent(AiCalendarSuggestion),
+}
+
 /// A structured, sidebar-ready read of a whole thread: how it unfolded, what
 /// matters, what the user must do next, and a ready-to-send draft reply.
 /// (Distinct from [`ThreadSummary`], which is a thread-list *row*.)
@@ -571,7 +909,7 @@ pub struct UnreadCounts {
     pub other: i64,
     pub splits: std::collections::HashMap<String, i64>,
     pub labels: std::collections::HashMap<String, i64>,
-    /// "starred" | "snoozed" | "drafts" (drafts counts all drafts, not unread)
+    /// "starred" | "snoozed" | "spam" | "drafts" (drafts counts all drafts, not unread)
     pub views: std::collections::HashMap<String, i64>,
 }
 
@@ -585,7 +923,7 @@ pub struct AiAutomationAction {
     pub value: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AiAutomationRule {
     pub id: String,
@@ -599,6 +937,31 @@ pub struct AiAutomationRule {
     pub enabled: bool,
     #[serde(default)]
     pub actions: Vec<AiAutomationAction>,
+    /// Deterministic condition evaluated through the rule decision API
+    /// ([`crate::route::decide`]). With an empty `instruction` the rule needs
+    /// no model at all; with both, both must hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition: Option<RuleCondition>,
+    /// Overrides `Settings::decision_min_confidence` for the AI check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_confidence: Option<f64>,
+}
+
+/// One decision model endpoint in the provider chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionEndpoint {
+    /// "openrouter" | "openai" | "custom".
+    pub provider: String,
+    /// Empty uses the provider default.
+    #[serde(default)]
+    pub model: String,
+    /// Endpoint for "custom".
+    #[serde(default)]
+    pub base_url: String,
+    /// Wire format for "custom": "openrouter" | "openai".
+    #[serde(default)]
+    pub format: String,
 }
 
 /// Safe, structured interpretation of a natural-language automation request.
@@ -619,12 +982,31 @@ pub struct AiAutomationPlan {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub theme: String,
+    /// Accent color applied on top of the theme: a preset ("violet" | "blue" |
+    /// "teal" | "green" | "amber" | "orange" | "rose" | "graphite") or a custom
+    /// "#rrggbb" hex.
+    #[serde(default = "default_accent_color")]
+    pub accent_color: String,
+    /// Interface font: "" = system stack, otherwise a Google Fonts family name.
+    #[serde(default)]
+    pub font_family: String,
     /// UI language: "system" follows the OS locale, otherwise a code like "en".
     #[serde(default = "default_language")]
     pub language: String,
     /// First day shown in calendar week and month views: "sunday" | "monday".
     #[serde(default = "default_calendar_week_start")]
     pub calendar_week_start: String,
+    /// Inbox UI: "classic" (single dense line) | "avatar" (tall rows with
+    /// avatars and bundled-tab rows).
+    #[serde(default = "default_inbox_ui")]
+    pub inbox_ui: String,
+    /// Avatar inbox UI: load sender photos from Gravatar (falls back to initials).
+    #[serde(default = "default_true")]
+    pub show_sender_photos: bool,
+    /// Avatar inbox UI: show the other tabs as bundle rows at the top of
+    /// Important.
+    #[serde(default = "default_true")]
+    pub show_bundles: bool,
     pub undo_send_seconds: i64,
     pub load_remote_images: bool,
     #[serde(default = "default_ai_base_url")]
@@ -686,6 +1068,10 @@ pub struct Settings {
     /// Play a sound on new mail and when sending.
     #[serde(default = "default_true")]
     pub sound_enabled: bool,
+    /// Copy verification codes from newly arrived mail to the clipboard
+    /// (Universal Clipboard then offers them on the user's other devices).
+    #[serde(default = "default_true")]
+    pub copy_verification_codes: bool,
     /// After archiving from a conversation, open the next thread (vs. back to list).
     #[serde(default = "default_true")]
     pub auto_advance: bool,
@@ -709,6 +1095,60 @@ pub struct Settings {
     /// every mailbox mutation comes from this explicit, user-owned allow-list.
     #[serde(default)]
     pub ai_automation_rules: Vec<AiAutomationRule>,
+    /// Decision model used for categories and rule questions: "off" |
+    /// "openrouter" (TypeSafe Jev and other OpenRouter decision models) |
+    /// "openai" (OpenAI Decisions API) | "custom". Off, or a failing provider,
+    /// falls back to the chat classifier, then the heuristic.
+    #[serde(default = "default_decision_provider")]
+    pub decision_provider: String,
+    /// Endpoint for the "custom" provider.
+    #[serde(default)]
+    pub decision_base_url: String,
+    /// Wire format for the "custom" provider: "openrouter" | "openai".
+    #[serde(default = "default_decision_provider_format")]
+    pub decision_format: String,
+    /// Decision model id; empty uses the provider default.
+    #[serde(default)]
+    pub decision_model: String,
+    /// Answers less certain than this (0..1) count as "no".
+    #[serde(default = "default_decision_min_confidence")]
+    pub decision_min_confidence: f64,
+    /// Backup decision providers, tried in order when the primary fails.
+    #[serde(default)]
+    pub decision_backups: Vec<DecisionEndpoint>,
+    /// Where decision models are used. Off = that feature asks the chat model.
+    #[serde(default = "default_true")]
+    pub decision_use_categories: bool,
+    #[serde(default = "default_true")]
+    pub decision_use_rules: bool,
+    #[serde(default = "default_true")]
+    pub decision_use_splits: bool,
+    /// When every decision provider fails (or none is set), ask the chat
+    /// model (API, local, or Apple on-device). Off = only decision models.
+    #[serde(default = "default_true")]
+    pub decision_chat_fallback: bool,
+    /// Guidance per AI category, keyed by the category label's keyword. Empty
+    /// uses the built-in description (built-ins) or the name alone (custom).
+    #[serde(default)]
+    pub ai_category_descriptions: std::collections::HashMap<String, String>,
+    /// Serve the local MCP endpoint so AI clients can use the mailbox.
+    #[serde(default)]
+    pub mcp_enabled: bool,
+    /// Loopback port for the MCP endpoint.
+    #[serde(default = "default_mcp_port")]
+    pub mcp_port: u16,
+    /// MCP clients may create, edit and delete drafts (never sends).
+    #[serde(default = "default_true")]
+    pub mcp_allow_drafts: bool,
+    /// MCP clients may send drafts (still subject to the undo-send delay).
+    #[serde(default)]
+    pub mcp_allow_send: bool,
+    /// MCP clients may archive, trash, label, move and flag threads.
+    #[serde(default)]
+    pub mcp_allow_actions: bool,
+    /// The user's own rules, appended to what MCP clients are told about comail.
+    #[serde(default)]
+    pub mcp_instructions: String,
     /// Which model tier the AI classifier uses: "instant" | "cheap" | "intelligent".
     #[serde(default = "default_tier_instant")]
     pub ai_tier_categorize: String,
@@ -789,6 +1229,19 @@ pub struct SignatureDefaults {
 }
 
 impl Settings {
+    /// The retired "holiday" theme reads back as Snow (it was a light theme),
+    /// both globally and as a per-account override.
+    pub fn migrate_themes(&mut self) {
+        if self.theme == "holiday" {
+            self.theme = "snow".into();
+        }
+        for theme in self.account_themes.values_mut() {
+            if theme == "holiday" {
+                *theme = "snow".into();
+            }
+        }
+    }
+
     /// Fold a legacy plain-text `signatures` map into the rich `signature_list`
     /// on first read: one named signature per account, set as both the new-mail
     /// and reply default. Idempotent - only runs while `signature_list` is empty
@@ -858,11 +1311,29 @@ fn default_language() -> String {
 fn default_calendar_week_start() -> String {
     "monday".into()
 }
+fn default_accent_color() -> String {
+    "violet".into()
+}
+fn default_inbox_ui() -> String {
+    "classic".into()
+}
 fn default_ai_base_url() -> String {
     crate::ai::DEFAULT_BASE_URL.into()
 }
 fn default_ai_model() -> String {
     crate::ai::DEFAULT_MODEL.into()
+}
+
+fn default_decision_provider() -> String {
+    "off".into()
+}
+
+fn default_decision_provider_format() -> String {
+    "openrouter".into()
+}
+
+fn default_decision_min_confidence() -> f64 {
+    0.6
 }
 fn default_tier_intelligent() -> String {
     "intelligent".into()
@@ -872,6 +1343,9 @@ fn default_tier_instant() -> String {
 }
 fn default_tier_cheap() -> String {
     "cheap".into()
+}
+fn default_mcp_port() -> u16 {
+    crate::mcp::DEFAULT_PORT
 }
 fn default_badge_source() -> String {
     "inbox".into()
@@ -884,8 +1358,13 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: "system".into(),
+            accent_color: default_accent_color(),
+            font_family: String::new(),
             language: "system".into(),
             calendar_week_start: default_calendar_week_start(),
+            inbox_ui: default_inbox_ui(),
+            show_sender_photos: true,
+            show_bundles: true,
             undo_send_seconds: 10,
             load_remote_images: true,
             ai_base_url: default_ai_base_url(),
@@ -909,12 +1388,30 @@ impl Default for Settings {
             meeting_notify_lead_minutes: 10,
             notifications_enabled: true,
             sound_enabled: true,
+            copy_verification_codes: true,
             auto_advance: true,
             select_advance: true,
             auto_labels_enabled: true,
             ai_categorize: false,
             ai_category_prompt: String::new(),
             ai_automation_rules: Vec::new(),
+            decision_provider: default_decision_provider(),
+            decision_base_url: String::new(),
+            decision_format: default_decision_provider_format(),
+            decision_model: String::new(),
+            decision_min_confidence: default_decision_min_confidence(),
+            decision_backups: Vec::new(),
+            decision_use_categories: true,
+            decision_use_rules: true,
+            decision_use_splits: true,
+            decision_chat_fallback: true,
+            ai_category_descriptions: Default::default(),
+            mcp_enabled: false,
+            mcp_port: default_mcp_port(),
+            mcp_allow_drafts: true,
+            mcp_allow_send: false,
+            mcp_allow_actions: false,
+            mcp_instructions: String::new(),
             ai_tier_categorize: default_tier_instant(),
             group_by_date: true,
             contact_suggest_all_accounts: false,
@@ -969,12 +1466,49 @@ pub struct AskResult {
     pub citations: Vec<AskCitation>,
 }
 
+/// The newest one-time code found in recently received mail.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationCode {
+    pub code: String,
+    pub message_id: i64,
+    pub thread_id: i64,
+    /// Sender display name, or address when there's no name.
+    pub sender: String,
+    pub subject: String,
+    pub received_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiStatus {
     pub configured: bool,
     pub model: String,
     pub base_url: String,
+    /// Apple Intelligence (on-device model) availability on this Mac:
+    /// "available", "deviceNotEligible", "notEnabled", "modelNotReady",
+    /// "osTooOld" or "unsupported" (not macOS / built without the SDK).
+    pub apple_intelligence: String,
+    /// A decision provider is selected and has a key.
+    #[serde(default)]
+    pub decision_configured: bool,
+    /// The decision model in use ("" when off).
+    #[serde(default)]
+    pub decision_model: String,
+}
+
+/// Outcome of a Settings "Test" against the decision provider.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionTestResult {
+    pub provider: String,
+    pub model: String,
+    pub ok: bool,
+    pub latency_ms: i64,
+    /// The model's probability that the sample invoice is an invoice.
+    pub probability: f64,
+    /// Why the provider failed ("" when ok).
+    pub error: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

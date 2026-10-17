@@ -16,5 +16,14 @@
   "unknown": "Đã xảy ra lỗi",
   "oauthFailed": "Đăng nhập OAuth thất bại",
   "connectionFailed": "Kết nối thất bại",
-  "caldav": "Lỗi máy chủ lịch"
+  "caldav": "Lỗi máy chủ lịch",
+  "crash": {
+    "title": "Đã xảy ra lỗi",
+    "body": "Màn hình này gặp lỗi không mong muốn. Thư của bạn vẫn an toàn — hãy thử lại hoặc tải lại ứng dụng.",
+    "details": "Chi tiết kỹ thuật",
+    "copy": "Sao chép chi tiết",
+    "copied": "Đã sao chép",
+    "reload": "Tải lại ứng dụng",
+    "retry": "Thử lại"
+  }
 }

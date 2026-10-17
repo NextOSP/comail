@@ -331,11 +331,13 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     const cur = tabs.findIndex((tab) =>
       state.labelFilter != null
         ? tab.labelId === state.labelFilter
-        : tab.labelId == null &&
-          tab.splitId === (state.splitId ?? SPLIT_IMPORTANT),
+        : tab.labelId == null && tab.splitId === state.splitId,
     );
-    const next =
-      tabs[((cur < 0 ? 0 : cur) + delta + tabs.length) % tabs.length];
+    // From the unsplit whole inbox (splitId null, no tab highlighted; see
+    // activeInboxTabKey) Tab enters at the first tab and Shift+Tab at the last.
+    const nextIndex =
+      cur < 0 ? (delta > 0 ? 0 : tabs.length - 1) : cur + delta;
+    const next = tabs[(nextIndex + tabs.length) % tabs.length];
     state.set({
       splitId: next.splitId,
       labelFilter: next.labelId,
@@ -407,13 +409,14 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
 
   const escape = () => {
     const state = useUi.getState();
-    // esc-stack: palette > attachment-preview > event-detail > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection > folder
+    // esc-stack: palette > attachment-preview > event-detail > day-list > snooze/move/help > event-create/availability > calendar > add-account > panel > composer > conversation > search > selection > folder
     if (state.paletteOpen) return state.set({ paletteOpen: false });
     if (state.contextMenu) return state.set({ contextMenu: null });
     // Focus lives inside the preview's sandboxed iframe (bounced to the app by
     // the iframe focus guard), so the modal's own onKeyDown can't see Esc -     // close it from the global stack instead.
     if (state.attachmentPreview) return state.set({ attachmentPreview: null });
     if (state.eventDetail) return state.set({ eventDetail: null });
+    if (state.calendarDayList) return state.set({ calendarDayList: null });
     if (state.snoozeTarget) return state.set({ snoozeTarget: null });
     if (state.moveTarget) return state.set({ moveTarget: null });
     if (state.labelTarget) return state.set({ labelTarget: null });
@@ -448,6 +451,9 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
       settings: {
         language: "system",
         calendarWeekStart: "monday",
+        inboxUi: "classic",
+        showSenderPhotos: true,
+        showBundles: true,
         undoSendSeconds: 10,
         loadRemoteImages: false,
         aiBaseUrl: "",
@@ -473,12 +479,30 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         notificationScope: "important",
         notificationTabs: [],
         soundEnabled: true,
+        copyVerificationCodes: true,
         autoAdvance: true,
         selectAdvance: true,
         autoLabelsEnabled: true,
         aiCategorize: false,
         aiCategoryPrompt: "",
         aiAutomationRules: [],
+        decisionProvider: "off",
+        decisionBaseUrl: "",
+        decisionFormat: "openrouter",
+        decisionModel: "",
+        decisionMinConfidence: 0.6,
+        decisionBackups: [],
+        decisionUseCategories: true,
+        decisionUseRules: true,
+        decisionUseSplits: true,
+        decisionChatFallback: true,
+        aiCategoryDescriptions: {},
+        mcpEnabled: false,
+        mcpPort: 47823,
+        mcpAllowDrafts: true,
+        mcpAllowSend: false,
+        mcpAllowActions: false,
+        mcpInstructions: "",
         aiTierCategorize: "instant",
         groupByDate: true,
         contactSuggestAllAccounts: false,
@@ -488,6 +512,8 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         signatureList: [],
         signatureDefaults: {},
         accountThemes: {},
+        accentColor: "violet",
+        fontFamily: "",
         showAccountBadges: true,
         accountColors: {},
         accountShortNames: {},

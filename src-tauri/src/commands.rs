@@ -520,9 +520,56 @@ pub async fn ai_status(state: State<'_, AppState>) -> CmdResult<AiStatus> {
     state.core.ai_status().await.map_err(err)
 }
 
+/// Newest one-time code from mail received in the last `max_age_minutes`.
+#[tauri::command]
+pub async fn latest_verification_code(
+    state: State<'_, AppState>,
+    max_age_minutes: Option<i64>,
+) -> CmdResult<Option<VerificationCode>> {
+    state
+        .core
+        .latest_verification_code(max_age_minutes.unwrap_or(30))
+        .await
+        .map_err(err)
+}
+
 #[tauri::command]
 pub async fn set_ai_key(state: State<'_, AppState>, api_key: String) -> CmdResult<()> {
     state.core.set_ai_key(api_key).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_decision_key(
+    state: State<'_, AppState>,
+    provider: String,
+    api_key: String,
+) -> CmdResult<()> {
+    state
+        .core
+        .set_decision_key(provider, api_key)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn test_decision_provider(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<DecisionTestResult>> {
+    state.core.test_decision_provider().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn create_category(
+    state: State<'_, AppState>,
+    name: String,
+    color: String,
+    description: String,
+) -> CmdResult<Label> {
+    state
+        .core
+        .create_category(name, color, description)
+        .await
+        .map_err(err)
 }
 
 #[tauri::command]
@@ -570,14 +617,17 @@ pub async fn ai_quick_replies(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn ai_draft(
     state: State<'_, AppState>,
     thread_id: Option<i64>,
     reply_to_message_id: Option<i64>,
     instruction: String,
+    current_draft: Option<String>,
     sender_name: Option<String>,
     voice: Option<bool>,
     has_signature: Option<bool>,
+    request_id: Option<String>,
 ) -> CmdResult<String> {
     state
         .core
@@ -585,10 +635,25 @@ pub async fn ai_draft(
             thread_id,
             reply_to_message_id,
             instruction,
+            current_draft.unwrap_or_default(),
             sender_name.unwrap_or_default(),
             voice,
             has_signature.unwrap_or(false),
+            request_id,
         )
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn ai_draft_actions(
+    state: State<'_, AppState>,
+    thread_id: Option<i64>,
+    draft: String,
+) -> CmdResult<Vec<comail_core::models::AiDraftAction>> {
+    state
+        .core
+        .ai_draft_actions(thread_id, draft)
         .await
         .map_err(err)
 }
@@ -644,12 +709,43 @@ pub struct SearchArgs {
 }
 
 #[tauri::command]
-pub async fn search(state: State<'_, AppState>, args: SearchArgs) -> CmdResult<Vec<ThreadSummary>> {
+pub async fn search(
+    state: State<'_, AppState>,
+    args: SearchArgs,
+) -> CmdResult<comail_core::db::repo::search::SearchResults> {
     state
         .core
         .search(args.query, args.account_id, args.limit.unwrap_or(50))
         .await
         .map_err(err)
+}
+
+/// The live "what will this search do" summary behind the search box.
+#[tauri::command]
+pub async fn explain_search(
+    state: State<'_, AppState>,
+    query: String,
+) -> CmdResult<comail_core::search::SearchExplain> {
+    state.core.explain_search(query).await.map_err(err)
+}
+
+/// Remember a thread opened from search results (local ranking feedback).
+#[tauri::command]
+pub async fn record_search_open(
+    state: State<'_, AppState>,
+    query: String,
+    thread_id: i64,
+) -> CmdResult<()> {
+    state
+        .core
+        .record_search_open(query, thread_id)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn clear_search_history(state: State<'_, AppState>) -> CmdResult<()> {
+    state.core.clear_search_history().await.map_err(err)
 }
 
 /// Fire-and-forget: pre-compute the query embedding while the user types so
@@ -710,10 +806,17 @@ pub struct SplitInput {
     pub id: Option<i64>,
     pub name: String,
     pub position: i64,
+    #[serde(default)]
     pub query: SplitRuleQuery,
+    /// Typed condition tree; replaces `query` when present.
+    #[serde(default)]
+    pub condition: Option<RuleCondition>,
     /// Route key matching mail is sent to, or `None` for a self-tab split.
     #[serde(default)]
-    pub target: Option<String>,
+    pub target: Option<RouteKey>,
+    /// Optional AI check answered by the decision model.
+    #[serde(default)]
+    pub ai: Option<AiCheck>,
 }
 
 #[tauri::command]
@@ -722,7 +825,11 @@ pub async fn list_splits(state: State<'_, AppState>) -> CmdResult<Vec<SplitRule>
 }
 
 #[tauri::command]
-pub async fn save_split(state: State<'_, AppState>, split: SplitInput) -> CmdResult<SplitRule> {
+pub async fn save_split(
+    state: State<'_, AppState>,
+    split: SplitInput,
+    apply_existing: Option<bool>,
+) -> CmdResult<SplitRule> {
     state
         .core
         .save_split(
@@ -730,15 +837,37 @@ pub async fn save_split(state: State<'_, AppState>, split: SplitInput) -> CmdRes
             split.name,
             split.position,
             split.query,
+            split.condition,
             split.target,
+            split.ai,
+            apply_existing.unwrap_or(true),
         )
         .await
         .map_err(err)
 }
 
+/// `apply_existing` (default true) also re-sorts inbox threads the change
+/// affects; false applies the rule to future mail only.
 #[tauri::command]
-pub async fn delete_split(state: State<'_, AppState>, split_id: i64) -> CmdResult<()> {
-    state.core.delete_split(split_id).await.map_err(err)
+pub async fn delete_split(
+    state: State<'_, AppState>,
+    split_id: i64,
+    apply_existing: Option<bool>,
+) -> CmdResult<()> {
+    state
+        .core
+        .delete_split(split_id, apply_existing.unwrap_or(true))
+        .await
+        .map_err(err)
+}
+
+/// How many inbox threads a pending save/delete/reorder would move.
+#[tauri::command]
+pub async fn preview_rule_change(
+    state: State<'_, AppState>,
+    change: comail_core::route::reroute::RuleChange,
+) -> CmdResult<comail_core::route::reroute::RuleChangeImpact> {
+    state.core.preview_rule_change(change).await.map_err(err)
 }
 
 #[tauri::command]
@@ -747,6 +876,29 @@ pub async fn find_matching_split(
     thread_id: i64,
 ) -> CmdResult<Option<SplitRule>> {
     state.core.find_matching_split(thread_id).await.map_err(err)
+}
+
+/// Why a thread is in its tab, with a trace of each split rule tried.
+#[tauri::command]
+pub async fn explain_route(
+    state: State<'_, AppState>,
+    thread_id: i64,
+) -> CmdResult<comail_core::route::RouteExplanation> {
+    state.core.explain_route(thread_id).await.map_err(err)
+}
+
+/// Dry-run a draft split condition against recent mail.
+#[tauri::command]
+pub async fn preview_split_condition(
+    state: State<'_, AppState>,
+    condition: RuleCondition,
+    limit: Option<usize>,
+) -> CmdResult<comail_core::route::decide::ConditionPreview> {
+    state
+        .core
+        .preview_split_condition(condition, limit.unwrap_or(5))
+        .await
+        .map_err(err)
 }
 
 /// One reorderable tab: `kind` is `"split"` or `"label"`, `id` its row id.
@@ -758,9 +910,17 @@ pub struct TabRef {
 
 /// Persist the shared top-to-bottom order of custom splits and auto-label tabs.
 #[tauri::command]
-pub async fn reorder_tabs(state: State<'_, AppState>, order: Vec<TabRef>) -> CmdResult<()> {
+pub async fn reorder_tabs(
+    state: State<'_, AppState>,
+    order: Vec<TabRef>,
+    apply_existing: Option<bool>,
+) -> CmdResult<()> {
     let order = order.into_iter().map(|t| (t.kind, t.id)).collect();
-    state.core.reorder_tabs(order).await.map_err(err)
+    state
+        .core
+        .reorder_tabs(order, apply_existing.unwrap_or(true))
+        .await
+        .map_err(err)
 }
 
 // ---------- labels ----------
@@ -829,6 +989,11 @@ pub async fn unread_counts(
 }
 
 #[tauri::command]
+pub async fn sender_avatar(state: State<'_, AppState>, email: String) -> CmdResult<Option<String>> {
+    Ok(state.core.sender_avatar(&email).await)
+}
+
+#[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> CmdResult<Settings> {
     state.core.get_settings().await.map_err(err)
 }
@@ -836,4 +1001,56 @@ pub async fn get_settings(state: State<'_, AppState>) -> CmdResult<Settings> {
 #[tauri::command]
 pub async fn set_settings(state: State<'_, AppState>, settings: Settings) -> CmdResult<()> {
     state.core.set_settings(settings).await.map_err(err)
+}
+
+// ---------- MCP (AI clients) ----------
+
+#[tauri::command]
+pub async fn mcp_status(state: State<'_, AppState>) -> CmdResult<comail_core::mcp::McpStatus> {
+    state.core.mcp_status().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn mcp_get_token(state: State<'_, AppState>) -> CmdResult<String> {
+    state.core.mcp_token().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn mcp_regenerate_token(state: State<'_, AppState>) -> CmdResult<String> {
+    state.core.mcp_regenerate_token().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn mcp_activity(state: State<'_, AppState>) -> CmdResult<Vec<comail_core::mcp::McpCall>> {
+    Ok(state.core.mcp_activity())
+}
+
+#[tauri::command]
+pub async fn mcp_list_clients(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<comail_core::mcp::clients::ClientInfo>> {
+    state.core.mcp_list_clients().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn mcp_client_snippet(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    state.core.mcp_client_snippet(id).await.map_err(err)
+}
+
+/// Add comail to an AI client. Deep-link installs (Cursor, VS Code, LM Studio)
+/// are opened here: the core is Tauri-free, and opening from Rust isn't bound
+/// by the webview's opener URL scope.
+#[tauri::command]
+pub async fn mcp_install_client(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<comail_core::mcp::clients::InstallResult> {
+    let result = state.core.mcp_install_client(id).await.map_err(err)?;
+    if let Some(url) = &result.open_url {
+        app.opener()
+            .open_url(url, None::<String>)
+            .map_err(|e| err(comail_core::error::CoreError::Other(e.to_string())))?;
+    }
+    Ok(result)
 }

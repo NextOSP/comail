@@ -29,6 +29,7 @@ const pausedSendToasts = new Map<number, number>();
 async function refreshMailQueries() {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["threads"] }),
+    queryClient.invalidateQueries({ queryKey: ["bundles"] }),
     queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
     queryClient.invalidateQueries({ queryKey: ["accounts"] }),
     queryClient.invalidateQueries({ queryKey: ["emailStats"] }),
@@ -163,6 +164,7 @@ export function useBackendEvents() {
     const offs = [
       onEvent("mail:new", () => {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
+        void queryClient.invalidateQueries({ queryKey: ["bundles"] });
         void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
         void queryClient.invalidateQueries({ queryKey: ["emailStats"] });
         // calendar invites arrive by mail
@@ -171,6 +173,7 @@ export function useBackendEvents() {
       }),
       onEvent("mail:updated", ({ threadIds }) => {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
+        void queryClient.invalidateQueries({ queryKey: ["bundles"] });
         void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
         for (const id of threadIds) {
           void queryClient.invalidateQueries({ queryKey: ["thread", id] });
@@ -178,6 +181,7 @@ export function useBackendEvents() {
       }),
       onEvent("thread:woke", ({ threadId }) => {
         void queryClient.invalidateQueries({ queryKey: ["threads"] });
+        void queryClient.invalidateQueries({ queryKey: ["bundles"] });
         void queryClient.invalidateQueries({ queryKey: ["thread", threadId] });
       }),
       onEvent("action:state", ({ actionId, state, error }) => {
@@ -207,6 +211,7 @@ export function useBackendEvents() {
             message: error ? `Couldn't send: ${error}` : "Sending failed",
           });
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["bundles"] });
           void queryClient.invalidateQueries({ queryKey: ["thread"] });
         } else if (state === "paused") {
           // The send couldn't authenticate: it's parked in the outbox, not sent.
@@ -226,9 +231,11 @@ export function useBackendEvents() {
             pausedSendToasts.set(actionId, toastId);
           }
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["bundles"] });
           void queryClient.invalidateQueries({ queryKey: ["thread"] });
         } else if (state === "done") {
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["bundles"] });
           void queryClient.invalidateQueries({ queryKey: ["emailStats"] });
         }
       }),
@@ -255,6 +262,20 @@ export function useBackendEvents() {
           }),
         });
         void queryClient.invalidateQueries({ queryKey: ["events"] });
+      }),
+      onEvent("intent:search", (query) => {
+        // Siri / Shortcuts "Search Mail": land on search results for the query.
+        useUi.getState().set({
+          panel: null,
+          paletteOpen: false,
+          calendarScreen: false,
+          searchOpen: true,
+          searchQuery: query,
+          searchFocusList: query.trim() !== "",
+          openThreadId: null,
+          focusedMessageId: null,
+          selection: [],
+        });
       }),
       onEvent("deeplink:mailto", (url) => {
         const fields = parseMailto(url);

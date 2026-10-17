@@ -22,6 +22,12 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/018_series_master.sql"),
     include_str!("migrations/019_list_unsubscribe_post.sql"),
     include_str!("migrations/020_attachment_inline_fix.sql"),
+    include_str!("migrations/021_search_history.sql"),
+    include_str!("migrations/022_contact_send_backfill.sql"),
+    include_str!("migrations/023_split_condition.sql"),
+    include_str!("migrations/024_automation_applied.sql"),
+    include_str!("migrations/025_automations_all_mail.sql"),
+    include_str!("migrations/026_split_ai_check.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -219,5 +225,56 @@ mod tests {
             )
             .unwrap();
         assert_eq!(columns, 2);
+    }
+
+    #[test]
+    fn migration_022_counts_mail_sent_from_comail() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        run_through(&mut conn, 21);
+        conn.execute_batch(
+            "INSERT INTO accounts (id, email, provider, auth_kind, username,
+               imap_host, imap_port, smtp_host, smtp_port, created_at)
+             VALUES (1, 'me@test.dev', 'imap', 'password', 'me', 'h', 993, 'h', 587, 0);
+             INSERT INTO threads (id, account_id, subject_norm) VALUES (1, 1, 's');
+             INSERT INTO contacts (id, email, name, send_count, recv_count, last_interacted)
+             VALUES (1, 'bao@acme.com', 'Bao', 0, 4, 10);
+             INSERT INTO contact_accounts (contact_id, account_id, send_count, recv_count, last_interacted)
+             VALUES (1, 1, 0, 4, 10);
+             -- two sends to bao (one via bcc), one to a never-harvested address,
+             -- and an unsent draft that must not count.
+             INSERT INTO messages (id, account_id, thread_id, subject, date, is_outgoing, is_draft, to_json, bcc_json)
+             VALUES (1, 1, 1, 's', 100, 1, 0, '[{\"email\":\"Bao@acme.com\"}]', '[]'),
+                    (2, 1, 1, 's', 200, 1, 0, '[{\"name\":\"Kim\",\"email\":\"kim@acme.com\"}]',
+                                             '[{\"email\":\"bao@acme.com\"}]'),
+                    (3, 1, 1, 's', 300, 1, 1, '[{\"email\":\"bao@acme.com\"}]', '[]');",
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        tx.execute_batch(MIGRATIONS[21]).unwrap();
+        tx.commit().unwrap();
+
+        let row = |sql: &str| -> (i64, i64, i64) {
+            conn.query_row(sql, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .unwrap()
+        };
+        assert_eq!(
+            row(
+                "SELECT send_count, recv_count, last_interacted FROM contacts WHERE email = 'bao@acme.com'"
+            ),
+            (2, 4, 200)
+        );
+        assert_eq!(
+            row(
+                "SELECT send_count, recv_count, last_interacted FROM contact_accounts WHERE contact_id = 1"
+            ),
+            (2, 4, 200)
+        );
+        assert_eq!(
+            row("SELECT ca.send_count, ca.recv_count, ca.last_interacted
+                 FROM contacts c JOIN contact_accounts ca ON ca.contact_id = c.id
+                 WHERE c.email = 'kim@acme.com' AND c.name = 'Kim'"),
+            (1, 0, 200)
+        );
     }
 }

@@ -9,11 +9,18 @@ use tokio::sync::broadcast;
 pub fn spawn_forwarder(app: AppHandle, mut rx: broadcast::Receiver<CoreEvent>) {
     tauri::async_runtime::spawn(async move {
         let mut pending_updated: Vec<i64> = Vec::new();
+        // Tracked separately from the id list: a MailUpdated with no thread ids
+        // (e.g. after AI routing moves threads between tabs) still means "refresh".
+        let mut update_pending = false;
         loop {
-            let ev = if pending_updated.is_empty() {
+            let ev = if !update_pending {
                 match rx.recv().await {
                     Ok(ev) => Some(ev),
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    // Dropped events may have included mail updates; refresh.
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        update_pending = true;
+                        continue;
+                    }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             } else {
@@ -29,13 +36,15 @@ pub fn spawn_forwarder(app: AppHandle, mut rx: broadcast::Receiver<CoreEvent>) {
             match ev {
                 Some(CoreEvent::MailUpdated { mut thread_ids }) => {
                     pending_updated.append(&mut thread_ids);
+                    update_pending = true;
                     continue;
                 }
                 Some(other) => emit(&app, other),
                 None => {}
             }
 
-            if !pending_updated.is_empty() {
+            if update_pending {
+                update_pending = false;
                 pending_updated.sort_unstable();
                 pending_updated.dedup();
                 let ids = std::mem::take(&mut pending_updated);
@@ -114,6 +123,12 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
         CoreEvent::AskDone { request_id } => {
             let _ = app.emit("ai:ask:done", json!({ "requestId": request_id }));
         }
+        CoreEvent::AiDraftDelta { request_id, delta } => {
+            let _ = app.emit(
+                "ai:draft:token",
+                json!({ "requestId": request_id, "delta": delta }),
+            );
+        }
         CoreEvent::AiSummaryDelta { thread_id, delta } => {
             let _ = app.emit(
                 "ai:summary:token",
@@ -143,6 +158,9 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
                 "calendar:conflict",
                 json!({ "eventId": event_id, "summary": summary }),
             );
+        }
+        CoreEvent::McpActivity(call) => {
+            let _ = app.emit("mcp:activity", &call);
         }
     }
 }

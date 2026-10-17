@@ -13,13 +13,50 @@ import type {
 } from "../ipc/types";
 import { syncStatusMap } from "../lib/syncStatus";
 
+export type CalendarView = "day" | "week" | "month";
+
+/** What the attachment viewer is showing: the file at `index` among its
+ *  message's siblings, plus who sent it (for the details panel). */
+export interface AttachmentViewerState {
+  items: AttachmentMeta[];
+  index: number;
+  from?: Address;
+  date?: number;
+  subject?: string;
+}
+
+/** calendarHidden key for events that live on no calendar (invites, local-only). */
+export const HIDDEN_LOCAL_CALENDAR = -1;
+
+/** Calendar view prefs survive reloads in localStorage (per-device). */
+function loadCalendarPref<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw == null ? fallback : (JSON.parse(raw) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function saveCalendarPref(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // storage blocked: the pref just won't persist
+  }
+}
+
 export type Screen = "onboarding" | "inbox" | "conversation" | "search" | "compose" | "calendar";
 
 /** Management panels opened from the command palette. */
 export type PanelKind = "settings" | "snippets" | "splits" | "labels";
 
 export type SettingsTab =
-  | "general"
+  | "appearance"
+  | "notifications"
+  | "reading"
+  | "compose"
+  | "calendar"
   | "stats"
   | "splits"
   | "snippets"
@@ -27,14 +64,10 @@ export type SettingsTab =
   | "ai"
   | "ai_automation"
   | "rag"
+  | "mcp"
   | "accounts"
-  | "sync";
-
-/** One-shot defaults used when an email opens the new split-rule form. */
-export interface SplitRulePrefill {
-  name: string;
-  senders: string[];
-}
+  | "sync"
+  | "about";
 
 export interface ToastItem {
   id: number;
@@ -126,8 +159,6 @@ interface UiState {
   settingsTab: SettingsTab | null;
   /** thread id the quick-split popover targets; null = closed */
   splitTarget: number | null;
-  /** one-shot defaults for a new rule opened from an email; consumed by the split editor */
-  splitRulePrefill: SplitRulePrefill | null;
   /** show the add-account (onboarding) form as a modal on demand */
   addAccountOpen: boolean;
   composer: ComposerState | null;
@@ -155,8 +186,15 @@ interface UiState {
   calendarDrawer: "day" | "week" | null;
   /** full-screen week calendar (the `2` view) */
   calendarScreen: boolean;
-  /** layout of the full-screen calendar (`m` toggles month) */
-  calendarView: "week" | "month";
+  /** layout of the full-screen calendar (`d` / `w` / `m`) */
+  calendarView: CalendarView;
+  /** full-screen calendar's left sidebar (mini month + calendar list), `\` */
+  calendarSidebar: boolean;
+  /** calendar ids hidden from the calendar views (view-only, not sync);
+   *  HIDDEN_LOCAL_CALENDAR stands for events with no calendar */
+  calendarHidden: number[];
+  /** month view's "+N more" day list, anchored near the clicked cell */
+  calendarDayList: { day: number; anchor: { x: number; y: number; w: number; h: number } } | null;
   /** day the drawer anchors on (ms day-start); null = today */
   calendarFocusDay: number | null;
   /** event-create modal; `prefill` seeds the form (create-from-email);
@@ -184,8 +222,8 @@ interface UiState {
   } | null;
   /** share-availability picker (inserts free times into the open composer) */
   availabilityOpen: boolean;
-  /** attachment being previewed in the safe in-app viewer; null = closed */
-  attachmentPreview: AttachmentMeta | null;
+  /** attachment viewer (safe in-app preview); null = closed */
+  attachmentPreview: AttachmentViewerState | null;
   /** AI thread summaries cached per thread id (kept until dismissed) */
   aiSummaries: Record<number, { pending: boolean; summary?: AiThreadSummary }>;
 
@@ -215,6 +253,8 @@ interface UiState {
   selectLabel: (labelId: number | null) => void;
   /** Show one IMAP user folder's contents (null clears back to the current view). */
   selectFolder: (folderId: number | null) => void;
+  /** Switch the inbox tab: a split (Important/Other/custom) or an auto-label tab. */
+  selectInboxTab: (tab: { splitId?: number; labelId?: number }) => void;
   selectThread: (index: number, id: number | null) => void;
   openThread: (id: number | null) => void;
   toggleSelect: (id: number) => void;
@@ -256,7 +296,6 @@ export const useUi = create<UiState>((set, get) => ({
   panel: null,
   settingsTab: null,
   splitTarget: null,
-  splitRulePrefill: null,
   addAccountOpen: false,
   composer: null,
   composerDirty: false,
@@ -269,6 +308,9 @@ export const useUi = create<UiState>((set, get) => ({
   calendarDrawer: null,
   calendarScreen: false,
   calendarView: "week",
+  calendarSidebar: loadCalendarPref("comail.calendarSidebar", true),
+  calendarHidden: loadCalendarPref<number[]>("comail.calendarHidden", []),
+  calendarDayList: null,
   calendarFocusDay: null,
   eventCreate: null,
   eventDetail: null,
@@ -336,6 +378,16 @@ export const useUi = create<UiState>((set, get) => ({
       selectAnchorId: null,
       selectedIndex: 0,
       selectedThreadId: null,
+    }),
+
+  selectInboxTab: (tab) =>
+    set({
+      splitId: tab.splitId ?? null,
+      labelFilter: tab.labelId ?? null,
+      folderFilter: null,
+      selectedIndex: 0,
+      selectedThreadId: null,
+      selection: [],
     }),
 
   selectThread: (index, id) => set({ selectedIndex: index, selectedThreadId: id }),
@@ -435,3 +487,11 @@ export const useUi = create<UiState>((set, get) => ({
     set({ toasts: get().toasts.filter((t) => t.id !== id) });
   },
 }));
+
+// Persist the calendar view prefs whenever they change.
+useUi.subscribe((s, prev) => {
+  if (s.calendarSidebar !== prev.calendarSidebar)
+    saveCalendarPref("comail.calendarSidebar", s.calendarSidebar);
+  if (s.calendarHidden !== prev.calendarHidden)
+    saveCalendarPref("comail.calendarHidden", s.calendarHidden);
+});

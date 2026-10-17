@@ -10,37 +10,19 @@ import {
 import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
 import { buildCommandContext } from "../../keyboard/context";
-import { dateGroup, primaryCorrespondent } from "../../lib/format";
+import { primaryCorrespondent } from "../../lib/format";
+import { buildListItems, type Bundle, type SectionHeader } from "../../lib/listItems";
 import { prefetchThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { Button } from "../ui/Button";
+import { BundleRow } from "./BundleRow";
 import { ContactPane } from "./ContactPane";
-import { ThreadRow, type AccountMeta } from "./ThreadRow";
+import { ThreadRow, type AccountMeta, type QuickAction } from "./ThreadRow";
 
-const ROW_HEIGHT = 42;
-
-/** One virtualized row: a date header or a thread. Headers occupy a full
- *  ROW_HEIGHT so the list stays uniform-height (keeps the cursor + gutter-sweep
- *  math simple). */
-type ListItem =
-  | { kind: "header"; key: string; label: string }
-  | { kind: "thread"; thread: ThreadSummary };
-
-/** Interleave date-group headers into the thread rows. When grouping is off the
- *  result is just the threads, one item each - identical to the old behavior. */
-function buildListItems(threads: ThreadSummary[], grouped: boolean): ListItem[] {
-  if (!grouped) return threads.map((thread) => ({ kind: "thread", thread }));
-  const items: ListItem[] = [];
-  let lastKey: string | null = null;
-  for (const thread of threads) {
-    const g = dateGroup(thread.lastMessageAt);
-    if (g.key !== lastKey) {
-      items.push({ kind: "header", key: g.key, label: g.label });
-      lastKey = g.key;
-    }
-    items.push({ kind: "thread", thread });
-  }
-  return items;
-}
+// Superhuman-like density: one line per thread, ~36px, so a large screen
+// shows a full page of mail instead of a handful of tall rows.
+const ROW_HEIGHT = 40;
+const AVATAR_ROW_HEIGHT = 42;
 
 type ThreadListProps = {
   /** Flattened thread summaries in display order. */
@@ -58,6 +40,16 @@ type ThreadListProps = {
   groupByDate?: boolean;
   /** Reveal ⌘/Ctrl+1..9 jump numbers on the first nine rows (search screen). */
   jumpHints?: boolean;
+  /** Avatar: tall rows with avatars, no contact pane. */
+  layout?: "classic" | "avatar";
+  /** Avatar UI only: load Gravatar photos into avatars. */
+  photos?: boolean;
+  /** Avatar inbox: other tabs collapsed into rows inside the list. */
+  bundles?: Bundle[];
+  onOpenBundle?: (bundle: Bundle) => void;
+  /** Ungrouped lists only: a header row above each keyed thread (search
+   *  results' "Partial matches" / "Related" sections). */
+  sections?: ReadonlyMap<number, SectionHeader>;
 };
 
 /**
@@ -74,6 +66,11 @@ export function ThreadList({
   isFetchingMore,
   groupByDate = false,
   jumpHints = false,
+  layout = "classic",
+  photos = false,
+  bundles,
+  onOpenBundle,
+  sections,
 }: ThreadListProps) {
   const { t } = useTranslation();
   const selectedThreadId = useUi((s) => s.selectedThreadId);
@@ -87,15 +84,26 @@ export function ThreadList({
   // Brief leave animation: keep removed rows for 150ms, action already committed.
   const [rows, setRows] = useState<ThreadSummary[]>(threads);
   const [leavingIds, setLeavingIds] = useState<ReadonlySet<number>>(new Set());
+  // Arrive animation: new mail that lands near the top of the list we're on.
+  const [arrivingIds, setArrivingIds] = useState<ReadonlySet<number>>(new Set());
+  /** True for the 300ms the rows below glide down to make room. */
+  const [shifting, setShifting] = useState(false);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
 
   // Virtualized items: threads plus interleaved date headers. `rows` stays the
   // thread-only array (selection, keyboard cursor, leave animation all index by
   // thread), while `items` is what the virtualizer lays out.
-  const items = useMemo(() => buildListItems(rows, groupByDate), [rows, groupByDate]);
+  const items = useMemo(
+    () => buildListItems(rows, groupByDate, bundles, Date.now(), sections),
+    [rows, groupByDate, bundles, sections],
+  );
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  const avatarUi = layout === "avatar";
+  const rowHeight = avatarUi ? AVATAR_ROW_HEIGHT : ROW_HEIGHT;
+  const rowHeightRef = useRef(rowHeight);
+  rowHeightRef.current = rowHeight;
 
   // While ⌘/Ctrl is held on the search screen, map the first nine threads to
   // their jump-to number so each row can show its ⌘/Ctrl+1..9 badge.
@@ -193,6 +201,20 @@ export function ThreadList({
     [],
   );
 
+  // Hover quick actions (Done / Remind / Star): act on exactly that row, moving
+  // the cursor onto it first so auto-advance continues from where the user is.
+  const handleQuickAction = useCallback((id: number, action: QuickAction) => {
+    const state = useUi.getState();
+    if (state.selectedThreadId !== id) {
+      const idx = rowsRef.current.findIndex((r) => r.id === id);
+      state.set({ selectedThreadId: id, selectedIndex: idx < 0 ? 0 : idx });
+    }
+    const ctx = buildCommandContext([id]);
+    if (action === "done") ctx.act("archive");
+    else if (action === "remind") ctx.openSnooze();
+    else ctx.toggleStar();
+  }, []);
+
   // Press-and-drag sweeps a contiguous range. The gutter and the row body both
   // start one; they differ only in what a no-move press means (see the two
   // callers below). Virtualization unmounts off-screen rows, so the hovered
@@ -204,13 +226,13 @@ export function ThreadList({
     useUi.getState().set({ selectAnchorId: id });
     el?.classList.add("select-none");
 
-    // Uniform ROW_HEIGHT (headers included), so pointer Y maps straight to an
+    // Uniform row height (headers and bundles included), so pointer Y maps straight to an
     // item index; range selection then filters that slice down to thread ids.
     const itemIndexFromY = (clientY: number): number => {
       if (!el) return 0;
       const r = el.getBoundingClientRect();
       const y = clientY - r.top + el.scrollTop;
-      return Math.max(0, Math.min(Math.floor(y / ROW_HEIGHT), itemsRef.current.length - 1));
+      return Math.max(0, Math.min(Math.floor(y / rowHeightRef.current), itemsRef.current.length - 1));
     };
 
     const onMove = (ev: MouseEvent) => {
@@ -289,6 +311,29 @@ export function ThreadList({
     }
     setLeavingIds(new Set());
     setRows(threads);
+    // A handful of rows appearing near the top while the rest of the list
+    // stays put is new mail arriving; anything bigger (tab/view switch, first
+    // load, a page of infinite scroll) just swaps in place.
+    const gainedIdx = threads.flatMap((t, i) => (prevIds.has(t.id) ? [] : [i]));
+    if (
+      prev.length > 0 &&
+      gainedIdx.length > 0 &&
+      gainedIdx.length <= 5 &&
+      removed.length <= 5 &&
+      gainedIdx.every((i) => i < 10)
+    ) {
+      setArrivingIds(new Set(gainedIdx.map((i) => threads[i].id)));
+      setShifting(true);
+      const shiftTimer = setTimeout(() => setShifting(false), 320);
+      // Outlives the drop-in so the accent wash can finish fading.
+      const arriveTimer = setTimeout(() => setArrivingIds(new Set()), 1300);
+      return () => {
+        clearTimeout(shiftTimer);
+        clearTimeout(arriveTimer);
+      };
+    }
+    setShifting(false);
+    setArrivingIds(new Set());
   }, [threads]);
 
   // Keep a valid cursor.
@@ -307,9 +352,13 @@ export function ThreadList({
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 12,
   });
+  // UI switch: drop cached sizes so every row re-lays out at the new height.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
 
   // Keep the keyboard cursor on screen. Only scrolls when the selected row is
   // actually out of view, so hovering a visible row never triggers a scroll.
@@ -321,12 +370,12 @@ export function ThreadList({
       (it) => it.kind === "thread" && it.thread.id === selectedThreadId,
     );
     if (idx < 0) return;
-    const top = idx * ROW_HEIGHT;
-    const bottom = top + ROW_HEIGHT;
+    const top = idx * rowHeight;
+    const bottom = top + rowHeight;
     if (top < el.scrollTop || bottom > el.scrollTop + el.clientHeight) {
       virtualizer.scrollToIndex(idx, { align: "auto" });
     }
-  }, [selectedThreadId, virtualizer]);
+  }, [selectedThreadId, virtualizer, rowHeight]);
 
   // Infinite scroll.
   const virtualItems = virtualizer.getVirtualItems();
@@ -341,8 +390,8 @@ export function ThreadList({
     <div className="relative flex min-h-0 flex-1">
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto"
-        style={{ background: "color-mix(in srgb, var(--bg0) 85%, transparent)" }}
+        // Superhuman: the list is a plain white sheet; only the side pane is tinted.
+        className="min-h-0 flex-1 overflow-y-auto bg-bg1"
       >
         <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
           {virtualItems.map((vi) => {
@@ -351,14 +400,26 @@ export function ThreadList({
             const style = { top: vi.start, height: vi.size } as const;
             if (item.kind === "header") {
               return (
-                <div key={`h-${item.key}`} className="absolute inset-x-0" style={style}>
-                  <DateHeader label={item.label} />
+                <div key={`h-${item.key}`} className={`absolute inset-x-0${shifting ? " co-row-shift" : ""}`} style={style}>
+                  <DateHeader label={item.label} subtitle={item.subtitle} avatarUi={avatarUi} />
+                </div>
+              );
+            }
+            if (item.kind === "bundle") {
+              return (
+                <div key={`b-${item.bundle.key}`} className={`absolute inset-x-0${shifting ? " co-row-shift" : ""}`} style={style}>
+                  <BundleRow
+                    bundle={item.bundle}
+                    selfEmails={selfEmails}
+                    photos={photos}
+                    onOpen={onOpenBundle ?? noop}
+                  />
                 </div>
               );
             }
             const th = item.thread;
             return (
-              <div key={th.id} className="absolute inset-x-0" style={style}>
+              <div key={th.id} className={`absolute inset-x-0${shifting ? " co-row-shift" : ""}`} style={style}>
                 <ThreadRow
                   thread={th}
                   selected={th.id === selectedThreadId}
@@ -368,71 +429,101 @@ export function ThreadList({
                   labelMap={labelMap}
                   account={accountMeta?.get(th.accountId)}
                   leaving={leavingIds.has(th.id)}
+                  arriving={arrivingIds.has(th.id)}
                   onRowClick={handleRowClick}
                   onRowContextMenu={handleRowContextMenu}
+                  onQuickAction={handleQuickAction}
                   onRowHover={handleRowHover}
                   onToggleCheck={handleToggleCheck}
                   onGutterDown={onGutterDown}
                   onRowDown={onRowDown}
                   jumpHint={jumpNumbers?.get(th.id)}
+                  avatarUi={avatarUi}
+                  photos={photos}
                 />
               </div>
             );
           })}
         </div>
         {isFetchingMore && (
-          <div className="py-3 text-center text-[12px] text-ink-faint">{t("common:loading")}</div>
+          <div className="py-3 text-center text-sm text-ink-faint">{t("common:loading")}</div>
         )}
       </div>
 
-      <ContactPane
-        thread={selectedThread}
-        recent={recentWithContact}
-        selfEmails={selfEmails}
-        onOpen={openThread}
-        className="hidden w-[340px] shrink-0 border-l border-hairline lg:flex"
-      />
+      {!avatarUi && (
+        <ContactPane
+          thread={selectedThread}
+          recent={recentWithContact}
+          selfEmails={selfEmails}
+          onOpen={openThread}
+          className="hidden w-[340px] shrink-0 bg-bg0 lg:flex"
+        />
+      )}
 
-      {selection.length > 0 && <BulkBar count={selection.length} onClear={() => ui({ selection: [] })} />}
+      {selection.length > 0 && (
+        <BulkBar count={selection.length} withPane={!avatarUi} onClear={() => ui({ selection: [] })} />
+      )}
     </div>
   );
 }
+
+const noop = () => {};
 
 /** Sticky-looking date separator between thread rows (Today / Yesterday / …). */
-function DateHeader({ label }: { label: string }) {
+function DateHeader({
+  label,
+  subtitle,
+  avatarUi,
+}: {
+  label: string;
+  subtitle?: string;
+  avatarUi: boolean;
+}) {
+  if (avatarUi) {
+    return (
+      <div className="flex h-full items-end gap-2 pb-1.5 pl-14">
+        <span className="text-sm text-ink-faint">{label}</span>
+        {subtitle && <span className="text-sm text-ink-faint/70">{subtitle}</span>}
+      </div>
+    );
+  }
+  // Superhuman: a quiet sentence-case label aligned with the sender column.
   return (
-    <div className="flex h-full items-end px-4 pb-1.5">
-      <span className="text-[11px] font-semibold tracking-[0.06em] text-ink-faint uppercase">
-        {label}
-      </span>
+    <div className="flex h-full items-end pb-1.5 pl-14">
+      <span className="text-sm text-ink-faint">{label}</span>
     </div>
   );
 }
 
-function BulkBar({ count, onClear }: { count: number; onClear: () => void }) {
+function BulkBar({
+  count,
+  withPane,
+  onClear,
+}: {
+  count: number;
+  /** Centre over the list only, leaving room for the contact pane. */
+  withPane: boolean;
+  onClear: () => void;
+}) {
   const { t } = useTranslation();
   const run = (fn: (ctx: ReturnType<typeof buildCommandContext>) => void) => () => {
     fn(buildCommandContext());
   };
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center lg:pr-[340px]">
+    <div className={`pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center ${withPane ? "lg:pr-[340px]" : ""}`}>
       <div
-        className="co-pop-in pointer-events-auto flex items-center gap-1 rounded-xl border border-hairline bg-bg1 px-2 py-1.5"
-        style={{ boxShadow: "var(--elev-2)" }}
+        className="co-pop-in pointer-events-auto flex items-center gap-1 rounded-card border border-hairline bg-bg1 px-2 py-1.5 shadow-elev-2"
       >
-        <span className="px-2 text-[12.5px] font-semibold text-ink">{t("common:selectedCount", { count })}</span>
+        <span className="px-2 text-sm font-semibold text-ink">{t("common:selectedCount", { count })}</span>
         <BulkButton label={t("common:action.done")} kbd="E" onClick={run((c) => c.act("archive"))} />
         <BulkButton label={t("common:action.snooze")} kbd="H" onClick={run((c) => c.openSnooze())} />
         <BulkButton label={t("common:action.star")} kbd="S" onClick={run((c) => c.toggleStar())} />
         <BulkButton label={t("common:action.read")} kbd="U" onClick={run((c) => c.toggleRead())} />
         <BulkButton label={t("common:action.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
         <BulkButton label={t("common:action.spam")} kbd="!" onClick={run((c) => c.act("spam"))} />
-        <button
-          className="ml-1 rounded-md px-2 py-1 text-[12.5px] text-ink-faint hover:bg-bg2"
-          onClick={onClear}
-        >
+        <Button variant="ghost" size="sm" className="ml-1 px-2" onClick={onClear}>
           {t("common:action.clear")}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -440,12 +531,9 @@ function BulkBar({ count, onClear }: { count: number; onClear: () => void }) {
 
 function BulkButton({ label, kbd, onClick }: { label: string; kbd: string; onClick: () => void }) {
   return (
-    <button
-      className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px] text-ink hover:bg-bg2"
-      onClick={onClick}
-    >
+    <Button variant="ghost" size="sm" onClick={onClick}>
       {label}
-      <kbd className="co-kbd !h-[1.35em] !text-[10px]">{kbd}</kbd>
-    </button>
+      <kbd className="co-kbd !h-[1.35em] !text-2xs">{kbd}</kbd>
+    </Button>
   );
 }

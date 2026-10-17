@@ -19,6 +19,21 @@
   "ccBcc": "Cc / Bcc",
   "subject": "Chủ đề",
   "aiBadge": "AI",
+  "ai": {
+    "write": "Viết bằng AI",
+    "edit": "Chỉnh sửa bằng AI",
+    "voiceTip": "Soạn theo giọng văn đã học của bạn",
+    "accept": "Chấp nhận",
+    "retry": "Thử lại",
+    "shorten": "Rút gọn",
+    "lengthen": "Viết dài hơn",
+    "improve": "Cải thiện văn phong",
+    "generate": "Tạo",
+    "hint": "↵ tạo · ⇧↵ xuống dòng · Esc đóng",
+    "addToCalendar": "Thêm vào lịch",
+    "addToCalendarTip": "Tạo sự kiện lịch từ bản nháp này",
+    "dismiss": "Bỏ qua"
+  },
   "aiPlaceholder": "vd. chấp nhận lời mời, đề xuất thứ Ba",
   "aiVoice": "Theo giọng văn của tôi",
   "drafting": "Đang soạn…",
@@ -60,9 +75,11 @@
   "quickReply1": "Đã nhận, cảm ơn!",
   "quickReply2": "Nghe ổn đấy, tôi sẽ làm.",
   "quickReply3": "Cảm ơn, tôi sẽ xem qua.",
+  "quickRepliesLoading": "Đang tạo gợi ý trả lời…",
   "signature": {
     "label": "Chữ ký",
-    "none": "Không có chữ ký"
+    "none": "Không có chữ ký",
+    "trigger": "Chữ ký: {{name}}"
   },
   "fmt": {
     "bold": "In đậm",
@@ -79,5 +96,11 @@
     "table": "Chèn bảng"
   },
   "proofread": "Soát lỗi",
-  "proofreadClean": "Ổn rồi - không có gì cần sửa."
+  "proofreadClean": "Ổn rồi - không có gì cần sửa.",
+  "teamsMeeting": "Cuộc họp Teams",
+  "teamsMeetingTip": "Tạo cuộc họp Microsoft Teams và thêm liên kết tham gia",
+  "teamsMeetingTitle": "Cuộc họp Microsoft Teams",
+  "teamsMeetingJoin": "Tham gia cuộc họp ngay",
+  "teamsMeetingAdded": "Đã thêm liên kết cuộc họp Teams",
+  "teamsMeetingError": "Không thể tạo cuộc họp Teams: {{error}}"
 }

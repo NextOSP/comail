@@ -13,6 +13,15 @@ pub enum Slot {
     AiApiKey,
     /// Generic-CalDAV app password (Google CalDAV reuses the OAuth tokens).
     CaldavPassword,
+    /// Bearer token for the local MCP server (stored under account id 0).
+    McpToken,
+    /// OpenRouter decision API key (stored under account id 0). Unset falls
+    /// back to [`Slot::AiApiKey`], which is the same OpenRouter key for most setups.
+    DecisionApiKey,
+    /// OpenAI Decisions API key (account id 0).
+    DecisionOpenAiKey,
+    /// Key for a custom decision endpoint (account id 0).
+    DecisionCustomKey,
 }
 
 impl Slot {
@@ -23,6 +32,10 @@ impl Slot {
             Slot::AccessToken => "access_token",
             Slot::AiApiKey => "ai_api_key",
             Slot::CaldavPassword => "caldav_password",
+            Slot::McpToken => "mcp_token",
+            Slot::DecisionApiKey => "decision_api_key",
+            Slot::DecisionOpenAiKey => "decision_api_key_openai",
+            Slot::DecisionCustomKey => "decision_api_key_custom",
         }
     }
 }
@@ -197,6 +210,20 @@ pub fn delete_all(account_id: i64) {
         }
         delete_chunks_from(account_id, &slot, 0);
     }
+}
+
+/// Remove one stored secret; missing entries are fine.
+pub fn delete(account_id: i64, slot: Slot) {
+    if let Some(path) = insecure_file() {
+        let mut map = file_map(&path);
+        map.remove(&slot_key(account_id, &slot));
+        let _ = file_save(&path, &map);
+        return;
+    }
+    if let Ok(e) = entry(account_id, &slot) {
+        let _ = e.delete_credential();
+    }
+    delete_chunks_from(account_id, &slot, 0);
 }
 
 pub async fn store_async(account_id: i64, slot: Slot, secret: String) -> Result<()> {

@@ -1,10 +1,16 @@
 import { memo, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
-import { participantSummary, relativeTime } from "../../lib/format";
+import { participantSummary, primaryCorrespondent, relativeTime } from "../../lib/format";
+import { IconButton } from "../ui/Button";
+import { Icon, type IconName } from "../ui/Icon";
+import { Avatar } from "./Avatar";
 
 /** Account marker shown on unified-inbox rows: edge bar color + name chip. */
 export type AccountMeta = { color: string; name: string; email: string };
+
+/** Hover/cursor row actions, mirroring the E / H / S shortcuts. */
+export type QuickAction = "done" | "remind" | "star";
 
 function ThreadRowImpl({
   thread,
@@ -16,12 +22,16 @@ function ThreadRowImpl({
   account,
   onRowClick,
   onRowContextMenu,
+  onQuickAction,
   onRowHover,
   onToggleCheck,
   onGutterDown,
   onRowDown,
   leaving,
+  arriving,
   jumpHint,
+  avatarUi = false,
+  photos = false,
 }: {
   thread: ThreadSummary;
   selected: boolean;
@@ -34,6 +44,9 @@ function ThreadRowImpl({
   onRowClick: (id: number, e: MouseEvent) => void;
   /** Right-click hook: opens the row context menu at the pointer. */
   onRowContextMenu?: (id: number, e: MouseEvent) => void;
+  /** Hover quick actions; when provided, they replace the timestamp on the
+   *  hovered / cursored row. */
+  onQuickAction?: (id: number, action: QuickAction) => void;
   /** Hover-intent hook (null on leave); the list debounces and prefetches. */
   onRowHover?: (id: number | null) => void;
   onToggleCheck: (id: number) => void;
@@ -43,15 +56,22 @@ function ThreadRowImpl({
    *  a no-move press stays a click (opens the thread). */
   onRowDown?: (id: number, e: MouseEvent) => void;
   leaving?: boolean;
+  /** Freshly arrived mail: plays the drop-in + accent wash. */
+  arriving?: boolean;
   /** jump-to number shown (in place of the timestamp) while ⌘/Ctrl is held */
   jumpHint?: string;
+  /** Avatar inbox UI: avatar, wide sender column, larger type. */
+  avatarUi?: boolean;
+  /** Avatar UI only: load Gravatar photos into the avatar. */
+  photos?: boolean;
 }) {
   const { t } = useTranslation();
   const unread = thread.unreadCount > 0;
+  const correspondent = avatarUi ? primaryCorrespondent(thread.participants, selfEmails) : null;
 
   return (
     <div
-      className={`co-row flex h-full cursor-default items-center gap-3 pr-5 pl-4 ${leaving ? "co-row-leaving" : ""}`}
+      className={`co-row flex h-full cursor-default items-center gap-3 pr-6 pl-6 ${leaving ? "co-row-leaving" : arriving ? "co-row-arrive" : ""}`}
       data-selected={selected}
       data-checked={checked}
       onMouseDown={onRowDown ? (e) => onRowDown(thread.id, e) : undefined}
@@ -88,13 +108,13 @@ function ThreadRowImpl({
       >
         {checked || selectionMode ? (
           <span
-            className={`flex size-4 items-center justify-center rounded border text-[10px] ${
+            className={`flex size-4 items-center justify-center rounded border ${
               checked
-                ? "border-accent bg-accent text-bg0"
+                ? "border-accent bg-accent text-on-accent"
                 : "border-hairline-strong text-transparent"
             }`}
           >
-            ✓
+            <Icon name="check" size={11} />
           </span>
         ) : unread ? (
           <span className="size-2 rounded-full bg-info" />
@@ -105,66 +125,114 @@ function ThreadRowImpl({
         )}
       </button>
 
-      <span
-        className={`w-52 shrink-0 truncate text-[13.5px] ${
-          unread ? "font-semibold text-ink" : "text-ink-muted"
-        }`}
-      >
-        {participantSummary(thread.participants, selfEmails)}
-        {thread.messageCount > 1 && (
-          <span className="ml-1.5 text-[11.5px] font-normal text-ink-faint">
-            {thread.messageCount}
+      {avatarUi ? (
+        <>
+          {correspondent && (
+            <Avatar address={correspondent} size={22} photo={photos} />
+          )}
+          <span
+            className="w-48 shrink-0 truncate text-base font-medium text-ink"
+          >
+            {participantSummary(thread.participants, selfEmails)}
           </span>
-        )}
-      </span>
 
-      <span className="min-w-0 flex-1 truncate text-[13.5px]">
-        <span className={unread ? "font-semibold text-ink" : "text-ink"}>{thread.subject}</span>
-        <span className="text-ink-faint">&ensp;-&ensp;{thread.snippet}</span>
-      </span>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-base">
+            {thread.isStarred && <StarIcon />}
+            <LabelChips labels={thread.labels} labelMap={labelMap} />
+            <span className="shrink-0 truncate text-ink" style={{ maxWidth: "60%" }}>
+              {thread.subject}
+            </span>
+            {thread.messageCount > 1 && (
+              <span className="shrink-0 rounded border border-hairline bg-bg2 px-1 text-xs leading-[16px] text-ink-faint tabular-nums">
+                {thread.messageCount}
+              </span>
+            )}
+            {thread.hasAttachments && (
+              <span className="co-row-meta">
+                <PaperclipIcon />
+              </span>
+            )}
+            <span className="ml-2 min-w-0 truncate text-ink-faint">{thread.snippet}</span>
+          </span>
+        </>
+      ) : (
+        <>
+          <span
+            className="w-[220px] shrink-0 truncate text-base font-medium text-ink"
+          >
+            {participantSummary(thread.participants, selfEmails)}
+            {thread.messageCount > 1 && (
+              <span className="ml-1.5 text-xs font-normal text-ink-faint">
+                {thread.messageCount}
+              </span>
+            )}
+          </span>
+
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-base">
+            <LabelChips labels={thread.labels} labelMap={labelMap} />
+            <span className="min-w-0 truncate">
+              <span className="text-ink">{thread.subject}</span>
+              <span className="text-ink-faint">&ensp;{thread.snippet}</span>
+            </span>
+          </span>
+        </>
+      )}
 
       {account && (
         <span
-          className="size-[7px] shrink-0 rounded-full"
+          className="co-row-meta size-[7px] shrink-0 rounded-full"
           style={{ background: account.color }}
           title={`${account.name} · ${account.email}`}
         />
       )}
 
-      {labelMap && thread.labels.length > 0 && (
-        <span className="flex shrink-0 items-center gap-1">
-          {thread.labels.slice(0, 3).map((id) => {
-            const l = labelMap.get(id);
-            if (!l) return null;
-            return (
-              <span
-                key={id}
-                className="max-w-[110px] truncate rounded-full px-2 py-[1px] text-[10.5px] font-medium"
-                style={{ background: `${l.color}22`, color: l.color }}
-                title={l.name}
-              >
-                {l.name}
-              </span>
-            );
-          })}
+      {!avatarUi && thread.isStarred && (unread || checked || selectionMode) && (
+        // Hidden with the timestamp while the quick-action star is showing.
+        <span className={onQuickAction && !selectionMode ? "co-row-time" : "contents"}>
+          <StarIcon />
         </span>
       )}
-
-      {thread.isStarred && (unread || checked || selectionMode) && <StarIcon />}
-      {thread.hasAttachments && (
-        <span className="shrink-0 text-ink-faint" title={t("common:threadRow.hasAttachments")} aria-label={t("common:threadRow.attachment")}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-          </svg>
+      {!avatarUi && thread.hasAttachments && (
+        <span className="co-row-meta">
+          <PaperclipIcon />
         </span>
       )}
 
       <span
-        className={`flex w-14 shrink-0 justify-end text-right text-[11.5px] tabular-nums ${
-          unread ? "font-semibold text-info" : "text-ink-faint"
-        }`}
+        className={`flex shrink-0 justify-end text-right tabular-nums ${
+          "w-[64px] text-sm uppercase"
+        } text-ink-muted`}
       >
-        {jumpHint ? <kbd className="co-kbd">{jumpHint}</kbd> : relativeTime(thread.lastMessageAt)}
+        {jumpHint ? (
+          <kbd className="co-kbd">{jumpHint}</kbd>
+        ) : (
+          <span className={onQuickAction && !selectionMode ? "co-row-time" : undefined}>
+            {relativeTime(thread.lastMessageAt)}
+          </span>
+        )}
+        {onQuickAction && !selectionMode && !jumpHint && (
+          <span className="co-row-actions items-center">
+            <QuickButton
+              icon="check"
+              label={t("common:contextMenu.archive")}
+              kbd="E"
+              onClick={() => onQuickAction(thread.id, "done")}
+            />
+            <QuickButton
+              icon="clock"
+              label={t("common:contextMenu.snooze")}
+              kbd="H"
+              onClick={() => onQuickAction(thread.id, "remind")}
+            />
+            <QuickButton
+              icon="star"
+              label={thread.isStarred ? t("common:contextMenu.unstar") : t("common:contextMenu.star")}
+              kbd="S"
+              onClick={() => onQuickAction(thread.id, "star")}
+              active={thread.isStarred}
+            />
+          </span>
+        )}
       </span>
     </div>
   );
@@ -172,13 +240,76 @@ function ThreadRowImpl({
 
 export const ThreadRow = memo(ThreadRowImpl);
 
+function QuickButton({
+  icon,
+  label,
+  kbd,
+  onClick,
+  active = false,
+}: {
+  icon: IconName;
+  label: string;
+  kbd: string;
+  onClick: () => void;
+  active?: boolean;
+}) {
+  return (
+    <IconButton
+      icon={icon}
+      size="xs"
+      label={label}
+      title={`${label} (${kbd})`}
+      filled={active}
+      className={active ? "!text-star" : undefined}
+      tabIndex={-1}
+      // The row's mousedown starts a drag-sweep and its click opens the thread;
+      // keep both away from the action buttons.
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    />
+  );
+}
+
+function PaperclipIcon() {
+  const { t } = useTranslation();
+  return (
+    <span className="shrink-0 text-ink-faint" title={t("common:threadRow.hasAttachments")} aria-label={t("common:threadRow.attachment")}>
+      <Icon name="paperclip" size={13} />
+    </span>
+  );
+}
+
+/** Superhuman-style label chips, placed before the subject. */
+function LabelChips({ labels, labelMap }: { labels: number[]; labelMap?: Map<number, Label> }) {
+  if (!labelMap || labels.length === 0) return null;
+  return (
+    <>
+      {labels.slice(0, 3).map((id) => {
+        const l = labelMap.get(id);
+        if (!l) return null;
+        return (
+          <span
+            key={id}
+            className="max-w-[110px] shrink-0 truncate rounded-[4px] px-1.5 text-2xs leading-[17px] font-medium"
+            style={{ background: `${l.color}24`, color: l.color }}
+            title={l.name}
+          >
+            {l.name}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function StarIcon() {
   const { t } = useTranslation();
   return (
     <span className="shrink-0 text-star" aria-label={t("common:threadRow.starred")}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2l2.94 6.26 6.87.86-5.06 4.73 1.31 6.79L12 17.27l-6.06 3.37 1.31-6.79L2.19 9.12l6.87-.86L12 2z" />
-      </svg>
+      <Icon name="star" size={13} filled />
     </span>
   );
 }

@@ -167,6 +167,10 @@ pub fn unread_counts(
             .clause("s.thread_id IS NOT NULL")
             .run(conn)?,
     );
+    // Spam is never notified, so its badge is the only signal that mail landed there.
+    let mut spam = Q::unread(account_id);
+    let c = spam.role_exists(roles::SPAM);
+    views.insert("spam".to_string(), spam.clause(c).run(conn)?);
     // Drafts badge = number of threads with a draft, unread or not.
     views.insert(
         "drafts".to_string(),
@@ -250,6 +254,7 @@ mod tests {
         assert_eq!(c.important, 1);
         assert_eq!(c.other, 1);
         assert_eq!(c.views["starred"], 0);
+        assert_eq!(c.views["spam"], 0);
 
         // account filter that matches nothing
         let none = unread_counts(&conn, Some(99), &[], &[]).unwrap();
@@ -268,6 +273,28 @@ mod tests {
         assert_eq!(c.inbox, 2);
         assert_eq!(c.important, 1, "latest human reply belongs in Important");
         assert_eq!(c.other, 1, "latest automated reply belongs in Other");
+    }
+
+    #[test]
+    fn counts_unread_spam() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO folders (id, account_id, imap_name, role) VALUES (2,1,'Spam','spam')",
+            [],
+        )
+        .unwrap();
+        seed_thread(&conn, 1, 1, false);
+        seed_thread(&conn, 2, 1, false);
+        seed_thread(&conn, 3, 0, false);
+        conn.execute(
+            "UPDATE messages SET folder_id = 2 WHERE thread_id IN (2, 3)",
+            [],
+        )
+        .unwrap();
+
+        let c = unread_counts(&conn, None, &[], &[]).unwrap();
+        assert_eq!(c.views["spam"], 1);
+        assert_eq!(c.inbox, 1);
     }
 
     #[test]
@@ -302,7 +329,9 @@ mod tests {
                 senders: Some(vec!["a@b.c".into()]),
                 ..Default::default()
             },
+            condition: None,
             target: None,
+            ai: None,
         };
         let label = Label {
             id: 5,

@@ -5,18 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Comail</title>
     <script>
-      // Apply the last-known theme before first paint to avoid a flash.
+      // Apply the last-known theme, accent and font before first paint to avoid a flash.
       (function () {
         var theme;
         try {
           theme = localStorage.getItem("comail:theme");
         } catch (e) {}
-        if (theme !== "snow" && theme !== "carbon" && theme !== "holiday") {
+        if (theme !== "snow" && theme !== "carbon") {
           theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "carbon" : "snow";
         }
         document.documentElement.dataset.theme = theme;
         document.documentElement.style.backgroundColor =
-          theme === "carbon" ? "#141413" : theme === "holiday" ? "#f4f7fa" : "#faf9f7";
+          theme === "carbon" ? "#141413" : "#faf9f7";
+        try {
+          var accent = localStorage.getItem("comail:accent");
+          if (accent) document.documentElement.style.setProperty("--accent", accent);
+          var onAccent = localStorage.getItem("comail:on-accent");
+          if (onAccent) document.documentElement.style.setProperty("--on-accent", onAccent);
+          var font = localStorage.getItem("comail:font");
+          if (font) {
+            var link = document.createElement("link");
+            link.id = "comail-font";
+            link.rel = "stylesheet";
+            link.href =
+              "https://fonts.googleapis.com/css2?family=" +
+              encodeURIComponent(font).replace(/%20/g, "+") +
+              ":wght@400;500;600;700&display=swap";
+            document.head.appendChild(link);
+            document.documentElement.style.setProperty(
+              "--font-sans",
+              '"' + font + '", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+            );
+          }
+        } catch (e) {}
       })();
     </script>
   </head>

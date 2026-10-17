@@ -7,100 +7,25 @@ import { call } from "../../ipc/commands";
 import { parseQuickAdd } from "../../lib/quickadd";
 import { useAccounts, useCalendars, useCreateEvent, useUpdateEvent } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { AiSparkle, AiSurface } from "../ui/Ai";
+import { Button, IconButton } from "../ui/Button";
+import { Toggle } from "../ui/Field";
+import { Icon, type IconName } from "../ui/Icon";
+import { Spinner } from "../ui/Spinner";
 import { normalizeHex } from "./calendarColor";
 
 const H_MS = 3_600_000;
 
-/** Small lucide-style line icons (the app has no icon lib; see AttachmentPreviewModal). */
-const svg = (children: ReactNode, size = 13) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.75"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    {children}
-  </svg>
-);
-const ICON = {
-  sparkle: svg(<path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z" />, 15),
-  title: svg(
-    <>
-      <path d="M4 7V5h16v2" />
-      <path d="M12 5v14" />
-      <path d="M9 19h6" />
-    </>,
-  ),
-  date: svg(
-    <>
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <path d="M16 2v4M8 2v4M3 10h18" />
-    </>,
-  ),
-  time: svg(
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </>,
-  ),
-  duration: svg(
-    <>
-      <path d="M10 2h4" />
-      <circle cx="12" cy="14" r="8" />
-      <path d="M12 14V10" />
-    </>,
-  ),
-  users: svg(
-    <>
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-    </>,
-  ),
-  location: svg(
-    <>
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
-    </>,
-  ),
-  link: svg(
-    <>
-      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
-      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
-    </>,
-  ),
-  notes: svg(<path d="M17 10H3M21 6H3M21 14H3M17 18H3" />),
-  close: svg(<path d="M18 6L6 18M6 6l12 12" />),
-  video: svg(
-    <>
-      <path d="M15 10l5-3v10l-5-3v-4z" />
-      <rect x="2" y="6" width="13" height="12" rx="2" />
-    </>,
-    12,
-  ),
-};
-
-/** Uppercase group heading (matches AvailabilityPicker / panelKit SectionLabel). */
-function SectionLabel({ children }: { children: ReactNode }) {
+/** One form row: muted icon in a fixed gutter, controls to its right
+ *  (Proton / Front event editors). */
+function Row({ icon, label, children }: { icon: IconName; label: string; children: ReactNode }) {
   return (
-    <div className="mb-1.5 text-[11px] font-semibold tracking-[0.1em] text-ink-faint uppercase">
-      {children}
+    <div className="flex gap-3">
+      <span className="mt-2 flex w-4 shrink-0 justify-center text-ink-faint" title={label}>
+        <Icon name={icon} size={15} />
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
-  );
-}
-
-/** Field label with a leading muted icon. */
-function FieldLabel({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return (
-    <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
-      {icon}
-      {children}
-    </label>
   );
 }
 
@@ -391,11 +316,13 @@ export function EventCreate() {
   };
 
   const inputCls =
-    "w-full rounded-md border border-hairline bg-bg0 px-2.5 py-1.5 text-[13px] text-ink outline-none transition focus:border-accent/60";
+    "h-8 rounded-control border border-hairline bg-bg0 px-2.5 text-[13px] text-ink outline-none transition placeholder:text-ink-faint focus:border-accent/60";
+  const invites = parseAttendees(attendeesRaw).length > 0;
+  const startMs = fromInputs(date, time);
 
   return (
     <div
-      className="co-overlay flex items-start justify-center pt-[12vh]"
+      className="co-overlay flex items-start justify-center pt-[10vh]"
       onMouseDown={close}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
@@ -409,23 +336,21 @@ export function EventCreate() {
     >
       <div
         data-testid="event-create"
-        className="co-fade-in w-[520px] rounded-xl border border-hairline bg-bg1 p-4"
+        className="co-fade-in flex max-h-[84vh] w-[540px] flex-col rounded-xl border border-hairline bg-bg1"
         style={{ boxShadow: "var(--elev-2)" }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between">
-          <h2 className="text-[14px] font-semibold text-ink">
+        <header className="flex items-center justify-between px-5 pt-4">
+          <h2 className="text-[13px] font-semibold text-ink-muted">
             {t(editingId != null ? "calendar:edit.title" : "calendar:create.title")}
           </h2>
-          <span className="text-[11.5px] text-ink-faint">{t("calendar:create.saveHint")}</span>
+          <IconButton icon="close" label={t("common:action.cancel")} onClick={close} />
         </header>
-        <div className="-mx-4 mt-3 mb-3 border-b border-hairline" />
 
+        <div className="min-h-0 overflow-y-auto px-5 pt-2 pb-4">
         {/* Smart quick-add: natural language fills the form below. */}
-        <div className="relative">
-          <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-accent">
-            {ICON.sparkle}
-          </span>
+        <AiSurface className="relative">
+          <AiSparkle size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2" />
           <input
             ref={quickRef}
             autoComplete="off"
@@ -433,7 +358,7 @@ export function EventCreate() {
             autoCapitalize="off"
             spellCheck={false}
             name="event-quickadd"
-            className="w-full rounded-lg border border-accent/40 bg-accent/[0.05] py-2 pr-9 pl-8 text-[13px] text-ink outline-none transition placeholder:text-ink-faint focus:border-accent/70 focus-visible:outline-none"
+            className="co-ai-fill w-full rounded-card py-2 pr-9 pl-8 text-base text-ink outline-none placeholder:text-ink-faint focus-visible:outline-none"
             placeholder={t("calendar:create.quickPlaceholder")}
             value={quick}
             onChange={(e) => setQuick(e.target.value)}
@@ -446,7 +371,7 @@ export function EventCreate() {
             }}
           />
           {quickAiPending || teamsPending ? (
-            <span className="co-spinner absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+            <Spinner className="co-ai-icon absolute top-1/2 right-2.5 -translate-y-1/2" />
           ) : (
             quick && (
               <button
@@ -457,14 +382,14 @@ export function EventCreate() {
                 }}
                 title={t("common:action.clear")}
                 aria-label={t("common:action.clear")}
-                className="absolute top-1/2 right-2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-ink-faint transition hover:bg-accent/10 hover:text-ink"
+                className="absolute top-1/2 right-2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-ink-faint transition hover:bg-bg2 hover:text-ink"
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             )
           )}
-        </div>
-        <div className="mt-1 mb-3 h-4 px-1 text-[11.5px] text-accent">
+        </AiSurface>
+        <div className="co-ai-icon mt-1 mb-3 h-4 px-1 text-xs">
           {!quickPreview && quickAiPending && <span>{t("calendar:create.quickAiPending")}</span>}
           {!quickPreview && !quickAiPending && quick.trim().length >= 3 && (
             <span className="text-ink-faint">{t("calendar:create.quickAiHint")}</span>
@@ -483,216 +408,188 @@ export function EventCreate() {
           )}
         </div>
 
-        <div className="flex flex-col gap-4">
-          {/* Title */}
-          <div>
-            <FieldLabel icon={ICON.title}>{t("calendar:create.summary")}</FieldLabel>
-            <input
-              className={inputCls}
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-            />
-          </div>
+        {/* Title: the big, borderless headline field */}
+        <input
+          className="mb-3 w-full border-b border-hairline bg-transparent pb-2 text-[20px] font-semibold text-ink outline-none placeholder:text-ink-faint focus:border-accent/60"
+          placeholder={t("calendar:create.summary")}
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+        />
+
+        <div className="flex flex-col gap-3">
+          {/* When: date, start → end, duration; all-day switch below */}
+          <Row icon="clock" label={t("calendar:create.section.when")}>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                aria-label={t("calendar:create.date")}
+                className={`${inputCls} w-[9.25rem] shrink-0`}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+              {!allDay && (
+                <>
+                  <input
+                    type="time"
+                    aria-label={t("calendar:create.start")}
+                    className={`${inputCls} w-[7.5rem] shrink-0`}
+                    value={time}
+                    onChange={(e) => changeStart(e.target.value)}
+                  />
+                  <span className="text-ink-faint">→</span>
+                  <input
+                    type="time"
+                    aria-label={t("calendar:create.end")}
+                    className={`${inputCls} w-[7.5rem] shrink-0`}
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                  />
+                </>
+              )}
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-[12.5px] text-ink-muted">
+              <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+                <Toggle checked={allDay} onChange={setAllDay} label={t("calendar:allDay")} />
+                {t("calendar:allDay")}
+              </label>
+              {!allDay && (
+                <span className="text-ink-faint tabular-nums">
+                  {formatDuration(endsFromInputs(startMs) - startMs)}
+                </span>
+              )}
+            </div>
+          </Row>
 
           {/* Calendar: pick the target account+calendar (create); read-only on
               edit - moving an event between calendars isn't supported. */}
           {editingId == null && calendarOptionCount > 1 && (
-            <div>
-              <FieldLabel icon={ICON.date}>
-                {t("calendar:create.calendar")}
+            <Row icon="calendar" label={t("calendar:create.calendar")}>
+              <div className="relative">
                 <span
-                  className="size-2 rounded-full"
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-2.5 -translate-y-1/2 rounded-full"
                   style={{
                     background: normalizeHex(selectedCalendar?.color) ?? "var(--accent)",
                   }}
                 />
-              </FieldLabel>
-              <select
-                className={inputCls}
-                value={selection ?? ""}
-                onChange={(e) => setCalSelection(e.target.value)}
-              >
-                {(accounts ?? []).map((a) => {
-                  const cals = writable.filter((c) => c.accountId === a.id);
-                  return (
-                    <optgroup key={a.id} label={a.email}>
-                      {cals.length === 0 ? (
-                        <option value={`acct:${a.id}`}>
-                          {t("calendar:create.localOnly")}
-                        </option>
-                      ) : (
-                        cals.map((c) => (
-                          <option key={c.id} value={`cal:${c.id}`}>
-                            {c.displayName ?? c.url}
-                          </option>
-                        ))
-                      )}
-                    </optgroup>
-                  );
-                })}
-              </select>
-            </div>
+                <select
+                  aria-label={t("calendar:create.calendar")}
+                  className={`${inputCls} w-full cursor-pointer pl-7`}
+                  value={selection ?? ""}
+                  onChange={(e) => setCalSelection(e.target.value)}
+                >
+                  {(accounts ?? []).map((a) => {
+                    const cals = writable.filter((c) => c.accountId === a.id);
+                    return (
+                      <optgroup key={a.id} label={a.email}>
+                        {cals.length === 0 ? (
+                          <option value={`acct:${a.id}`}>{t("calendar:create.localOnly")}</option>
+                        ) : (
+                          cals.map((c) => (
+                            <option key={c.id} value={`cal:${c.id}`}>
+                              {c.displayName ?? c.url}
+                            </option>
+                          ))
+                        )}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </div>
+            </Row>
           )}
           {editingId != null && editCalendar && (
-            <div className="flex items-center gap-1.5 text-[12px] text-ink-faint">
-              <span
-                className="size-2 shrink-0 rounded-full"
-                style={{ background: normalizeHex(editCalendar.color) ?? "var(--accent)" }}
-              />
-              <span className="truncate">
-                {editCalendar.displayName ?? editCalendar.url}
-                {" · "}
-                {accounts?.find((a) => a.id === accountId)?.email ?? ""}
-              </span>
-            </div>
+            <Row icon="calendar" label={t("calendar:create.calendar")}>
+              <div className="flex h-8 items-center gap-2 text-[13px] text-ink-muted">
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ background: normalizeHex(editCalendar.color) ?? "var(--accent)" }}
+                />
+                <span className="truncate">
+                  {editCalendar.displayName ?? editCalendar.url}
+                  <span className="text-ink-faint">
+                    {" · "}
+                    {accounts?.find((a) => a.id === accountId)?.email ?? ""}
+                  </span>
+                </span>
+              </div>
+            </Row>
           )}
 
-          {/* WHEN */}
-          <div>
-            <SectionLabel>{t("calendar:create.section.when")}</SectionLabel>
-            <div className="flex items-end gap-2">
-              <div className="w-40">
-                <FieldLabel icon={ICON.date}>{t("calendar:create.date")}</FieldLabel>
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
-              </div>
-              {!allDay && (
-                <>
-                  <div className="w-[6.5rem]">
-                    <FieldLabel icon={ICON.time}>{t("calendar:create.start")}</FieldLabel>
-                    <input
-                      type="time"
-                      className={inputCls}
-                      value={time}
-                      onChange={(e) => changeStart(e.target.value)}
-                    />
-                  </div>
-                  <div className="w-[6.5rem]">
-                    <FieldLabel icon={ICON.duration}>{t("calendar:create.end")}</FieldLabel>
-                    <input
-                      type="time"
-                      className={inputCls}
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                    />
-                  </div>
-                  <span className="pb-2 text-[11.5px] whitespace-nowrap text-ink-faint">
-                    {formatDuration(
-                      endsFromInputs(fromInputs(date, time)) - fromInputs(date, time),
-                    )}
-                  </span>
-                </>
-              )}
-              <label className="ml-auto flex items-center gap-1.5 pb-2 text-[12px] text-ink-muted select-none">
-                <input
-                  type="checkbox"
-                  checked={allDay}
-                  onChange={(e) => setAllDay(e.target.checked)}
-                />
-                {t("calendar:allDay")}
-              </label>
-            </div>
-          </div>
-
-          {/* WHO */}
-          <div>
-            <SectionLabel>{t("calendar:create.section.who")}</SectionLabel>
-            <FieldLabel icon={ICON.users}>{t("calendar:create.attendees")}</FieldLabel>
+          <Row icon="users" label={t("calendar:create.attendees")}>
             <input
-              className={inputCls}
+              aria-label={t("calendar:create.attendees")}
+              className={`${inputCls} w-full`}
               placeholder={t("calendar:create.attendeesPlaceholder")}
               value={attendeesRaw}
               onChange={(e) => setAttendeesRaw(e.target.value)}
             />
-          </div>
+          </Row>
 
-          {/* WHERE */}
-          <div>
-            <SectionLabel>{t("calendar:create.section.where")}</SectionLabel>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <div className="mb-1 flex h-6 items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
-                  {ICON.location}
-                  {t("calendar:create.location")}
-                </div>
-                <input
-                  className={inputCls}
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                />
-              </div>
-              <div className="flex-1">
-                <div className="mb-1 flex h-6 items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
-                    {ICON.link}
-                    {t("calendar:create.joinUrl")}
-                  </span>
-                  {isMicrosoftAccount && (
-                    <button
-                      type="button"
-                      disabled={teamsPending}
-                      onClick={() => void createTeamsMeeting()}
-                      title={t("calendar:create.teamsTip")}
-                      className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/[0.06] px-2 py-0.5 text-[11px] font-medium text-accent transition hover:bg-accent/10 disabled:opacity-50"
-                    >
-                      {teamsPending ? (
-                        <span className="co-spinner size-2.5 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-                      ) : (
-                        ICON.video
-                      )}
-                      {t("calendar:create.teamsMeeting")}
-                    </button>
-                  )}
-                </div>
-                <input
-                  className={inputCls}
-                  placeholder="https://meet…"
-                  value={joinUrl}
-                  onChange={(e) => setJoinUrl(e.target.value)}
-                />
-              </div>
+          <Row icon="pin" label={t("calendar:create.location")}>
+            <input
+              aria-label={t("calendar:create.location")}
+              className={`${inputCls} w-full`}
+              placeholder={t("calendar:create.location")}
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </Row>
+
+          <Row icon="video" label={t("calendar:create.joinUrl")}>
+            <div className="flex items-center gap-2">
+              <input
+                aria-label={t("calendar:create.joinUrl")}
+                className={`${inputCls} w-full`}
+                placeholder={t("calendar:create.joinUrl")}
+                value={joinUrl}
+                onChange={(e) => setJoinUrl(e.target.value)}
+              />
+              {isMicrosoftAccount && (
+                <Button
+                  size="sm"
+                  icon="video"
+                  busy={teamsPending}
+                  title={t("calendar:create.teamsTip")}
+                  onClick={() => void createTeamsMeeting()}
+                >
+                  {t("calendar:create.teamsMeeting")}
+                </Button>
+              )}
             </div>
-          </div>
+          </Row>
 
-          {/* NOTES */}
-          <div>
-            <SectionLabel>{t("calendar:create.section.notes")}</SectionLabel>
-            <FieldLabel icon={ICON.notes}>{t("calendar:create.description")}</FieldLabel>
+          <Row icon="notes" label={t("calendar:create.description")}>
             <textarea
-              className={`${inputCls} min-h-16 resize-y`}
+              aria-label={t("calendar:create.description")}
+              className={`${inputCls} block h-auto min-h-20 w-full resize-y py-2`}
+              placeholder={t("calendar:create.description")}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
-          </div>
+          </Row>
+        </div>
         </div>
 
-        <div className="-mx-4 mt-4 border-b border-hairline" />
-        <footer className="mt-3 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            className="rounded-md px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 hover:text-ink"
-            onClick={close}
-          >
+        <footer className="flex items-center gap-2 border-t border-hairline px-5 py-3">
+          <span className="text-[11.5px] text-ink-faint">{t("calendar:create.saveHint")}</span>
+          <div className="grow" />
+          <Button variant="ghost" onClick={close}>
             {t("common:action.cancel")}
-          </button>
-          <button
-            type="button"
-            disabled={!summary.trim() || accountId == null || saving}
-            className="rounded-md bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!summary.trim() || accountId == null}
+            busy={saving}
             onClick={save}
           >
             {editingId != null
-              ? parseAttendees(attendeesRaw).length > 0
+              ? invites
                 ? t("calendar:edit.saveInvite")
                 : t("calendar:edit.save")
-              : parseAttendees(attendeesRaw).length > 0
+              : invites
                 ? t("calendar:create.saveInvite")
                 : t("calendar:create.save")}
-          </button>
+          </Button>
         </footer>
       </div>
     </div>

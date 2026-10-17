@@ -6,7 +6,7 @@ import type { CalendarEvent } from "../ipc/types";
 
 export const DAY_MS = 86_400_000;
 /** Pixel height of one hour in the week grid. */
-export const HOUR_PX = 48;
+export const HOUR_PX = 56;
 /** Width of the hour-label gutter left of the day columns. */
 export const GUTTER_PX = 56;
 
@@ -49,6 +49,13 @@ export function startOfMonth(ms: number): number {
   const d = new Date(ms);
   d.setDate(1);
   d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** `ms` moved by whole calendar days (DST-safe, unlike adding DAY_MS). */
+export function addDays(ms: number, n: number): number {
+  const d = new Date(ms);
+  d.setDate(d.getDate() + n);
   return d.getTime();
 }
 
@@ -176,5 +183,70 @@ export function layoutDay(events: CalendarEvent[], dayStart: number): Positioned
       lane,
       lanes,
     };
+  });
+}
+
+// ---------------------------------------------------------------- spans
+
+export interface Span {
+  ev: CalendarEvent;
+  /** first and last visible day column (inclusive, 0-based) */
+  startCol: number;
+  endCol: number;
+  /** stacking row, 0 = top */
+  row: number;
+  /** event starts before / ends after the visible range */
+  clippedStart: boolean;
+  clippedEnd: boolean;
+}
+
+/**
+ * Lay events out as horizontal bars over `days` (consecutive day starts), one
+ * bar per event spanning every day it touches - the all-day row and month
+ * week rows. Longer bars go first so they claim the top rows; each bar takes
+ * the lowest row free across its whole span.
+ */
+export function packSpans(events: readonly CalendarEvent[], days: readonly number[]): Span[] {
+  if (days.length === 0) return [];
+  const rangeStart = days[0];
+  const rangeEnd = days[days.length - 1] + DAY_MS;
+  const colOf = (ms: number) => {
+    // Day boundaries can be 23/25h apart across DST, so search, don't divide.
+    let col = 0;
+    while (col + 1 < days.length && days[col + 1] <= ms) col++;
+    return col;
+  };
+  const items = events
+    .map((ev) => {
+      const end = Math.max(ev.endsAt ?? ev.startsAt + 30 * 60_000, ev.startsAt + 1);
+      return { ev, start: ev.startsAt, end };
+    })
+    .filter(({ start, end }) => start < rangeEnd && end > rangeStart)
+    .map(({ ev, start, end }) => ({
+      ev,
+      startCol: colOf(Math.max(start, rangeStart)),
+      // `end` is exclusive: an all-day event ending at midnight stays in the prior day.
+      endCol: colOf(Math.min(end, rangeEnd) - 1),
+      clippedStart: start < rangeStart,
+      clippedEnd: end > rangeEnd,
+    }))
+    .sort(
+      (a, b) =>
+        b.endCol - b.startCol - (a.endCol - a.startCol) ||
+        a.startCol - b.startCol ||
+        a.ev.startsAt - b.ev.startsAt,
+    );
+
+  const rows: boolean[][] = [];
+  return items.map((it) => {
+    let row = 0;
+    for (; ; row++) {
+      rows[row] ??= [];
+      let free = true;
+      for (let c = it.startCol; c <= it.endCol; c++) if (rows[row][c]) free = false;
+      if (free) break;
+    }
+    for (let c = it.startCol; c <= it.endCol; c++) rows[row][c] = true;
+    return { ...it, row };
   });
 }

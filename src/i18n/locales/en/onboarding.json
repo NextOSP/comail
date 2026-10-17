@@ -1,14 +1,4 @@
 {
-  "intro": {
-    "skipHint": "Press any key to skip",
-    "lines": [
-      "Email hasn't changed in twenty years.",
-      "Today, it does.",
-      "Fast. Calm. Simply beautiful."
-    ],
-    "title": "Comail",
-    "continue": "Begin"
-  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",
@@ -54,5 +44,324 @@
   "connectionFailed": "Connection failed",
   "accountConnected": "{{email}} connected. Syncing…",
   "oauthConnected": "Account connected. Syncing…",
-  "oauthNotConfigured": "Add your OAuth client ID first. Opening Settings, see the step-by-step guide under OAuth apps."
+  "oauthNotConfigured": "Add your OAuth client ID first. Opening Settings, see the step-by-step guide under OAuth apps.",
+  "flow": {
+    "stepOf": "Step {{n}} of {{total}}",
+    "back": "Back",
+    "continue": "Continue",
+    "skip": "Skip",
+    "welcome": {
+      "title": "Welcome to Comail.",
+      "body": "A fast, keyboard-first inbox. Connect an account, pick a look, learn three keys, and you're in. About a minute.",
+      "cta": "Get started"
+    },
+    "connect": {
+      "title": "Bring your inbox.",
+      "body": "Comail talks to your provider directly. Your password and mail never leave this computer.",
+      "imap": "Other provider (IMAP)",
+      "waiting": "Waiting for your browser…",
+      "waitingHint": "Finish signing in, then come back here.",
+      "cancel": "Cancel",
+      "connected": "Connected as {{email}}",
+      "addAnother": "Add another account"
+    },
+    "personalize": {
+      "title": "Pick a look.",
+      "body": "You can change this any time from the command bar ({{mod}}K) or Settings.",
+      "theme": "Theme",
+      "accent": "Accent",
+      "themes": {
+        "snow": "Light",
+        "carbon": "Dark",
+        "system": "System"
+      }
+    },
+    "shortcuts": {
+      "title": "Learn the keys.",
+      "body": "Comail is built to be driven from the keyboard. Try each one, the inbox on the right is a sandbox and nothing touches your mail.",
+      "press": "Press",
+      "groups": {
+        "navigate": "Move around",
+        "triage": "Triage",
+        "act": "Act",
+        "ai": "AI"
+      },
+      "down": "Move to the next conversation",
+      "up": "Move to the previous conversation",
+      "search": "Search everything",
+      "done": "Mark the conversation done",
+      "star": "Star it",
+      "snooze": "Snooze it until later",
+      "reply": "Reply",
+      "palette": "Open the command bar, it can do anything",
+      "downShort": "Next",
+      "upShort": "Previous",
+      "searchShort": "Search",
+      "doneShort": "Mark done",
+      "starShort": "Star",
+      "snoozeShort": "Snooze",
+      "replyShort": "Reply",
+      "paletteShort": "Command bar",
+      "allDone": "You've got the basics. Press ? anywhere in Comail to see every shortcut.",
+      "progress": "{{n}} of {{total}} tried",
+      "then": "then",
+      "summarize": "Summarize the conversation",
+      "summarizeShort": "Summarize",
+      "aiWrite": "Open a reply, then let AI write it",
+      "aiWriteShort": "Write with AI",
+      "proofread": "Proofread your draft",
+      "proofreadShort": "Proofread",
+      "ask": "Open search, then ask AI anything about your mail",
+      "askShort": "Ask AI",
+      "back": "Back to the inbox",
+      "aiDone": "That's the AI toolkit. {{mod}}J works anywhere, it reads the context."
+    },
+    "sync": {
+      "title": "Getting your mail ready, {{name}}.",
+      "titleNoName": "Getting your mail ready.",
+      "connecting": "Connecting to your server…",
+      "fetching": "Fetching your inbox…",
+      "ready": "Your inbox is ready.",
+      "history": "Older mail keeps syncing in the background.",
+      "open": "Open inbox",
+      "openAnyway": "Open inbox now",
+      "ofTotal_one": "of {{total}} message",
+      "ofTotal_other": "of {{total}} messages"
+    },
+    "or": "or",
+    "ai": {
+      "title": "One key for AI: {{mod}}J.",
+      "body": "It reads where you are. In a conversation it summarizes, in a draft it writes, in search it answers. Try it on the sandbox."
+    }
+  },
+  "preview": {
+    "title": "Inbox",
+    "allAccounts": "All accounts",
+    "checkingMail": "Checking mail",
+    "tabs": [
+      {
+        "name": "Important",
+        "count": 6
+      },
+      {
+        "name": "GitHub",
+        "count": 3
+      },
+      {
+        "name": "News",
+        "count": 7
+      },
+      {
+        "name": "Other",
+        "count": 0
+      }
+    ],
+    "today": "Today",
+    "doneToast": "Marked done",
+    "undo": "Undo",
+    "replyText": "Thanks, looks good. I'll reveiw it tonight and send notes tomorow.",
+    "palettePlaceholder": "Type a command…",
+    "paletteItems": [
+      {
+        "title": "Mark done",
+        "section": "Triage",
+        "key": "E"
+      },
+      {
+        "title": "Snooze…",
+        "section": "Triage",
+        "key": "H"
+      },
+      {
+        "title": "Reply all",
+        "section": "Compose",
+        "key": "⇧R"
+      },
+      {
+        "title": "Go to Starred",
+        "section": "Navigate",
+        "key": "G S"
+      }
+    ],
+    "labels": {
+      "work": "Work",
+      "followUp": "Follow up",
+      "personal": "Personal"
+    },
+    "rows": [
+      {
+        "from": "Ana Moreau",
+        "labels": [
+          "personal"
+        ],
+        "subject": "Q3 roadmap review - final deck",
+        "snippet": "Attached is the final deck for tomorrow's review, slides 4-6 changed",
+        "time": "09:41",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Tom Okafor",
+        "count": 4,
+        "subject": "Re: Sync engine - IDLE reconnect on flaky wifi",
+        "snippet": "Sketch looks good. One wrinkle: the backoff resets on every",
+        "time": "09:12",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Northbeam Finance",
+        "labels": [
+          "work",
+          "followUp"
+        ],
+        "subject": "Expense report needs a receipt",
+        "snippet": "Your report EXP-1187 is missing one receipt for the team dinner",
+        "time": "08:30",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Priya Raman",
+        "labels": [
+          "work"
+        ],
+        "subject": "Offer letter - senior backend engineer",
+        "snippet": "Rina accepted verbally this morning, sending the paperwork",
+        "time": "SAT",
+        "starred": true,
+        "group": "earlier"
+      },
+      {
+        "from": "Jonas Wehrli",
+        "count": 3,
+        "subject": "Re: Dinner Thursday?",
+        "snippet": "He's in. I forwarded him your question and he says",
+        "time": "SAT",
+        "group": "earlier"
+      },
+      {
+        "from": "Sofia Lindqvist",
+        "count": 2,
+        "subject": "Re: Lisbon in August - flat swap?",
+        "snippet": "Two weeks works for us, the place has a balcony and",
+        "time": "SAT",
+        "group": "earlier"
+      },
+      {
+        "from": "GitHub",
+        "subject": "[comail] PR #68 approved",
+        "snippet": "Approved with no changes requested. Ready to merge",
+        "time": "FRI",
+        "group": "earlier"
+      },
+      {
+        "from": "Léa Fontaine",
+        "subject": "Atelier photos + September dates",
+        "snippet": "Photos from the open day attached! The chairs came out",
+        "time": "FRI",
+        "group": "earlier"
+      },
+      {
+        "from": "Marcus Bell",
+        "count": 2,
+        "subject": "Pen test report - action items",
+        "snippet": "H-1 and H-3 are patched in staging, H-2 needs a decision",
+        "time": "THU",
+        "group": "earlier"
+      }
+    ],
+    "earlier": "This week",
+    "snoozeToast": "Snoozed until tomorrow",
+    "searchPlaceholder": "Search mail",
+    "searchQuery": "from:ana",
+    "thread": {
+      "back": "Back",
+      "position": "1 of 9",
+      "meta": "2 messages · {{from}} · {{time}}",
+      "to": "to you",
+      "date": "Today, 09:41",
+      "body": "Hi! Attached is the final deck for tomorrow's review. Slides 4-6 changed after Friday's sync, the rest is as you saw it. Could you take a look before 10?",
+      "draft": "Draft",
+      "draftTo": "to {{from}}",
+      "toLabel": "To",
+      "send": "Send"
+    },
+    "searchTitle": "Search",
+    "search": {
+      "placeholder": "Search mail…",
+      "query": "from:ana",
+      "chip": "From: ana",
+      "hint": "Emails from ana, newest first.",
+      "modeSearch": "Search",
+      "modeAsk": "Ask AI",
+      "askQuery": "When is the roadmap review?",
+      "askAnswer": "Tomorrow at 10:00. Ana sent the final deck this morning and asked you to look at slides 4-6 before then.",
+      "sources": "Sources",
+      "results": [
+        {
+          "from": "Ana Moreau",
+          "labels": [
+            "personal"
+          ],
+          "subject": "Q3 roadmap review - final deck",
+          "snippet": "Attached is the final deck for tomorrow's review",
+          "time": "09:41",
+          "unread": true,
+          "group": "today"
+        },
+        {
+          "from": "Ana Moreau",
+          "subject": "Board update draft - June",
+          "snippet": "Draft of the June board update is here, comments welcome",
+          "time": "THU",
+          "group": "today"
+        },
+        {
+          "from": "Ana Moreau",
+          "subject": "Re: Conference travel budget",
+          "snippet": "Approved, book the flights before prices jump",
+          "time": "TUE",
+          "group": "today"
+        }
+      ]
+    },
+    "summary": {
+      "title": "Summary",
+      "points": [
+        "Ana sent the final Q3 roadmap deck for tomorrow's review.",
+        "Slides 4-6 changed after Friday's sync; the rest is unchanged.",
+        "She wants your read before 10:00."
+      ],
+      "nextAction": "Next action",
+      "next": "Review slides 4-6 and reply before 10:00."
+    },
+    "aiWritten": "Written with AI",
+    "aiText": "Thanks for sending this over. I'll go through it tonight and get back to you with notes first thing tomorrow.",
+    "proofread": {
+      "badge": "Proofread · 2 fixes",
+      "parts": [
+        [
+          "Thanks, looks good. I'll ",
+          false
+        ],
+        [
+          "review",
+          true
+        ],
+        [
+          " it tonight and send notes ",
+          false
+        ],
+        [
+          "tomorrow",
+          true
+        ],
+        [
+          ".",
+          false
+        ]
+      ]
+    }
+  }
 }

@@ -74,7 +74,9 @@ pub fn enqueue_at(conn: &Connection, message_id: i64, created_at: i64) -> Result
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutedTab {
     /// AI classification is still in flight; the caller should wait and re-check.
-    Pending,
+    /// `fallback` is the Important/Other bucket the list shows the thread under
+    /// meanwhile, used if routing never settles.
+    Pending { fallback: String },
     /// Resolved route key: "important" | "other" | "split:<id>" | "label:<id>".
     Resolved(String),
 }
@@ -94,25 +96,35 @@ pub fn resolve_tab(conn: &Connection, thread_id: i64) -> Result<Option<RoutedTab
         return Ok(None);
     };
     Ok(Some(match routed.as_deref() {
-        Some("pending") => RoutedTab::Pending,
+        Some("pending") => RoutedTab::Pending {
+            fallback: heuristic_bucket(conn, thread_id)?.to_owned(),
+        },
         Some(key) => RoutedTab::Resolved(key.to_owned()),
-        // Unrouted (legacy threads): a thread whose incoming mail is entirely
-        // automated shows under Other, otherwise Important - the same split the
-        // thread list applies to a null `routed_tab`.
-        None => {
-            let all_automated: bool = conn.query_row(
-                "SELECT EXISTS (SELECT 1 FROM messages
-                     WHERE thread_id = ?1 AND is_draft = 0 AND is_outgoing = 0
-                       AND is_automated = 1)
-                 AND NOT EXISTS (SELECT 1 FROM messages
-                     WHERE thread_id = ?1 AND is_draft = 0 AND is_outgoing = 0
-                       AND is_automated = 0)",
-                params![thread_id],
-                |r| r.get(0),
-            )?;
-            RoutedTab::Resolved(if all_automated { "other" } else { "important" }.to_owned())
-        }
+        // Unrouted (legacy threads): the same Important/Other split the thread
+        // list applies to a null `routed_tab`.
+        None => RoutedTab::Resolved(heuristic_bucket(conn, thread_id)?.to_owned()),
     }))
+}
+
+/// Important/Other for a thread with no explicit route: Other when its newest
+/// incoming message is automated, else Important. This is exactly the
+/// `HUMAN_BUCKET`/`AUTO_BUCKET` test the thread list uses, so a notification
+/// is always scoped to the tab the thread is actually shown in.
+fn heuristic_bucket(conn: &Connection, thread_id: i64) -> Result<&'static str> {
+    let newest_automated: Option<bool> = conn
+        .query_row(
+            "SELECT is_automated FROM messages
+             WHERE thread_id = ?1 AND is_draft = 0 AND is_outgoing = 0
+             ORDER BY date DESC, id DESC LIMIT 1",
+            params![thread_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(if newest_automated == Some(true) {
+        "other"
+    } else {
+        "important"
+    })
 }
 
 /// Push a pending item's next dispatch out without consuming a delivery attempt.
@@ -279,7 +291,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             resolve_tab(&c, human_thread).unwrap(),
-            Some(RoutedTab::Pending)
+            Some(RoutedTab::Pending {
+                fallback: "important".to_owned()
+            })
         );
 
         // Null routed_tab falls back to Important for human mail...

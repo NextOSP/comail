@@ -19,6 +19,21 @@
   "ccBcc": "Cc / Bcc",
   "subject": "Subject",
   "aiBadge": "AI",
+  "ai": {
+    "write": "Write with AI",
+    "edit": "Edit with AI",
+    "voiceTip": "Draft in your learned writing voice",
+    "accept": "Accept",
+    "retry": "Retry",
+    "shorten": "Shorten",
+    "lengthen": "Lengthen",
+    "improve": "Improve writing",
+    "generate": "Generate",
+    "hint": "↵ generate · ⇧↵ new line · Esc close",
+    "addToCalendar": "Add to calendar",
+    "addToCalendarTip": "Create a calendar event from this draft",
+    "dismiss": "Dismiss"
+  },
   "aiPlaceholder": "e.g. accept the invite, propose Tuesday",
   "aiVoice": "In my voice",
   "drafting": "Drafting…",
@@ -63,7 +78,8 @@
   "quickRepliesLoading": "Generating suggested replies…",
   "signature": {
     "label": "Signature",
-    "none": "No signature"
+    "none": "No signature",
+    "trigger": "Signature: {{name}}"
   },
   "fmt": {
     "bold": "Bold",

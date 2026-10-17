@@ -1695,10 +1695,7 @@ async fn store_headers(
                     }
                 }
 
-                let date_ms = parsed
-                    .date_ms
-                    .or(fh.internal_date_ms)
-                    .unwrap_or_else(now_ms);
+                let date_ms = sane_date_ms(parsed.date_ms, fh.internal_date_ms, now_ms());
 
                 let from_email = parsed
                     .from
@@ -1804,10 +1801,11 @@ async fn store_headers(
             // Resolve each touched thread to a single tab (rules + heuristic, or
             // mark it 'pending' for the async AI pass). Runs once per thread with
             // all its messages in place. See crate::route.
-            if auto_labels {
+            {
                 let splits = repo::splits::list(&tx)?;
+                let fallback = crate::route::Fallback::from_settings(auto_labels, ai_categorize);
                 for &tid in &thread_ids {
-                    crate::route::route_thread_deterministic(&tx, &splits, ai_categorize, tid)?;
+                    crate::route::route_thread_deterministic(&tx, &splits, fallback, tid)?;
                 }
             }
             tx.commit()?;
@@ -3127,4 +3125,36 @@ async fn persist_body(
         });
     }
     Ok(())
+}
+
+/// The sender-controlled Date header, unless it claims to be more than a day
+/// after the server received the message (or after now, without one): a future-dated
+/// message would otherwise sit on top of every list and decide its thread's
+/// "newest message" for routing indefinitely. Falls back to INTERNALDATE.
+fn sane_date_ms(header: Option<i64>, internal: Option<i64>, now: i64) -> i64 {
+    const DAY_MS: i64 = 86_400_000;
+    let ceiling = internal.unwrap_or(now) + DAY_MS;
+    match header {
+        Some(d) if d <= ceiling => d,
+        _ => internal.unwrap_or(now),
+    }
+}
+
+#[cfg(test)]
+mod date_tests {
+    use super::sane_date_ms;
+
+    #[test]
+    fn future_date_headers_fall_back_to_internaldate() {
+        let day = 86_400_000;
+        let recv = 10 * day;
+        assert_eq!(sane_date_ms(Some(recv - 5), Some(recv), 0), recv - 5);
+        assert_eq!(
+            sane_date_ms(Some(recv + day / 2), Some(recv), 0),
+            recv + day / 2
+        );
+        assert_eq!(sane_date_ms(Some(recv + 400 * day), Some(recv), 0), recv);
+        assert_eq!(sane_date_ms(None, Some(recv), 0), recv);
+        assert_eq!(sane_date_ms(Some(99 * day), None, recv), recv);
+    }
 }

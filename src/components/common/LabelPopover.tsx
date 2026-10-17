@@ -6,10 +6,10 @@ import { commandScore } from "../../keyboard/commandScore";
 import { findCachedSummary, performThreadAction } from "../../queries/actions";
 import { queryClient } from "../../queries/client";
 import { useLabels } from "../../queries/hooks";
+import { nextLabelColor } from "../../lib/labelColors";
 import { useUi } from "../../stores/ui";
-
-/** Palette new labels cycle through, so fresh labels look distinct. */
-const SWATCHES = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777"];
+import { Icon } from "../ui/Icon";
+import { Modal } from "../ui/Modal";
 
 /** Global label popover, opened by L (targets stored in the ui store). */
 export function LabelPopover() {
@@ -75,7 +75,7 @@ export function LabelPopover() {
   const create = async () => {
     const name = query.trim();
     if (!name) return;
-    const color = SWATCHES[(labels?.length ?? 0) % SWATCHES.length];
+    const color = nextLabelColor(labels?.length ?? 0);
     try {
       const label = await call("save_label", {
         label: { id: null, name, color, position: labels?.length ?? 0 },
@@ -97,81 +97,75 @@ export function LabelPopover() {
   };
 
   return (
-    <div className="co-overlay flex items-start justify-center pt-[18vh]" onMouseDown={close}>
-      <div
-        className="co-pop-in w-[380px] rounded-xl border border-hairline bg-bg1 p-3"
-        style={{ boxShadow: "var(--elev-2)" }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="px-1 pb-2 text-[12px] font-semibold tracking-wide text-ink-faint uppercase">
-          {t("common:label.title")}
-        </div>
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setCursor(0);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setCursor((c) => Math.min(rowCount - 1, c + 1));
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setCursor((c) => Math.max(0, c - 1));
-            } else if (e.key === "Enter") {
-              e.preventDefault();
-              activate(sel);
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              e.stopPropagation();
-              close();
-            }
-          }}
-          placeholder={t("common:label.placeholder")}
-          className="w-full rounded-lg border border-hairline bg-bg0 px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-accent/60"
-        />
-        <div className="mt-1.5 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
-          {rowCount === 0 && (
-            <p className="px-3 py-4 text-center text-[12.5px] text-ink-faint">
-              {labels ? t("common:label.none") : t("common:move.loading")}
-            </p>
-          )}
-          {filtered.map((l, i) => (
-            <button
-              key={l.id}
-              className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[13.5px] text-ink ${
-                i === sel ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
-              }`}
-              onMouseMove={() => setCursor(i)}
-              onClick={() => toggle(l)}
-            >
-              <span className="size-2.5 shrink-0 rounded-full" style={{ background: l.color }} />
-              <span className="min-w-0 flex-1 truncate">{l.name}</span>
-              <span
-                className={`shrink-0 text-[11px] ${isApplied(l.id) ? "text-accent" : "text-transparent"}`}
-              >
-                ✓
-              </span>
-            </button>
-          ))}
-          {canCreate && (
-            <button
-              className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[13.5px] text-ink ${
-                sel === filtered.length ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
-              }`}
-              onMouseMove={() => setCursor(filtered.length)}
-              onClick={() => void create()}
-            >
-              <span className="text-ink-faint">＋</span>
-              <span className="min-w-0 flex-1 truncate">
-                {t("common:label.create", { name: query.trim() })}
-              </span>
-            </button>
-          )}
-        </div>
+    <Modal onClose={close} width={380} className="p-3">
+      <div className="px-1 pb-2 text-sm font-semibold tracking-wide text-ink-faint uppercase">
+        {t("common:label.title")}
       </div>
-    </div>
+      <input
+        autoFocus
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setCursor(0);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setCursor((c) => Math.min(rowCount - 1, c + 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setCursor((c) => Math.max(0, c - 1));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            activate(sel);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+          }
+        }}
+        placeholder={t("common:label.placeholder")}
+        className="w-full rounded-control border border-hairline bg-bg0 px-3 py-2 text-md text-ink outline-none placeholder:text-ink-faint focus:border-accent/60"
+      />
+      <div className="mt-1.5 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+        {rowCount === 0 && (
+          <p className="px-3 py-4 text-center text-sm text-ink-faint">
+            {labels ? t("common:label.none") : t("common:move.loading")}
+          </p>
+        )}
+        {filtered.map((l, i) => (
+          <button
+            key={l.id}
+            className={`flex items-center gap-2.5 rounded-control px-3 py-1.5 text-left text-base text-ink ${
+              i === sel ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
+            }`}
+            onMouseMove={() => setCursor(i)}
+            onClick={() => toggle(l)}
+          >
+            <span className="size-2.5 shrink-0 rounded-full" style={{ background: l.color }} />
+            <span className="min-w-0 flex-1 truncate">{l.name}</span>
+            <Icon
+              name="check"
+              size={12}
+              className={`shrink-0 ${isApplied(l.id) ? "text-accent" : "text-transparent"}`}
+            />
+          </button>
+        ))}
+        {canCreate && (
+          <button
+            className={`flex items-center gap-2.5 rounded-control px-3 py-1.5 text-left text-base text-ink ${
+              sel === filtered.length ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
+            }`}
+            onMouseMove={() => setCursor(filtered.length)}
+            onClick={() => void create()}
+          >
+            <Icon name="plus" size={12} className="text-ink-faint" />
+            <span className="min-w-0 flex-1 truncate">
+              {t("common:label.create", { name: query.trim() })}
+            </span>
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }

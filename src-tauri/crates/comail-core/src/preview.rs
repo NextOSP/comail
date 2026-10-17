@@ -290,6 +290,16 @@ fn unsupported_parse(detail: &str) -> AttachmentPreview {
     }
 }
 
+/// Resolve an XML entity reference (`&amp;`, `&#233;`, ...) to its text.
+/// quick-xml reports these as `GeneralRef` events separate from the text
+/// around them. Unknown named entities resolve to None.
+pub(crate) fn xml_entity(r: &quick_xml::events::BytesRef) -> Option<String> {
+    let name = r.decode().ok()?;
+    quick_xml::escape::unescape(&format!("&{name};"))
+        .ok()
+        .map(|t| t.into_owned())
+}
+
 fn read_zip_entry(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
     let mut file = zip.by_name(name).ok()?;
@@ -369,7 +379,12 @@ fn docx_preview(bytes: &[u8]) -> AttachmentPreview {
                 _ => {}
             },
             Ok(quick_xml::events::Event::Text(t)) => {
-                if let Ok(txt) = t.unescape() {
+                if let Ok(txt) = t.decode() {
+                    para.push_str(&txt);
+                }
+            }
+            Ok(quick_xml::events::Event::GeneralRef(r)) => {
+                if let Some(txt) = xml_entity(&r) {
                     para.push_str(&txt);
                 }
             }
@@ -459,7 +474,7 @@ fn pptx_preview(bytes: &[u8]) -> AttachmentPreview {
     };
     // Slide entries aren't ordered in the archive; collect and sort by number.
     let mut slide_names: Vec<(u32, String)> = (0..zip.len())
-        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| Some(zip.by_index(i).ok()?.name().ok()?.into_owned()))
         .filter_map(|name| {
             let n: u32 = name
                 .strip_prefix("ppt/slides/slide")?
@@ -486,7 +501,12 @@ fn pptx_preview(bytes: &[u8]) -> AttachmentPreview {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(quick_xml::events::Event::Text(t)) => {
-                    if let Ok(txt) = t.unescape() {
+                    if let Ok(txt) = t.decode() {
+                        line.push_str(&txt);
+                    }
+                }
+                Ok(quick_xml::events::Event::GeneralRef(r)) => {
+                    if let Some(txt) = xml_entity(&r) {
                         line.push_str(&txt);
                     }
                 }

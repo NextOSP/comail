@@ -1,70 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
-import { useAccounts, useAsk, useContactSuggestions, useLabels, useSearch } from "../../queries/hooks";
+import {
+  useAccounts,
+  useAsk,
+  useContactSuggestions,
+  useLabels,
+  useSearch,
+  useSearchExplain,
+  useSettings,
+} from "../../queries/hooks";
 import { useModHeld } from "../../lib/useModHeld";
 import { useUi } from "../../stores/ui";
 import { ThreadList } from "../inbox/ThreadList";
 import { Markdown } from "../common/Markdown";
+import { AiBadge, AiSurface } from "../ui/Ai";
+import { SectionLabel, Segmented } from "../ui/Field";
+import { Spinner } from "../ui/Spinner";
 import { SourcePreview } from "./SourcePreview";
+import {
+  OPERATOR_META,
+  applySuggestion,
+  chipLabel,
+  currentToken as tokenAt,
+  describe,
+  replaceSpan,
+  suggestionsFor,
+  tierHeaders,
+  type Suggestion,
+} from "./searchSyntax";
 
-// Every operator the search parser understands, each with a one-line
-// description that drives the as-you-type suggestion list and hover hints.
-// Operators ending in `:` take a freeform value, so they complete to the bare
-// prefix; the rest are self-contained. `starter` surfaces the operator in the
-// "Try" row shown when there's nothing to complete.
-type OperatorMeta = { op: string; desc: string; starter?: boolean };
-const OPERATOR_META: OperatorMeta[] = [
-  { op: "from:", desc: "Sender name or email", starter: true },
-  { op: "to:", desc: "Recipient name or email" },
-  { op: "subject:", desc: 'Words or "phrase" in the subject', starter: true },
-  { op: "body:", desc: 'Words or "phrase" in the body' },
-  { op: "in:inbox", desc: "Only the inbox", starter: true },
-  { op: "in:sent", desc: "Only sent mail" },
-  { op: "in:drafts", desc: "Only drafts" },
-  { op: "in:archive", desc: "Only archived mail" },
-  { op: "in:trash", desc: "Only trash" },
-  { op: "in:spam", desc: "Only spam" },
-  { op: "is:unread", desc: "Unread only", starter: true },
-  { op: "is:starred", desc: "Starred only" },
-  { op: "has:attachment", desc: "Has an attachment", starter: true },
-  { op: "last:7days", desc: "Within the last 7 days", starter: true },
-  { op: "last:month", desc: "Within the last 30 days" },
-  { op: "after:", desc: "On or after a date, YYYY-MM-DD" },
-  { op: "before:", desc: "Before a date, YYYY-MM-DD" },
-  { op: "between:", desc: "Date range, YYYY-MM-DD:YYYY-MM-DD" },
-  { op: "sort:newest", desc: "Newest first (default)" },
-  { op: "sort:oldest", desc: "Oldest first" },
-  { op: "exclude:", desc: "Drop results with a word" },
+// Ready-made example queries for the "?" cheat-sheet. Each row is the query
+// plus the i18n key (common:search.help.*) of what it does; clicking one drops
+// it into the search box.
+const SEARCH_EXAMPLES: [string, string][] = [
+  ["from:alice in:inbox last:7d", "ex1"],
+  ["subject:invoice has:attachment", "ex2"],
+  ["from:me sort:oldest", "ex3"],
+  ["label:work is:unread", "ex4"],
+  ['between:2026-01-01:2026-03-31 "q1 report"', "ex5"],
+  ["report -draft", "ex6"],
 ];
-const OPERATORS = OPERATOR_META.filter((m) => m.starter);
-
-// Ready-made example queries for the "?" cheat-sheet, grouped by theme. Each
-// row is [query, what it does]; clicking one drops it into the search box.
-const SEARCH_EXAMPLES: { title: string; rows: [string, string][] }[] = [
-  {
-    title: "Combine operators",
-    rows: [
-      ["from:alice in:inbox last:7days", "recent inbox mail from Alice"],
-      ["subject:invoice has:attachment", "invoices with an attachment"],
-      ["in:sent sort:oldest", "your sent mail, oldest first"],
-      ["from:bob is:unread is:starred", "unread, starred mail from Bob"],
-      [
-        'between:2026-01-01:2026-03-31 subject:"q1 report"',
-        "a phrase within a date range",
-      ],
-    ],
-  },
-  {
-    title: "Phrases & case",
-    rows: [
-      ['subject:"quarterly report"', "match an exact phrase"],
-      ['subject:!"phrase"', "ignore case (the default)"],
-      ['subject:!!"Phrase"', "match case exactly"],
-      ['"kept together"', "quote any phrase, not just fields"],
-    ],
-  },
-];
+const STARTERS = OPERATOR_META.filter((m) => m.starter);
 
 // The most recent line of the model's reasoning, for the clipped one-line trace.
 function lastLine(text: string): string {
@@ -73,7 +50,7 @@ function lastLine(text: string): string {
 }
 
 export function SearchScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const storedQuery = useUi((s) => s.searchQuery);
   const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
@@ -148,6 +125,9 @@ export function SearchScreen() {
   }, [storedQuery]);
 
   const { data: results, isFetching } = useSearch(storedQuery, accountFilter);
+  // What the query will do, parsed on every keystroke (no debounce) so the
+  // chips and sentence keep pace with typing.
+  const { data: explain } = useSearchExplain(mode === "search" ? input : "");
 
   // Typing (or switching mode) disarms Enter so refining a query can't open a
   // stale row.
@@ -155,8 +135,7 @@ export function SearchScreen() {
   // Contact autocomplete: while typing a `from:`/`to:` value, suggest senders
   // matching the partial after the colon; for a plain query (no operator),
   // suggest people to turn the query into a `from:` filter.
-  const tokenStart = input.lastIndexOf(" ") + 1;
-  const currentToken = input.slice(tokenStart);
+  const { start: tokenStart, token: currentToken } = tokenAt(input);
   const contactOp = /^(from:|to:)/i.exec(currentToken)?.[1].toLowerCase() ?? null;
   const contactQuery = contactOp
     ? currentToken.slice(contactOp.length)
@@ -171,8 +150,25 @@ export function SearchScreen() {
     [accounts],
   );
   const labelMap = useMemo(() => new Map((labels ?? []).map((l) => [l.id, l])), [labels]);
+  const { data: settings } = useSettings();
+  const avatarUi = settings?.inboxUi === "avatar";
 
-  const rows = results ?? [];
+  const rows = useMemo(() => results?.threads ?? [], [results]);
+  // "Partial matches" / "Related" headers above the first row of each weaker
+  // tier, so it's obvious where exact keyword matches end.
+  const sections = useMemo(() => tierHeaders(results?.hits ?? [], t), [results, t]);
+
+  // Learn from what gets opened: each thread opened while these results are
+  // on screen is recorded (locally) so future searches rank it, and its
+  // sender, higher.
+  const openThreadId = useUi((s) => s.openThreadId);
+  const lastRecorded = useRef<number | null>(null);
+  useEffect(() => {
+    if (openThreadId == null || openThreadId === lastRecorded.current) return;
+    if (!storedQuery.trim() || !rows.some((r) => r.id === openThreadId)) return;
+    lastRecorded.current = openThreadId;
+    void call("record_search_open", { query: storedQuery, threadId: openThreadId }).catch(() => {});
+  }, [openThreadId, storedQuery, rows]);
 
   // For a list-focused entry ("View all from sender"), put the cursor on the
   // first result once it loads so there's a visible highlight and single-row
@@ -200,23 +196,37 @@ export function SearchScreen() {
     selectThread(idx, rows[idx].id);
   };
 
-  // As-you-type operator completion: match the token being typed (the text
-  // after the last space) against the known operators. The first match is the
-  // "active" suggestion - Tab or Enter completes to it.
-  const opSuggestions = useMemo(() => {
-    const tok = currentToken.toLowerCase();
-    if (!tok) return [] as OperatorMeta[];
-    return OPERATOR_META.filter(
-      (m) => m.op.toLowerCase().startsWith(tok) && m.op.toLowerCase() !== tok,
-    );
-  }, [currentToken]);
-  const activeSuggestion =
-    mode === "search" && !enterArmed ? (opSuggestions[0]?.op ?? null) : null;
+  // As-you-type completion of the token being typed: operators for a bare
+  // word, and right after `label:` / `in:` / `is:` / … the values that
+  // operator takes - so typing `label:` immediately lists your labels. The
+  // first row is "active": Tab or Enter completes to it.
+  const suggestions = useMemo(
+    () => (mode === "search" ? suggestionsFor(currentToken, labels ?? []) : []),
+    [currentToken, labels, mode],
+  );
+  const activeSuggestion: Suggestion | null =
+    mode === "search" && !enterArmed ? (suggestions[0] ?? null) : null;
 
-  const applyCompletion = (op: string) => {
-    setInput(input.slice(0, tokenStart) + op);
+  const applyCompletion = (insert: string) => {
+    setInput(applySuggestion(input, tokenStart, insert));
     inputRef.current?.focus();
   };
+
+  // Edit the query from the explain row: drop a filter (× on its chip) or
+  // apply a did-you-mean fix. Spans come from the parse of `input` itself.
+  const editSpan = (start: number, end: number, text = "") => {
+    setInput(replaceSpan(input, start, end, text));
+    inputRef.current?.focus();
+  };
+  const sentence = useMemo(
+    // Only once there's something to describe: a half-typed `label:` alone
+    // would read as the empty "Emails, newest first."
+    () =>
+      explain && (explain.chips.length > 0 || explain.terms.length > 0)
+        ? describe(explain, t, i18n.language)
+        : "",
+    [explain, input, t, i18n.language],
+  );
 
   return (
     <div className="co-fade-in flex min-h-0 flex-1 flex-col">
@@ -264,7 +274,7 @@ export function SearchScreen() {
                 // Accept the highlighted operator suggestion with Tab or Enter.
                 if (activeSuggestion && (e.key === "Tab" || e.key === "Enter")) {
                   e.preventDefault();
-                  applyCompletion(activeSuggestion);
+                  applyCompletion(activeSuggestion.insert);
                   return;
                 }
                 if (mode === "search" && rows.length > 0) {
@@ -303,16 +313,16 @@ export function SearchScreen() {
                   if (input.trim()) ask.run(input.trim(), accountFilter);
                 }
               }}
-              placeholder={mode === "ask" ? "Ask anything about your mailbox…" : t("common:search.placeholder")}
-              className="w-full bg-transparent py-1 text-[17px] text-ink outline-none placeholder:text-ink-faint"
+              placeholder={mode === "ask" ? t("common:search.askPlaceholder") : t("common:search.placeholder")}
+              className="w-full bg-transparent py-1 text-lg text-ink outline-none placeholder:text-ink-faint"
               spellCheck={false}
             />
             {(isFetching || ask.status === "pending" || ask.status === "streaming") && (
-              <span className="co-spinner size-3 shrink-0 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+              <Spinner className={mode === "ask" ? "co-ai-icon" : "text-ink-faint"} />
             )}
             {mode === "search" && storedQuery.trim() !== "" && rows.length > 0 && (
               <span
-                className="co-chip shrink-0 !py-0.5 !text-[11px] tabular-nums text-ink-muted"
+                className="co-chip shrink-0 !py-0.5 !text-xs tabular-nums text-ink-muted"
                 title={`${rows.length}${rows.length >= 60 ? "+" : ""} result${
                   rows.length === 1 ? "" : "s"
                 }`}
@@ -328,7 +338,7 @@ export function SearchScreen() {
                   title="Search syntax"
                   aria-label="Search syntax"
                   onClick={() => setShowHelp((v) => !v)}
-                  className={`flex size-5 items-center justify-center rounded-full border text-[11px] font-medium transition-colors ${
+                  className={`flex size-5 items-center justify-center rounded-full border text-xs font-medium transition-colors ${
                     showHelp
                       ? "border-accent/60 bg-accent/10 text-accent"
                       : "border-hairline text-ink-faint hover:text-ink-muted"
@@ -342,9 +352,9 @@ export function SearchScreen() {
                       className="fixed inset-0 z-20"
                       onClick={() => setShowHelp(false)}
                     />
-                    <div className="co-pop-in absolute right-0 top-full z-30 mt-2 w-[340px] overflow-hidden rounded-xl border border-hairline bg-bg1 shadow-lg">
-                      <div className="border-b border-hairline px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                        Search operators
+                    <div className="co-pop-in absolute right-0 top-full z-30 mt-2 w-[340px] overflow-hidden rounded-card border border-hairline bg-bg1 shadow-elev-2">
+                      <div className="border-b border-hairline px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-faint">
+                        {t("common:search.help.title")}
                       </div>
                       <div className="max-h-[46vh] overflow-y-auto py-1">
                         {OPERATOR_META.map((m) => (
@@ -359,39 +369,35 @@ export function SearchScreen() {
                             }}
                             className="flex w-full items-center gap-3 px-3 py-1 text-left hover:bg-bg2"
                           >
-                            <span className="w-[92px] shrink-0 font-mono text-[12px] text-ink">
+                            <span className="w-[92px] shrink-0 font-mono text-sm text-ink">
                               {m.op}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
-                              {m.desc}
+                            <span className="min-w-0 flex-1 truncate text-xs text-ink-faint">
+                              {t(`common:search.ops.${m.descKey}`)}
                             </span>
                           </button>
                         ))}
-                        {SEARCH_EXAMPLES.map((group) => (
-                          <div key={group.title}>
-                            <div className="mt-1 border-t border-hairline px-3 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                              {group.title}
-                            </div>
-                            {group.rows.map(([ex, desc]) => (
-                              <button
-                                key={ex}
-                                title={`Search: ${ex}`}
-                                onClick={() => {
-                                  setInput(ex);
-                                  setShowHelp(false);
-                                  inputRef.current?.focus();
-                                }}
-                                className="flex w-full flex-col gap-0.5 px-3 py-1.5 text-left hover:bg-bg2"
-                              >
-                                <span className="break-words font-mono text-[11.5px] text-ink-muted">
-                                  {ex}
-                                </span>
-                                <span className="text-[11px] text-ink-faint">
-                                  {desc}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
+                        <div className="mt-1 border-t border-hairline px-3 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-ink-faint">
+                          {t("common:search.help.examples")}
+                        </div>
+                        {SEARCH_EXAMPLES.map(([ex, key]) => (
+                          <button
+                            key={ex}
+                            title={ex}
+                            onClick={() => {
+                              setInput(ex);
+                              setShowHelp(false);
+                              inputRef.current?.focus();
+                            }}
+                            className="flex w-full flex-col gap-0.5 px-3 py-1.5 text-left hover:bg-bg2"
+                          >
+                            <span className="break-words font-mono text-xs text-ink-muted">
+                              {ex}
+                            </span>
+                            <span className="text-xs text-ink-faint">
+                              {t(`common:search.help.${key}`)}
+                            </span>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -399,86 +405,154 @@ export function SearchScreen() {
                 )}
               </div>
             )}
-            <div className="flex shrink-0 rounded-lg border border-hairline bg-bg0 p-0.5">
-              {(["search", "ask"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  title={t("common:search.toggleHint")}
-                  onClick={() => {
-                    setMode(m);
-                    inputRef.current?.focus();
-                  }}
-                  className={`rounded-md px-2.5 py-0.5 text-[12px] transition-colors ${
-                    m === mode ? "bg-bg2 font-medium text-ink" : "text-ink-faint hover:text-ink-muted"
-                  }`}
-                >
-                  {m === "search" ? "Search" : "Ask"}
-                </button>
-              ))}
+            <div className="shrink-0" title={t("common:search.toggleHint")}>
+              <Segmented
+                value={mode}
+                options={[
+                  { value: "search" as const, label: t("common:search.modeSearch") },
+                  { value: "ask" as const, label: <AiBadge label={t("common:search.modeAsk")} className="text-sm" /> },
+                ]}
+                onChange={(m) => {
+                  setMode(m);
+                  inputRef.current?.focus();
+                }}
+              />
             </div>
             <kbd className="co-kbd shrink-0">Esc</kbd>
           </div>
           {mode === "search" && (
             <div className="relative mt-2.5">
-              {opSuggestions.length > 0 ? (
-                // Completing the current token: a floating list of matches, each
-                // with a one-line description. The first is active - Tab/Enter
-                // (or a click) accepts it. Absolute so it overlays results
-                // without nudging them as it appears.
-                <div className="co-pop-in absolute left-0 top-0 z-20 w-[360px] max-w-full overflow-hidden rounded-xl border border-hairline bg-bg1 py-1 shadow-lg">
-                  {opSuggestions.slice(0, 7).map((m) => {
-                    const active = m.op === activeSuggestion;
+              {suggestions.length > 0 && (
+                // Completing the current token: a floating list of operators
+                // or of the values the operator takes (labels with their
+                // colour). The first is active - Tab/Enter (or a click)
+                // accepts it. Absolute so it overlays the row below without
+                // nudging the results as it appears.
+                <div className="co-pop-in absolute left-0 top-0 z-20 w-[380px] max-w-full overflow-hidden rounded-card border border-hairline bg-bg1 py-1 shadow-elev-2">
+                  {suggestions.slice(0, 8).map((sg) => {
+                    const active = sg === activeSuggestion;
                     return (
                       <button
-                        key={m.op}
+                        key={sg.insert}
                         // mousedown, not click: fire before the input blurs so
                         // focus (and the caret) stays put through completion.
                         onMouseDown={(e) => {
                           e.preventDefault();
-                          applyCompletion(m.op);
+                          applyCompletion(sg.insert);
                         }}
                         className={`flex w-full items-center gap-3 px-3 py-1.5 text-left ${
                           active ? "bg-accent/10" : "hover:bg-bg2"
                         }`}
                       >
+                        {sg.kind === "label" && (
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ background: sg.color }}
+                          />
+                        )}
                         <span
-                          className={`shrink-0 font-mono text-[12.5px] ${
+                          className={`shrink-0 ${sg.kind === "label" ? "text-sm" : "font-mono text-sm"} ${
                             active ? "text-accent" : "text-ink"
                           }`}
                         >
-                          {m.op}
+                          {sg.label}
                         </span>
-                        <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
-                          {m.desc}
-                        </span>
+                        {sg.descKey && (
+                          <span className="min-w-0 flex-1 truncate text-xs text-ink-faint">
+                            {t(`common:search.${sg.descKey}`)}
+                          </span>
+                        )}
                         {active && (
-                          <kbd className="co-kbd shrink-0 !text-[9px]">⇥</kbd>
+                          <kbd className="co-kbd ml-auto shrink-0 !text-2xs">⇥</kbd>
                         )}
                       </button>
                     );
                   })}
                 </div>
-              ) : (
-                // Nothing to complete: the default starter operators, each
-                // labelled with what it does.
+              )}
+              {input.trim() === "" ? (
+                // Nothing typed: the starter operators, each labelled with
+                // what it does.
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] text-ink-faint">
+                  <span className="text-xs text-ink-faint">
                     {t("common:search.try")}
                   </span>
-                  {OPERATORS.map((m) => (
+                  {STARTERS.map((m) => (
                     <button
                       key={m.op}
-                      title={m.desc}
-                      className="co-chip !py-0.5 !text-[11.5px] text-ink-muted hover:bg-bg2"
+                      title={t(`common:search.ops.${m.descKey}`)}
+                      className="co-chip !py-0.5 !text-xs text-ink-muted hover:bg-bg2"
                       onClick={() => {
-                        setInput((v) => (v.trim() ? `${v.trim()} ${m.op}` : m.op));
+                        setInput(m.op);
                         inputRef.current?.focus();
                       }}
                     >
                       {m.op}
                     </button>
                   ))}
+                </div>
+              ) : (
+                // The explain row: every understood filter as a removable
+                // chip, anything that couldn't be used as an amber warning
+                // with its fix, and one sentence saying what will be shown.
+                <div className="flex min-h-[22px] flex-col gap-1.5">
+                  {((explain?.chips.length ?? 0) > 0 || (explain?.warnings.length ?? 0) > 0) && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {explain?.chips.map((c) => {
+                        const text = chipLabel(c, t);
+                        const color =
+                          c.kind === "label"
+                            ? labels?.find((l) => l.name === c.value)?.color
+                            : undefined;
+                        return (
+                          <span
+                            key={`${c.start}-${c.kind}`}
+                            className="co-chip flex items-center gap-1.5 !py-0.5 !text-xs text-ink"
+                          >
+                            {color && (
+                              <span className="size-2 rounded-full" style={{ background: color }} />
+                            )}
+                            {text}
+                            <button
+                              type="button"
+                              title={t("common:search.removeFilter", { label: text })}
+                              aria-label={t("common:search.removeFilter", { label: text })}
+                              className="text-ink-faint hover:text-ink"
+                              onClick={() => editSpan(c.start, c.end)}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {explain?.warnings.map((w) => (
+                        <span
+                          key={`${w.start}-${w.kind}`}
+                          className="co-chip flex items-center gap-1.5 !border-star/40 !bg-star/10 !py-0.5 !text-xs text-ink"
+                        >
+                          {t(`common:search.warn.${w.kind}`, { token: w.token })}
+                          {w.suggestion && (
+                            <button
+                              type="button"
+                              className="font-medium text-accent hover:underline"
+                              onClick={() =>
+                                editSpan(
+                                  w.start,
+                                  w.end,
+                                  w.kind === "unknown_label"
+                                    ? `label:${/\s/.test(w.suggestion!) ? `"${w.suggestion}"` : w.suggestion}`
+                                    : w.suggestion!,
+                                )
+                              }
+                            >
+                              {t("common:search.warn.use", { fix: w.suggestion })}
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {sentence && <p className="truncate text-xs text-ink-faint" title={sentence}>{sentence}</p>}
                 </div>
               )}
             </div>
@@ -490,33 +564,28 @@ export function SearchScreen() {
         ask.status === "idle" ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-[760px] px-6 py-6">
-              <p className="text-[13px] text-ink-faint">
-                Ask a question like “what did Alice say about the Q3 budget?” and get an answer
-                grounded in your mail, with sources.
-              </p>
+              <p className="text-base text-ink-faint">{t("common:search.askIntro")}</p>
             </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1">
             {/* Sources - left rail */}
             <aside className="co-hairline-r flex w-[300px] shrink-0 flex-col gap-1 overflow-y-auto px-3 py-5">
-              <span className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-                Sources
-              </span>
+              <SectionLabel className="px-2">{t("common:search.sources")}</SectionLabel>
               {ask.citations.length > 0 ? (
                 ask.citations.map((c, i) => (
                   <button
                     key={c.messageId}
                     onClick={() => setPreviewThreadId(c.threadId)}
-                    className="flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left hover:bg-bg2"
+                    className="flex items-baseline gap-2 rounded-control px-2 py-1.5 text-left hover:bg-bg2"
                   >
-                    <span className="text-[11px] text-ink-faint">[{i + 1}]</span>
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{c.subject}</span>
-                    <span className="shrink-0 text-[11px] text-ink-faint">{c.from}</span>
+                    <span className="text-xs text-ink-faint">[{i + 1}]</span>
+                    <span className="min-w-0 flex-1 truncate text-base text-ink">{c.subject}</span>
+                    <span className="shrink-0 text-xs text-ink-faint">{c.from}</span>
                   </button>
                 ))
               ) : (
-                <p className="px-2 text-[12px] text-ink-faint">Searching your mailbox…</p>
+                <p className="px-2 text-sm text-ink-faint">{t("common:search.searchingMailbox")}</p>
               )}
             </aside>
 
@@ -526,31 +595,32 @@ export function SearchScreen() {
                 {ask.reasoning && (
                   <p
                     title={ask.reasoning}
-                    className="mb-4 flex items-center gap-2 overflow-hidden text-[12px] text-ink-faint"
+                    className="mb-4 flex items-center gap-2 overflow-hidden text-sm text-ink-faint"
                   >
-                    {ask.status === "streaming" && (
-                      <span className="inline-block size-3 shrink-0 animate-spin rounded-full border border-ink-faint border-t-transparent" />
-                    )}
+                    {ask.status === "streaming" && <Spinner />}
                     <span className="truncate">{lastLine(ask.reasoning)}</span>
                   </p>
                 )}
                 {ask.status === "error" ? (
-                  <p className="text-[13px] text-danger">
-                    {ask.error || "Ask failed. Make sure AI is configured in Settings."}
-                  </p>
-                ) : ask.answer ? (
-                  <div className="text-[14px] leading-relaxed text-ink">
-                    <Markdown text={ask.answer} />
-                    {ask.status === "streaming" && (
-                      <span className="ml-0.5 inline-block animate-pulse text-ink-faint">▍</span>
-                    )}
-                  </div>
+                  <p className="text-base text-danger">{ask.error || t("common:search.askFailed")}</p>
                 ) : (
-                  <p className="text-[13px] text-ink-faint">
-                    {ask.citations.length > 0
-                      ? `Reading ${ask.citations.length} source${ask.citations.length === 1 ? "" : "s"}…`
-                      : "Searching your mailbox…"}
-                  </p>
+                  <AiSurface className="px-5 py-4">
+                    <AiBadge className="mb-2" />
+                    {ask.answer ? (
+                      <div className="text-md leading-relaxed text-ink">
+                        <Markdown text={ask.answer} />
+                        {ask.status === "streaming" && (
+                          <span className="ml-0.5 inline-block animate-pulse text-ink-faint">▍</span>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-base text-ink-faint">
+                        {ask.citations.length > 0
+                          ? t("common:search.readingSources", { count: ask.citations.length })
+                          : t("common:search.searchingMailbox")}
+                      </p>
+                    )}
+                  </AiSurface>
                 )}
               </div>
             </div>
@@ -575,25 +645,56 @@ export function SearchScreen() {
                   }}
                   className="co-chip flex items-center gap-2 !py-1 hover:bg-bg2"
                 >
-                  <span className="flex size-5 items-center justify-center rounded-full bg-bg2 text-[10px] font-semibold uppercase text-ink-muted">
+                  <span className="flex size-5 items-center justify-center rounded-full bg-bg2 text-2xs font-semibold uppercase text-ink-muted">
                     {(c.name ?? c.email).trim().charAt(0)}
                   </span>
-                  <span className="text-[12.5px] text-ink">{c.name ?? c.email}</span>
-                  <span className="text-[11px] text-ink-faint">{c.interactions}</span>
+                  <span className="text-sm text-ink">{c.name ?? c.email}</span>
+                  <span className="text-xs text-ink-faint">{c.interactions}</span>
                 </button>
               ))}
             </div>
           )}
           {storedQuery.trim() === "" ? (
-            <p className="px-6 py-10 text-center text-[13px] text-ink-faint">
+            <p className="px-6 py-10 text-center text-base text-ink-faint">
               {t("common:search.emptyHint")}
             </p>
+          ) : rows.length === 0 && !isFetching && suggestions.length > 0 ? (
+            // Mid-completion (`label:` with its value list open): a bare
+            // operator matches nothing yet, which isn't worth announcing.
+            null
           ) : rows.length === 0 && !isFetching ? (
-            <p className="px-6 py-10 text-center text-[13px] text-ink-faint">
-              {t("common:search.noResults", { query: storedQuery })}
-            </p>
+            <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+              <p className="text-base text-ink-faint">
+                {t("common:search.noResults", { query: storedQuery })}
+              </p>
+              {/* Filters are the usual reason for an empty result: offer to
+                  drop each one in a click. */}
+              {(explain?.chips.length ?? 0) > 0 && input === storedQuery && (
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  <span className="text-xs text-ink-faint">{t("common:search.noResultsHint")}</span>
+                  {explain!.chips.map((c) => (
+                    <button
+                      key={`${c.start}-${c.kind}`}
+                      type="button"
+                      className="co-chip !py-0.5 !text-xs text-ink-muted hover:bg-bg2"
+                      onClick={() => editSpan(c.start, c.end)}
+                    >
+                      {chipLabel(c, t)} ×
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
-            <ThreadList threads={rows} selfEmails={selfEmails} labelMap={labelMap} jumpHints={modHeld} />
+            <ThreadList
+              threads={rows}
+              sections={sections}
+              selfEmails={selfEmails}
+              labelMap={labelMap}
+              jumpHints={modHeld}
+              layout={settings?.inboxUi}
+              photos={avatarUi && (settings?.showSenderPhotos ?? true)}
+            />
           )}
         </div>
       )}

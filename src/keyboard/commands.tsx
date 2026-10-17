@@ -8,7 +8,7 @@ import { errorMessage } from "../ipc/errors";
 import { subscribeEvent } from "../ipc/events";
 import { MOCK_MODE } from "../ipc/mock";
 import type { Account, Address, Settings, ThreadDetail } from "../ipc/types";
-import { addMonths, startOfMonth } from "../lib/calendarGrid";
+import { addDays, addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
 import { normalizeSyncStatus } from "../lib/syncStatus";
 import { parsePartialAiSummary } from "../lib/summaryStream";
@@ -94,6 +94,24 @@ function editableFocused(): boolean {
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
 }
 
+/**
+ * Tab / Shift+Tab cycle split tabs only while keyboard focus is "resting": on
+ * the body, the offscreen focus sink, or an element that isn't itself a
+ * focusable control (thread rows aren't). With an input or a real control
+ * focused (a tab in the tab bar, a button, a link), Tab keeps its native
+ * focus-navigation meaning.
+ */
+function splitCycleFocusOk(): boolean {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement) || el === document.body) return true;
+  if (editableFocused()) return false;
+  // the registry's focus sink (aria-hidden, tabindex -1)
+  if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1) return true;
+  return !el.matches(
+    "a[href], button, select, summary, [role='tab'], [role='button'], [role='option'], [tabindex]:not([tabindex='-1'])",
+  );
+}
+
 // ------------------------------------------------------------- Unsubscribe
 
 /**
@@ -169,8 +187,9 @@ function shiftCalendar(dir: 1 | -1) {
     s.set({ calendarFocusDay: addMonths(startOfMonth(anchor), dir) });
     return;
   }
-  const span = s.calendarScreen || s.calendarDrawer === "week" ? 7 : 1;
-  s.set({ calendarFocusDay: anchor + dir * span * 86_400_000 });
+  const span =
+    s.calendarScreen ? (s.calendarView === "day" ? 1 : 7) : s.calendarDrawer === "week" ? 7 : 1;
+  s.set({ calendarFocusDay: addDays(anchor, dir * span) });
 }
 
 /** Any calendar surface (peek drawer or full-screen week) showing. */
@@ -617,7 +636,8 @@ export const ALL_COMMANDS: Command[] = [
     aliases: ["cycle splits", "next tab"],
     keys: ["tab"],
     section: "Navigation",
-    when: (ctx) => noOverlay(ctx) && !ctx.inConversation && !ctx.inSearch && ctx.ui.view === "inbox",
+    when: (ctx) =>
+      noOverlay(ctx) && !ctx.inConversation && !ctx.inSearch && ctx.ui.view === "inbox" && splitCycleFocusOk(),
     run: (ctx) => ctx.cycleSplit(1),
   },
   {
@@ -626,7 +646,8 @@ export const ALL_COMMANDS: Command[] = [
     aliases: ["previous tab"],
     keys: ["shift+tab"],
     section: "Navigation",
-    when: (ctx) => noOverlay(ctx) && !ctx.inConversation && !ctx.inSearch && ctx.ui.view === "inbox",
+    when: (ctx) =>
+      noOverlay(ctx) && !ctx.inConversation && !ctx.inSearch && ctx.ui.view === "inbox" && splitCycleFocusOk(),
     run: (ctx) => ctx.cycleSplit(-1),
   },
   {
@@ -889,6 +910,34 @@ export const ALL_COMMANDS: Command[] = [
     run: () => useUi.getState().set({ searchOpen: true, searchModeRequest: "ask", openThreadId: null }),
   },
   {
+    id: "copy-verification-code",
+    titleKey: "commands:title.copyVerificationCode",
+    aliases: ["otp", "2fa", "one-time code", "login code", "verification code", "copy code"],
+    keys: [],
+    section: "Triage",
+    when: (ctx) => !ctx.composerOpen,
+    run: async () => {
+      const push = useUi.getState().pushToast;
+      try {
+        const found = await call("latest_verification_code", { maxAgeMinutes: 30 });
+        if (!found) {
+          push({ kind: "info", message: i18n.t("commands:toast.noVerificationCode") });
+          return;
+        }
+        await navigator.clipboard.writeText(found.code);
+        push({
+          kind: "info",
+          message: i18n.t("commands:toast.verificationCodeCopied", {
+            code: found.code,
+            sender: found.sender,
+          }),
+        });
+      } catch (err) {
+        push({ kind: "error", message: errorMessage(err) });
+      }
+    },
+  },
+  {
     id: "relabel-auto",
     titleKey: "commands:title.relabelAuto",
     aliases: ["auto labels", "recategorize", "reclassify mail"],
@@ -931,15 +980,42 @@ export const ALL_COMMANDS: Command[] = [
         .set({ calendarScreen: true, calendarDrawer: null, calendarFocusDay: null }),
   },
   {
+    id: "calendar-day-view",
+    titleKey: "commands:title.calendarDay",
+    aliases: ["day", "day view"],
+    keys: ["d"],
+    section: "Calendar",
+    when: (ctx) => noPanel(ctx) && ctx.ui.calendarScreen,
+    run: () => useUi.getState().set({ calendarView: "day" }),
+  },
+  {
+    id: "calendar-week-view",
+    titleKey: "commands:title.calendarWeekView",
+    aliases: ["week view"],
+    keys: ["w"],
+    section: "Calendar",
+    when: (ctx) => noPanel(ctx) && ctx.ui.calendarScreen,
+    run: () => useUi.getState().set({ calendarView: "week" }),
+  },
+  {
     id: "calendar-month-toggle",
     titleKey: "commands:title.calendarMonth",
-    aliases: ["month", "month view", "toggle month", "week view"],
+    aliases: ["month", "month view", "toggle month"],
     keys: ["m"],
+    section: "Calendar",
+    when: (ctx) => noPanel(ctx) && ctx.ui.calendarScreen,
+    run: () => useUi.getState().set({ calendarView: "month" }),
+  },
+  {
+    id: "calendar-sidebar",
+    titleKey: "commands:title.calendarSidebar",
+    aliases: ["calendar sidebar", "mini calendar", "calendar list"],
+    keys: ["\\"],
     section: "Calendar",
     when: (ctx) => noPanel(ctx) && ctx.ui.calendarScreen,
     run: () => {
       const s = useUi.getState();
-      s.set({ calendarView: s.calendarView === "month" ? "week" : "month" });
+      s.set({ calendarSidebar: !s.calendarSidebar });
     },
   },
   {
@@ -1137,7 +1213,7 @@ export const ALL_COMMANDS: Command[] = [
     id: "toggle-sidebar",
     titleKey: "commands:title.toggleSidebar",
     aliases: ["menu", "mailboxes", "folders", "drawer", "hamburger"],
-    keys: [],
+    keys: ["mod+\\"],
     section: "Meta",
     when: (ctx) => !ctx.composerOpen && !ctx.panelOpen,
     run: () => useUi.getState().set({ sidebarOpen: !useUi.getState().sidebarOpen }),
@@ -1172,7 +1248,7 @@ export const ALL_COMMANDS: Command[] = [
   {
     id: "split-by-sender",
     titleKey: "commands:title.splitBySender",
-    aliases: ["split by sender", "split by domain", "new split from thread"],
+    aliases: ["split by sender", "split by domain", "new split from thread", "add rule", "split rule", "create rule"],
     keys: [],
     section: "Inbox",
     when: (ctx) => ctx.hasTargets && !ctx.panelOpen && !ctx.composerOpen,

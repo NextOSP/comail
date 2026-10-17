@@ -64,6 +64,8 @@
       "mixed": "Finalisation de la synchronisation"
     },
     "waitingForChord": "En attente d’un raccourci",
+    "compose": "Composer",
+    "composeWithShortcut": "Composer ({{shortcut}})",
     "settings": "Paramètres",
     "settingsWithShortcut": "Paramètres ({{shortcut}})",
     "allAccounts": "Tous les comptes",
@@ -83,7 +85,172 @@
     "try": "Essayez",
     "emptyHint": "Recherchez dans tous les comptes, dossiers et messages.",
     "noResults": "Aucun résultat pour « {{query}} »",
-    "toggleHint": "Basculer Recherche / Question - ⌘/Ctrl+J"
+    "toggleHint": "Basculer Recherche / Demander à l’IA - ⌘/Ctrl+J",
+    "modeSearch": "Rechercher",
+    "modeAsk": "Demander à l’IA",
+    "askPlaceholder": "Posez une question sur vos messages…",
+    "askIntro": "Posez une question comme « qu’a dit Alice à propos du budget du T3 ? » et obtenez une réponse fondée sur vos messages, avec les sources.",
+    "sources": "Sources",
+    "searchingMailbox": "Recherche dans vos messages…",
+    "readingSources_one": "Lecture de {{count}} source…",
+    "readingSources_other": "Lecture de {{count}} sources…",
+    "askFailed": "La question a échoué. Vérifiez que l’IA est configurée dans les Réglages.",
+    "previewFallbackTitle": "Conversation",
+    "openFull": "Ouvrir en entier",
+    "closePreview": "Fermer l’aperçu",
+    "previewFailed": "Impossible de charger cette conversation.",
+    "ops": {
+      "from": "Nom ou e-mail de l'expéditeur (from:me pour vos envois)",
+      "to": "Nom ou e-mail du destinataire",
+      "label": "Porte ce libellé",
+      "subject": "Mots ou \"phrase\" dans l'objet",
+      "body": "Mots ou \"phrase\" dans le corps",
+      "in": "Dossier : inbox, sent, archive…",
+      "is": "unread, read, starred, replied",
+      "has": "attachment ou label",
+      "last": "Récent : 7d, 2w, month, today",
+      "after": "À partir d'une date, AAAA-MM-JJ",
+      "before": "Avant une date, AAAA-MM-JJ",
+      "between": "Période, AAAA-MM-JJ:AAAA-MM-JJ",
+      "olderThan": "Plus ancien que : 30d, 1y",
+      "sort": "newest, oldest ou relevance",
+      "exclude": "Exclure les résultats contenant un mot (ou -mot)"
+    },
+    "values": {
+      "in": {
+        "inbox": "Boîte de réception",
+        "sent": "Envoyés",
+        "drafts": "Brouillons",
+        "archive": "Archives",
+        "trash": "Corbeille",
+        "spam": "Spam"
+      },
+      "is": {
+        "unread": "Non lu",
+        "read": "Lu",
+        "starred": "Suivi",
+        "replied": "Répondu"
+      },
+      "has": {
+        "attachment": "Pièce jointe",
+        "label": "Un libellé"
+      },
+      "sort": {
+        "newest": "Plus récents",
+        "oldest": "Plus anciens",
+        "relevance": "Plus pertinents"
+      },
+      "last": {
+        "today": "Aujourd'hui",
+        "7d": "7 derniers jours",
+        "30d": "30 derniers jours",
+        "90d": "90 derniers jours",
+        "1y": "Dernière année"
+      },
+      "older_than": {
+        "30d": "Il y a plus de 30 jours",
+        "90d": "Il y a plus de 90 jours",
+        "1y": "Il y a plus d'un an"
+      },
+      "from": {
+        "me": "Messages envoyés"
+      }
+    },
+    "chip": {
+      "from": "De",
+      "to": "À",
+      "label": "Libellé",
+      "in": "Dans",
+      "is": "État",
+      "has": "Contient",
+      "subject": "Objet",
+      "body": "Corps",
+      "exclude": "Sans",
+      "after": "Après",
+      "before": "Avant",
+      "between": "Entre",
+      "last": "Derniers",
+      "older_than": "Plus ancien",
+      "sort": "Tri"
+    },
+    "span": {
+      "hours_one": "{{count}} heure",
+      "hours_other": "{{count}} heures",
+      "days_one": "{{count}} jour",
+      "days_other": "{{count}} jours",
+      "weeks_one": "{{count}} semaine",
+      "weeks_other": "{{count}} semaines",
+      "months_one": "{{count}} mois",
+      "months_other": "{{count}} mois",
+      "years_one": "{{count}} an",
+      "years_other": "{{count}} ans"
+    },
+    "explain": {
+      "lead": "Messages",
+      "leadSent": "Messages envoyés",
+      "me": "moi",
+      "from": "de {{v}}",
+      "to": "à {{v}}",
+      "label": "avec le libellé {{v}}",
+      "in": "dans {{v}}",
+      "is": {
+        "unread": "non lus",
+        "read": "lus",
+        "starred": "suivis",
+        "replied": "auxquels vous avez répondu"
+      },
+      "has": {
+        "attachment": "avec pièces jointes",
+        "label": "avec un libellé"
+      },
+      "today": "d'aujourd'hui",
+      "todayShort": "aujourd'hui",
+      "last": "des {{span}} derniers",
+      "olderThan": "de plus de {{span}}",
+      "between": "entre le {{from}} et le {{to}}",
+      "after": "depuis le {{date}}",
+      "before": "avant le {{date}}",
+      "containing": "contenant {{terms}}",
+      "subject": "avec {{v}} dans l'objet",
+      "body": "avec {{v}} dans le corps",
+      "without": "sans {{v}}",
+      "sort": {
+        "relevance": "les plus pertinents d'abord",
+        "newest": "les plus récents d'abord",
+        "oldest": "les plus anciens d'abord"
+      },
+      "sentence": "{{what}}, {{order}}."
+    },
+    "warn": {
+      "unknown_operator": "« {{token}} » n'est pas un filtre de recherche",
+      "bad_value": "« {{token}} » n'est pas une valeur valide",
+      "unknown_label": "Aucun libellé « {{token}} »",
+      "use": "Utiliser {{fix}}"
+    },
+    "group": {
+      "partial": "Correspondances partielles - pas tous les mots",
+      "similar": "Associés - aucun mot-clé exact",
+      "similarHint": "Trouvés par le sens"
+    },
+    "reason": {
+      "subject": "Objet",
+      "sender": "Expéditeur",
+      "content": "Texte",
+      "partial": "Partiel",
+      "similar": "Similaire"
+    },
+    "help": {
+      "title": "Filtres de recherche",
+      "examples": "Exemples",
+      "ex1": "messages récents d'Alice dans la boîte de réception",
+      "ex2": "factures avec pièce jointe",
+      "ex3": "vos envois, les plus anciens d'abord",
+      "ex4": "non lus avec le libellé Work",
+      "ex5": "une phrase exacte sur une période",
+      "ex6": "messages sans un mot"
+    },
+    "removeFilter": "Retirer {{label}}",
+    "noResultsHint": "Rien ne correspond à tous les filtres. Essayez d'en retirer un :"
   },
   "shortcutHelp": {
     "title": "Raccourcis clavier",
@@ -126,7 +293,11 @@
     "next week": "La semaine prochaine"
   },
   "splitTabs": {
-    "tabToSwitch": "Tab pour changer"
+    "tabToSwitch": "Tab pour changer",
+    "label": "Onglets de la boîte de réception",
+    "newMail": "nouveau message",
+    "unread_one": "{{count}} non lu",
+    "unread_other": "{{count}} non lus"
   },
   "threadRow": {
     "hasAttachments": "Contient des pièces jointes",
@@ -150,7 +321,7 @@
   },
   "sidebar": {
     "snippets": "Extraits",
-    "splits": "Règles de boîte divisée",
+    "splits": "Règles de la boîte scindée",
     "labels": "Libellés",
     "folders": "Dossiers",
     "manageLabels": "Gérer les libellés",

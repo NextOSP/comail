@@ -6,14 +6,22 @@ import i18n from "../../i18n";
 import { errorMessage } from "../../ipc/errors";
 import { call } from "../../ipc/commands";
 import { MOCK_MODE } from "../../ipc/mock";
-import type { Address, DraftAttachment, MessageDetail, Snippet, ThreadDetail } from "../../ipc/types";
+import { subscribeEvent } from "../../ipc/events";
+import type { Address, AiDraftAction, DraftAttachment, MessageDetail, Snippet, ThreadDetail } from "../../ipc/types";
 import { RecipientField } from "./RecipientField";
 import { onComposerAction } from "../../keyboard/commands";
 import { advanceAfter, buildCommandContext } from "../../keyboard/context";
+import { calendarPrefill } from "../../lib/calendarSuggestion";
 import { addressName, longTime, MOD_LABEL } from "../../lib/format";
 import { stripQuoteMarkers } from "../../lib/quotes";
 import { decodeEntities, escapeHtml, htmlToText, isHtmlEmpty, textToHtml } from "../../lib/richtext";
-import { pickSignature, signaturesForAccount, type ComposeMode } from "../../lib/signatures";
+import {
+  pickSignature,
+  replaceSignature,
+  signaturesForAccount,
+  stripSignature,
+  type ComposeMode,
+} from "../../lib/signatures";
 import { playSound } from "../../lib/sound";
 import { RichBody, type RichBodyHandle } from "./RichBody";
 import { performThreadAction } from "../../queries/actions";
@@ -22,6 +30,11 @@ import { useAccounts, useSettings, useSnippets } from "../../queries/hooks";
 import { useUi, type ComposerState } from "../../stores/ui";
 import { TimePopover } from "../common/TimePopover";
 import { AvailabilityPicker } from "../calendar/AvailabilityPicker";
+import { Button } from "../ui/Button";
+import { AiBadge, AiSparkle, AiSurface } from "../ui/Ai";
+import { Icon } from "../ui/Icon";
+import { MenuDivider, MenuItem, Popover } from "../ui/Menu";
+import { Spinner } from "../ui/Spinner";
 
 function quote(m: MessageDetail): string {
   const body = (m.textBody ?? m.snippet)
@@ -145,6 +158,14 @@ function stripTrailingSignoff(text: string): string {
   return lines.join("\n");
 }
 
+/** Follow-up edits offered on an AI result (Superhuman's chip row). Sent to
+ *  the model as the instruction, so they stay English like the backend prompts. */
+const AI_REFINE = {
+  shorten: "Make it shorter and more concise, keeping the meaning and tone.",
+  lengthen: "Make it a little longer with more helpful detail, keeping the tone.",
+  improve: "Improve the writing: clarity, flow and grammar, keeping the meaning.",
+} as const;
+
 /** A passage selected from the thread, rendered as a leading blockquote with a
  *  blank line after it for the reply. Shared by the seeded-reply path and the
  *  "insert into the open composer" action. */
@@ -208,18 +229,23 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const [aiPending, setAiPending] = useState(false);
   /** null = follow the saved setting; true/false = per-draft override */
   const [aiVoice, setAiVoice] = useState<boolean | null>(null);
-  /** one-shot undo: body as it was before the last AI replacement */
+  /** one-shot undo: body as it was before the current run of AI edits */
   const [aiPrevBody, setAiPrevBody] = useState<string | null>(null);
+  /** The last AI draft/edit, so the result row's Retry can run it again on the
+   *  body it started from. */
+  const [aiLastRun, setAiLastRun] = useState<{ instruction: string; base: string } | null>(null);
+  /** Typed follow-ups the AI suggested for the last draft (e.g. create an event). */
+  const [aiActions, setAiActions] = useState<AiDraftAction[]>([]);
+  const [signatureMenu, setSignatureMenu] = useState<{ x: number; y: number } | null>(null);
   const [proofPending, setProofPending] = useState(false);
   const [teamsPending, setTeamsPending] = useState(false);
-  const aiInputRef = useRef<HTMLInputElement>(null);
+  const aiInputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Quick-reply chips: AI suggestions generated when a reply opens; the
-  // static i18n chips show instantly and are swapped out when these arrive.
+  // Quick-reply chips: nothing shows while the AI is generating; the chips pop
+  // in once its suggestions arrive. The static i18n chips are only a fallback
+  // when AI isn't configured or the request fails.
   const [quickReplies, setQuickReplies] = useState<string[] | null>(null);
-  // True while the AI is generating suggestions: shows a gradient shimmer in
-  // place of the chips so the work is visible instead of static placeholders.
-  const [quickRepliesLoading, setQuickRepliesLoading] = useState(false);
+  const [quickRepliesFallback, setQuickRepliesFallback] = useState(false);
   useEffect(() => {
     if (state.mode !== "reply" && state.mode !== "reply_all") return;
     const threadId = state.replyTo?.threadId;
@@ -228,14 +254,17 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     void (async () => {
       try {
         const status = await call("ai_status", {});
-        if (!status.configured || cancelled) return;
-        setQuickRepliesLoading(true);
+        if (cancelled) return;
+        if (!status.configured) {
+          setQuickRepliesFallback(true);
+          return;
+        }
         const suggestions = await call("ai_quick_replies", { threadId });
-        if (!cancelled && suggestions.length > 0) setQuickReplies(suggestions);
+        if (cancelled) return;
+        if (suggestions.length > 0) setQuickReplies(suggestions);
+        else setQuickRepliesFallback(true);
       } catch {
-        // AI unavailable or slow: fall back to the static chips.
-      } finally {
-        if (!cancelled) setQuickRepliesLoading(false);
+        if (!cancelled) setQuickRepliesFallback(true);
       }
     })();
     return () => {
@@ -280,29 +309,19 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     return pickSignature(aiSettings, accountId, state.mode as ComposeMode);
   }, [aiSettings, accountId, manualSigId, accountSigs, state.mode]);
 
-  // Insert the active signature while the body is still pristine (fresh composes
-  // only; reopened drafts keep their content untouched). Also swaps cleanly when
-  // the account, mode default, or manual pick changes.
-  const lastSigBodyRef = useRef<string | null>(null);
+  // Keep the active signature block in the body (fresh composes only; reopened
+  // drafts keep their content untouched). The block is swapped in place, so
+  // changing the account, mode default, or manual pick works after typing too.
   useEffect(() => {
     if (state.initial) return;
-    const sigHtml = (activeSig?.html ?? "").trim();
     const cur = fieldsRef.current.body;
-    const pristine =
-      cur === init.bodyHtml || cur === lastSigBodyRef.current || isHtmlEmpty(cur);
-    if (!pristine) return;
-    const next = sigHtml
-      ? init.bodyHtml
-        ? `${init.bodyHtml}<br><br>${sigHtml}`
-        : `<br><br>${sigHtml}`
-      : init.bodyHtml;
-    if (next !== cur) {
-      setBody(next);
-      lastSigBodyRef.current = next;
-      // keep the caret at the top for replies so typing lands above the signature
-      if (state.mode === "reply" || state.mode === "reply_all") {
-        requestAnimationFrame(() => bodyRef.current?.focusStart());
-      }
+    const next = replaceSignature(cur, activeSig?.html ?? "");
+    if (next === cur) return;
+    const pristine = stripSignature(cur) === init.bodyHtml || isHtmlEmpty(stripSignature(cur));
+    setBody(next);
+    // keep the caret at the top for replies so typing lands above the signature
+    if (pristine && (state.mode === "reply" || state.mode === "reply_all")) {
+      requestAnimationFrame(() => bodyRef.current?.focusStart());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSig]);
@@ -531,41 +550,100 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   // "Write with AI": Enter runs ai_draft, result replaces the body.
   const voiceOn = aiVoice ?? aiSettings?.voiceDrafting ?? false;
 
-  const runAiDraft = useCallback(async () => {
-    const instruction = aiInstruction.trim();
+  // With text already in the body the bar edits it ("Edit with AI"): the
+  // current draft is sent separately so the model revises it rather than
+  // re-expanding. Empty bodies get a fresh draft. Tokens stream straight into
+  // the body; once done, a typed follow-up pass may suggest a calendar event.
+  const runAiDraft = useCallback(async (rawInstruction: string, baseBody?: string) => {
+    const instruction = rawInstruction.trim();
     if (!instruction || aiPending) return;
     setAiPending(true);
+    setAiActions([]);
+    const base = baseBody ?? fieldsRef.current.body;
+    const hadPrev = aiPrevBody != null;
+    // The signature is re-attached to the draft here (the model is told to
+    // skip its own sign-off), so the AI reply carries the account's signature.
+    const sigHtml = (activeSig?.html ?? "").trim();
+    const requestId = crypto.randomUUID();
+    let streamed = "";
+    let frame = 0;
+    const paint = () => {
+      frame = 0;
+      setBody(replaceSignature(textToHtml(streamed.trimStart()), sigHtml));
+    };
+    const unlisten = await subscribeEvent("ai:draft:token", (e) => {
+      if (e.requestId !== requestId) return;
+      if (!streamed) {
+        // First token: swap the instruction bar for the live result row.
+        setAiPrevBody((prev) => prev ?? base);
+        setAiOpen(false);
+      }
+      streamed += e.delta;
+      if (!frame) frame = requestAnimationFrame(paint);
+    });
     try {
+      const current = htmlToText(stripSignature(base)).trim();
       const account = accounts?.find((a) => a.id === fieldsRef.current.accountId);
-      // The signature is appended to the draft here (the model is told to skip
-      // its own sign-off), so the AI reply carries the account's signature.
-      const sigHtml = (activeSig?.html ?? "").trim();
+      const threadId = state.replyTo?.threadId ?? null;
       const text = await call("ai_draft", {
-        threadId: state.replyTo?.threadId ?? null,
+        threadId,
         replyToMessageId: state.replyTo?.id ?? null,
         instruction,
+        currentDraft: current || null,
         senderName: account ? (account.displayName ?? account.email) : null,
         voice: voiceOn,
         hasSignature: sigHtml !== "",
+        requestId,
       });
-      setAiPrevBody(fieldsRef.current.body);
-      // Append the signature the composer would use; the model is told to skip
-      // its own sign-off, but strip any stray trailing "Best,"/"Regards," it
-      // adds anyway so it never doubles up with the signature. The body is now
-      // non-pristine, so the signature effect leaves this content alone.
-      const draftHtml = textToHtml(sigHtml ? stripTrailingSignoff(text) : text);
-      setBody(sigHtml ? `${draftHtml}<br><br>${sigHtml}` : draftHtml);
+      if (frame) cancelAnimationFrame(frame);
+      setAiPrevBody((prev) => prev ?? base);
+      setAiLastRun({ instruction, base });
+      // The model is told to skip its own sign-off, but strip any stray
+      // trailing "Best,"/"Regards," it adds anyway so it never doubles up with
+      // the signature block.
+      const finalText = sigHtml ? stripTrailingSignoff(text) : text;
+      setBody(replaceSignature(textToHtml(finalText), sigHtml));
       markDirty();
       setAiOpen(false);
       setAiInstruction("");
       requestAnimationFrame(() => bodyRef.current?.focus());
+      // Typed follow-ups (e.g. "add this meeting to your calendar"); best-effort.
+      call("ai_draft_actions", { threadId, draft: finalText })
+        .then(setAiActions)
+        .catch(() => {});
     } catch (err) {
+      if (frame) cancelAnimationFrame(frame);
+      // Roll back any partially streamed text.
+      if (streamed) {
+        setBody(base);
+        if (!hadPrev) setAiPrevBody(null);
+        setAiOpen(true);
+      }
       pushToast({ kind: "error", message: errorMessage(err) });
     } finally {
+      unlisten();
       setAiPending(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiInstruction, aiPending, accounts, state.replyTo, pushToast, voiceOn, activeSig]);
+  }, [aiPending, aiPrevBody, accounts, state.replyTo, pushToast, voiceOn, activeSig]);
+
+  /** Open the event form prefilled from an AI suggestion, inviting the
+   *  draft's recipients. */
+  const createSuggestedEvent = (action: AiDraftAction) => {
+    const prefill = calendarPrefill(action);
+    if (!prefill) return;
+    const f = fieldsRef.current;
+    useUi.getState().set({
+      eventCreate: { prefill: { ...prefill, attendees: [...f.to, ...f.cc] } },
+    });
+    setAiActions((cur) => cur.filter((a) => a !== action));
+  };
+
+  const acceptAiResult = () => {
+    setAiPrevBody(null);
+    setAiLastRun(null);
+    requestAnimationFrame(() => bodyRef.current?.focus());
+  };
 
   // "Proofread": AI copy-edits the current body in place; the existing
   // restore bar undoes it. HTML formatting is preserved by the prompt.
@@ -576,7 +654,8 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     try {
       const fixed = (await call("ai_proofread", { body: cur })).trim();
       if (fixed && fixed !== cur) {
-        setAiPrevBody(cur);
+        setAiPrevBody((prev) => prev ?? cur);
+        setAiLastRun(null);
         // Plain-text answers (model stripped the markup) are re-encoded;
         // decode first so entities from the HTML input don't double-escape.
         setBody(/<[a-z][^>]*>/i.test(fixed) ? fixed : textToHtml(decodeEntities(fixed)));
@@ -632,6 +711,8 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     if (aiPrevBody == null) return;
     setBody(aiPrevBody);
     setAiPrevBody(null);
+    setAiLastRun(null);
+    setAiActions([]);
     markDirty();
     requestAnimationFrame(() => bodyRef.current?.focus());
   };
@@ -740,7 +821,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
         setAccountId(Number(e.target.value));
         markDirty();
       }}
-      className="shrink-0 cursor-pointer bg-transparent text-right text-[12px] text-ink-faint outline-none hover:text-ink-muted"
+      className="shrink-0 cursor-pointer bg-transparent text-right text-sm text-ink-faint outline-none hover:text-ink-muted"
     >
       {(accounts ?? []).map((a) => (
         <option key={a.id} value={a.id}>
@@ -755,25 +836,27 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       className={
         inline
           ? "co-composer co-fade-in border border-hairline bg-bg1"
-          : "co-composer co-fade-in min-h-0 flex-1 overflow-y-auto"
+          : "co-composer co-fade-in min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-24"
       }
       style={inline ? { boxShadow: "var(--elev-card)" } : undefined}
     >
+      {/* New messages float as a card on the canvas, matching the inline reply composer. */}
       <div
         className={
           inline
             ? "relative flex w-full flex-col px-5 py-4"
-            : "relative mx-auto flex w-full max-w-[860px] flex-col px-6 py-6 pb-24"
+            : "relative mx-auto flex w-full max-w-[860px] flex-col rounded-xl border border-hairline bg-bg1 px-7 pt-5 pb-4"
         }
+        style={inline ? undefined : { boxShadow: "var(--elev-card)" }}
       >
         {!inline && (
-          <header className="mb-3 flex items-center justify-between gap-4">
+          <header className="co-hairline-b -mx-7 mb-2 flex items-center justify-between gap-4 px-7 pb-3">
             <button
-              className="flex items-center gap-1.5 text-[12px] text-ink-faint hover:text-ink-muted"
+              className="flex items-center gap-1.5 text-sm text-ink-faint hover:text-ink-muted"
               onClick={() => buildCommandContext().escape()}
             >
               ← {t("compose:close")}
-              <kbd className="co-kbd !text-[10px]">Esc</kbd>
+              <kbd className="co-kbd !text-2xs">Esc</kbd>
             </button>
             {accountSelect}
           </header>
@@ -784,9 +867,9 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
           {inline && (
             <div className="flex items-baseline gap-1.5 pb-1.5">
               {/* Superhuman-style draft header: green "Draft" + muted recipients. */}
-              <span className="text-[14px] font-semibold text-ok">{t("compose:draftLabel")}</span>
+              <span className="text-md font-semibold text-ok">{t("compose:draftLabel")}</span>
               {to.length > 0 && (
-                <span className="min-w-0 truncate text-[14px] text-ink-muted">
+                <span className="min-w-0 truncate text-md text-ink-muted">
                   {t("compose:draftTo", { names: to.map(addressName).join(", ") })}
                 </span>
               )}
@@ -819,7 +902,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             </div>
             {!showCc && (
               <button
-                className="mt-2 shrink-0 text-[11.5px] text-ink-faint hover:text-accent"
+                className="mt-2 shrink-0 text-xs text-ink-faint hover:text-accent"
                 tabIndex={-1}
                 onClick={() => setShowCc(true)}
               >
@@ -838,69 +921,160 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                 markDirty();
               }}
               placeholder={t("compose:subject")}
-              className="co-hairline-b w-full bg-transparent py-3 text-[19px] font-semibold tracking-tight text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
+              className="co-hairline-b w-full bg-transparent py-3 text-lg font-semibold tracking-tight text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
               spellCheck={false}
             />
           )}
 
           {aiOpen && (
-            <div
-              data-testid="ai-bar"
-              className="co-fade-in co-hairline-b flex items-center gap-2 py-2"
-            >
-              <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10.5px] font-semibold tracking-wide text-accent uppercase">
-                {t("compose:aiBadge")}
-              </span>
-              <input
-                ref={aiInputRef}
-                value={aiInstruction}
-                onChange={(e) => setAiInstruction(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void runAiDraft();
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setAiOpen(false);
-                    requestAnimationFrame(() => bodyRef.current?.focus());
-                  }
-                }}
-                disabled={aiPending}
-                placeholder={t("compose:aiPlaceholder")}
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-faint disabled:opacity-60"
-              />
-              <button
-                type="button"
-                onClick={() => setAiVoice(!voiceOn)}
-                title="Draft in your learned writing voice"
-                className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] transition-colors ${
-                  voiceOn
-                    ? "border-accent/40 bg-accent/15 text-accent"
-                    : "border-hairline text-ink-faint hover:text-ink-muted"
-                }`}
-              >
-                {t("compose:aiVoice")}
-              </button>
-              {aiPending ? (
-                <span
-                  className="co-spinner size-3.5 shrink-0 rounded-full border-[1.5px] border-hairline-strong border-t-accent"
-                  title={t("compose:drafting")}
+            <div data-testid="ai-bar" className="co-fade-in my-2">
+              {/* Stacked prompt box (Superhuman "Write a draft"): badge + voice
+                  on top, a roomy auto-growing prompt, hints + Generate below. */}
+              <AiSurface className="flex flex-col gap-2 px-4 pt-3 pb-2.5 shadow-elev-1">
+                <div className="flex items-center justify-between gap-3">
+                  <AiBadge
+                    className="text-sm"
+                    label={
+                      isHtmlEmpty(stripSignature(body)) ? t("compose:ai.write") : t("compose:ai.edit")
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAiVoice(!voiceOn)}
+                    title={t("compose:ai.voiceTip")}
+                    aria-pressed={voiceOn}
+                    className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+                      voiceOn
+                        ? "co-ai-fill border-transparent text-ink"
+                        : "border-hairline text-ink-faint hover:text-ink-muted"
+                    }`}
+                  >
+                    {t("compose:aiVoice")}
+                  </button>
+                </div>
+                <textarea
+                  ref={aiInputRef}
+                  rows={2}
+                  value={aiInstruction}
+                  onChange={(e) => {
+                    setAiInstruction(e.target.value);
+                    // Auto-grow up to ~6 lines, then scroll.
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void runAiDraft(aiInstruction);
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAiOpen(false);
+                      requestAnimationFrame(() => bodyRef.current?.focus());
+                    }
+                  }}
+                  disabled={aiPending}
+                  placeholder={t("compose:aiPlaceholder")}
+                  className="min-h-[52px] w-full resize-none bg-transparent text-md leading-relaxed text-ink outline-none placeholder:text-ink-faint disabled:opacity-60"
                 />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-ink-faint">{t("compose:ai.hint")}</span>
+                  <Button
+                    size="sm"
+                    variant="ai"
+                    busy={aiPending}
+                    disabled={!aiInstruction.trim()}
+                    onClick={() => void runAiDraft(aiInstruction)}
+                  >
+                    {aiPending ? t("compose:drafting") : t("compose:ai.generate")}
+                  </Button>
+                </div>
+              </AiSurface>
+            </div>
+          )}
+
+          {aiPrevBody != null && !aiOpen && (
+            <div
+              data-testid="ai-result"
+              className="co-fade-in flex flex-wrap items-center gap-1.5 py-1.5 text-xs text-ink-faint"
+            >
+              <AiSparkle size={12} />
+              <span className="mr-1">{t("compose:aiDraftInserted")}</span>
+              {aiPending ? (
+                <span className="co-ai-icon inline-flex items-center gap-1.5">
+                  <Spinner />
+                  <span className="text-ink-faint">{t("compose:drafting")}</span>
+                </span>
               ) : (
-                <span className="shrink-0 text-[11px] text-ink-faint">{t("compose:aiHint")}</span>
+                <>
+                  <Button size="sm" variant="secondary" icon="check" onClick={acceptAiResult}>
+                    {t("compose:ai.accept")}
+                  </Button>
+                  {aiLastRun && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="repeat"
+                      onClick={() => void runAiDraft(aiLastRun.instruction, aiLastRun.base)}
+                    >
+                      {t("compose:ai.retry")}
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => void runAiDraft(AI_REFINE.shorten)}>
+                    {t("compose:ai.shorten")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void runAiDraft(AI_REFINE.lengthen)}>
+                    {t("compose:ai.lengthen")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void runAiDraft(AI_REFINE.improve)}>
+                    {t("compose:ai.improve")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={restorePreviousBody}>
+                    {t("compose:restorePrevious")}
+                  </Button>
+                </>
               )}
             </div>
           )}
 
-          {aiPrevBody != null && (
-            <div className="co-fade-in flex items-center gap-2 py-1.5 text-[11.5px] text-ink-faint">
-              <span>{t("compose:aiDraftInserted")}</span>
+          {aiActions.length > 0 && !aiPending && (
+            <div data-testid="ai-actions" className="co-fade-in flex flex-wrap items-center gap-1.5 py-1 text-xs">
+              {aiActions.map((action, i) => {
+                switch (action.kind) {
+                  case "create_event": {
+                    const prefill = calendarPrefill(action);
+                    if (!prefill) return null;
+                    const when = new Date(prefill.startsAt).toLocaleString(i18n.language, {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      ...(action.allDay ? {} : { hour: "numeric", minute: "2-digit" }),
+                    });
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => createSuggestedEvent(action)}
+                        title={t("compose:ai.addToCalendarTip")}
+                        className="co-ai-fill inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-ink transition-opacity hover:opacity-90"
+                      >
+                        <Icon name="calendar" size={12} />
+                        <span>{t("compose:ai.addToCalendar")}</span>
+                        <span className="text-ink-muted">
+                          {action.title} · {when}
+                        </span>
+                      </button>
+                    );
+                  }
+                }
+              })}
               <button
-                className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2"
-                onClick={restorePreviousBody}
+                type="button"
+                onClick={() => setAiActions([])}
+                className="px-1 text-ink-faint hover:text-ink-muted"
               >
-                {t("compose:restorePrevious")}
+                {t("compose:ai.dismiss")}
               </button>
             </div>
           )}
@@ -909,9 +1083,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             <div data-testid="attachment-chips" className="flex flex-wrap gap-2 py-2">
               {attachments.map((a) => (
                 <span key={a.filePath} className="co-chip" title={a.filePath}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-                  </svg>
+                  <Icon name="paperclip" size={11} />
                   {a.filename}
                   <button
                     className="ml-0.5 rounded px-0.5 text-ink-faint hover:text-danger"
@@ -933,48 +1105,38 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
               markDirty();
             }}
             placeholder={t("compose:bodyPlaceholder", { mod: MOD_LABEL })}
-            minHeightClass={inline ? "min-h-[140px]" : "min-h-[240px]"}
+            minHeightClass={inline ? "min-h-[140px]" : "min-h-[320px]"}
             expandShortcut={expandShortcut}
             onMention={addMention}
           />
 
           {(state.mode === "reply" || state.mode === "reply_all") &&
-            (quickRepliesLoading || isHtmlEmpty(body)) && (
+            (quickReplies || quickRepliesFallback) &&
+            isHtmlEmpty(stripSignature(body)) && (
               <div
                 className="flex flex-wrap items-center gap-2 pb-3"
                 data-testid="quick-replies"
               >
-                {quickRepliesLoading ? (
-                  <>
-                    {["w-24", "w-36", "w-28"].map((w) => (
-                      <span
-                        key={w}
-                        aria-hidden
-                        className={`co-ai-shimmer inline-block h-[26px] rounded-full ${w}`}
-                      />
-                    ))}
-                    <span className="sr-only">{t("compose:quickRepliesLoading")}</span>
-                  </>
-                ) : (
-                  (
-                    quickReplies ?? [
-                      t("compose:quickReply1"),
-                      t("compose:quickReply2"),
-                      t("compose:quickReply3"),
-                    ]
-                  ).map((s) => (
-                    <button
-                      key={s}
-                      className="co-fade-in rounded-full border border-hairline bg-bg0 px-3 py-1 text-[12.5px] text-ink-muted hover:border-hairline-strong hover:bg-bg2 hover:text-ink"
-                      onClick={() => {
-                        markDirty();
-                        bodyRef.current?.insertText(s);
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))
-                )}
+                {quickReplies && <AiSparkle size={13} className="co-chip-pop" />}
+                {(
+                  quickReplies ?? [
+                    t("compose:quickReply1"),
+                    t("compose:quickReply2"),
+                    t("compose:quickReply3"),
+                  ]
+                ).map((s, i) => (
+                  <button
+                    key={s}
+                    style={{ animationDelay: `${(i + 1) * 60}ms` }}
+                    className="co-chip-pop rounded-full border border-hairline bg-bg0 px-3 py-1 text-sm text-ink-muted hover:border-hairline-strong hover:bg-bg2 hover:text-ink"
+                    onClick={() => {
+                      markDirty();
+                      bodyRef.current?.insertText(s);
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
             )}
 
@@ -982,7 +1144,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             <div className="pb-3">
               {!quoteOpen ? (
                 <button
-                  className="rounded-md border border-hairline bg-bg2 px-2.5 pb-1 text-[14px] leading-[10px] tracking-widest text-ink-faint hover:text-ink"
+                  className="rounded-control border border-hairline bg-bg2 px-2.5 pb-1 text-md leading-[10px] tracking-widest text-ink-faint hover:text-ink"
                   title={t("compose:showQuoted")}
                   aria-label={t("compose:showQuoted")}
                   onClick={() => setQuoteOpen(true)}
@@ -990,8 +1152,8 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                   ⋯
                 </button>
               ) : (
-                <div className="co-fade-in rounded-md border-l-2 border-hairline-strong bg-bg0/60 px-3 py-2">
-                  <div className="mb-1 flex items-center gap-3 text-[11px] text-ink-faint">
+                <div className="co-fade-in rounded-control border-l-2 border-hairline-strong bg-bg0/60 px-3 py-2">
+                  <div className="mb-1 flex items-center gap-3 text-xs text-ink-faint">
                     <span className="font-semibold tracking-wide uppercase">
                       {t("compose:quotedLabel")}
                     </span>
@@ -1009,7 +1171,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                       {t("compose:removeQuoted")}
                     </button>
                   </div>
-                  <pre className="max-h-44 overflow-y-auto font-sans text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-faint">
+                  <pre className="max-h-44 overflow-y-auto font-sans text-sm leading-relaxed whitespace-pre-wrap text-ink-faint">
                     {stripQuoteMarkers(init.quote)}
                   </pre>
                 </div>
@@ -1020,108 +1182,115 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
 
         {/* footer */}
         <div className="mt-1 flex shrink-0 items-center gap-3 border-t border-hairline pt-3">
-          <button
-            className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-white transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
-            onClick={() => void doSend()}
-            disabled={sending}
-          >
+          <Button variant="primary" className="px-4" onClick={() => void doSend()} disabled={sending}>
             {t("compose:send")}
-          </button>
-          <button
-            className="flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 disabled:opacity-50"
+          </Button>
+          <Button
+            icon="paperclip"
             onClick={() => void attachFiles()}
             title={`${t("compose:attach")} (${MOD_LABEL}⇧A)`}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-            </svg>
             {t("compose:attach")}
-          </button>
-          <button
-            className="flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 disabled:opacity-50"
+          </Button>
+          <Button
+            variant="ai"
+            size="sm"
             onClick={() => void runProofread()}
-            disabled={proofPending || isHtmlEmpty(body)}
+            busy={proofPending}
+            disabled={isHtmlEmpty(stripSignature(body))}
             title={`${t("compose:proofread")} (${MOD_LABEL}⇧P)`}
           >
-            {proofPending && (
-              <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-            )}
             {t("compose:proofread")}
-          </button>
+          </Button>
           {isMicrosoftAccount && (
-            <button
-              className="flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2 disabled:opacity-50"
+            <Button
+              icon="video"
               onClick={() => void createTeamsMeeting()}
-              disabled={teamsPending}
+              busy={teamsPending}
               title={t("compose:teamsMeetingTip")}
             >
-              {teamsPending && (
-                <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-              )}
               {t("compose:teamsMeeting")}
-            </button>
+            </Button>
           )}
-          <span className="text-[11.5px] text-ink-faint">
+          <span className="text-xs text-ink-faint">
             {t("compose:footerHints", { mod: MOD_LABEL })}
           </span>
           <div className="grow" />
           {!state.initial && accountSigs.length > 0 && (
-            <select
-              value={activeSig?.id ?? ""}
-              aria-label={t("compose:signature.label")}
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={signatureMenu != null}
               title={t("compose:signature.label")}
               data-testid="signature-picker"
-              onChange={(e) => {
-                setManualSigId(e.target.value || null);
-                markDirty();
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setSignatureMenu(signatureMenu ? null : { x: r.left, y: r.bottom + 4 });
               }}
-              className="shrink-0 cursor-pointer bg-transparent text-[11.5px] text-ink-faint outline-none hover:text-ink-muted"
+              className="flex shrink-0 items-center gap-1 rounded-control px-1.5 py-0.5 text-xs text-ink-faint hover:bg-bg2 hover:text-ink-muted"
             >
-              <option value="">{t("compose:signature.none")}</option>
-              {accountSigs.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              {t("compose:signature.trigger", {
+                name: activeSig?.name ?? t("compose:signature.none"),
+              })}
+              <Icon name="chevronDown" size={12} />
+            </button>
           )}
-          <span className="text-[11.5px] text-ink-faint">
+          {signatureMenu && (
+            <Popover x={signatureMenu.x} y={signatureMenu.y} onClose={() => setSignatureMenu(null)}>
+              {accountSigs.map((s) => (
+                <MenuItem
+                  key={s.id}
+                  label={s.name}
+                  active={activeSig?.id === s.id}
+                  icon={<SigCheck on={activeSig?.id === s.id} />}
+                  onClick={() => {
+                    setManualSigId(s.id);
+                    setSignatureMenu(null);
+                    markDirty();
+                  }}
+                />
+              ))}
+              <MenuDivider />
+              <MenuItem
+                label={t("compose:signature.none")}
+                active={!activeSig}
+                icon={<SigCheck on={!activeSig} />}
+                onClick={() => {
+                  setManualSigId(null);
+                  setSignatureMenu(null);
+                  markDirty();
+                }}
+              />
+            </Popover>
+          )}
+          <span className="text-xs text-ink-faint">
             {savedAt ? t("compose:draftSaved") : dirtyRef.current ? t("compose:unsaved") : ""}
           </span>
         </div>
 
         {/* discard / save confirm */}
         {confirmOpen && (
-          <div className="co-fade-in absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-bg0/70 backdrop-blur-[2px]">
-            <div className="flex flex-col items-center gap-3 rounded-xl border border-hairline bg-bg1 px-6 py-5" style={{ boxShadow: "var(--elev-2)" }}>
-              <span className="text-[13.5px] text-ink">{t("compose:keepDraft")}</span>
+          <div className="co-fade-in absolute inset-0 z-10 flex items-center justify-center rounded-card bg-bg0/70 backdrop-blur-[2px]">
+            <div className="flex flex-col items-center gap-3 rounded-card border border-hairline bg-bg1 px-6 py-5 shadow-elev-2">
+              <span className="text-base text-ink">{t("compose:keepDraft")}</span>
               <div className="flex gap-2">
-                <button
-                  className="rounded-lg bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white"
-                  onClick={() => void saveAndClose()}
-                >
+                <Button variant="primary" onClick={() => void saveAndClose()}>
                   {t("compose:saveDraftButton")}
-                </button>
-                <button
-                  className="rounded-lg border border-hairline px-3.5 py-1.5 text-[12.5px] text-danger hover:bg-bg2"
-                  onClick={() => void discard()}
-                >
+                </Button>
+                <Button variant="danger" onClick={() => void discard()}>
                   {t("compose:discard")}
-                </button>
-                <button
-                  className="rounded-lg border border-hairline px-3.5 py-1.5 text-[12.5px] text-ink-muted hover:bg-bg2"
-                  onClick={() => set({ composerConfirmOpen: false })}
-                >
+                </Button>
+                <Button onClick={() => set({ composerConfirmOpen: false })}>
                   {t("compose:keepWriting")}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
         )}
 
         {dragOver && (
-          <div className="co-fade-in pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent/10">
-            <span className="rounded-lg bg-bg1 px-3.5 py-1.5 text-[13px] font-medium text-accent" style={{ boxShadow: "var(--elev-2)" }}>
+          <div className="co-fade-in pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-card border-2 border-dashed border-accent bg-accent/10">
+            <span className="rounded-control bg-bg1 px-3.5 py-1.5 text-base font-medium text-accent shadow-elev-2">
               {t("compose:dropToAttach")}
             </span>
           </div>
@@ -1187,6 +1356,12 @@ function RecipientRow(props: {
   );
 }
 
+/** Leading check for the current choice in the signature menu; a same-width
+ *  blank keeps the labels aligned. */
+function SigCheck({ on }: { on: boolean }) {
+  return on ? <Icon name="check" size={13} className="text-accent" /> : <span className="w-[13px]" />;
+}
+
 function SnippetPicker({
   snippets,
   onClose,
@@ -1208,8 +1383,7 @@ function SnippetPicker({
   return (
     <div className="co-overlay flex items-start justify-center pt-[20vh]" onMouseDown={onClose}>
       <div
-        className="co-pop-in w-[440px] rounded-xl border border-hairline bg-bg1 p-2"
-        style={{ boxShadow: "var(--elev-2)" }}
+        className="co-pop-in w-[440px] rounded-card border border-hairline bg-bg1 p-1 shadow-elev-2"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <input
@@ -1236,24 +1410,24 @@ function SnippetPicker({
             }
           }}
           placeholder={t("compose:insertSnippet")}
-          className="co-hairline-b w-full bg-transparent px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint"
+          className="co-hairline-b w-full bg-transparent px-3 py-2 text-md text-ink outline-none placeholder:text-ink-faint"
         />
         <div className="max-h-64 overflow-y-auto pt-1">
           {filtered.length === 0 && (
-            <p className="px-3 py-4 text-center text-[12.5px] text-ink-faint">{t("compose:noSnippets")}</p>
+            <p className="px-3 py-4 text-center text-sm text-ink-faint">{t("compose:noSnippets")}</p>
           )}
           {filtered.map((s, i) => (
             <button
               key={s.id}
-              className={`flex w-full items-baseline gap-2 rounded-lg px-3 py-2 text-left ${
+              className={`flex w-full items-baseline gap-2 rounded-control px-3 py-2 text-left ${
                 i === cursor ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
               }`}
               onMouseMove={() => setCursor(i)}
               onClick={() => onPick(s.id)}
             >
-              <span className="text-[13.5px] text-ink">{s.name}</span>
-              {s.shortcut && <span className="font-mono text-[11.5px] text-accent">;{s.shortcut}</span>}
-              <span className="ml-auto truncate pl-3 text-[11.5px] text-ink-faint">
+              <span className="text-base text-ink">{s.name}</span>
+              {s.shortcut && <span className="font-mono text-xs text-accent">;{s.shortcut}</span>}
+              <span className="ml-auto truncate pl-3 text-xs text-ink-faint">
                 {s.bodyText.replace(/\s+/g, " ").slice(0, 40)}
               </span>
             </button>

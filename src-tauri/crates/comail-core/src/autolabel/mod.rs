@@ -47,7 +47,7 @@ pub struct MessageFacts<'a> {
     pub is_automated: bool,
     /// List-Unsubscribe or List-Id present.
     pub has_list_headers: bool,
-    /// Sender already appears in the harvested contacts table.
+    /// The user has written to this sender before (see [`sender_known`]).
     pub sender_known: bool,
 }
 
@@ -184,9 +184,13 @@ fn label_id_for(conn: &Connection, category: Category) -> Result<Option<i64>> {
         .optional()?)
 }
 
+/// Has the user ever sent mail to this address? Only outgoing mail counts:
+/// every inbound sender is harvested into `contacts` during the same sync
+/// transaction that routes the thread, so "appears in contacts" would make
+/// every sender look known and cold outreach (Pitch) could never be detected.
 pub fn sender_known(conn: &Connection, from_addr: &str) -> bool {
     conn.query_row(
-        "SELECT 1 FROM contacts WHERE email = ?1 COLLATE NOCASE LIMIT 1",
+        "SELECT 1 FROM contacts WHERE email = ?1 COLLATE NOCASE AND send_count > 0 LIMIT 1",
         params![from_addr],
         |_| Ok(()),
     )
@@ -359,10 +363,23 @@ mod tests {
     }
 
     #[test]
-    fn sender_known_consults_contacts() {
+    fn sender_known_requires_prior_send() {
         use crate::db::testutil;
         let c = testutil::conn();
         testutil::seed_account(&c);
+        assert!(!sender_known(&c, "bd@agency.io"));
+        // Receiving mail from someone doesn't make them known.
+        crate::db::repo::contacts::harvest(
+            &c,
+            1,
+            &crate::models::Address {
+                name: None,
+                email: "bd@agency.io".into(),
+            },
+            false,
+            50,
+        )
+        .unwrap();
         assert!(!sender_known(&c, "bd@agency.io"));
         crate::db::repo::contacts::harvest(
             &c,

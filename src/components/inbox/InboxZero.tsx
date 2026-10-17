@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { friendlyDate } from "../../lib/format";
 
+/** `viewTitle` is shown as-is (no case folding: lowercasing translated text
+ *  is wrong in many languages); in the inbox it is the active tab's name. */
 export function InboxZero({ viewTitle }: { viewTitle: string }) {
   const { t } = useTranslation();
   return (
@@ -20,11 +22,11 @@ export function InboxZero({ viewTitle }: { viewTitle: string }) {
         >
           <path d="M20 6L9 17l-5-5" />
         </svg>
-        <h1 className="text-[26px] font-semibold tracking-tight text-ink">{t("inbox:zero.allDone")}</h1>
-        <p className="text-[13.5px] text-ink-muted">
-          {t("inbox:zero.nothingIn", { view: viewTitle.toLowerCase(), date: friendlyDate(Date.now()) })}
+        <h1 className="text-xl font-semibold tracking-tight text-ink">{t("inbox:zero.allDone")}</h1>
+        <p className="text-base text-ink-muted">
+          {t("inbox:zero.nothingIn", { view: viewTitle, date: friendlyDate(Date.now()) })}
         </p>
-        <p className="mt-4 text-[12px] text-ink-faint">
+        <p className="mt-4 text-sm text-ink-faint">
           <kbd className="co-kbd">Tab</kbd> {t("inbox:zero.hintNextSplit")} &ensp;·&ensp; <kbd className="co-kbd">C</kbd>{" "}
           {t("inbox:zero.hintCompose")} &ensp;·&ensp; <kbd className="co-kbd">?</kbd> {t("inbox:zero.hintShortcuts")}
         </p>

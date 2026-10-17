@@ -2,7 +2,7 @@
   "zero": {
     "allDone": "全部处理完毕",
     "nothingIn": "{{view}} 中没有内容 · {{date}}",
-    "hintNextSplit": "下一个分组",
+    "hintNextSplit": "下一个分栏",
     "hintCompose": "撰写",
     "hintShortcuts": "快捷键"
   },
@@ -11,11 +11,11 @@
     "other": "其他"
   },
   "splitPopover": {
-    "title": "新建分组",
+    "title": "新建分栏",
     "fromSender": "来自 {{email}} 的邮件",
     "fromDomain": "所有 @{{domain}}",
     "tabName": "标签页：{{name}}",
-    "created": "已创建分组“{{name}}”",
+    "created": "已创建分栏“{{name}}”",
     "excludeSender": "将 {{email}} 从其当前规则中排除",
     "excludeDomain": "将所有 @{{domain}} 从其当前规则中排除",
     "excluded": "已从“{{name}}”中排除"
@@ -25,5 +25,15 @@
     "recent": "最近的会话",
     "noRecent": "没有其他会话",
     "noSubject": "(无主题)"
+  },
+  "tips": {
+    "done": "标记完成",
+    "remind": "稍后提醒",
+    "compose": "撰写",
+    "search": "搜索",
+    "command": "所有命令",
+    "dismiss": "隐藏提示",
+    "splits": "切换收件箱分栏。可在 设置 › 分栏收件箱 中自定义。",
+    "splitsOpen": "设置分栏"
   }
 }

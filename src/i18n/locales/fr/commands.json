@@ -28,8 +28,8 @@
     "prevThread": "Conversation précédente",
     "openThread": "Ouvrir la conversation",
     "backClose": "Retour / fermer",
-    "nextSplit": "Division suivante",
-    "prevSplit": "Division précédente",
+    "nextSplit": "Onglet suivant",
+    "prevSplit": "Onglet précédent",
     "nextMessage": "Message suivant",
     "prevMessage": "Message précédent",
     "goInbox": "Aller à la boîte de réception",
@@ -44,6 +44,7 @@
     "compose": "Composer un nouveau message",
     "reply": "Répondre",
     "replyAll": "Répondre à tous",
+    "quoteSelection": "Répondre en citant la sélection",
     "forward": "Transférer",
     "send": "Envoyer",
     "sendDone": "Envoyer et marquer terminé",
@@ -52,7 +53,7 @@
     "instantSend": "Envoi instantané",
     "attachFiles": "Joindre des fichiers…",
     "aiWrite": "Écrire avec l’IA…",
-    "aiSummarize": "IA : Résumer la conversation",
+    "aiSummarize": "Résumé de cette conversation",
     "calendarToday": "Calendrier : Aujourd’hui",
     "calendarWeek": "Calendrier : Cette semaine",
     "calendarMonth": "Calendrier : Vue mois",
@@ -74,21 +75,27 @@
     "openSettings": "Ouvrir les paramètres",
     "manageSnippets": "Gérer les extraits",
     "manageLabels": "Gérer les libellés",
-    "editSplits": "Modifier les divisions",
+    "editSplits": "Modifier les onglets",
     "themeSnow": "Thème : Snow",
     "themeCarbon": "Thème : Carbon",
     "themeSystem": "Thème : Système",
-    "splitBySender": "Diviser par expéditeur",
+    "splitBySender": "Onglet par expéditeur",
     "goLabel": "Aller au libellé : {{name}}",
     "goSplitTab": "Aller à {{name}}",
     "askAi": "Interroger l’IA sur votre boîte de réception",
+    "copyVerificationCode": "Copier le dernier code de vérification",
     "relabelAuto": "Relancer les libellés automatiques",
     "openAiSettings": "Paramètres IA",
     "openAccountSettings": "Paramètres du compte",
     "toggleSidebar": "Afficher le menu des boîtes aux lettres",
-    "aiProofread": "Corriger avec l'IA"
+    "aiProofread": "Relire",
+    "calendarDay": "Calendrier : vue jour",
+    "calendarWeekView": "Calendrier : vue semaine",
+    "calendarSidebar": "Calendrier : afficher/masquer la barre latérale"
   },
   "toast": {
+    "noVerificationCode": "Aucun code de vérification depuis 30 minutes",
+    "verificationCodeCopied": "{{code}} de {{sender}} copié",
     "syncing": "Synchronisation…",
     "noUnsubscribeLink": "Aucun lien de désabonnement",
     "unsubscribeWouldOpen": "Désabonnement : ouvrirait {{url}}",
@@ -126,5 +133,9 @@
     "row": "Demander à l’IA de faire : « {{query}} »",
     "notUnderstood": "L’IA n’a pas pu transformer cela en action. Essayez de reformuler.",
     "locationNote": "Lieu : {{location}}"
+  },
+  "aiHere": {
+    "title": "IA ici",
+    "hint": "Écrire avec l’IA dans l’éditeur · Résumé dans une conversation · Demander à l’IA dans la recherche"
   }
 }

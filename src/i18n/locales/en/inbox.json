@@ -25,5 +25,15 @@
     "recent": "Recent conversations",
     "noRecent": "No other conversations",
     "noSubject": "(no subject)"
+  },
+  "tips": {
+    "done": "to mark done",
+    "remind": "to remind me",
+    "compose": "to compose",
+    "search": "to search",
+    "command": "for all commands",
+    "dismiss": "Hide tips",
+    "splits": "to switch inbox tabs. Add your own in Settings › Split inbox.",
+    "splitsOpen": "Set up tabs"
   }
 }

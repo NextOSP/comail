@@ -1,6 +1,7 @@
 {
   "db": "Erreur de base de données",
   "io": "Erreur du système de fichiers",
+  "network": "Impossible de joindre le serveur. Vérifiez votre connexion ou le point de terminaison dans les Paramètres.",
   "imap": "Erreur du serveur de messagerie (IMAP)",
   "smtp": "Envoi impossible (erreur SMTP)",
   "tls": "Erreur de connexion sécurisée (TLS)",
@@ -10,9 +11,19 @@
   "mime": "Erreur de format du message",
   "not_found": "Introuvable",
   "offline": "Vous êtes hors ligne",
+  "ai_not_configured": "L’IA n’est pas configurée. Ajoutez une clé API dans les Paramètres (inutile pour les points de terminaison locaux comme LM Studio).",
   "other": "Une erreur s’est produite",
   "unknown": "Une erreur s’est produite",
   "oauthFailed": "Échec de la connexion OAuth",
   "connectionFailed": "Échec de la connexion",
-  "caldav": "Erreur du serveur de calendrier"
+  "caldav": "Erreur du serveur de calendrier",
+  "crash": {
+    "title": "Une erreur s’est produite",
+    "body": "Cette vue a rencontré une erreur inattendue. Vos e-mails sont en sécurité : réessayez ou rechargez l’application.",
+    "details": "Détails techniques",
+    "copy": "Copier les détails",
+    "copied": "Copié",
+    "reload": "Recharger l’app",
+    "retry": "Réessayer"
+  }
 }

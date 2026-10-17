@@ -267,12 +267,20 @@ async fn full_sync_triage_and_search() {
     })
     .await;
 
-    let hits = core.search("quarterly".into(), None, 10).await.unwrap();
+    let hits = core
+        .search("quarterly".into(), None, 10)
+        .await
+        .unwrap()
+        .threads;
     assert!(
         hits.iter().any(|t| t.id == alice_id),
         "FTS search should find the quarterly thread"
     );
-    let hits = core.search("from:stripe".into(), None, 10).await.unwrap();
+    let hits = core
+        .search("from:stripe".into(), None, 10)
+        .await
+        .unwrap()
+        .threads;
     assert_eq!(hits.len(), 1, "from: operator");
 
     // 6. Archive Bob's thread: optimistic local move + remote replay.
@@ -372,7 +380,8 @@ async fn full_sync_triage_and_search() {
     let eve_hits = core
         .search("has:attachment".into(), None, 10)
         .await
-        .unwrap();
+        .unwrap()
+        .threads;
     assert!(
         eve_hits.iter().any(|t| t.id == eve_id),
         "has:attachment finds it"

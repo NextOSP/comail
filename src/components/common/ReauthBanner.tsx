@@ -5,6 +5,7 @@ import { errorMessage } from "../../ipc/errors";
 import { queryClient } from "../../queries/client";
 import { useAccounts } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
+import { Button } from "../ui/Button";
 
 /**
  * Inbox-level warning for accounts whose sign-in expired (`needs_reauth`).
@@ -56,26 +57,28 @@ export function ReauthBanner() {
         return (
           <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="size-1.5 shrink-0 rounded-full bg-danger" />
-            <span className="min-w-0 truncate text-[12.5px] text-ink">
+            <span className="min-w-0 truncate text-sm text-ink">
               {t("common:reauthBanner.message", { email: a.email })}
             </span>
             {a.provider === "imap" ? (
-              <button
-                className="rounded-md border border-hairline px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-bg2"
+              <Button
+                size="sm"
+                className="font-medium"
                 onClick={() => set({ panel: "settings", settingsTab: "accounts" })}
               >
                 {t("common:reauthBanner.openSettings")}
-              </button>
+              </Button>
             ) : (
-              <button
-                className="rounded-md border border-hairline px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-bg2 disabled:opacity-50"
+              <Button
+                size="sm"
+                className="font-medium"
                 disabled={waitingId != null && waitingId !== a.id}
                 onClick={() => void reauth(a.id, a.email)}
               >
                 {waitingId === a.id
                   ? t("common:reauthBanner.waiting", { provider })
                   : t("common:reauthBanner.action", { provider })}
-              </button>
+              </Button>
             )}
           </div>
         );

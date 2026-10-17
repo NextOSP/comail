@@ -91,6 +91,7 @@ export function applyOptimistic(
 
 function refetchLists() {
   void queryClient.invalidateQueries({ queryKey: ["threads"] });
+  void queryClient.invalidateQueries({ queryKey: ["bundles"] });
   void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
   void queryClient.invalidateQueries({ queryKey: ["search"] });
 }

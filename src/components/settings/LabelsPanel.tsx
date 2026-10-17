@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
-import type { Label } from "../../ipc/types";
+import type { AiAutomationRule, Label, RuleCondition, Settings, SplitRule } from "../../ipc/types";
 import { queryClient } from "../../queries/client";
-import { useLabels } from "../../queries/hooks";
+import { useLabels, useSplits } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
-import { ConfirmButton, FormField, ghostBtnCls, inputCls, primaryBtnCls } from "./panelKit";
+import { Button, ConfirmButton, EmptyState, FormField, inputCls, SettingsGroup, Toggle } from "./panelKit";
+import { newRule, RuleForm } from "./RulesEditor";
+import { invalidateSplitViews } from "./SplitsPanel";
 
-export const SWATCHES = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#6b7280"];
+import { LABEL_COLORS as SWATCHES } from "../../lib/labelColors";
+export { SWATCHES };
 
 function invalidateLabelViews() {
   void queryClient.invalidateQueries({ queryKey: ["labels"] });
@@ -28,12 +31,48 @@ export function LabelsPanel() {
   return null;
 }
 
-/** Label management, hosted inside the Settings panel. */
-export function LabelsSection() {
+/** The split that shows exactly this label as an inbox tab, if any. */
+function labelTabSplit(splits: SplitRule[], labelId: number): SplitRule | undefined {
+  const only = (c: RuleCondition | null | undefined): boolean =>
+    !!c &&
+    ((c.kind === "label" && c.id === labelId) ||
+      ((c.kind === "all" || c.kind === "any") && c.of.length === 1 && only(c.of[0])));
+  return splits.find(
+    (s) =>
+      s.target == null &&
+      (s.condition
+        ? only(s.condition)
+        : s.query.labels?.length === 1 &&
+          s.query.labels[0] === labelId &&
+          Object.keys(s.query).length === 1),
+  );
+}
+
+/** Rules whose actions add this label. */
+function rulesAdding(rules: AiAutomationRule[], labelId: number) {
+  return rules.filter((r) =>
+    r.actions.some((a) => a.kind === "add_label" && a.value === String(labelId)),
+  );
+}
+
+/** Label management, hosted inside the Settings panel. Each user label can be
+ *  auto-applied by rules (condition and/or AI check) and shown as its own
+ *  split-inbox tab. */
+export function LabelsSection({
+  settings,
+  commitRules,
+}: {
+  settings: Settings;
+  commitRules: (rules: AiAutomationRule[]) => void;
+}) {
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
   const { data: labels } = useLabels();
+  const { data: splits } = useSplits();
   const [editing, setEditing] = useState<Label | "new" | null>(null);
+  const [ruleDraft, setRuleDraft] = useState<AiAutomationRule | null>(null);
+  const [tabBusy, setTabBusy] = useState<number | null>(null);
+  const rules = settings.aiAutomationRules;
 
   const ordered = [...(labels ?? [])].sort((a, b) => a.position - b.position);
 
@@ -47,9 +86,55 @@ export function LabelsSection() {
     }
   };
 
+  const toggleTab = async (label: Label, on: boolean) => {
+    setTabBusy(label.id);
+    try {
+      const existing = labelTabSplit(splits ?? [], label.id);
+      if (on && !existing) {
+        await call("save_split", {
+          split: {
+            id: null,
+            name: label.name,
+            position: splits?.length ?? 0,
+            query: {},
+            condition: { kind: "label", id: label.id },
+            target: null,
+          },
+        });
+      } else if (!on && existing) {
+        await call("delete_split", { splitId: existing.id });
+      }
+    } catch (err) {
+      pushToast({ kind: "error", message: t("settings:labels.tabFailed", { detail: errorMessage(err) }) });
+    } finally {
+      setTabBusy(null);
+      invalidateSplitViews();
+    }
+  };
+
+  const openAutoApply = (label: Label) => {
+    // One dedicated rule per label is the common case: edit it in place.
+    const own = rulesAdding(rules, label.id);
+    setRuleDraft(
+      own.length === 1
+        ? structuredClone(own[0])
+        : newRule({
+            name: t("settings:labels.autoRuleName", { name: label.name }),
+            actions: [{ kind: "add_label", value: String(label.id) }],
+          }),
+    );
+  };
+
   return (
     <>
-      {editing != null ? (
+      {ruleDraft != null ? (
+        <RuleForm
+          rules={rules}
+          initial={ruleDraft}
+          commit={commitRules}
+          onDone={() => setRuleDraft(null)}
+        />
+      ) : editing != null ? (
         <LabelForm
           label={editing === "new" ? null : editing}
           nextPosition={ordered.length}
@@ -57,41 +142,65 @@ export function LabelsSection() {
         />
       ) : (
         <>
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-[11.5px] font-semibold tracking-[0.12em] text-ink-faint uppercase">
-              {t("settings:labels.yourLabels")}
-            </span>
-            <button className={primaryBtnCls} onClick={() => setEditing("new")}>
-              {t("settings:labels.new")}
-            </button>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {ordered.map((l) => (
-              <div
-                key={l.id}
-                className="flex items-center gap-2.5 rounded-lg border border-hairline bg-bg0 px-3 py-2"
-              >
-                <span className="size-3 shrink-0 rounded-full" style={{ background: l.color }} />
-                <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">{l.name}</span>
-                <button
-                  className="rounded-md border border-hairline px-2.5 py-1 text-[12px] text-ink-muted hover:bg-bg2"
-                  onClick={() => setEditing(l)}
-                >
-                  {t("settings:labels.edit")}
-                </button>
-                <ConfirmButton
-                  label={t("settings:labels.delete")}
-                  confirmLabel={t("settings:labels.reallyDelete")}
-                  onConfirm={() => void deleteLabel(l.id)}
-                />
-              </div>
-            ))}
-            {ordered.length === 0 && (
-              <p className="py-4 text-center text-[12.5px] text-ink-faint">
-                {t("settings:labels.empty")}
-              </p>
-            )}
-          </div>
+          {ordered.length === 0 ? (
+            <EmptyState
+              title={t("settings:labels.empty")}
+              action={
+                <Button variant="primary" size="sm" icon="plus" onClick={() => setEditing("new")}>
+                  {t("settings:labels.new")}
+                </Button>
+              }
+            />
+          ) : (
+            <SettingsGroup
+              title={t("settings:labels.yourLabels")}
+              actions={
+                <Button variant="primary" size="sm" icon="plus" onClick={() => setEditing("new")}>
+                  {t("settings:labels.new")}
+                </Button>
+              }
+            >
+              {ordered.map((l) => (
+                <div key={l.id} className="flex items-center gap-2.5">
+                  <span className="size-3 shrink-0 rounded-full" style={{ background: l.color }} />
+                  <span className="min-w-0 flex-1 truncate text-base text-ink">{l.name}</span>
+                  {/* Auto categories are sorted by the classifier and already have tabs. */}
+                  {!l.isAuto && (
+                    <>
+                      <Button
+                        size="sm"
+                        icon="sparkle"
+                        onClick={() => openAutoApply(l)}
+                        title={t("settings:labels.autoApplyHint")}
+                      >
+                        {rulesAdding(rules, l.id).length > 0
+                          ? t("settings:labels.autoApplyCount", { count: rulesAdding(rules, l.id).length })
+                          : t("settings:labels.autoApply")}
+                      </Button>
+                      <span className="flex items-center gap-1.5 text-xs text-ink-faint">
+                        <Toggle
+                          label={t("settings:labels.showAsTab", { name: l.name })}
+                          checked={labelTabSplit(splits ?? [], l.id) != null}
+                          onChange={(on) => {
+                            if (tabBusy == null) void toggleTab(l, on);
+                          }}
+                        />
+                        {t("settings:labels.tab")}
+                      </span>
+                    </>
+                  )}
+                  <Button size="sm" icon="edit" onClick={() => setEditing(l)}>
+                    {t("settings:labels.edit")}
+                  </Button>
+                  <ConfirmButton
+                    label={t("settings:labels.delete")}
+                    confirmLabel={t("settings:labels.reallyDelete")}
+                    onConfirm={() => void deleteLabel(l.id)}
+                  />
+                </div>
+              ))}
+            </SettingsGroup>
+          )}
         </>
       )}
     </>
@@ -159,7 +268,7 @@ function LabelForm({
         />
       </FormField>
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11.5px] font-medium text-ink-faint">{t("settings:labels.colorLabel")}</span>
+        <span className="text-xs font-medium text-ink-faint">{t("settings:labels.colorLabel")}</span>
         <div className="flex flex-wrap gap-2">
           {SWATCHES.map((c) => (
             <button
@@ -176,16 +285,16 @@ function LabelForm({
         </div>
       </div>
       <div className="mt-1 flex items-center gap-2">
-        <button type="submit" className={primaryBtnCls} disabled={busy || !name.trim()}>
+        <Button type="submit" variant="primary" busy={busy} disabled={!name.trim()}>
           {busy
             ? t("settings:labels.saving")
             : label
               ? t("settings:labels.saveChanges")
               : t("settings:labels.create")}
-        </button>
-        <button type="button" className={ghostBtnCls} onClick={onDone}>
+        </Button>
+        <Button variant="ghost" onClick={onDone}>
           {t("settings:labels.cancel")}
-        </button>
+        </Button>
       </div>
     </form>
   );

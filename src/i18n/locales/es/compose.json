@@ -19,6 +19,21 @@
   "ccBcc": "Cc / Cco",
   "subject": "Asunto",
   "aiBadge": "IA",
+  "ai": {
+    "write": "Escribir con IA",
+    "edit": "Editar con IA",
+    "voiceTip": "Redactar con tu estilo de escritura aprendido",
+    "accept": "Aceptar",
+    "retry": "Reintentar",
+    "shorten": "Acortar",
+    "lengthen": "Alargar",
+    "improve": "Mejorar redacción",
+    "generate": "Generar",
+    "hint": "↵ generar · ⇧↵ nueva línea · Esc cerrar",
+    "addToCalendar": "Añadir al calendario",
+    "addToCalendarTip": "Crear un evento de calendario a partir de este borrador",
+    "dismiss": "Descartar"
+  },
   "aiPlaceholder": "p. ej. aceptar la invitación, proponer el martes",
   "aiVoice": "Con mi estilo",
   "drafting": "Redactando…",
@@ -60,9 +75,11 @@
   "quickReply1": "¡Entendido, gracias!",
   "quickReply2": "Perfecto, lo haré.",
   "quickReply3": "Gracias, le echaré un vistazo.",
+  "quickRepliesLoading": "Generando respuestas sugeridas…",
   "signature": {
     "label": "Firma",
-    "none": "Sin firma"
+    "none": "Sin firma",
+    "trigger": "Firma: {{name}}"
   },
   "fmt": {
     "bold": "Negrita",
@@ -79,5 +96,11 @@
     "table": "Insertar tabla"
   },
   "proofread": "Revisar",
-  "proofreadClean": "Todo correcto: nada que corregir."
+  "proofreadClean": "Todo correcto: nada que corregir.",
+  "teamsMeeting": "Reunión de Teams",
+  "teamsMeetingTip": "Crea una reunión de Microsoft Teams y añade el enlace para unirse",
+  "teamsMeetingTitle": "Reunión de Microsoft Teams",
+  "teamsMeetingJoin": "Unirse a la reunión ahora",
+  "teamsMeetingAdded": "Enlace de la reunión de Teams añadido",
+  "teamsMeetingError": "No se pudo crear la reunión de Teams: {{error}}"
 }

@@ -19,6 +19,21 @@
   "ccBcc": "抄送 / 密送",
   "subject": "主题",
   "aiBadge": "AI",
+  "ai": {
+    "write": "用 AI 撰写",
+    "edit": "用 AI 编辑",
+    "voiceTip": "以你习得的写作风格起草",
+    "accept": "接受",
+    "retry": "重试",
+    "shorten": "缩短",
+    "lengthen": "扩写",
+    "improve": "润色",
+    "generate": "生成",
+    "hint": "↵ 生成 · ⇧↵ 换行 · Esc 关闭",
+    "addToCalendar": "添加到日历",
+    "addToCalendarTip": "根据此草稿创建日历事件",
+    "dismiss": "忽略"
+  },
   "aiPlaceholder": "例如：接受邀请，提议周二",
   "aiVoice": "以我的口吻",
   "drafting": "起草中…",
@@ -60,9 +75,11 @@
   "quickReply1": "收到，谢谢！",
   "quickReply2": "好的，没问题。",
   "quickReply3": "谢谢，我看一下。",
+  "quickRepliesLoading": "正在生成建议回复…",
   "signature": {
     "label": "签名",
-    "none": "无签名"
+    "none": "无签名",
+    "trigger": "签名：{{name}}"
   },
   "fmt": {
     "bold": "加粗",
@@ -79,5 +96,11 @@
     "table": "插入表格"
   },
   "proofread": "校对",
-  "proofreadClean": "看起来不错 - 无需修改。"
+  "proofreadClean": "看起来不错 - 无需修改。",
+  "teamsMeeting": "Teams 会议",
+  "teamsMeetingTip": "创建 Microsoft Teams 会议并添加入会链接",
+  "teamsMeetingTitle": "Microsoft Teams 会议",
+  "teamsMeetingJoin": "立即加入会议",
+  "teamsMeetingAdded": "已添加 Teams 会议链接",
+  "teamsMeetingError": "无法创建 Teams 会议：{{error}}"
 }

@@ -197,14 +197,15 @@ async fn hundred_k_messages_stay_instant() {
     let op_ms = t0.elapsed().as_millis();
     let _ = hits2;
 
-    // 5. Full hybrid pipeline (lexical + OR fallback + RRF + personal boosts
+    // 5. Full hybrid pipeline (lexical + partial candidates + tiered ranking
     //    + hydration) - the path the search screen hits per keystroke.
     let t0 = Instant::now();
     let hits3 = db
         .read(|conn| {
             let q = comail_core::search::parse("quarterly numbers");
-            let lex = repo::search::lexical_thread_ids(conn, &q, repo::search::candidate_cap(60))?;
-            repo::search::fuse(conn, &q, lex, &[], 60)
+            let lex = repo::search::lexical_candidates(conn, &q, repo::search::candidate_cap(60))?;
+            let now = chrono::Utc::now().timestamp_millis();
+            Ok(repo::search::rank(conn, &q, lex, &[], 60, now)?.threads)
         })
         .await
         .unwrap();

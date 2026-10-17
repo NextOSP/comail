@@ -1,14 +1,4 @@
 {
-  "intro": {
-    "skipHint": "Appuyez sur une touche pour passer",
-    "lines": [
-      "L'e-mail n'a pas changé depuis vingt ans.",
-      "Aujourd'hui, tout change.",
-      "Rapide. Serein. Simplement beau."
-    ],
-    "title": "Comail",
-    "continue": "Commencer"
-  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",
@@ -54,5 +44,324 @@
   "connectionFailed": "Échec de la connexion",
   "accountConnected": "{{email}} connecté. Synchronisation…",
   "oauthConnected": "Compte connecté. Synchronisation…",
-  "oauthNotConfigured": "Ajoutez d’abord votre client ID OAuth. Ouverture des paramètres, consultez le guide détaillé sous Applications OAuth."
+  "oauthNotConfigured": "Ajoutez d’abord votre client ID OAuth. Ouverture des paramètres, consultez le guide détaillé sous Applications OAuth.",
+  "flow": {
+    "stepOf": "Étape {{n}} sur {{total}}",
+    "back": "Retour",
+    "continue": "Continuer",
+    "skip": "Passer",
+    "welcome": {
+      "title": "Bienvenue dans Comail.",
+      "body": "Une boîte de réception rapide, pensée pour le clavier. Connectez un compte, choisissez une apparence, apprenez trois touches, et c’est parti. Environ une minute.",
+      "cta": "Commencer"
+    },
+    "connect": {
+      "title": "Connectez votre boîte de réception.",
+      "body": "Comail communique directement avec votre fournisseur. Votre mot de passe et vos e-mails ne quittent jamais cet ordinateur.",
+      "imap": "Autre fournisseur (IMAP)",
+      "waiting": "En attente de votre navigateur…",
+      "waitingHint": "Terminez la connexion, puis revenez ici.",
+      "cancel": "Annuler",
+      "connected": "Connecté en tant que {{email}}",
+      "addAnother": "Ajouter un autre compte"
+    },
+    "personalize": {
+      "title": "Choisissez une apparence.",
+      "body": "Vous pouvez la modifier à tout moment depuis la palette de commandes ({{mod}}K) ou les Paramètres.",
+      "theme": "Thème",
+      "accent": "Couleur d’accent",
+      "themes": {
+        "snow": "Clair",
+        "carbon": "Sombre",
+        "system": "Système"
+      }
+    },
+    "shortcuts": {
+      "title": "Apprenez les touches.",
+      "body": "Comail est conçu pour être piloté au clavier. Essayez chaque touche : la boîte de réception à droite est un bac à sable et rien ne touche à vos e-mails.",
+      "press": "Appuyez sur",
+      "groups": {
+        "navigate": "Se déplacer",
+        "triage": "Trier",
+        "act": "Agir",
+        "ai": "IA"
+      },
+      "down": "Passer à la conversation suivante",
+      "up": "Revenir à la conversation précédente",
+      "search": "Tout rechercher",
+      "done": "Marquer la conversation comme terminée",
+      "star": "La suivre",
+      "snooze": "La reporter à plus tard",
+      "reply": "Répondre",
+      "palette": "Ouvrir la palette de commandes, elle sait tout faire",
+      "downShort": "Suivante",
+      "upShort": "Précédente",
+      "searchShort": "Rechercher",
+      "doneShort": "Marquer terminé",
+      "starShort": "Suivre",
+      "snoozeShort": "Reporter",
+      "replyShort": "Répondre",
+      "paletteShort": "Palette de commandes",
+      "allDone": "Vous maîtrisez les bases. Appuyez sur ? n’importe où dans Comail pour voir tous les raccourcis.",
+      "progress": "{{n}} sur {{total}} essayés",
+      "then": "puis",
+      "summarize": "Résumer la conversation",
+      "summarizeShort": "Résumer",
+      "aiWrite": "Ouvrir une réponse, puis laisser l’IA la rédiger",
+      "aiWriteShort": "Rédiger avec l’IA",
+      "proofread": "Corriger votre brouillon",
+      "proofreadShort": "Corriger",
+      "ask": "Ouvrir la recherche, puis poser n’importe quelle question à l’IA sur vos e-mails",
+      "askShort": "Demander à l’IA",
+      "back": "Retour à la boîte de réception",
+      "aiDone": "Voilà la boîte à outils IA. {{mod}}J fonctionne partout et tient compte du contexte."
+    },
+    "sync": {
+      "title": "Préparation de vos e-mails, {{name}}.",
+      "titleNoName": "Préparation de vos e-mails.",
+      "connecting": "Connexion à votre serveur…",
+      "fetching": "Récupération de votre boîte de réception…",
+      "ready": "Votre boîte de réception est prête.",
+      "history": "Les anciens e-mails continuent de se synchroniser en arrière-plan.",
+      "open": "Ouvrir la boîte de réception",
+      "openAnyway": "Ouvrir la boîte de réception maintenant",
+      "ofTotal_one": "sur {{total}} message",
+      "ofTotal_other": "sur {{total}} messages"
+    },
+    "or": "ou",
+    "ai": {
+      "title": "Une seule touche pour l’IA : {{mod}}J.",
+      "body": "Elle tient compte de l’endroit où vous êtes. Dans une conversation, elle résume ; dans un brouillon, elle rédige ; dans la recherche, elle répond. Essayez-la dans le bac à sable."
+    }
+  },
+  "preview": {
+    "title": "Boîte de réception",
+    "allAccounts": "Tous les comptes",
+    "checkingMail": "Vérification du courrier",
+    "tabs": [
+      {
+        "name": "Important",
+        "count": 6
+      },
+      {
+        "name": "GitHub",
+        "count": 3
+      },
+      {
+        "name": "Actualités",
+        "count": 7
+      },
+      {
+        "name": "Autres",
+        "count": 0
+      }
+    ],
+    "today": "Aujourd’hui",
+    "doneToast": "Marqué terminé",
+    "undo": "Annuler",
+    "replyText": "Merci, ça me paraît bien. Je le rellirai ce soir et j’enverrai mes remarques demian.",
+    "palettePlaceholder": "Saisir une commande…",
+    "paletteItems": [
+      {
+        "title": "Marquer terminé",
+        "section": "Trier",
+        "key": "E"
+      },
+      {
+        "title": "Reporter…",
+        "section": "Trier",
+        "key": "H"
+      },
+      {
+        "title": "Répondre à tous",
+        "section": "Rédiger",
+        "key": "⇧R"
+      },
+      {
+        "title": "Aller aux suivis",
+        "section": "Navigation",
+        "key": "G S"
+      }
+    ],
+    "labels": {
+      "work": "Travail",
+      "followUp": "À relancer",
+      "personal": "Personnel"
+    },
+    "rows": [
+      {
+        "from": "Ana Moreau",
+        "labels": [
+          "personal"
+        ],
+        "subject": "Revue de la feuille de route T3 - présentation finale",
+        "snippet": "Ci-joint la présentation finale pour la revue de demain, les slides 4 à 6 ont changé",
+        "time": "09:41",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Tom Okafor",
+        "count": 4,
+        "subject": "Re : Moteur de synchro - reconnexion IDLE sur wifi instable",
+        "snippet": "L’ébauche me va. Un détail : le backoff se réinitialise à chaque",
+        "time": "09:12",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Northbeam Finance",
+        "labels": [
+          "work",
+          "followUp"
+        ],
+        "subject": "Note de frais : justificatif manquant",
+        "snippet": "Il manque un justificatif à votre note EXP-1187 pour le dîner d’équipe",
+        "time": "08:30",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Priya Raman",
+        "labels": [
+          "work"
+        ],
+        "subject": "Lettre d’offre - ingénieure backend senior",
+        "snippet": "Rina a accepté oralement ce matin, j’envoie les documents",
+        "time": "SAM",
+        "starred": true,
+        "group": "earlier"
+      },
+      {
+        "from": "Jonas Wehrli",
+        "count": 3,
+        "subject": "Re : Dîner jeudi ?",
+        "snippet": "Il est partant. Je lui ai transmis ta question et il dit",
+        "time": "SAM",
+        "group": "earlier"
+      },
+      {
+        "from": "Sofia Lindqvist",
+        "count": 2,
+        "subject": "Re : Lisbonne en août - échange d’appart ?",
+        "snippet": "Deux semaines, ça nous va, l’appartement a un balcon et",
+        "time": "SAM",
+        "group": "earlier"
+      },
+      {
+        "from": "GitHub",
+        "subject": "[comail] PR #68 approuvée",
+        "snippet": "Approuvée sans modification demandée. Prête à être fusionnée",
+        "time": "VEN",
+        "group": "earlier"
+      },
+      {
+        "from": "Léa Fontaine",
+        "subject": "Photos de l’atelier + dates de septembre",
+        "snippet": "Les photos de la journée portes ouvertes en pièce jointe ! Les chaises rendent",
+        "time": "VEN",
+        "group": "earlier"
+      },
+      {
+        "from": "Marcus Bell",
+        "count": 2,
+        "subject": "Rapport de test d’intrusion - actions à mener",
+        "snippet": "H-1 et H-3 sont corrigés en préproduction, H-2 nécessite une décision",
+        "time": "JEU",
+        "group": "earlier"
+      }
+    ],
+    "earlier": "Cette semaine",
+    "snoozeToast": "Reporté à demain",
+    "searchPlaceholder": "Rechercher dans les messages",
+    "searchQuery": "from:ana",
+    "thread": {
+      "back": "Retour",
+      "position": "1 sur 9",
+      "meta": "2 messages · {{from}} · {{time}}",
+      "to": "à vous",
+      "date": "Aujourd’hui, 09:41",
+      "body": "Bonjour ! Ci-joint la présentation finale pour la revue de demain. Les slides 4 à 6 ont changé après le point de vendredi, le reste est tel que vous l’avez vu. Pourriez-vous y jeter un œil avant 10 h ?",
+      "draft": "Brouillon",
+      "draftTo": "à {{from}}",
+      "toLabel": "À",
+      "send": "Envoyer"
+    },
+    "searchTitle": "Recherche",
+    "search": {
+      "placeholder": "Rechercher dans les messages…",
+      "query": "from:ana",
+      "chip": "De : ana",
+      "hint": "E-mails d’ana, les plus récents d’abord.",
+      "modeSearch": "Rechercher",
+      "modeAsk": "Demander à l’IA",
+      "askQuery": "Quand a lieu la revue de la feuille de route ?",
+      "askAnswer": "Demain à 10 h. Ana a envoyé la présentation finale ce matin et vous a demandé de regarder les slides 4 à 6 d’ici là.",
+      "sources": "Sources",
+      "results": [
+        {
+          "from": "Ana Moreau",
+          "labels": [
+            "personal"
+          ],
+          "subject": "Revue de la feuille de route T3 - présentation finale",
+          "snippet": "Ci-joint la présentation finale pour la revue de demain",
+          "time": "09:41",
+          "unread": true,
+          "group": "today"
+        },
+        {
+          "from": "Ana Moreau",
+          "subject": "Brouillon du point au conseil - juin",
+          "snippet": "Voici le brouillon du point au conseil de juin, vos commentaires sont bienvenus",
+          "time": "JEU",
+          "group": "today"
+        },
+        {
+          "from": "Ana Moreau",
+          "subject": "Re : Budget déplacement conférence",
+          "snippet": "Approuvé, réservez les vols avant que les prix ne grimpent",
+          "time": "MAR",
+          "group": "today"
+        }
+      ]
+    },
+    "summary": {
+      "title": "Résumé",
+      "points": [
+        "Ana a envoyé la présentation finale de la feuille de route T3 pour la revue de demain.",
+        "Les slides 4 à 6 ont changé après le point de vendredi ; le reste est inchangé.",
+        "Elle souhaite votre avis avant 10 h."
+      ],
+      "nextAction": "Prochaine action",
+      "next": "Relire les slides 4 à 6 et répondre avant 10 h."
+    },
+    "aiWritten": "Rédigé avec l’IA",
+    "aiText": "Merci pour l’envoi. Je la parcours ce soir et je vous fais part de mes remarques demain à la première heure.",
+    "proofread": {
+      "badge": "Corrigé · 2 corrections",
+      "parts": [
+        [
+          "Merci, ça me paraît bien. Je le ",
+          false
+        ],
+        [
+          "relirai",
+          true
+        ],
+        [
+          " ce soir et j’enverrai mes remarques ",
+          false
+        ],
+        [
+          "demain",
+          true
+        ],
+        [
+          ".",
+          false
+        ]
+      ]
+    }
+  }
 }

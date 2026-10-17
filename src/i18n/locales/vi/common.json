@@ -64,6 +64,8 @@
       "mixed": "Đang hoàn tất đồng bộ nền"
     },
     "waitingForChord": "Đang chờ tổ hợp phím",
+    "compose": "Soạn thư",
+    "composeWithShortcut": "Soạn thư ({{shortcut}})",
     "settings": "Cài đặt",
     "settingsWithShortcut": "Cài đặt ({{shortcut}})",
     "allAccounts": "Tất cả tài khoản",
@@ -83,7 +85,172 @@
     "try": "Thử",
     "emptyHint": "Tìm trên mọi tài khoản, thư mục và tin nhắn.",
     "noResults": "Không có kết quả cho “{{query}}”",
-    "toggleHint": "Chuyển Tìm kiếm / Hỏi - ⌘/Ctrl+J"
+    "toggleHint": "Chuyển Tìm kiếm / Hỏi AI - ⌘/Ctrl+J",
+    "modeSearch": "Tìm kiếm",
+    "modeAsk": "Hỏi AI",
+    "askPlaceholder": "Hỏi bất cứ điều gì về hộp thư của bạn…",
+    "askIntro": "Đặt câu hỏi như “Alice đã nói gì về ngân sách quý 3?” và nhận câu trả lời dựa trên thư của bạn, kèm nguồn.",
+    "sources": "Nguồn",
+    "searchingMailbox": "Đang tìm trong hộp thư…",
+    "readingSources_one": "Đang đọc {{count}} nguồn…",
+    "readingSources_other": "Đang đọc {{count}} nguồn…",
+    "askFailed": "Hỏi thất bại. Hãy đảm bảo AI đã được cấu hình trong Cài đặt.",
+    "previewFallbackTitle": "Cuộc hội thoại",
+    "openFull": "Mở đầy đủ",
+    "closePreview": "Đóng bản xem trước",
+    "previewFailed": "Không thể tải cuộc hội thoại này.",
+    "ops": {
+      "from": "Tên hoặc email người gửi (from:me cho thư bạn gửi)",
+      "to": "Tên hoặc email người nhận",
+      "label": "Có nhãn này",
+      "subject": "Từ hoặc \"cụm từ\" trong tiêu đề",
+      "body": "Từ hoặc \"cụm từ\" trong nội dung",
+      "in": "Thư mục: inbox, sent, archive…",
+      "is": "unread, read, starred, replied",
+      "has": "attachment hoặc label",
+      "last": "Gần đây: 7d, 2w, month, today",
+      "after": "Từ ngày, YYYY-MM-DD",
+      "before": "Trước ngày, YYYY-MM-DD",
+      "between": "Khoảng ngày, YYYY-MM-DD:YYYY-MM-DD",
+      "olderThan": "Cũ hơn: 30d, 1y",
+      "sort": "newest, oldest hoặc relevance",
+      "exclude": "Bỏ kết quả chứa một từ (hoặc -từ)"
+    },
+    "values": {
+      "in": {
+        "inbox": "Hộp thư đến",
+        "sent": "Đã gửi",
+        "drafts": "Thư nháp",
+        "archive": "Lưu trữ",
+        "trash": "Thùng rác",
+        "spam": "Thư rác"
+      },
+      "is": {
+        "unread": "Chưa đọc",
+        "read": "Đã đọc",
+        "starred": "Gắn sao",
+        "replied": "Đã trả lời"
+      },
+      "has": {
+        "attachment": "Tệp đính kèm",
+        "label": "Có nhãn"
+      },
+      "sort": {
+        "newest": "Mới nhất trước",
+        "oldest": "Cũ nhất trước",
+        "relevance": "Phù hợp nhất"
+      },
+      "last": {
+        "today": "Hôm nay",
+        "7d": "7 ngày qua",
+        "30d": "30 ngày qua",
+        "90d": "90 ngày qua",
+        "1y": "Năm qua"
+      },
+      "older_than": {
+        "30d": "Hơn 30 ngày trước",
+        "90d": "Hơn 90 ngày trước",
+        "1y": "Hơn một năm trước"
+      },
+      "from": {
+        "me": "Thư bạn gửi"
+      }
+    },
+    "chip": {
+      "from": "Từ",
+      "to": "Đến",
+      "label": "Nhãn",
+      "in": "Trong",
+      "is": "Trạng thái",
+      "has": "Có",
+      "subject": "Tiêu đề",
+      "body": "Nội dung",
+      "exclude": "Không có",
+      "after": "Sau",
+      "before": "Trước",
+      "between": "Trong khoảng",
+      "last": "Gần đây",
+      "older_than": "Cũ hơn",
+      "sort": "Sắp xếp"
+    },
+    "span": {
+      "hours_one": "{{count}} giờ",
+      "hours_other": "{{count}} giờ",
+      "days_one": "{{count}} ngày",
+      "days_other": "{{count}} ngày",
+      "weeks_one": "{{count}} tuần",
+      "weeks_other": "{{count}} tuần",
+      "months_one": "{{count}} tháng",
+      "months_other": "{{count}} tháng",
+      "years_one": "{{count}} năm",
+      "years_other": "{{count}} năm"
+    },
+    "explain": {
+      "lead": "Thư",
+      "leadSent": "Thư bạn đã gửi",
+      "me": "tôi",
+      "from": "từ {{v}}",
+      "to": "gửi {{v}}",
+      "label": "có nhãn {{v}}",
+      "in": "trong {{v}}",
+      "is": {
+        "unread": "chưa đọc",
+        "read": "đã đọc",
+        "starred": "được gắn sao",
+        "replied": "bạn đã trả lời"
+      },
+      "has": {
+        "attachment": "có tệp đính kèm",
+        "label": "có nhãn"
+      },
+      "today": "trong hôm nay",
+      "todayShort": "hôm nay",
+      "last": "trong {{span}} qua",
+      "olderThan": "cũ hơn {{span}}",
+      "between": "từ {{from}} đến {{to}}",
+      "after": "từ {{date}}",
+      "before": "trước {{date}}",
+      "containing": "có chứa {{terms}}",
+      "subject": "có {{v}} trong tiêu đề",
+      "body": "có {{v}} trong nội dung",
+      "without": "không có {{v}}",
+      "sort": {
+        "relevance": "phù hợp nhất trước",
+        "newest": "mới nhất trước",
+        "oldest": "cũ nhất trước"
+      },
+      "sentence": "{{what}}, {{order}}."
+    },
+    "warn": {
+      "unknown_operator": "“{{token}}” không phải bộ lọc tìm kiếm",
+      "bad_value": "“{{token}}” không phải giá trị hợp lệ",
+      "unknown_label": "Không có nhãn “{{token}}”",
+      "use": "Dùng {{fix}}"
+    },
+    "group": {
+      "partial": "Khớp một phần - không đủ mọi từ",
+      "similar": "Liên quan - không khớp từ khóa",
+      "similarHint": "Tìm theo ý nghĩa"
+    },
+    "reason": {
+      "subject": "Tiêu đề",
+      "sender": "Người gửi",
+      "content": "Nội dung",
+      "partial": "Một phần",
+      "similar": "Tương tự"
+    },
+    "help": {
+      "title": "Bộ lọc tìm kiếm",
+      "examples": "Ví dụ",
+      "ex1": "thư gần đây trong hộp thư đến từ Alice",
+      "ex2": "hóa đơn có tệp đính kèm",
+      "ex3": "thư bạn đã gửi, cũ nhất trước",
+      "ex4": "thư chưa đọc có nhãn Work",
+      "ex5": "cụm từ chính xác trong khoảng ngày",
+      "ex6": "thư không chứa một từ"
+    },
+    "removeFilter": "Bỏ {{label}}",
+    "noResultsHint": "Không có thư nào khớp mọi bộ lọc. Thử bỏ bớt:"
   },
   "shortcutHelp": {
     "title": "Phím tắt",
@@ -126,7 +293,11 @@
     "next week": "Tuần sau"
   },
   "splitTabs": {
-    "tabToSwitch": "Tab để chuyển"
+    "tabToSwitch": "Tab để chuyển",
+    "label": "Các tab hộp thư",
+    "newMail": "có thư mới",
+    "unread_one": "{{count}} chưa đọc",
+    "unread_other": "{{count}} chưa đọc"
   },
   "threadRow": {
     "hasAttachments": "Có tệp đính kèm",
@@ -150,7 +321,7 @@
   },
   "sidebar": {
     "snippets": "Mẫu văn bản",
-    "splits": "Quy tắc hộp thư chia cột",
+    "splits": "Quy tắc hộp thư chia tab",
     "labels": "Nhãn",
     "folders": "Thư mục",
     "manageLabels": "Quản lý nhãn",

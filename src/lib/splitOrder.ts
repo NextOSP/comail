@@ -40,6 +40,24 @@ export function mergeTabOrder(
   return [...splitItems, ...labelItems].sort((a, b) => a.position - b.position);
 }
 
+/**
+ * Position for a newly created split: one past the highest position across
+ * custom splits and auto-label tabs. Using a plain count (`splits.length`)
+ * could land on a position an auto label already holds once positions have
+ * gaps, and a single collision flips `mergeTabOrder` back to the legacy
+ * grouped order, scrambling the user's arrangement.
+ */
+export function nextTabPosition(
+  splits: SplitRule[] | undefined,
+  labels: Label[] | undefined,
+): number {
+  const positions = [
+    ...(splits ?? []).map((s) => s.position),
+    ...(labels ?? []).filter((l) => l.isAuto).map((l) => l.position),
+  ];
+  return positions.length === 0 ? 0 : Math.max(...positions) + 1;
+}
+
 /** Complete inbox tab order shared by rendering, direct hotkeys, and cycling.
  *  Rules that route their matches into an existing tab (a non-null `target`)
  *  own no tab of their own, so they are excluded here; Settings lists them via
@@ -56,4 +74,24 @@ export function inboxTabOrder(
     ),
     { kind: "other" },
   ];
+}
+
+/**
+ * Tab-bar key of the inbox tab the UI is showing, or null for the whole inbox.
+ *
+ * `splitId: null` with no label filter is the sidebar's "Inbox" row: every
+ * inbox thread, unsplit. No tab shows exactly that, so no tab is highlighted
+ * (highlighting Important would claim a filter that isn't applied). Cycling
+ * with Tab from there enters the bar at its first or last tab.
+ */
+export function activeInboxTabKey(
+  splitId: number | null,
+  labelFilter: number | null,
+): string | null {
+  if (labelFilter != null) return `l${labelFilter}`;
+  if (splitId == null) return null;
+  // SPLIT_IMPORTANT / SPLIT_OTHER (stores/ui); literals keep this module store-free.
+  if (splitId === -1) return "important";
+  if (splitId === -2) return "other";
+  return `s${splitId}`;
 }

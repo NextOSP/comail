@@ -13,6 +13,7 @@ import {
 } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { SWATCHES } from "./LabelsPanel";
+import { Button, Checkbox, inputCls, SettingsGroup } from "./panelKit";
 
 /** Per-account calendar sync (Settings → Accounts): connect Google Calendar
  *  (OAuth re-consent), Microsoft 365 (Graph consent; Outlook has no CalDAV)
@@ -26,21 +27,15 @@ export function CalendarSettings() {
   if ((accounts ?? []).length === 0) return null;
 
   return (
-    <section className="mt-5">
-      <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
-        {t("settings:calendar.section")}
-      </div>
-      <p className="mb-2 text-[12px] text-ink-faint">{t("settings:calendar.hint")}</p>
-      <div className="flex flex-col gap-2">
-        {(accounts ?? []).map((a) => (
-          <AccountCalendarCard
-            key={a.id}
-            account={a}
-            calendars={(calendars ?? []).filter((c) => c.accountId === a.id)}
-          />
-        ))}
-      </div>
-    </section>
+    <SettingsGroup title={t("settings:calendar.section")} description={t("settings:calendar.hint")}>
+      {(accounts ?? []).map((a) => (
+        <AccountCalendarCard
+          key={a.id}
+          account={a}
+          calendars={(calendars ?? []).filter((c) => c.accountId === a.id)}
+        />
+      ))}
+    </SettingsGroup>
   );
 }
 
@@ -54,6 +49,7 @@ function AccountCalendarCard({
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [username, setUsername] = useState(account.email);
@@ -104,64 +100,47 @@ function AccountCalendarCard({
   };
 
   const syncNow = async () => {
+    setSyncing(true);
     try {
       await call("calendar_sync_now", { accountId: account.id });
       pushToast({ kind: "info", message: t("settings:calendar.syncStarted") });
     } catch (err) {
       pushToast({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setSyncing(false);
     }
   };
 
-  const inputCls =
-    "w-full rounded-md border border-hairline bg-bg0 px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent/60";
-
   return (
-    <div className="rounded-lg border border-hairline bg-bg0 px-3 py-2.5">
+    <div>
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{account.email}</span>
+        <span className="min-w-0 flex-1 truncate text-base text-ink">{account.email}</span>
         {connected ? (
           <>
-            <button
-              className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2 hover:text-ink"
-              onClick={() => void syncNow()}
-            >
+            <Button size="sm" busy={syncing} onClick={() => void syncNow()}>
               {t("settings:calendar.syncNow")}
-            </button>
-            <button
-              className="rounded-md px-2 py-0.5 text-[11.5px] text-danger hover:bg-bg2"
-              onClick={() => void disconnect()}
-            >
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => void disconnect()}>
               {t("settings:calendar.disconnect")}
-            </button>
+            </Button>
           </>
         ) : (
           <>
             {account.provider === "gmail" && (
-              <button
-                className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2 hover:text-ink disabled:opacity-50"
-                disabled={busy}
-                onClick={() => void connect("google")}
-              >
+              <Button size="sm" busy={busy} onClick={() => void connect("google")}>
                 {t("settings:calendar.connectGoogle")}
-              </button>
+              </Button>
             )}
             {account.provider === "microsoft" ? (
               // Outlook / Microsoft 365 has no CalDAV endpoint; the calendar
               // syncs through Microsoft Graph on the account's own sign-in.
-              <button
-                className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2 hover:text-ink disabled:opacity-50"
-                disabled={busy}
-                onClick={() => void connect("microsoft")}
-              >
+              <Button size="sm" busy={busy} onClick={() => void connect("microsoft")}>
                 {t("settings:calendar.connectMicrosoft")}
-              </button>
+              </Button>
             ) : (
-              <button
-                className="rounded-md border border-hairline px-2 py-0.5 text-[11.5px] text-ink-muted hover:bg-bg2 hover:text-ink"
-                onClick={() => setFormOpen((v) => !v)}
-              >
+              <Button size="sm" onClick={() => setFormOpen((v) => !v)}>
                 {t("settings:calendar.connectCaldav")}
-              </button>
+              </Button>
             )}
           </>
         )}
@@ -191,13 +170,15 @@ function AccountCalendarCard({
             />
           </div>
           <div>
-            <button
-              className="rounded-md bg-accent px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
-              disabled={busy || !url.trim() || !password}
+            <Button
+              variant="primary"
+              size="sm"
+              busy={busy}
+              disabled={!url.trim() || !password}
               onClick={() => void connect("generic")}
             >
               {busy ? t("common:loading") : t("settings:calendar.connect")}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -227,23 +208,7 @@ function CalendarRow({ calendar: c, onChanged }: { calendar: Calendar; onChanged
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-2 text-[12.5px] text-ink-muted select-none">
-        <input
-          type="checkbox"
-          className="cursor-pointer"
-          checked={c.enabled}
-          onChange={async (e) => {
-            try {
-              await call("set_calendar_enabled", {
-                calendarId: c.id,
-                enabled: e.target.checked,
-              });
-              onChanged();
-            } catch (err) {
-              onError(err);
-            }
-          }}
-        />
+      <div className="flex items-center gap-2 select-none">
         <button
           type="button"
           className="flex size-4 shrink-0 items-center justify-center rounded-full hover:ring-2 hover:ring-accent/40"
@@ -256,16 +221,24 @@ function CalendarRow({ calendar: c, onChanged }: { calendar: Calendar; onChanged
             style={{ background: hex ?? "var(--accent)" }}
           />
         </button>
-        <span className="min-w-0 flex-1 truncate">{c.displayName ?? c.url}</span>
+        <div className="min-w-0 flex-1 truncate">
+          <Checkbox
+            checked={c.enabled}
+            label={c.displayName ?? c.url}
+            onChange={(enabled) => {
+              void call("set_calendar_enabled", { calendarId: c.id, enabled }).then(onChanged, onError);
+            }}
+          />
+        </div>
         {c.isDefault ? (
-          <span className="rounded bg-bg2 px-1.5 text-[10px] font-semibold tracking-wide text-ink-faint uppercase">
+          <span className="rounded bg-bg2 px-1.5 text-2xs font-semibold tracking-wide text-ink-faint uppercase">
             {t("settings:calendar.default")}
           </span>
         ) : (
           !c.readOnly && (
             <button
               type="button"
-              className="rounded px-1.5 text-[10px] font-semibold tracking-wide text-ink-faint uppercase hover:bg-bg2 hover:text-ink"
+              className="rounded px-1.5 text-2xs font-semibold tracking-wide text-ink-faint uppercase hover:bg-bg2 hover:text-ink"
               onClick={() =>
                 setDefault.mutate({ calendarId: c.id }, { onSuccess: onChanged, onError })
               }

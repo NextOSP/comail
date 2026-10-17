@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { View } from "../../ipc/types";
 import { buildFolderTree, type FolderNode } from "../../lib/folders";
+import { inboxTabOrder } from "../../lib/splitOrder";
 import {
   splitCount,
   useAccounts,
   useFolders,
   useLabels,
+  useSettings,
   useSplits,
   useUnreadCounts,
 } from "../../queries/hooks";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi, type PanelKind } from "../../stores/ui";
+import { Icon } from "../ui/Icon";
 
 const VIEWS: View[] = ["starred", "snoozed", "drafts", "sent", "done", "spam", "trash", "all"];
 
@@ -31,6 +34,8 @@ export function Sidebar() {
   const { data: accounts } = useAccounts();
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
+  const { data: settings } = useSettings();
+  const autoLabelsEnabled = settings?.autoLabelsEnabled !== false;
   const { data: folders } = useFolders(accountFilter);
   const { data: counts } = useUnreadCounts(accountFilter, open);
 
@@ -88,71 +93,70 @@ export function Sidebar() {
     <div className="fixed inset-0 z-40" onMouseDown={close}>
       <div className="absolute inset-0 bg-bg0/40" />
       <aside
-        className="co-fade-in relative flex h-full w-[272px] flex-col overflow-y-auto border-r border-hairline bg-bg1 py-3"
-        style={{ boxShadow: "var(--elev-2)" }}
+        className="co-fade-in relative flex h-full w-[272px] flex-col overflow-y-auto border-r border-hairline bg-bg1 py-3 shadow-elev-2"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <button
-          className="mx-2 mb-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-bg2"
+          className="mx-2 mb-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-control px-2 py-1.5 text-left hover:bg-bg2"
           title={t("common:sidebar.accountSettings")}
           onClick={() => set({ panel: "settings", settingsTab: "accounts", sidebarOpen: false })}
         >
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+          <span className="min-w-0 flex-1 truncate text-base font-medium text-ink">
             {active ? active.email : t("common:topbar.allAccounts")}
           </span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-ink-faint">
-            <path d="M9 18l6-6-6-6" />
-          </svg>
+          <Icon name="chevronRight" size={12} className="shrink-0 text-ink-faint" />
         </button>
 
         {/* Inbox + splits */}
         <SideRow
           label={t("common:view.inbox")}
-          active={inboxActive && splitId == null}
+          active={inboxActive && splitId == null && labelFilter == null}
           badge={counts?.inbox || undefined}
           onClick={() => go("inbox", null)}
         />
+        {/* Same order as the tab bar (lib/splitOrder). Rules routed into an
+            existing tab own no tab, so they get no row either. */}
         <div className="mb-1">
-          <SideRow
-            label={t("inbox:split.important")}
-            active={inboxActive && splitId === SPLIT_IMPORTANT}
-            badge={counts?.important || undefined}
-            indent
-            onClick={() => go("inbox", SPLIT_IMPORTANT)}
-          />
-          <SideRow
-            label={t("inbox:split.other")}
-            active={inboxActive && splitId === SPLIT_OTHER}
-            badge={counts?.other || undefined}
-            indent
-            onClick={() => go("inbox", SPLIT_OTHER)}
-          />
-          {(splits ?? []).map((s) => (
-            <SideRow
-              key={s.id}
-              label={s.name}
-              active={inboxActive && splitId === s.id}
-              badge={splitCount(counts, s.id) || undefined}
-              indent
-              onClick={() => go("inbox", s.id)}
-            />
-          ))}
-          {(labels ?? [])
-            .filter((l) => l.isAuto)
-            .map((l) => (
+          {inboxTabOrder(splits, labels, autoLabelsEnabled).map((item) => {
+            if (item.kind === "important" || item.kind === "other") {
+              const sid = item.kind === "important" ? SPLIT_IMPORTANT : SPLIT_OTHER;
+              return (
+                <SideRow
+                  key={item.kind}
+                  label={t(`inbox:split.${item.kind}`)}
+                  active={inboxActive && labelFilter == null && splitId === sid}
+                  badge={counts?.[item.kind] || undefined}
+                  indent
+                  onClick={() => go("inbox", sid)}
+                />
+              );
+            }
+            if (item.kind === "split") {
+              return (
+                <SideRow
+                  key={`split-${item.id}`}
+                  label={item.name}
+                  active={inboxActive && labelFilter == null && splitId === item.id}
+                  badge={splitCount(counts, item.id) || undefined}
+                  indent
+                  onClick={() => go("inbox", item.id)}
+                />
+              );
+            }
+            return (
               <SideRow
-                key={`auto-${l.id}`}
-                label={l.name}
-                active={inboxActive && labelFilter === l.id}
-                dotColor={l.color}
-                badge={counts?.labels[String(l.id)] || undefined}
+                key={`auto-${item.id}`}
+                label={item.name}
+                active={inboxActive && labelFilter === item.id}
+                dotColor={item.label.color}
+                badge={counts?.labels[String(item.id)] || undefined}
                 indent
                 onClick={() => {
                   openThread(null);
                   set({
                     view: "inbox",
                     splitId: null,
-                    labelFilter: l.id,
+                    labelFilter: item.id,
                     folderFilter: null,
                     searchOpen: false,
                     searchQuery: "",
@@ -163,7 +167,8 @@ export function Sidebar() {
                   });
                 }}
               />
-            ))}
+            );
+          })}
         </div>
 
         {VIEWS.map((v) => (
@@ -179,7 +184,7 @@ export function Sidebar() {
         {folderTree.length > 0 && (
           <>
             <div className="co-hairline-b mx-4 my-2.5" />
-            <div className="px-4 pb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+            <div className="px-4 pb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">
               {t("common:sidebar.folders")}
             </div>
             <FolderTree
@@ -194,7 +199,7 @@ export function Sidebar() {
         )}
 
         <div className="co-hairline-b mx-4 my-2.5" />
-        <div className="px-4 pb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+        <div className="px-4 pb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">
           {t("common:sidebar.calendar")}
         </div>
         <SideRow
@@ -223,7 +228,7 @@ export function Sidebar() {
         {(labels ?? []).filter((l) => !l.isAuto).length > 0 && (
           <>
             <div className="co-hairline-b mx-4 my-2.5" />
-            <div className="px-4 pb-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+            <div className="px-4 pb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">
               {t("common:sidebar.labels")}
             </div>
             {(labels ?? []).filter((l) => !l.isAuto).map((l) => (
@@ -279,8 +284,8 @@ function SideRow({
 }) {
   return (
     <button
-      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-md py-1.5 pr-3 text-left text-[13px] ${
-        indent ? "pl-7" : "pl-3"
+      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-control py-1.5 pe-3 text-start text-base ${
+        indent ? "ps-7" : "ps-3"
       } ${
         active
           ? "bg-[var(--selected-bg)] font-medium text-ink"
@@ -293,7 +298,7 @@ function SideRow({
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {badge != null && badge > 0 && (
-        <span className="shrink-0 text-[11.5px] text-ink-faint tabular-nums">{badge}</span>
+        <span className="shrink-0 text-xs text-ink-faint tabular-nums">{badge}</span>
       )}
       {kbd && <span className="co-kbd shrink-0">{kbd}</span>}
     </button>
@@ -371,7 +376,7 @@ function FolderRow({
 }) {
   return (
     <button
-      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-1.5 rounded-md py-1.5 pr-3 text-left text-[13px] ${
+      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-1.5 rounded-control py-1.5 pr-3 text-left text-base ${
         active
           ? "bg-[var(--selected-bg)] font-medium text-ink"
           : "text-ink-muted hover:bg-bg2 hover:text-ink"
@@ -390,36 +395,12 @@ function FolderRow({
             onToggle();
           }}
         >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ transform: collapsed ? "none" : "rotate(90deg)" }}
-          >
-            <path d="M9 18l6-6-6-6" />
-          </svg>
+          <Icon name="chevronRight" size={10} className={collapsed ? undefined : "rotate-90"} />
         </span>
       ) : (
         <span className="size-4 shrink-0" />
       )}
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="shrink-0 text-ink-faint"
-      >
-        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      </svg>
+      <Icon name="folder" size={13} className="shrink-0 text-ink-faint" />
       <span className="min-w-0 flex-1 truncate">{name}</span>
     </button>
   );

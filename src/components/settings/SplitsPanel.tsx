@@ -1,30 +1,87 @@
 import type { TFunction } from "i18next";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
-import type { Label, SplitRule, SplitRuleQuery } from "../../ipc/types";
-import { mergeTabOrder } from "../../lib/splitOrder";
+import type {
+  ConditionPreview,
+  Label,
+  RuleCondition,
+  SplitRule,
+  SplitRuleQuery,
+} from "../../ipc/types";
+import {
+  conditionProblems,
+  isGroup,
+  queryToCondition,
+  simplify,
+} from "../../lib/ruleCondition";
+import { mergeTabOrder, nextTabPosition } from "../../lib/splitOrder";
 import { queryClient } from "../../queries/client";
 import { useLabels, useSplits } from "../../queries/hooks";
-import { SPLIT_IMPORTANT, useUi, type SplitRulePrefill } from "../../stores/ui";
+import { SPLIT_IMPORTANT, useUi } from "../../stores/ui";
+import { Icon } from "../ui/Icon";
 import {
-  BusyLabel,
+  Button,
+  Checkbox,
   ChipInput,
   ConfirmButton,
+  EmptyState,
   FormField,
-  ghostBtnCls,
   inputCls,
-  primaryBtnCls,
   Segmented,
   Select,
+  SettingsGroup,
 } from "./panelKit";
+import { AiCheckField } from "./AiCheckField";
+import { ConditionBuilder, describeCondition } from "./ConditionBuilder";
 
 type Automated = "any" | "automated" | "human";
+type EditMode = "simple" | "advanced";
+type GroupCondition = Extract<RuleCondition, { kind: "all" | "any" }>;
 
-type SplitEditor =
-  | { kind: "new"; prefill?: SplitRulePrefill }
-  | { kind: "edit"; rule: SplitRule };
+type SplitEditor = { kind: "new" } | { kind: "edit"; rule: SplitRule };
+
+/** Longest tab name the editor accepts; the tab bar truncates well before this. */
+const NAME_MAX_LENGTH = 64;
+/** Beyond this many tabs the bar gets hard to scan; Settings shows a soft warning. */
+const MANY_TABS = 7;
+
+// Intl.ListFormat is ES2021, past tsconfig's ES2020 lib, so type the one
+// constructor used here; every supported webview ships it.
+const ListFormat = (
+  Intl as unknown as {
+    ListFormat?: new (
+      lng: string,
+      opts: { type: "conjunction" | "disjunction" },
+    ) => { format(values: string[]): string };
+  }
+).ListFormat;
+
+function formatList(
+  values: string[],
+  lng: string,
+  type: "conjunction" | "disjunction",
+  fallbackSep: string,
+): string {
+  try {
+    if (ListFormat) return new ListFormat(lng, { type }).format(values);
+  } catch {
+    /* unknown locale tag: fall through */
+  }
+  return values.join(fallbackSep);
+}
+
+/** Locale-aware "a, b, or c" for a rule's any-of value lists. */
+const anyOf = (values: string[], lng: string) =>
+  formatList(values, lng, "disjunction", ", ");
+
+/** Locale-aware "a, b, and c" for a rule's all-of conditions. */
+const allOf = (values: string[], lng: string) =>
+  formatList(values, lng, "conjunction", " · ");
+
+/** Case- and whitespace-insensitive key for duplicate checks. */
+const norm = (s: string) => s.trim().toLocaleLowerCase();
 
 const DEFAULT_AUTO_LABEL_KEYWORDS = [
   "ComailAutoMarketing",
@@ -33,7 +90,7 @@ const DEFAULT_AUTO_LABEL_KEYWORDS = [
   "ComailAutoPitch",
 ];
 
-function invalidateSplitViews() {
+export function invalidateSplitViews() {
   void queryClient.invalidateQueries({ queryKey: ["splits"] });
   void queryClient.invalidateQueries({ queryKey: ["threads"] });
   void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
@@ -42,27 +99,51 @@ function invalidateSplitViews() {
 function describeQuery(
   q: SplitRuleQuery,
   t: TFunction,
+  lng: string,
   labels: { id: number; name: string }[] = [],
 ): string {
   const parts: string[] = [];
   if (q.senders?.length)
-    parts.push(t("settings:splits.describe.from", { senders: q.senders.join(", ") }));
+    parts.push(
+      t("settings:splits.describe.from", { senders: anyOf(q.senders, lng) }),
+    );
   if (q.excludeSenders?.length)
-    parts.push(t("settings:splits.describe.notFrom", { senders: q.excludeSenders.join(", ") }));
+    parts.push(
+      t("settings:splits.describe.notFrom", {
+        senders: anyOf(q.excludeSenders, lng),
+      }),
+    );
   if (q.recipients?.length)
-    parts.push(t("settings:splits.describe.to", { recipients: q.recipients.join(", ") }));
+    parts.push(
+      t("settings:splits.describe.to", {
+        recipients: anyOf(q.recipients, lng),
+      }),
+    );
   if (q.subjectContains?.length)
-    parts.push(t("settings:splits.describe.subjectHas", { subjects: q.subjectContains.join(", ") }));
+    parts.push(
+      t("settings:splits.describe.subjectHas", {
+        subjects: anyOf(q.subjectContains, lng),
+      }),
+    );
   if (q.labels?.length)
     parts.push(
       t("settings:splits.describe.hasLabel", {
-        labels: q.labels.map((id) => labels.find((l) => l.id === id)?.name ?? `#${id}`).join(", "),
+        labels: anyOf(
+          q.labels.map(
+            (id) => labels.find((l) => l.id === id)?.name ?? `#${id}`,
+          ),
+          lng,
+        ),
       }),
     );
-  if (q.isAutomated === true) parts.push(t("settings:splits.describe.automatedOnly"));
-  if (q.isAutomated === false) parts.push(t("settings:splits.describe.humanOnly"));
+  if (q.isAutomated === true)
+    parts.push(t("settings:splits.describe.automatedOnly"));
+  if (q.isAutomated === false)
+    parts.push(t("settings:splits.describe.humanOnly"));
   if (q.hasAttachment) parts.push(t("settings:splits.describe.hasAttachment"));
-  return parts.join(" · ") || t("settings:splits.describe.nothing");
+  return parts.length > 0
+    ? allOf(parts, lng)
+    : t("settings:splits.describe.nothing");
 }
 
 /** Human name for a route target key ("important" | "other" | "label:<id>"). */
@@ -75,7 +156,9 @@ function targetName(
   if (target === "important") return t("inbox:split.important");
   if (target === "other") return t("inbox:split.other");
   const id = Number(target.slice("label:".length));
-  return labels.find((l) => l.id === id)?.name ?? t("settings:splits.target.ownTab");
+  return (
+    labels.find((l) => l.id === id)?.name ?? t("settings:splits.target.ownTab")
+  );
 }
 
 /** Compat shim: split management moved into Settings → Split inbox.
@@ -91,15 +174,15 @@ export function SplitsPanel() {
 
 /** Split-inbox management, hosted inside the Settings panel. */
 export function SplitInboxSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
-  const splitRulePrefill = useUi((s) => s.splitRulePrefill);
   const set = useUi((s) => s.set);
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
-  const [editing, setEditing] = useState<SplitEditor | null>(() =>
-    splitRulePrefill ? { kind: "new", prefill: splitRulePrefill } : null,
-  );
+  const [editing, setEditing] = useState<SplitEditor | null>(null);
+  // Drag handle to refocus once a keyboard reorder has re-rendered the list.
+  const refocusKey = useRef<string | null>(null);
+  const handleRefs = useRef(new Map<string, HTMLButtonElement>());
   const [relabeling, setRelabeling] = useState(false);
   const [restoringDefaults, setRestoringDefaults] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -110,24 +193,31 @@ export function SplitInboxSection() {
   const hasAutoLabels = items.some((it) => it.kind === "label");
   const missingAutoLabels = labels
     ? DEFAULT_AUTO_LABEL_KEYWORDS.filter(
-        (keyword) => !labels.some((label) => label.isAuto && label.keyword === keyword),
+        (keyword) =>
+          !labels.some((label) => label.isAuto && label.keyword === keyword),
       ).length
     : 0;
 
-  // Opening Settings from a message carries a one-shot form prefill. Consume
-  // it here so cancelling or reopening Settings can never resurrect it.
+  // Rules routed into an existing tab add no tab of their own.
+  const ownTabCount = items.filter(
+    (it) => it.kind === "label" || it.rule.target == null,
+  ).length;
+
   useEffect(() => {
-    if (!splitRulePrefill) return;
-    setEditing({ kind: "new", prefill: splitRulePrefill });
-    set({ splitRulePrefill: null });
-  }, [set, splitRulePrefill]);
+    if (refocusKey.current == null) return;
+    handleRefs.current.get(refocusKey.current)?.focus();
+    refocusKey.current = null;
+  });
 
   const relabel = async () => {
     if (relabeling) return;
     setRelabeling(true);
     try {
       const n = await call("relabel_auto", {});
-      pushToast({ kind: "info", message: t("settings:splits.relabeled", { count: n }) });
+      pushToast({
+        kind: "info",
+        message: t("settings:splits.relabeled", { count: n }),
+      });
       invalidateSplitViews();
       void queryClient.invalidateQueries({ queryKey: ["labels"] });
     } catch (err) {
@@ -142,7 +232,10 @@ export function SplitInboxSection() {
     setRestoringDefaults(true);
     try {
       const count = await call("restore_auto_labels", {});
-      pushToast({ kind: "info", message: t("settings:splits.restoredDefaults", { count }) });
+      pushToast({
+        kind: "info",
+        message: t("settings:splits.restoredDefaults", { count }),
+      });
       invalidateSplitViews();
       void queryClient.invalidateQueries({ queryKey: ["labels"] });
     } catch (err) {
@@ -162,17 +255,27 @@ export function SplitInboxSection() {
     // optimistic: renumber both caches so every tab reorders immediately
     const posOf = new Map(next.map((it, i) => [`${it.kind}:${it.id}`, i]));
     queryClient.setQueryData<SplitRule[]>(["splits"], (old) =>
-      (old ?? []).map((s) => ({ ...s, position: posOf.get(`split:${s.id}`) ?? s.position })),
+      (old ?? []).map((s) => ({
+        ...s,
+        position: posOf.get(`split:${s.id}`) ?? s.position,
+      })),
     );
     queryClient.setQueryData<Label[]>(["labels"], (old) =>
-      (old ?? []).map((l) => ({ ...l, position: posOf.get(`label:${l.id}`) ?? l.position })),
+      (old ?? []).map((l) => ({
+        ...l,
+        position: posOf.get(`label:${l.id}`) ?? l.position,
+      })),
     );
     try {
-      await call("reorder_tabs", { order: next.map((it) => ({ kind: it.kind, id: it.id })) });
+      await call("reorder_tabs", {
+        order: next.map((it) => ({ kind: it.kind, id: it.id })),
+      });
     } catch (err) {
       pushToast({
         kind: "error",
-        message: t("settings:splits.reorderFailed", { detail: errorMessage(err) }),
+        message: t("settings:splits.reorderFailed", {
+          detail: errorMessage(err),
+        }),
       });
     } finally {
       invalidateSplitViews();
@@ -183,10 +286,21 @@ export function SplitInboxSection() {
   const deleteSplit = async (splitId: number) => {
     try {
       await call("delete_split", { splitId });
+      // Don't leave the inbox pointed at a tab that no longer exists.
+      if (useUi.getState().splitId === splitId) {
+        set({
+          splitId: SPLIT_IMPORTANT,
+          selectedIndex: 0,
+          selectedThreadId: null,
+          selection: [],
+        });
+      }
     } catch (err) {
       pushToast({
         kind: "error",
-        message: t("settings:splits.deleteFailed", { detail: errorMessage(err) }),
+        message: t("settings:splits.deleteFailed", {
+          detail: errorMessage(err),
+        }),
       });
     } finally {
       invalidateSplitViews();
@@ -196,6 +310,15 @@ export function SplitInboxSection() {
   const deleteLabel = async (labelId: number) => {
     try {
       await call("delete_label", { labelId });
+      if (useUi.getState().labelFilter === labelId) {
+        set({
+          labelFilter: null,
+          splitId: SPLIT_IMPORTANT,
+          selectedIndex: 0,
+          selectedThreadId: null,
+          selection: [],
+        });
+      }
     } catch (err) {
       pushToast({ kind: "error", message: errorMessage(err) });
     } finally {
@@ -209,65 +332,75 @@ export function SplitInboxSection() {
       {editing != null ? (
         <SplitForm
           key={
-            editing.kind === "edit"
-              ? `edit-${editing.rule.id}`
-              : `new-${editing.prefill?.senders.join(",") ?? "blank"}`
+            editing.kind === "edit" ? `edit-${editing.rule.id}` : "new"
           }
           rule={editing.kind === "edit" ? editing.rule : null}
-          prefill={editing.kind === "new" ? editing.prefill : undefined}
-          nextPosition={items.length}
+          nextPosition={nextTabPosition(splits, labels)}
           onDone={() => setEditing(null)}
         />
       ) : (
         <>
-          {/* Important is the fixed first fallback bucket. */}
-          <div className="mb-3 flex flex-col gap-1.5 opacity-55">
-            <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-bg2 px-3 py-2">
-              <span className="text-[13.5px] text-ink">{t("settings:splits.builtin.importantName")}</span>
-              <span className="text-[11.5px] text-ink-faint">{t("settings:splits.builtin.importantDesc")}</span>
-              <span className="ml-auto rounded bg-bg3 px-1.5 py-px text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
-                {t("settings:splits.builtin.firstBadge")}
-              </span>
-            </div>
-          </div>
-          <p className="mb-4 text-[11.5px] text-ink-faint">
-            {t("settings:splits.builtinNote")}
-          </p>
-
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <span className="text-[11.5px] font-semibold tracking-[0.12em] text-ink-faint uppercase">
-              {t("settings:splits.customSplits")}
-            </span>
-            <div className="flex items-center gap-2">
-              {missingAutoLabels > 0 && (
-                <button
-                  className={ghostBtnCls}
-                  disabled={restoringDefaults}
-                  onClick={() => void restoreDefaults()}
+          <SettingsGroup
+            title={t("settings:splits.customSplits")}
+            description={
+              <>
+                {t("settings:splits.builtinNote")}
+                {items.length > 1 && (
+                  <span className="mt-0.5 block">
+                    {t("settings:splits.priorityHint")}
+                  </span>
+                )}
+                {/* +2: Important and Other are always tabs too. */}
+                {ownTabCount > MANY_TABS && (
+                  <span className="mt-0.5 block text-ink-muted">
+                    {t("settings:splits.manyTabs", { count: ownTabCount + 2 })}
+                  </span>
+                )}
+              </>
+            }
+            actions={
+              <>
+                {missingAutoLabels > 0 && (
+                  <Button
+                    size="sm"
+                    busy={restoringDefaults}
+                    onClick={() => void restoreDefaults()}
+                  >
+                    {restoringDefaults
+                      ? t("settings:splits.restoringDefaults")
+                      : t("settings:splits.restoreDefaults", {
+                          count: missingAutoLabels,
+                        })}
+                  </Button>
+                )}
+                {hasAutoLabels && (
+                  <Button
+                    size="sm"
+                    busy={relabeling}
+                    onClick={() => void relabel()}
+                  >
+                    {relabeling
+                      ? t("settings:splits.relabeling")
+                      : t("settings:splits.relabel")}
+                  </Button>
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="plus"
+                  onClick={() => setEditing({ kind: "new" })}
                 >
-                  {restoringDefaults
-                    ? t("settings:splits.restoringDefaults")
-                    : t("settings:splits.restoreDefaults", { count: missingAutoLabels })}
-                </button>
-              )}
-              {hasAutoLabels && (
-                <button className={ghostBtnCls} disabled={relabeling} onClick={() => void relabel()}>
-                  {relabeling ? (
-                    <BusyLabel>{t("settings:splits.relabeling")}</BusyLabel>
-                  ) : (
-                    t("settings:splits.relabel")
-                  )}
-                </button>
-              )}
-              <button className={primaryBtnCls} onClick={() => setEditing({ kind: "new" })}>
-                {t("settings:splits.new")}
-              </button>
-            </div>
-          </div>
-          {items.length > 1 && (
-            <p className="mb-2 text-[11.5px] text-ink-faint">{t("settings:splits.priorityHint")}</p>
-          )}
-          <div className="flex flex-col gap-1.5">
+                  {t("settings:splits.new")}
+                </Button>
+              </>
+            }
+          >
+            {/* Important is the fixed first fallback bucket. */}
+            <BuiltinRow
+              name={t("settings:splits.builtin.importantName")}
+              desc={t("settings:splits.builtin.importantDesc")}
+              badge={t("settings:splits.builtin.firstBadge")}
+            />
             {items.map((it, i) => (
               <div
                 key={it.kind + it.id}
@@ -282,28 +415,54 @@ export function SplitInboxSection() {
                   setDragIndex(null);
                   setOverIndex(null);
                 }}
-                className={`flex items-center gap-2.5 rounded-lg border bg-bg0 px-3 py-2 transition-colors ${
+                className={`flex items-center gap-2.5 transition-colors ${
                   dragIndex === i
-                    ? "border-hairline opacity-40"
+                    ? "opacity-40"
                     : overIndex === i && dragIndex !== null
-                      ? "border-accent"
-                      : "border-hairline"
+                      ? "bg-accent/10"
+                      : ""
                 }`}
               >
-                <span
+                <button
+                  type="button"
+                  ref={(el) => {
+                    const key = it.kind + it.id;
+                    if (el) handleRefs.current.set(key, el);
+                    else handleRefs.current.delete(key);
+                  }}
                   draggable
                   onDragStart={() => setDragIndex(i)}
                   onDragEnd={() => {
                     setDragIndex(null);
                     setOverIndex(null);
                   }}
+                  // Keyboard reorder: Arrow Up / Down move this tab one step.
+                  onKeyDown={(e) => {
+                    const to =
+                      e.key === "ArrowUp" ? i - 1 : e.key === "ArrowDown" ? i + 1 : null;
+                    if (to == null) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (to < 0 || to >= items.length) return;
+                    refocusKey.current = it.kind + it.id;
+                    void reorderTo(i, to);
+                  }}
                   title={t("settings:splits.dragHint")}
-                  className="flex size-6 shrink-0 cursor-grab items-center justify-center rounded-md bg-bg2 text-[12px] font-semibold text-ink-muted select-none active:cursor-grabbing"
+                  aria-label={t("settings:splits.reorderHandle", {
+                    name: it.name,
+                    position: i + 1,
+                    total: items.length,
+                  })}
+                  className="flex size-7 shrink-0 cursor-grab items-center justify-center rounded-control bg-bg2 text-sm font-semibold text-ink-muted select-none active:cursor-grabbing"
                 >
                   {i + 1}
-                </span>
+                </button>
                 <div className="flex shrink-0 flex-col">
-                  <OrderButton dir="up" disabled={i === 0} onClick={() => void reorderTo(i, i - 1)} />
+                  <OrderButton
+                    dir="up"
+                    disabled={i === 0}
+                    onClick={() => void reorderTo(i, i - 1)}
+                  />
                   <OrderButton
                     dir="down"
                     disabled={i === items.length - 1}
@@ -317,35 +476,63 @@ export function SplitInboxSection() {
                   />
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] text-ink">{it.name}</span>
+                  <span className="block truncate text-base text-ink">
+                    {it.name}
+                  </span>
                   {it.kind === "split" && (
-                    <span className="block truncate text-[11.5px] text-ink-faint">
-                      {describeQuery(it.rule.query, t, labels ?? [])}
-                      {it.rule.target ? ` → ${targetName(it.rule.target, labels ?? [], t)}` : ""}
+                    <span className="block truncate text-xs text-ink-faint">
+                      {it.rule.ai &&
+                      !it.rule.condition &&
+                      Object.keys(it.rule.query).length === 0
+                        ? ""
+                        : it.rule.condition
+                          ? describeCondition(it.rule.condition, t, labels ?? [])
+                          : describeQuery(
+                              it.rule.query,
+                              t,
+                              i18n.language,
+                              labels ?? [],
+                            )}
+                      {it.rule.ai &&
+                        `${it.rule.condition || Object.keys(it.rule.query).length > 0 ? " · " : ""}${t(
+                          "settings:rules.aiCheckSummary",
+                          { text: it.rule.ai.instruction },
+                        )}`}
+                      {it.rule.target
+                        ? ` ${t("settings:splits.routesTo", {
+                            target: targetName(it.rule.target, labels ?? [], t),
+                          })}`
+                        : ""}
                     </span>
                   )}
                 </span>
                 {it.kind === "label" ? (
                   <>
-                    <span className="rounded bg-bg2 px-1.5 py-px text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+                    <span className="rounded bg-bg2 px-1.5 py-px text-2xs font-semibold tracking-wide text-ink-faint uppercase">
                       {t("settings:splits.autoBadge")}
                     </span>
                     <ConfirmButton
                       label={t("settings:splits.delete")}
+                      ariaLabel={t("settings:splits.deleteNamed", { name: it.name })}
                       confirmLabel={t("settings:splits.reallyDelete")}
                       onConfirm={() => void deleteLabel(it.id)}
                     />
                   </>
                 ) : (
                   <>
-                    <button
-                      className="rounded-md border border-hairline px-2.5 py-1 text-[12px] text-ink-muted hover:bg-bg2"
-                      onClick={() => setEditing({ kind: "edit", rule: it.rule })}
+                    <Button
+                      size="sm"
+                      icon="edit"
+                      aria-label={t("settings:splits.editNamed", { name: it.name })}
+                      onClick={() =>
+                        setEditing({ kind: "edit", rule: it.rule })
+                      }
                     >
                       {t("settings:splits.edit")}
-                    </button>
+                    </Button>
                     <ConfirmButton
                       label={t("settings:splits.delete")}
+                      ariaLabel={t("settings:splits.deleteNamed", { name: it.name })}
                       confirmLabel={t("settings:splits.reallyDelete")}
                       onConfirm={() => void deleteSplit(it.id)}
                     />
@@ -354,24 +541,41 @@ export function SplitInboxSection() {
               </div>
             ))}
             {items.length === 0 && (
-              <p className="py-4 text-center text-[12.5px] text-ink-faint">
-                {t("settings:splits.empty")}
-              </p>
+              <div>
+                <EmptyState title={t("settings:splits.empty")} />
+              </div>
             )}
-          </div>
-          {/* Other catches anything no earlier tab matched, so it is always last. */}
-          <div className="mt-3 flex flex-col gap-1.5 opacity-55">
-            <div className="flex items-center gap-2.5 rounded-lg border border-hairline bg-bg2 px-3 py-2">
-              <span className="text-[13.5px] text-ink">{t("settings:splits.builtin.otherName")}</span>
-              <span className="text-[11.5px] text-ink-faint">{t("settings:splits.builtin.otherDesc")}</span>
-              <span className="ml-auto rounded bg-bg3 px-1.5 py-px text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
-                {t("settings:splits.builtin.lastBadge")}
-              </span>
-            </div>
-          </div>
+            {/* Other catches anything no earlier tab matched, so it is always last. */}
+            <BuiltinRow
+              name={t("settings:splits.builtin.otherName")}
+              desc={t("settings:splits.builtin.otherDesc")}
+              badge={t("settings:splits.builtin.lastBadge")}
+            />
+          </SettingsGroup>
         </>
       )}
     </section>
+  );
+}
+
+/** A fixed, non-reorderable bucket (Important / Other) inside the tab list. */
+function BuiltinRow({
+  name,
+  desc,
+  badge,
+}: {
+  name: string;
+  desc: string;
+  badge: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 bg-bg2/60">
+      <span className="text-base text-ink-muted">{name}</span>
+      <span className="text-xs text-ink-faint">{desc}</span>
+      <span className="ms-auto rounded bg-bg3 px-1.5 py-px text-2xs font-semibold tracking-wide text-ink-faint uppercase">
+        {badge}
+      </span>
+    </div>
   );
 }
 
@@ -388,14 +592,16 @@ function OrderButton({
   return (
     <button
       type="button"
-      aria-label={dir === "up" ? t("settings:splits.moveUp") : t("settings:splits.moveDown")}
+      aria-label={
+        dir === "up"
+          ? t("settings:splits.moveUp")
+          : t("settings:splits.moveDown")
+      }
       disabled={disabled}
       onClick={onClick}
-      className="flex h-3.5 w-5 items-center justify-center rounded text-ink-faint hover:bg-bg2 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
+      className="flex h-5 w-7 items-center justify-center rounded text-ink-faint hover:bg-bg2 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
     >
-      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        {dir === "up" ? <path d="M18 15l-6-6-6 6" /> : <path d="M6 9l6 6 6-6" />}
-      </svg>
+      <Icon name={dir === "up" ? "chevronUp" : "chevronDown"} size={12} />
     </button>
   );
 }
@@ -416,7 +622,7 @@ function LabeledChips({
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11.5px] font-medium text-ink-faint">{label}</span>
+      <span className="text-xs font-medium text-ink-faint">{label}</span>
       <ChipInput
         values={values}
         onChange={onChange}
@@ -430,72 +636,153 @@ function LabeledChips({
 
 function SplitForm({
   rule,
-  prefill,
   nextPosition,
   onDone,
 }: {
   rule: SplitRule | null;
-  prefill?: SplitRulePrefill;
   nextPosition: number;
   onDone: () => void;
 }) {
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
   const { data: labels } = useLabels();
+  const { data: splits } = useSplits();
   const autoLabels = (labels ?? []).filter((l) => l.isAuto);
   const userLabels = (labels ?? []).filter((l) => !l.isAuto);
-  const [name, setName] = useState(rule?.name ?? prefill?.name ?? "");
-  const [senders, setSenders] = useState<string[]>(
-    rule?.query.senders ?? prefill?.senders ?? [],
+  const [name, setName] = useState(rule?.name ?? "");
+  const [senders, setSenders] = useState<string[]>(rule?.query.senders ?? []);
+  const [excludeSenders, setExcludeSenders] = useState<string[]>(
+    rule?.query.excludeSenders ?? [],
   );
-  const [excludeSenders, setExcludeSenders] = useState<string[]>(rule?.query.excludeSenders ?? []);
-  const [recipients, setRecipients] = useState<string[]>(rule?.query.recipients ?? []);
-  const [subjects, setSubjects] = useState<string[]>(rule?.query.subjectContains ?? []);
+  const [recipients, setRecipients] = useState<string[]>(
+    rule?.query.recipients ?? [],
+  );
+  const [subjects, setSubjects] = useState<string[]>(
+    rule?.query.subjectContains ?? [],
+  );
   const [labelIds, setLabelIds] = useState<number[]>(rule?.query.labels ?? []);
   const [automated, setAutomated] = useState<Automated>(
-    rule?.query.isAutomated === true ? "automated" : rule?.query.isAutomated === false ? "human" : "any",
+    rule?.query.isAutomated === true
+      ? "automated"
+      : rule?.query.isAutomated === false
+        ? "human"
+        : "any",
   );
-  const [hasAttachment, setHasAttachment] = useState(rule?.query.hasAttachment === true);
+  const [hasAttachment, setHasAttachment] = useState(
+    rule?.query.hasAttachment === true,
+  );
   // "" = the rule is its own tab; otherwise a route key routed into an existing tab.
   const [target, setTarget] = useState<string>(rule?.target ?? "");
   const [busy, setBusy] = useState(false);
+  // Optional AI check (decision model): with no condition it alone decides.
+  const [aiInstruction, setAiInstruction] = useState(rule?.ai?.instruction ?? "");
+  const [aiMin, setAiMin] = useState<number | null>(rule?.ai?.minConfidence ?? null);
+  const hasAi = aiInstruction.trim() !== "";
+  // Advanced mode edits a typed condition tree (AND/OR/NOT, more operators);
+  // rules saved with one always reopen in it.
+  const [mode, setMode] = useState<EditMode>(
+    rule?.condition ? "advanced" : "simple",
+  );
+  const [tree, setTree] = useState<GroupCondition>(() =>
+    asGroup(rule?.condition ?? null),
+  );
 
+  const buildQuery = (): SplitRuleQuery => {
+    const query: SplitRuleQuery = {};
+    if (senders.length > 0) query.senders = senders;
+    // Excludes alone can't make a rule match; keep them out of hasCondition.
+    if (excludeSenders.length > 0) query.excludeSenders = excludeSenders;
+    if (recipients.length > 0) query.recipients = recipients;
+    if (subjects.length > 0) query.subjectContains = subjects;
+    // Drop stale ids so a deleted label can't leave a dead condition behind.
+    const validLabelIds = labelIds.filter((id) =>
+      userLabels.some((l) => l.id === id),
+    );
+    if (validLabelIds.length > 0) query.labels = validLabelIds;
+    if (automated !== "any") query.isAutomated = automated === "automated";
+    if (hasAttachment) query.hasAttachment = true;
+    return query;
+  };
+
+  // The condition the backend will evaluate, for validation and the live preview.
+  const effective: RuleCondition =
+    mode === "advanced" ? simplify(tree) : queryToCondition(buildQuery());
+  const problems = mode === "advanced" ? conditionProblems(effective) : [];
   const hasCondition =
-    senders.length > 0 ||
-    recipients.length > 0 ||
-    subjects.length > 0 ||
-    labelIds.length > 0 ||
-    automated !== "any" ||
-    hasAttachment;
+    mode === "advanced"
+      ? problems.length === 0
+      : senders.length > 0 ||
+        recipients.length > 0 ||
+        subjects.length > 0 ||
+        labelIds.length > 0 ||
+        automated !== "any" ||
+        hasAttachment;
+  const preview = useConditionPreview(hasCondition ? effective : null);
+
+  // Soft warnings (saving still works): another tab with the same name, and
+  // senders another rule already claims (the higher rule would win them).
+  const otherRules = (splits ?? []).filter((s) => s.id !== rule?.id);
+  const nameKey = norm(name);
+  const duplicateName =
+    nameKey !== "" &&
+    [
+      ...otherRules.map((s) => s.name),
+      ...autoLabels.map((l) => l.name),
+      t("inbox:split.important"),
+      t("inbox:split.other"),
+    ].some((n) => norm(n) === nameKey);
+  const senderOwners = new Map<string, string>();
+  for (const other of otherRules) {
+    for (const sender of other.query.senders ?? []) {
+      if (!senderOwners.has(norm(sender))) senderOwners.set(norm(sender), other.name);
+    }
+  }
+  const duplicateSenders =
+    mode === "simple"
+      ? senders.flatMap((sender) => {
+          const owner = senderOwners.get(norm(sender));
+          return owner != null ? [{ sender, owner }] : [];
+        })
+      : [];
+
+  const switchMode = (next: EditMode) => {
+    // Carry the simple fields over so switching never loses work; the reverse
+    // keeps the simple fields as they were (a tree can't flatten in general).
+    if (next === "advanced" && !rule?.condition && tree.of.length === 0) {
+      setTree(asGroup(queryToCondition(buildQuery())));
+    }
+    setMode(next);
+  };
 
   const save = async () => {
     if (busy) return;
     setBusy(true);
     try {
-      const query: SplitRuleQuery = {};
-      if (senders.length > 0) query.senders = senders;
-      // Excludes alone can't make a rule match; keep them out of hasCondition.
-      if (excludeSenders.length > 0) query.excludeSenders = excludeSenders;
-      if (recipients.length > 0) query.recipients = recipients;
-      if (subjects.length > 0) query.subjectContains = subjects;
-      // Drop stale ids so a deleted label can't leave a dead condition behind.
-      const validLabelIds = labelIds.filter((id) => userLabels.some((l) => l.id === id));
-      if (validLabelIds.length > 0) query.labels = validLabelIds;
-      if (automated !== "any") query.isAutomated = automated === "automated";
-      if (hasAttachment) query.hasAttachment = true;
+      const query = buildQuery();
       const saved = await call("save_split", {
         split: {
           id: rule?.id ?? null,
           name: name.trim(),
           position: rule?.position ?? nextPosition,
           query,
+          condition: mode === "advanced" ? effective : null,
           target: target || null,
+          ai: hasAi
+            ? { instruction: aiInstruction.trim(), minConfidence: aiMin }
+            : null,
         },
       });
       // Routing an existing rule elsewhere removes its tab; don't leave the
       // inbox pointed at it.
       if (saved.target != null && useUi.getState().splitId === saved.id) {
-        useUi.getState().set({ splitId: SPLIT_IMPORTANT, selectedIndex: 0, selectedThreadId: null, selection: [] });
+        useUi
+          .getState()
+          .set({
+            splitId: SPLIT_IMPORTANT,
+            selectedIndex: 0,
+            selectedThreadId: null,
+            selection: [],
+          });
       }
       invalidateSplitViews();
       onDone();
@@ -530,94 +817,154 @@ function SplitForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("settings:splits.namePlaceholder")}
+          maxLength={NAME_MAX_LENGTH}
           autoFocus
           spellCheck={false}
         />
       </FormField>
-      <LabeledChips
-        label={t("settings:splits.senderLabel")}
-        values={senders}
-        onChange={setSenders}
-        placeholder={t("settings:splits.senderPlaceholder")}
-      />
-      <LabeledChips
-        label={t("settings:splits.excludeSenderLabel")}
-        values={excludeSenders}
-        onChange={setExcludeSenders}
-        placeholder={t("settings:splits.excludeSenderPlaceholder")}
-      />
-      <LabeledChips
-        label={t("settings:splits.recipientLabel")}
-        values={recipients}
-        onChange={setRecipients}
-        placeholder={t("settings:splits.recipientPlaceholder")}
-      />
-      <LabeledChips
-        label={t("settings:splits.subjectLabel")}
-        values={subjects}
-        onChange={setSubjects}
-        placeholder={t("settings:splits.subjectPlaceholder")}
-      />
-      {userLabels.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11.5px] font-medium text-ink-faint">
-            {t("settings:splits.labelLabel")}
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {userLabels.map((l) => {
-              const on = labelIds.includes(l.id);
-              return (
-                <button
-                  key={l.id}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() =>
-                    setLabelIds((ids) =>
-                      ids.includes(l.id) ? ids.filter((x) => x !== l.id) : [...ids, l.id],
-                    )
-                  }
-                  className={`rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium transition-colors ${
-                    on ? "border-transparent" : "border-hairline text-ink-muted hover:bg-bg2"
-                  }`}
-                  style={on ? { background: `${l.color}22`, color: l.color } : undefined}
-                >
-                  {l.name}
-                </button>
-              );
-            })}
-          </div>
-          <span className="text-[11.5px] text-ink-faint">{t("settings:splits.labelHint")}</span>
-        </div>
+      {duplicateName && (
+        <p className="-mt-1 text-xs text-ink-muted" role="status">
+          {t("settings:splits.duplicateName", { name: name.trim() })}
+        </p>
       )}
-      {/* not a <label>: it would swallow the segmented buttons' accessible names */}
-      <div className="flex flex-col gap-1">
-        <span className="text-[11.5px] font-medium text-ink-faint">
-          {t("settings:splits.automatedLabel")}
-        </span>
-        <div className="self-start">
-          <Segmented<Automated>
-            value={automated}
-            options={[
-              { value: "any", label: t("settings:splits.automated.any") },
-              { value: "automated", label: t("settings:splits.automated.automated") },
-              { value: "human", label: t("settings:splits.automated.human") },
-            ]}
-            onChange={setAutomated}
-          />
-        </div>
-        <span className="text-[11.5px] text-ink-faint">
-          {t("settings:splits.automatedHint")}
+      <div className="flex items-center gap-2">
+        <Segmented<EditMode>
+          value={mode}
+          options={[
+            { value: "simple", label: t("settings:splits.mode.simple") },
+            { value: "advanced", label: t("settings:splits.mode.advanced") },
+          ]}
+          onChange={switchMode}
+        />
+        <span className="text-xs text-ink-faint">
+          {t(`settings:splits.mode.${mode}Hint`)}
         </span>
       </div>
-      <label className="flex cursor-pointer items-center gap-2 self-start">
-        <input
-          type="checkbox"
-          checked={hasAttachment}
-          onChange={(e) => setHasAttachment(e.target.checked)}
-          className="size-4 accent-accent"
+      {mode === "advanced" ? (
+        <ConditionBuilder
+          value={tree}
+          onChange={setTree}
+          userLabels={userLabels}
         />
-        <span className="text-[12.5px] text-ink">{t("settings:splits.hasAttachmentLabel")}</span>
-      </label>
+      ) : (
+        <>
+          <LabeledChips
+            label={t("settings:splits.senderLabel")}
+            values={senders}
+            onChange={setSenders}
+            placeholder={t("settings:splits.senderPlaceholder")}
+          />
+          {duplicateSenders.length > 0 && (
+            <p className="-mt-1 text-xs text-ink-muted" role="status">
+              {duplicateSenders
+                .map(({ sender, owner }) =>
+                  t("settings:splits.duplicateSender", { sender, name: owner }),
+                )
+                .join(" ")}
+            </p>
+          )}
+          <LabeledChips
+            label={t("settings:splits.excludeSenderLabel")}
+            values={excludeSenders}
+            onChange={setExcludeSenders}
+            placeholder={t("settings:splits.excludeSenderPlaceholder")}
+          />
+          <LabeledChips
+            label={t("settings:splits.recipientLabel")}
+            values={recipients}
+            onChange={setRecipients}
+            placeholder={t("settings:splits.recipientPlaceholder")}
+          />
+          <LabeledChips
+            label={t("settings:splits.subjectLabel")}
+            values={subjects}
+            onChange={setSubjects}
+            placeholder={t("settings:splits.subjectPlaceholder")}
+          />
+          {userLabels.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-ink-faint">
+                {t("settings:splits.labelLabel")}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {userLabels.map((l) => {
+                  const on = labelIds.includes(l.id);
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() =>
+                        setLabelIds((ids) =>
+                          ids.includes(l.id)
+                            ? ids.filter((x) => x !== l.id)
+                            : [...ids, l.id],
+                        )
+                      }
+                      className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                        on
+                          ? "border-transparent"
+                          : "border-hairline text-ink-muted hover:bg-bg2"
+                      }`}
+                      style={
+                        on
+                          ? { background: `${l.color}22`, color: l.color }
+                          : undefined
+                      }
+                    >
+                      {l.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="text-xs text-ink-faint">
+                {t("settings:splits.labelHint")}
+              </span>
+            </div>
+          )}
+          {/* not a <label>: it would swallow the segmented buttons' accessible names */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-ink-faint">
+              {t("settings:splits.automatedLabel")}
+            </span>
+            <div className="self-start">
+              <Segmented<Automated>
+                value={automated}
+                options={[
+                  { value: "any", label: t("settings:splits.automated.any") },
+                  {
+                    value: "automated",
+                    label: t("settings:splits.automated.automated"),
+                  },
+                  {
+                    value: "human",
+                    label: t("settings:splits.automated.human"),
+                  },
+                ]}
+                onChange={setAutomated}
+              />
+            </div>
+            <span className="text-xs text-ink-faint">
+              {t("settings:splits.automatedHint")}
+            </span>
+          </div>
+          <div className="self-start">
+            <Checkbox
+              checked={hasAttachment}
+              onChange={setHasAttachment}
+              label={t("settings:splits.hasAttachmentLabel")}
+            />
+          </div>
+        </>
+      )}
+      <AiCheckField
+        instruction={aiInstruction}
+        onInstruction={setAiInstruction}
+        minConfidence={aiMin}
+        onMinConfidence={setAiMin}
+        hasCondition={hasCondition}
+        feature="splits"
+      />
       <FormField label={t("settings:splits.targetLabel")}>
         <Select
           className="self-start"
@@ -634,22 +981,85 @@ function SplitForm({
           ))}
         </Select>
       </FormField>
-      <p className="-mt-1 text-[11.5px] text-ink-faint">{t("settings:splits.targetHint")}</p>
-      {!hasCondition && (
-        <p className="text-[11.5px] text-ink-faint">{t("settings:splits.addCondition")}</p>
+      <p className="-mt-1 text-xs text-ink-faint">
+        {t("settings:splits.targetHint")}
+      </p>
+      {!hasCondition && !(hasAi && problems.length === 0) && (
+        <p className="text-xs text-ink-faint">
+          {problems.length > 0
+            ? problems
+                .map((p) => t(`settings:splits.cond.problems.${p}`))
+                .join(" ")
+            : t("settings:splits.addCondition")}
+        </p>
+      )}
+      {hasCondition && preview && (
+        <p className="text-xs text-ink-faint">
+          {t("settings:splits.preview.matches", {
+            count: preview.total,
+            scanned: preview.scanned,
+          })}
+          {preview.samples.length > 0 &&
+            ` — ${preview.samples.map((s) => s.subject || s.fromAddr).join(" · ")}`}
+        </p>
       )}
       <div className="mt-1 flex items-center gap-2">
-        <button type="submit" className={primaryBtnCls} disabled={busy || !name.trim() || !hasCondition}>
+        <Button
+          type="submit"
+          variant="primary"
+          busy={busy}
+          disabled={!name.trim() || !(hasCondition || (hasAi && problems.length === 0))}
+        >
           {busy
             ? t("settings:splits.saving")
             : rule
               ? t("settings:splits.saveChanges")
               : t("settings:splits.create")}
-        </button>
-        <button type="button" className={ghostBtnCls} onClick={onDone}>
+        </Button>
+        <Button variant="ghost" onClick={onDone}>
           {t("settings:splits.cancel")}
-        </button>
+        </Button>
       </div>
     </form>
   );
+}
+
+export function asGroup(c: RuleCondition | null): GroupCondition {
+  if (!c) return { kind: "all", of: [] };
+  return isGroup(c) ? c : { kind: "all", of: [c] };
+}
+
+/** Debounced dry-run of a draft condition against recent mail. */
+export function useConditionPreview(
+  condition: RuleCondition | null,
+): ConditionPreview | null {
+  const key = useMemo(
+    () => (condition ? JSON.stringify(condition) : null),
+    [condition],
+  );
+  const [result, setResult] = useState<ConditionPreview | null>(null);
+  useEffect(() => {
+    if (!key) {
+      setResult(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      call("preview_split_condition", {
+        condition: JSON.parse(key) as RuleCondition,
+        limit: 3,
+      })
+        .then((r) => {
+          if (!cancelled) setResult(r);
+        })
+        .catch(() => {
+          if (!cancelled) setResult(null);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [key]);
+  return result;
 }

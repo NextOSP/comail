@@ -53,7 +53,7 @@
     "instantSend": "Instant Send",
     "attachFiles": "Attach files…",
     "aiWrite": "Write with AI…",
-    "aiSummarize": "AI: Summarize thread",
+    "aiSummarize": "Summary of this thread",
     "calendarToday": "Calendar: Today",
     "calendarWeek": "Calendar: This Week",
     "calendarMonth": "Calendar: Month view",
@@ -83,13 +83,19 @@
     "goLabel": "Go to label: {{name}}",
     "goSplitTab": "Go to {{name}}",
     "askAi": "Ask AI about your inbox",
+    "copyVerificationCode": "Copy latest verification code",
     "relabelAuto": "Re-run auto labels",
     "openAiSettings": "AI settings",
     "openAccountSettings": "Account settings",
     "toggleSidebar": "Show mailboxes menu",
-    "aiProofread": "Proofread with AI"
+    "aiProofread": "Proofread",
+    "calendarDay": "Calendar: Day view",
+    "calendarWeekView": "Calendar: Week view",
+    "calendarSidebar": "Calendar: Toggle sidebar"
   },
   "toast": {
+    "noVerificationCode": "No verification code in the last 30 minutes",
+    "verificationCodeCopied": "Copied {{code}} from {{sender}}",
     "syncing": "Syncing…",
     "noUnsubscribeLink": "No unsubscribe link",
     "unsubscribeWouldOpen": "Unsubscribe: would open {{url}}",
@@ -127,5 +133,9 @@
     "row": "Ask AI to do: “{{query}}”",
     "notUnderstood": "AI couldn't turn that into an action. Try rephrasing.",
     "locationNote": "Location: {{location}}"
+  },
+  "aiHere": {
+    "title": "AI here",
+    "hint": "Write with AI in compose · Summary in a thread · Ask AI in search"
   }
 }

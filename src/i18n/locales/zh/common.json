@@ -64,6 +64,8 @@
       "mixed": "正在完成后台同步"
     },
     "waitingForChord": "等待组合键",
+    "compose": "撰写",
+    "composeWithShortcut": "撰写（{{shortcut}}）",
     "settings": "设置",
     "settingsWithShortcut": "设置（{{shortcut}}）",
     "allAccounts": "所有账户",
@@ -83,7 +85,172 @@
     "try": "试试",
     "emptyHint": "在所有账户、文件夹和邮件中搜索。",
     "noResults": "没有关于“{{query}}”的结果",
-    "toggleHint": "切换搜索 / 提问 - ⌘/Ctrl+J"
+    "toggleHint": "切换搜索 / 询问 AI - ⌘/Ctrl+J",
+    "modeSearch": "搜索",
+    "modeAsk": "询问 AI",
+    "askPlaceholder": "询问关于你邮箱的任何问题…",
+    "askIntro": "提出类似“Alice 关于第三季度预算说了什么？”的问题，获取基于你邮件的回答，并附带来源。",
+    "sources": "来源",
+    "searchingMailbox": "正在搜索你的邮箱…",
+    "readingSources_one": "正在阅读 {{count}} 个来源…",
+    "readingSources_other": "正在阅读 {{count}} 个来源…",
+    "askFailed": "提问失败。请确认已在设置中配置 AI。",
+    "previewFallbackTitle": "会话",
+    "openFull": "完整打开",
+    "closePreview": "关闭预览",
+    "previewFailed": "无法加载此会话。",
+    "ops": {
+      "from": "发件人姓名或邮箱（from:me 为你发出的邮件）",
+      "to": "收件人姓名或邮箱",
+      "label": "带有此标签",
+      "subject": "主题中的词或\"短语\"",
+      "body": "正文中的词或\"短语\"",
+      "in": "文件夹：inbox、sent、archive…",
+      "is": "unread、read、starred、replied",
+      "has": "attachment 或 label",
+      "last": "最近：7d、2w、month、today",
+      "after": "某日期及之后，YYYY-MM-DD",
+      "before": "某日期之前，YYYY-MM-DD",
+      "between": "日期范围，YYYY-MM-DD:YYYY-MM-DD",
+      "olderThan": "早于：30d、1y",
+      "sort": "newest、oldest 或 relevance",
+      "exclude": "排除包含某词的结果（或 -词）"
+    },
+    "values": {
+      "in": {
+        "inbox": "收件箱",
+        "sent": "已发送",
+        "drafts": "草稿",
+        "archive": "归档",
+        "trash": "废纸篓",
+        "spam": "垃圾邮件"
+      },
+      "is": {
+        "unread": "未读",
+        "read": "已读",
+        "starred": "已加星标",
+        "replied": "已回复"
+      },
+      "has": {
+        "attachment": "附件",
+        "label": "任意标签"
+      },
+      "sort": {
+        "newest": "最新优先",
+        "oldest": "最早优先",
+        "relevance": "最相关"
+      },
+      "last": {
+        "today": "今天",
+        "7d": "最近 7 天",
+        "30d": "最近 30 天",
+        "90d": "最近 90 天",
+        "1y": "最近一年"
+      },
+      "older_than": {
+        "30d": "30 天前",
+        "90d": "90 天前",
+        "1y": "一年前"
+      },
+      "from": {
+        "me": "你发出的邮件"
+      }
+    },
+    "chip": {
+      "from": "发件人",
+      "to": "收件人",
+      "label": "标签",
+      "in": "位置",
+      "is": "状态",
+      "has": "包含",
+      "subject": "主题",
+      "body": "正文",
+      "exclude": "不含",
+      "after": "之后",
+      "before": "之前",
+      "between": "期间",
+      "last": "最近",
+      "older_than": "早于",
+      "sort": "排序"
+    },
+    "span": {
+      "hours_one": "{{count}} 小时",
+      "hours_other": "{{count}} 小时",
+      "days_one": "{{count}} 天",
+      "days_other": "{{count}} 天",
+      "weeks_one": "{{count}} 周",
+      "weeks_other": "{{count}} 周",
+      "months_one": "{{count}} 个月",
+      "months_other": "{{count}} 个月",
+      "years_one": "{{count}} 年",
+      "years_other": "{{count}} 年"
+    },
+    "explain": {
+      "lead": "邮件",
+      "leadSent": "你发出的邮件",
+      "me": "我",
+      "from": "来自 {{v}}",
+      "to": "发给 {{v}}",
+      "label": "标签为 {{v}}",
+      "in": "位于{{v}}",
+      "is": {
+        "unread": "未读",
+        "read": "已读",
+        "starred": "已加星标",
+        "replied": "你已回复"
+      },
+      "has": {
+        "attachment": "带附件",
+        "label": "带标签"
+      },
+      "today": "今天的",
+      "todayShort": "今天",
+      "last": "最近 {{span}} 内",
+      "olderThan": "早于 {{span}}",
+      "between": "{{from}} 至 {{to}}",
+      "after": "自 {{date}} 起",
+      "before": "{{date}} 之前",
+      "containing": "包含 {{terms}}",
+      "subject": "主题含 {{v}}",
+      "body": "正文含 {{v}}",
+      "without": "不含 {{v}}",
+      "sort": {
+        "relevance": "最相关优先",
+        "newest": "最新优先",
+        "oldest": "最早优先"
+      },
+      "sentence": "{{what}}，{{order}}。"
+    },
+    "warn": {
+      "unknown_operator": "“{{token}}”不是搜索筛选器",
+      "bad_value": "“{{token}}”不是有效的值",
+      "unknown_label": "没有名为“{{token}}”的标签",
+      "use": "改用 {{fix}}"
+    },
+    "group": {
+      "partial": "部分匹配 - 未包含所有词",
+      "similar": "相关 - 无精确关键词匹配",
+      "similarHint": "按语义找到"
+    },
+    "reason": {
+      "subject": "主题",
+      "sender": "发件人",
+      "content": "正文",
+      "partial": "部分",
+      "similar": "相似"
+    },
+    "help": {
+      "title": "搜索筛选器",
+      "examples": "示例",
+      "ex1": "收件箱中来自 Alice 的近期邮件",
+      "ex2": "带附件的发票",
+      "ex3": "你发出的邮件，最早优先",
+      "ex4": "标签为 Work 的未读邮件",
+      "ex5": "日期范围内的精确短语",
+      "ex6": "不含某词的邮件"
+    },
+    "removeFilter": "移除 {{label}}",
+    "noResultsHint": "没有邮件符合所有筛选条件。试着移除一个："
   },
   "shortcutHelp": {
     "title": "键盘快捷键",
@@ -126,7 +293,11 @@
     "next week": "下周"
   },
   "splitTabs": {
-    "tabToSwitch": "按 Tab 切换"
+    "tabToSwitch": "按 Tab 切换",
+    "label": "收件箱分栏",
+    "newMail": "有新邮件",
+    "unread_one": "{{count}} 封未读",
+    "unread_other": "{{count}} 封未读"
   },
   "threadRow": {
     "hasAttachments": "含附件",

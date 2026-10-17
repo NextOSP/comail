@@ -26,7 +26,9 @@ jobs:
             runner: ubuntu-22.04
             args: "--bundles deb,appimage"
           - name: macos-universal
-            runner: macos-14
+            # macOS 26 image: its Xcode SDK ships FoundationModels, which the
+            # Apple Intelligence provider is compiled against.
+            runner: macos-26
             # `app` produces Comail.app plus the .app.tar.gz updater artifact;
             # without an explicit list the config's Linux-only targets apply
             # and macOS bundles nothing.
@@ -87,7 +89,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Add macOS universal targets
-        if: matrix.runner == 'macos-14'
+        if: matrix.runner == 'macos-26'
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
@@ -113,7 +115,7 @@ jobs:
       # otherwise. Validate secrets cheaply with the "Check Apple signing
       # secrets" workflow before tagging.
       - name: Enable Apple code signing
-        if: matrix.runner == 'macos-14' && vars.ENABLE_APPLE_SIGNING == 'true'
+        if: matrix.runner == 'macos-26' && vars.ENABLE_APPLE_SIGNING == 'true'
         run: |
           {
             echo "APPLE_CERTIFICATE<<__CERT__"
@@ -134,6 +136,8 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Fail the macOS build rather than ship without Apple Intelligence.
+          COMAIL_REQUIRE_APPLE_INTELLIGENCE: "1"
           # Signs the updater artifacts and uploads latest.json to the release.
           # Set these two repo secrets from the generated key (see README).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -144,6 +148,8 @@ jobs:
           releaseBody: |
             ### What's changed
             ${{ steps.changelog.outputs.body }}
+
+            Full release notes: [CHANGELOG.md](https://github.com/NextOSP/comail/blob/${{ github.ref_name }}/CHANGELOG.md)
 
             ### Downloads
             - **macOS**: `Comail_x.y.z_universal.dmg` (Apple Silicon + Intel)

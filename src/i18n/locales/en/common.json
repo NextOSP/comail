@@ -85,7 +85,172 @@
     "try": "Try",
     "emptyHint": "Search across every account, folder, and message.",
     "noResults": "No results for “{{query}}”",
-    "toggleHint": "Switch Search / Ask - ⌘/Ctrl+J"
+    "toggleHint": "Switch Search / Ask AI - ⌘/Ctrl+J",
+    "modeSearch": "Search",
+    "modeAsk": "Ask AI",
+    "askPlaceholder": "Ask anything about your mailbox…",
+    "askIntro": "Ask a question like “what did Alice say about the Q3 budget?” and get an answer grounded in your mail, with sources.",
+    "sources": "Sources",
+    "searchingMailbox": "Searching your mailbox…",
+    "readingSources_one": "Reading {{count}} source…",
+    "readingSources_other": "Reading {{count}} sources…",
+    "askFailed": "Ask failed. Make sure AI is configured in Settings.",
+    "previewFallbackTitle": "Conversation",
+    "openFull": "Open full",
+    "closePreview": "Close preview",
+    "previewFailed": "Couldn't load this conversation.",
+    "ops": {
+      "from": "Sender name or email (from:me for mail you sent)",
+      "to": "Recipient name or email",
+      "label": "Has this label",
+      "subject": "Words or \"phrase\" in the subject",
+      "body": "Words or \"phrase\" in the body",
+      "in": "Folder: inbox, sent, archive…",
+      "is": "unread, read, starred, replied",
+      "has": "attachment or label",
+      "last": "Recent: 7d, 2w, month, today",
+      "after": "On or after a date, YYYY-MM-DD",
+      "before": "Before a date, YYYY-MM-DD",
+      "between": "Date range, YYYY-MM-DD:YYYY-MM-DD",
+      "olderThan": "Older than: 30d, 1y",
+      "sort": "newest, oldest or relevance",
+      "exclude": "Drop results with a word (or -word)"
+    },
+    "values": {
+      "in": {
+        "inbox": "Inbox",
+        "sent": "Sent",
+        "drafts": "Drafts",
+        "archive": "Archive",
+        "trash": "Trash",
+        "spam": "Spam"
+      },
+      "is": {
+        "unread": "Unread",
+        "read": "Read",
+        "starred": "Starred",
+        "replied": "Replied"
+      },
+      "has": {
+        "attachment": "Attachment",
+        "label": "Any label"
+      },
+      "sort": {
+        "newest": "Newest first",
+        "oldest": "Oldest first",
+        "relevance": "Best match"
+      },
+      "last": {
+        "today": "Today",
+        "7d": "Last 7 days",
+        "30d": "Last 30 days",
+        "90d": "Last 90 days",
+        "1y": "Last year"
+      },
+      "older_than": {
+        "30d": "More than 30 days ago",
+        "90d": "More than 90 days ago",
+        "1y": "More than a year ago"
+      },
+      "from": {
+        "me": "Mail you sent"
+      }
+    },
+    "chip": {
+      "from": "From",
+      "to": "To",
+      "label": "Label",
+      "in": "In",
+      "is": "Is",
+      "has": "Has",
+      "subject": "Subject",
+      "body": "Body",
+      "exclude": "Without",
+      "after": "After",
+      "before": "Before",
+      "between": "Between",
+      "last": "Last",
+      "older_than": "Older than",
+      "sort": "Sort"
+    },
+    "span": {
+      "hours_one": "{{count}} hour",
+      "hours_other": "{{count}} hours",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "weeks_one": "{{count}} week",
+      "weeks_other": "{{count}} weeks",
+      "months_one": "{{count}} month",
+      "months_other": "{{count}} months",
+      "years_one": "{{count}} year",
+      "years_other": "{{count}} years"
+    },
+    "explain": {
+      "lead": "Emails",
+      "leadSent": "Emails you sent",
+      "me": "me",
+      "from": "from {{v}}",
+      "to": "to {{v}}",
+      "label": "labeled {{v}}",
+      "in": "in {{v}}",
+      "is": {
+        "unread": "that are unread",
+        "read": "that are read",
+        "starred": "that are starred",
+        "replied": "you replied to"
+      },
+      "has": {
+        "attachment": "with attachments",
+        "label": "with a label"
+      },
+      "today": "from today",
+      "todayShort": "today",
+      "last": "from the last {{span}}",
+      "olderThan": "older than {{span}}",
+      "between": "between {{from}} and {{to}}",
+      "after": "since {{date}}",
+      "before": "before {{date}}",
+      "containing": "containing {{terms}}",
+      "subject": "with {{v}} in the subject",
+      "body": "with {{v}} in the body",
+      "without": "without {{v}}",
+      "sort": {
+        "relevance": "best match first",
+        "newest": "newest first",
+        "oldest": "oldest first"
+      },
+      "sentence": "{{what}}, {{order}}."
+    },
+    "warn": {
+      "unknown_operator": "“{{token}}” isn't a search filter",
+      "bad_value": "“{{token}}” isn't a valid value",
+      "unknown_label": "No label named “{{token}}”",
+      "use": "Use {{fix}}"
+    },
+    "group": {
+      "partial": "Partial matches - not every word",
+      "similar": "Related - no exact keyword match",
+      "similarHint": "Found by meaning"
+    },
+    "reason": {
+      "subject": "Subject",
+      "sender": "Sender",
+      "content": "Text",
+      "partial": "Partial",
+      "similar": "Similar"
+    },
+    "help": {
+      "title": "Search filters",
+      "examples": "Examples",
+      "ex1": "recent inbox mail from Alice",
+      "ex2": "invoices with an attachment",
+      "ex3": "your sent mail, oldest first",
+      "ex4": "unread mail labeled Work",
+      "ex5": "an exact phrase within a date range",
+      "ex6": "mail without a word"
+    },
+    "removeFilter": "Remove {{label}}",
+    "noResultsHint": "Nothing matches every filter. Try removing one:"
   },
   "shortcutHelp": {
     "title": "Keyboard shortcuts",
@@ -128,7 +293,11 @@
     "next week": "Next week"
   },
   "splitTabs": {
-    "tabToSwitch": "Tab to switch"
+    "tabToSwitch": "Tab to switch",
+    "label": "Inbox tabs",
+    "newMail": "new mail",
+    "unread_one": "{{count}} unread",
+    "unread_other": "{{count}} unread"
   },
   "threadRow": {
     "hasAttachments": "Has attachments",

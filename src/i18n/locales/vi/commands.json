@@ -28,8 +28,8 @@
     "prevThread": "Cuộc hội thoại trước",
     "openThread": "Mở cuộc hội thoại",
     "backClose": "Quay lại / đóng",
-    "nextSplit": "Nhóm tiếp theo",
-    "prevSplit": "Nhóm trước",
+    "nextSplit": "Tab tiếp theo",
+    "prevSplit": "Tab trước",
     "nextMessage": "Thư tiếp theo",
     "prevMessage": "Thư trước",
     "goInbox": "Đến Hộp thư đến",
@@ -44,6 +44,7 @@
     "compose": "Soạn thư mới",
     "reply": "Trả lời",
     "replyAll": "Trả lời tất cả",
+    "quoteSelection": "Trả lời kèm trích dẫn đoạn đã chọn",
     "forward": "Chuyển tiếp",
     "send": "Gửi",
     "sendDone": "Gửi & đánh dấu hoàn tất",
@@ -52,7 +53,7 @@
     "instantSend": "Gửi tức thì",
     "attachFiles": "Đính kèm tệp…",
     "aiWrite": "Viết bằng AI…",
-    "aiSummarize": "AI: Tóm tắt cuộc hội thoại",
+    "aiSummarize": "Tóm tắt cuộc hội thoại này",
     "calendarToday": "Lịch: Hôm nay",
     "calendarWeek": "Lịch: Tuần này",
     "calendarMonth": "Lịch: Xem theo tháng",
@@ -74,21 +75,27 @@
     "openSettings": "Mở Cài đặt",
     "manageSnippets": "Quản lý mẫu",
     "manageLabels": "Quản lý nhãn",
-    "editSplits": "Chỉnh sửa nhóm",
+    "editSplits": "Chỉnh sửa tab",
     "themeSnow": "Giao diện: Snow",
     "themeCarbon": "Giao diện: Carbon",
     "themeSystem": "Giao diện: Hệ thống",
-    "splitBySender": "Phân nhóm theo người gửi",
+    "splitBySender": "Tạo tab theo người gửi",
     "goLabel": "Đến nhãn: {{name}}",
     "goSplitTab": "Chuyển đến {{name}}",
     "askAi": "Hỏi AI về hộp thư của bạn",
+    "copyVerificationCode": "Sao chép mã xác minh mới nhất",
     "relabelAuto": "Chạy lại gắn nhãn tự động",
     "openAiSettings": "Cài đặt AI",
     "openAccountSettings": "Cài đặt tài khoản",
     "toggleSidebar": "Hiện menu hộp thư",
-    "aiProofread": "Soát lỗi bằng AI"
+    "aiProofread": "Soát lỗi",
+    "calendarDay": "Lịch: Xem theo ngày",
+    "calendarWeekView": "Lịch: Xem theo tuần",
+    "calendarSidebar": "Lịch: Ẩn/hiện thanh bên"
   },
   "toast": {
+    "noVerificationCode": "Không có mã xác minh nào trong 30 phút qua",
+    "verificationCodeCopied": "Đã sao chép {{code}} từ {{sender}}",
     "syncing": "Đang đồng bộ…",
     "noUnsubscribeLink": "Không có liên kết hủy đăng ký",
     "unsubscribeWouldOpen": "Hủy đăng ký: sẽ mở {{url}}",
@@ -126,5 +133,9 @@
     "row": "Yêu cầu AI thực hiện: “{{query}}”",
     "notUnderstood": "AI không thể chuyển điều đó thành một thao tác. Hãy thử diễn đạt lại.",
     "locationNote": "Địa điểm: {{location}}"
+  },
+  "aiHere": {
+    "title": "AI tại đây",
+    "hint": "Viết bằng AI khi soạn thư · Tóm tắt trong cuộc hội thoại · Hỏi AI khi tìm kiếm"
   }
 }

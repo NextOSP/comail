@@ -333,7 +333,7 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         format!("WHERE {}", where_clauses.join(" AND "))
     };
     let sql = format!(
-        "{SUMMARY_SELECT} {where_sql} ORDER BY t.last_message_at DESC LIMIT {}",
+        "{SUMMARY_SELECT} {where_sql} ORDER BY t.last_message_at DESC, t.id DESC LIMIT {}",
         args.limit + 1
     );
 
@@ -344,8 +344,30 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let next_cursor = if threads.len() as i64 > args.limit {
+        let overflow_at = threads[args.limit as usize].last_message_at;
         threads.truncate(args.limit as usize);
-        threads.last().map(|t| t.last_message_at)
+        let last_at = threads.last().map(|t| t.last_message_at);
+        // The cursor is a bare timestamp and the next page asks for strictly
+        // older threads, so threads sharing the boundary timestamp (common:
+        // Date headers have one-second resolution) would be skipped. Finish
+        // the tie group on this page instead.
+        if last_at == Some(overflow_at) {
+            let mut tie_clauses = where_clauses.clone();
+            tie_clauses.push(format!("t.last_message_at = {overflow_at}"));
+            let sql = format!(
+                "{SUMMARY_SELECT} WHERE {} ORDER BY t.id DESC",
+                tie_clauses.join(" AND ")
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let have: std::collections::HashSet<i64> = threads.iter().map(|t| t.id).collect();
+            for t in stmt.query_map(params_ref.as_slice(), summary_from_row)? {
+                let t = t?;
+                if !have.contains(&t.id) {
+                    threads.push(t);
+                }
+            }
+        }
+        last_at
     } else {
         None
     };
@@ -353,4 +375,43 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         threads,
         next_cursor,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::testutil;
+    use crate::models::View;
+
+    #[test]
+    fn paging_never_skips_threads_sharing_a_timestamp() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        // Five threads, all at the same instant (seed_message uses t=1000).
+        for i in 0..5 {
+            testutil::seed_message(&c, &format!("p{i}@x.io"), &format!("s{i}"), false);
+        }
+        let page = |cursor| {
+            list(
+                &c,
+                &ListArgs {
+                    view: View::Inbox,
+                    tab: None,
+                    account_id: None,
+                    folder_id: None,
+                    cursor,
+                    limit: 2,
+                },
+            )
+            .unwrap()
+        };
+        let first = page(None);
+        let mut seen: Vec<i64> = first.threads.iter().map(|t| t.id).collect();
+        if let Some(cur) = first.next_cursor {
+            seen.extend(page(Some(cur)).threads.iter().map(|t| t.id));
+        }
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), 5);
+    }
 }

@@ -16,6 +16,7 @@ pub fn get(conn: &Connection) -> Result<Settings> {
     // Fold any legacy plain-text signatures into the rich model. Migrated data is
     // persisted on the next `set()`.
     settings.migrate_signatures();
+    settings.migrate_themes();
     Ok(settings)
 }
 
@@ -41,10 +42,16 @@ mod tests {
         assert!(d.auto_advance);
         assert!(d.auto_labels_enabled);
         assert_eq!(d.calendar_week_start, "monday");
+        assert_eq!(d.inbox_ui, "classic");
+        assert!(d.show_sender_photos);
+        assert_eq!(d.accent_color, "violet");
+        assert_eq!(d.font_family, "");
 
         let mut s = d.clone();
         s.theme = "carbon".into();
         s.calendar_week_start = "sunday".into();
+        s.inbox_ui = "avatar".into();
+        s.show_sender_photos = false;
         s.notifications_enabled = false;
         s.signature_list.push(crate::models::Signature {
             id: "a".into(),
@@ -65,6 +72,8 @@ mod tests {
             source_prompt: "For vendor invoices, move to Important".into(),
             instruction: "It is a vendor invoice".into(),
             enabled: true,
+            condition: None,
+            min_confidence: None,
             actions: vec![crate::models::AiAutomationAction {
                 kind: "route_to".into(),
                 value: "important".into(),
@@ -75,6 +84,8 @@ mod tests {
         let back = get(&c).unwrap();
         assert_eq!(back.theme, "carbon");
         assert_eq!(back.calendar_week_start, "sunday");
+        assert_eq!(back.inbox_ui, "avatar");
+        assert!(!back.show_sender_photos);
         assert!(!back.notifications_enabled);
         assert_eq!(back.signature_list.len(), 1);
         assert_eq!(back.signature_list[0].html, "<b>Dean</b>");
@@ -109,6 +120,26 @@ mod tests {
         assert_eq!(def.reply_id.as_deref(), Some(sig.id.as_str()));
     }
 
+    /// The retired "holiday" theme reads back as Snow, globally and per account.
+    #[test]
+    fn holiday_theme_migrates_to_snow() {
+        let c = testutil::conn();
+        c.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('settings',
+             '{\"theme\":\"holiday\",\"undoSendSeconds\":10,\"loadRemoteImages\":false,\"accountThemes\":{\"1\":\"holiday\",\"2\":\"carbon\"}}')",
+            [],
+        )
+        .unwrap();
+        let s = get(&c).unwrap();
+        assert_eq!(s.theme, "snow");
+        assert_eq!(s.account_themes.get("1").map(String::as_str), Some("snow"));
+        assert_eq!(
+            s.account_themes.get("2").map(String::as_str),
+            Some("carbon")
+        );
+        assert_eq!(s.accent_color, "violet");
+    }
+
     /// Blobs written before new fields existed must deserialize with defaults.
     #[test]
     fn old_blob_gets_field_defaults() {
@@ -124,6 +155,8 @@ mod tests {
         assert_eq!(s.undo_send_seconds, 20);
         assert!(s.load_remote_images);
         assert_eq!(s.calendar_week_start, "monday");
+        assert_eq!(s.inbox_ui, "classic");
+        assert!(s.show_sender_photos);
         // serde defaults for everything added since
         assert!(s.notifications_enabled);
         assert!(s.auto_advance);

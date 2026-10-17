@@ -128,6 +128,18 @@ export interface MessageDetail {
   sendState?: "queued" | "failed" | null;
   /** The last delivery error when `sendState` is "failed". */
   sendError?: string | null;
+  /** One-time verification code found in received mail, if any. */
+  verificationCode?: string | null;
+}
+
+/** Newest one-time code from recently received mail. */
+export interface VerificationCode {
+  code: string;
+  messageId: number;
+  threadId: number;
+  sender: string;
+  subject: string;
+  receivedAt: number;
 }
 
 export interface ThreadDetail {
@@ -254,14 +266,83 @@ export interface SplitRuleQuery {
   hasAttachment?: boolean;
 }
 
+/** How a text condition compares (case-insensitive; subjects are also accent-folded). */
+export type TextOp = "contains" | "equals" | "startsWith" | "endsWith";
+
+/** Typed split-rule condition tree (mirrors Rust `RuleCondition`). A tree only
+ *  matches when some leaf sits under an even number of `not`s. */
+export type RuleCondition =
+  | { kind: "all"; of: RuleCondition[] }
+  | { kind: "any"; of: RuleCondition[] }
+  | { kind: "not"; cond: RuleCondition }
+  | { kind: "sender"; op: TextOp; value: string }
+  | { kind: "recipient"; op: TextOp; value: string }
+  | { kind: "subject"; op: TextOp; value: string }
+  | { kind: "label"; id: number }
+  | { kind: "isAutomated"; value: boolean }
+  | { kind: "hasAttachment"; value: boolean };
+
+/** Route key: "important" | "other" | "pending" | "label:<id>" | "split:<id>". */
+export type RouteKey = string;
+
 export interface SplitRule {
   id: number;
   name: string;
   position: number;
+  /** Legacy flat query; evaluated only when `condition` is unset. */
   query: SplitRuleQuery;
+  /** Typed condition tree; replaces `query` when present. */
+  condition?: RuleCondition | null;
   /** Where matching mail is routed: undefined/null = the rule is its own tab;
    *  otherwise a route key "important" | "other" | "label:<id>". */
-  target?: string | null;
+  target?: RouteKey | null;
+  /** Optional AI check (decision model, else chat model). With no condition
+   *  the check alone decides; with no AI available it never matches. */
+  ai?: AiCheck | null;
+}
+
+/** A yes/no question answered by the decision model (or chat fallback). */
+export interface AiCheck {
+  instruction: string;
+  /** Overrides Settings.decisionMinConfidence for this check. */
+  minConfidence?: number | null;
+}
+
+export interface LeafTrace {
+  condition: RuleCondition;
+  passed: boolean;
+}
+
+export interface RuleTrace {
+  splitId: number;
+  name: string;
+  matched: boolean;
+  /** false when the rule has no positive criterion and can never match */
+  matchable: boolean;
+  leaves: LeafTrace[];
+  /** The condition passed through to this rule's AI check (verdict decided async). */
+  aiCheck: boolean;
+}
+
+export interface Decision {
+  route: RouteKey | null;
+  matchedSplit: number | null;
+  rules: RuleTrace[];
+  /** A split's AI check applies; the thread waits for the async pass. */
+  needsAi: boolean;
+}
+
+export interface RouteExplanation {
+  /** threads.routed_tab as stored (rule, AI, or heuristic outcome) */
+  current: RouteKey | null;
+  decision: Decision;
+}
+
+export interface ConditionPreview {
+  /** matches among the `scanned` most recent threads */
+  total: number;
+  scanned: number;
+  samples: { id: number; subject: string; fromAddr: string; lastMessageAt: number }[];
 }
 
 export interface FolderInfo {
@@ -299,7 +380,7 @@ export interface UnreadCounts {
   other: number;
   splits: Record<string, number>;
   labels: Record<string, number>;
-  /** "starred" | "snoozed" | "drafts" (drafts counts all drafts) */
+  /** "starred" | "snoozed" | "spam" | "drafts" (drafts counts all drafts) */
   views: Record<string, number>;
 }
 
@@ -348,6 +429,22 @@ export interface AiAutomationRule {
   instruction: string;
   enabled: boolean;
   actions: AiAutomationAction[];
+  /** Deterministic condition (the rule decision API). With an empty
+   *  `instruction` no model is used; with both, both must hold. */
+  condition?: RuleCondition | null;
+  /** Overrides Settings.decisionMinConfidence for the AI check. */
+  minConfidence?: number | null;
+}
+
+/** One decision model endpoint in the provider chain. */
+export interface DecisionEndpoint {
+  provider: Exclude<DecisionProvider, "off">;
+  /** "" uses the provider default. */
+  model: string;
+  /** Endpoint for "custom". */
+  baseUrl: string;
+  /** Wire format for "custom". */
+  format: "openrouter" | "openai" | "";
 }
 
 export interface AiAutomationPlan {
@@ -360,11 +457,21 @@ export interface AiAutomationPlan {
 }
 
 export interface Settings {
-  theme: "snow" | "carbon" | "holiday" | "system";
+  theme: "snow" | "carbon" | "system";
+  /** Accent color preset key (see lib/accent.ts). */
+  accentColor: string;
+  /** Interface font: "" = system, otherwise a Google Fonts family name. */
+  fontFamily: string;
   /** UI language: "system" follows the OS locale, otherwise a code like "en". */
   language: string;
   /** First day shown in calendar week and month views. */
   calendarWeekStart: "sunday" | "monday";
+  /** Inbox UI: classic dense line, or tall avatar rows + bundles. */
+  inboxUi: "classic" | "avatar";
+  /** Avatar inbox UI: load sender photos from Gravatar (initials fallback). */
+  showSenderPhotos: boolean;
+  /** Avatar inbox UI: other tabs as bundle rows at the top of Important. */
+  showBundles: boolean;
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;
@@ -394,6 +501,8 @@ export interface Settings {
    * "important", "other", "split:<id>", or "label:<id>". */
   notificationTabs: string[];
   soundEnabled: boolean;
+  /** Copy verification codes from new mail to the clipboard. */
+  copyVerificationCodes: boolean;
   /** After archiving from a conversation, open the next thread (vs. back to list). */
   autoAdvance: boolean;
   /** After selecting a thread with `x`, advance the cursor to the next row. Off
@@ -408,6 +517,40 @@ export interface Settings {
   /** Compound AI-triggered workflows. The AI matches rules; configured actions
    * are executed deterministically by the app. */
   aiAutomationRules: AiAutomationRule[];
+  /** Decision model for categories and rule questions; falls back to the
+   *  chat classifier, then the heuristic. */
+  decisionProvider: DecisionProvider;
+  /** Endpoint for the "custom" provider. */
+  decisionBaseUrl: string;
+  /** Wire format for the "custom" provider. */
+  decisionFormat: "openrouter" | "openai";
+  /** Model id; "" uses the provider default. */
+  decisionModel: string;
+  /** Answers less certain than this (0..1) count as "no". */
+  decisionMinConfidence: number;
+  /** Backup decision providers, tried in order when the primary fails. */
+  decisionBackups: DecisionEndpoint[];
+  /** Where decision models are used; off = that feature asks the chat model. */
+  decisionUseCategories: boolean;
+  decisionUseRules: boolean;
+  decisionUseSplits: boolean;
+  /** When decision models fail or none is set, ask the chat model (API,
+   *  local, or Apple on-device). */
+  decisionChatFallback: boolean;
+  /** Guidance per AI category, keyed by the category label's keyword. */
+  aiCategoryDescriptions: Record<string, string>;
+  /** Serve the local MCP endpoint so AI clients can use the mailbox. */
+  mcpEnabled: boolean;
+  /** Loopback port for the MCP endpoint (default 47823). */
+  mcpPort: number;
+  /** MCP clients may create, edit and delete drafts (never sends). */
+  mcpAllowDrafts: boolean;
+  /** MCP clients may send drafts (still subject to the undo-send delay). */
+  mcpAllowSend: boolean;
+  /** MCP clients may archive, trash, label, move and flag threads. */
+  mcpAllowActions: boolean;
+  /** The user's own rules, appended to what MCP clients are told about comail. */
+  mcpInstructions: string;
   /** Model tier the AI classifier uses. */
   aiTierCategorize: AiTier;
   /** Group the thread list under date headers (Today / Yesterday / …). */
@@ -427,7 +570,7 @@ export interface Settings {
   /** Which signature each account defaults to, keyed by stringified account id. */
   signatureDefaults: Record<string, SignatureDefaults>;
   /** Per-account theme override, keyed by stringified account id. Missing = global theme. */
-  accountThemes: Record<string, "snow" | "carbon" | "holiday" | "system">;
+  accountThemes: Record<string, "snow" | "carbon" | "system">;
   /** Show which account each unified-inbox row belongs to (dot + short name). */
   showAccountBadges: boolean;
   /** Per-account marker color (hex), keyed by stringified account id. Missing =
@@ -556,7 +699,36 @@ export interface AiStatus {
   configured: boolean;
   model: string;
   baseUrl: string;
+  /** Apple Intelligence (on-device model) availability on this Mac. */
+  appleIntelligence: AppleIntelligenceAvailability;
+  /** A decision provider is selected and has a key. */
+  decisionConfigured: boolean;
+  /** Decision model in use ("" when off). */
+  decisionModel: string;
 }
+
+/** Decision model backend: TypeSafe Jev & co. on OpenRouter, OpenAI's
+ *  Decisions API, or any endpoint speaking one of those two formats. */
+export type DecisionProvider = "off" | "openrouter" | "openai" | "custom";
+
+export interface DecisionTestResult {
+  provider: string;
+  model: string;
+  ok: boolean;
+  latencyMs: number;
+  /** Probability the sample invoice was judged an invoice. */
+  probability: number;
+  /** Why it failed ("" when ok). */
+  error: string;
+}
+
+export type AppleIntelligenceAvailability =
+  | "available"
+  | "deviceNotEligible"
+  | "notEnabled"
+  | "modelNotReady"
+  | "osTooOld"
+  | "unsupported";
 
 /** Structured action parsed by AI from a natural-language palette query. */
 export interface AiIntent {
@@ -593,6 +765,10 @@ export interface AiCalendarSuggestion {
   description: string | null;
 }
 
+/** A follow-up the AI proposes for a finished draft (from `ai_draft_actions`),
+ * discriminated by `kind`. Narrow with `switch (action.kind)`. */
+export type AiDraftAction = { kind: "create_event" } & AiCalendarSuggestion;
+
 /** Structured, sidebar-ready AI read of a whole thread (from `ai_summarize`). */
 export interface AiThreadSummary {
   timeline: TimelineEntry[];
@@ -610,6 +786,68 @@ export interface SearchArgs {
   /** Scope results to one account; null/omitted searches all accounts. */
   accountId?: number | null;
   limit?: number;
+}
+
+/** An operator the search parser understood (comail-core/src/search/mod.rs).
+ *  `start`/`end` are the operator's span in the query (JS string indices). */
+export interface SearchChip {
+  kind:
+    | "from"
+    | "to"
+    | "label"
+    | "in"
+    | "is"
+    | "has"
+    | "subject"
+    | "body"
+    | "exclude"
+    | "after"
+    | "before"
+    | "between"
+    | "last"
+    | "older_than"
+    | "sort";
+  value: string;
+  start: number;
+  end: number;
+}
+
+/** A query token the parser could not use, with the closest valid spelling. */
+export interface SearchWarning {
+  kind: "unknown_operator" | "bad_value" | "unknown_label";
+  token: string;
+  suggestion: string | null;
+  start: number;
+  end: number;
+}
+
+/** What a query will do - drives the chips + sentence under the search box. */
+export interface SearchExplain {
+  chips: SearchChip[];
+  warnings: SearchWarning[];
+  /** Free-text words and phrases every result must contain. */
+  terms: string[];
+  afterMs: number | null;
+  beforeMs: number | null;
+  sort: "relevance" | "newest" | "oldest";
+}
+
+/** Why a thread matched: all terms in the subject / sender, all in the mail,
+ *  only some terms, meaning only (semantic), or an operator-only query. */
+export type MatchReason = "subject" | "sender" | "content" | "partial" | "similar" | "filter";
+
+export interface SearchHit {
+  threadId: number;
+  /** 1 = exact subject/sender match … 5 = similar meaning only. */
+  tier: number;
+  reason: MatchReason;
+}
+
+export interface SearchResults {
+  threads: ThreadSummary[];
+  /** Index-aligned with `threads`. */
+  hits: SearchHit[];
+  explain: SearchExplain;
 }
 
 export interface EmbeddingStatus {
@@ -731,6 +969,11 @@ export interface CalendarConflictEvent {
 }
 
 /** One raw response chunk for an in-progress structured thread summary. */
+export interface AiDraftTokenEvent {
+  requestId: string;
+  delta: string;
+}
+
 export interface AiSummaryTokenEvent {
   threadId: number;
   delta: string;
@@ -750,12 +993,54 @@ export interface EventMap {
   "ai:ask:reasoning": AskReasoningEvent;
   "ai:ask:done": AskDoneEvent;
   "ai:summary:token": AiSummaryTokenEvent;
+  "ai:draft:token": AiDraftTokenEvent;
   "calendar:updated": CalendarUpdatedEvent;
   "calendar:new": CalendarNewEvent;
   "calendar:reminder": CalendarReminderEvent;
   "calendar:conflict": CalendarConflictEvent;
   /** OS mailto: deep link; payload is the raw mailto URL. */
   "deeplink:mailto": string;
+  /** Siri / Shortcuts "Search Mail"; payload is the query. */
+  "intent:search": string;
+  /** An AI client called a tool on the local MCP server. */
+  "mcp:activity": McpCall;
+}
+
+// ---------- MCP (AI clients) ----------
+
+export interface McpStatus {
+  running: boolean;
+  port: number;
+  url: string;
+  error: string | null;
+  /** Distinct clients that connected since the server started. */
+  clientCount: number;
+}
+
+export interface McpCall {
+  at: number;
+  client: string;
+  tool: string;
+  ok: boolean;
+  error: string | null;
+}
+
+export type McpInstallMethod = "command" | "deeplink" | "write" | "copy";
+
+export interface McpClientInfo {
+  id: string;
+  name: string;
+  method: McpInstallMethod;
+  detected: boolean;
+  configPath: string | null;
+  snippetLang: "json" | "toml" | "yaml" | "shell" | "text";
+}
+
+export interface McpInstallResult {
+  ok: boolean;
+  message: string;
+  path: string | null;
+  openUrl: string | null;
 }
 
 // ---------- Command signatures ----------
@@ -787,7 +1072,9 @@ export interface Commands {
   /** Newest message of the thread that can be unsubscribed from, or null when
    *  the thread really offers none. Recovers the header from the cached raw
    *  message for mail synced before it was fetched. */
-  thread_unsubscribe_message(args: { threadId: number }): Promise<number | null>;
+  thread_unsubscribe_message(args: {
+    threadId: number;
+  }): Promise<number | null>;
   /** Unsubscribe from the list this message came from (RFC 8058 one-click
    *  POST, mailto: send, or hand back a URL for the browser). */
   unsubscribe_message(args: { messageId: number }): Promise<UnsubscribeOutcome>;
@@ -814,13 +1101,22 @@ export interface Commands {
   get_draft(args: { draftId: number }): Promise<SaveDraftArgs>;
   delete_draft(args: { draftId: number }): Promise<void>;
   queue_send(args: { args: QueueSendArgs }): Promise<QueueSendResult>;
-  list_contacts(args: { prefix: string; accountId?: number; limit?: number }): Promise<Address[]>;
+  list_contacts(args: {
+    prefix: string;
+    accountId?: number;
+    limit?: number;
+  }): Promise<Address[]>;
   suggest_contacts(args: {
     query: string;
     limit?: number;
   }): Promise<ContactSuggestion[]>;
 
-  search(args: { args: SearchArgs }): Promise<ThreadSummary[]>;
+  search(args: { args: SearchArgs }): Promise<SearchResults>;
+  /** Parse-only: what `query` will do, for the live explain row. */
+  explain_search(args: { query: string }): Promise<SearchExplain>;
+  /** Remember a thread opened from search results (local ranking feedback). */
+  record_search_open(args: { query: string; threadId: number }): Promise<void>;
+  clear_search_history(args: Record<string, never>): Promise<void>;
   /** Fire-and-forget: pre-computes the semantic query embedding while typing. */
   warm_search_embedding(args: { query: string }): Promise<void>;
 
@@ -838,6 +1134,13 @@ export interface Commands {
   delete_split(args: { splitId: number }): Promise<void>;
   /** First rule (position order) matching the thread; null when routed by AI/heuristic. */
   find_matching_split(args: { threadId: number }): Promise<SplitRule | null>;
+  /** Stored tab plus a trace of every split rule tried for the thread. */
+  explain_route(args: { threadId: number }): Promise<RouteExplanation>;
+  /** Dry-run a draft condition against recent mail. */
+  preview_split_condition(args: {
+    condition: RuleCondition;
+    limit?: number;
+  }): Promise<ConditionPreview>;
   /** Persist the shared top-to-bottom order of custom splits and auto-label tabs. */
   reorder_tabs(args: {
     order: { kind: "split" | "label"; id: number }[];
@@ -861,7 +1164,16 @@ export interface Commands {
   reroute_all(args: Record<string, never>): Promise<number>;
 
   get_settings(args: Record<string, never>): Promise<Settings>;
+  /** Sender picture as a data URL (Gravatar, BIMI brand logo, or site icon), cached on disk. */
+  sender_avatar(args: { email: string }): Promise<string | null>;
   set_settings(args: { settings: Settings }): Promise<void>;
+  mcp_status(args: Record<string, never>): Promise<McpStatus>;
+  mcp_get_token(args: Record<string, never>): Promise<string>;
+  mcp_regenerate_token(args: Record<string, never>): Promise<string>;
+  mcp_activity(args: Record<string, never>): Promise<McpCall[]>;
+  mcp_list_clients(args: Record<string, never>): Promise<McpClientInfo[]>;
+  mcp_client_snippet(args: { id: string }): Promise<string>;
+  mcp_install_client(args: { id: string }): Promise<McpInstallResult>;
 
   list_events(args: {
     startMs: number;
@@ -930,12 +1242,23 @@ export interface Commands {
   }): Promise<void>;
 
   ai_status(args: Record<string, never>): Promise<AiStatus>;
+  latest_verification_code(args: {
+    maxAgeMinutes?: number;
+  }): Promise<VerificationCode | null>;
   /** Model ids from the endpoint's GET /models (OpenAI-compatible). */
   ai_list_models(args: Record<string, never>): Promise<string[]>;
   ai_usage_stats(args: Record<string, never>): Promise<AiUsageStats>;
   email_stats(args: Record<string, never>): Promise<EmailStats>;
   ai_plan_automation(args: { prompt: string }): Promise<AiAutomationPlan>;
   set_ai_key(args: { apiKey: string }): Promise<void>;
+  set_decision_key(args: {
+    provider: Exclude<DecisionProvider, "off">;
+    apiKey: string;
+  }): Promise<void>;
+  /** Probe every provider in the chain, in order. */
+  test_decision_provider(args: Record<string, never>): Promise<DecisionTestResult[]>;
+  /** Add a custom AI category (a local auto label) with model guidance. */
+  create_category(args: { name: string; color: string; description: string }): Promise<Label>;
   /** Parse a natural-language palette query into an executable intent. */
   ai_command(args: { query: string }): Promise<AiIntent>;
   ai_summarize(args: { threadId: number }): Promise<AiThreadSummary>;
@@ -946,12 +1269,18 @@ export interface Commands {
     /** The message the user hit reply on, so the draft targets the right one. */
     replyToMessageId: number | null;
     instruction: string;
+    /** Edit mode: the body to revise per `instruction` (omit for a fresh draft). */
+    currentDraft?: string | null;
     senderName: string | null;
     /** Write in the user's learned voice; falls back to the saved setting when omitted. */
     voice?: boolean;
     /** A signature will be appended to the draft, so the model skips its own sign-off. */
     hasSignature?: boolean;
+    /** Stream answer text as `ai:draft:token` events tagged with this id. */
+    requestId?: string;
   }): Promise<string>;
+  /** Typed follow-ups for a finished draft, e.g. a calendar event to create. */
+  ai_draft_actions(args: { threadId: number | null; draft: string }): Promise<AiDraftAction[]>;
   /** Copy-edit a draft (plain text or simple HTML); returns the corrected draft. */
   ai_proofread(args: { body: string }): Promise<string>;
   /** Generate a clean email signature from an account's name/email (plain text). */

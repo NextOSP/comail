@@ -71,6 +71,11 @@ pub enum CoreEvent {
     AskDone {
         request_id: String,
     },
+    /// One incremental chunk of a streamed AI draft (reasoning stripped).
+    AiDraftDelta {
+        request_id: String,
+        delta: String,
+    },
     /// One incremental raw JSON chunk of a structured thread summary.
     AiSummaryDelta {
         thread_id: i64,
@@ -96,6 +101,8 @@ pub enum CoreEvent {
         event_id: i64,
         summary: Option<String>,
     },
+    /// An AI client called a tool on the local MCP server.
+    McpActivity(crate::mcp::McpCall),
 }
 
 #[derive(Clone)]

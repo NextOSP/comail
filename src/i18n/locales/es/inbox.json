@@ -2,7 +2,7 @@
   "zero": {
     "allDone": "Ya terminaste todo",
     "nothingIn": "Nada en {{view}} · {{date}}",
-    "hintNextSplit": "división siguiente",
+    "hintNextSplit": "pestaña siguiente",
     "hintCompose": "redactar",
     "hintShortcuts": "atajos"
   },
@@ -11,11 +11,11 @@
     "other": "Otros"
   },
   "splitPopover": {
-    "title": "Nueva división",
+    "title": "Nueva pestaña",
     "fromSender": "Correo de {{email}}",
     "fromDomain": "Todos @{{domain}}",
     "tabName": "pestaña: {{name}}",
-    "created": "División \"{{name}}\" creada",
+    "created": "Pestaña \"{{name}}\" creada",
     "excludeSender": "Excluir a {{email}} de su regla actual",
     "excludeDomain": "Excluir a todos @{{domain}} de su regla actual",
     "excluded": "Excluido de \"{{name}}\""
@@ -25,5 +25,15 @@
     "recent": "Conversaciones recientes",
     "noRecent": "No hay otras conversaciones",
     "noSubject": "(sin asunto)"
+  },
+  "tips": {
+    "done": "para marcar como hecho",
+    "remind": "para recordarme",
+    "compose": "para redactar",
+    "search": "para buscar",
+    "command": "para todos los comandos",
+    "dismiss": "Ocultar consejos",
+    "splits": "para cambiar de pestaña. Crea las tuyas en Ajustes › Bandeja dividida.",
+    "splitsOpen": "Configurar pestañas"
   }
 }

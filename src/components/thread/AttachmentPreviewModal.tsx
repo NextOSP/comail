@@ -4,63 +4,105 @@ import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { MOCK_MODE } from "../../ipc/mock";
-import { useUi } from "../../stores/ui";
-import { reclaimIframeFocus } from "../../keyboard/registry";
-import type { AttachmentPreview, SheetPreview } from "../../ipc/types";
-import { formatSize } from "../../lib/format";
+import type { AttachmentMeta, AttachmentPreview } from "../../ipc/types";
+import { fileKind, type FileKind } from "../../lib/fileKind";
+import { addressName, formatSize, longTime } from "../../lib/format";
+import { prefetchAttachmentPreview, useAttachmentPreview } from "../../queries/hooks";
+import { useUi, type AttachmentViewerState } from "../../stores/ui";
+import { Avatar } from "../inbox/Avatar";
+import { AttachmentThumb } from "./viewer/AttachmentThumb";
+import {
+  EmptyState,
+  FileBadge,
+  IconButton,
+  LoadingPage,
+  ViewerActionsContext,
+  ViewerFallbackActions,
+  ViewerIcon,
+  useViewerKeys,
+} from "./viewer/common";
+import { DocViewer } from "./viewer/DocViewer";
+import { ImageViewer } from "./viewer/ImageViewer";
+import { PdfViewer } from "./viewer/PdfViewer";
+import { SheetViewer } from "./viewer/SheetViewer";
+import { SlidesViewer } from "./viewer/SlidesViewer";
+import { TextViewer } from "./viewer/TextViewer";
+
+const INFO_KEY = "comail.viewer.info";
 
 /**
  * Safe in-app viewer for attachments. All document parsing happens in Rust
- * (comail-core/src/preview.rs); this modal only renders inert payloads:
- * sanitized HTML goes into the same sandboxed-iframe pattern as email bodies,
- * PDFs are rasterized locally with bundled pdf.js, images arrive as data URIs.
+ * (comail-core/src/preview.rs); this only renders inert payloads: sanitized
+ * HTML goes into the same sandboxed-iframe pattern as email bodies, PDFs are
+ * rasterized locally with bundled pdf.js, images arrive as data URIs.
+ *
+ * Always a dark stage (the `.co-viewer` scope re-points the theme tokens) so
+ * documents and photos read the same in every app theme.
  */
 export function AttachmentPreviewModal() {
+  const state = useUi((s) => s.attachmentPreview);
+  if (!state || state.items.length === 0) return null;
+  return <Viewer state={state} />;
+}
+
+function Viewer({ state }: { state: AttachmentViewerState }) {
   const { t } = useTranslation();
-  const attachment = useUi((s) => s.attachmentPreview);
   const pushToast = useUi((s) => s.pushToast);
-  const [preview, setPreview] = useState<AttachmentPreview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const { items, from, date, subject } = state;
+  const index = Math.min(Math.max(0, state.index), items.length - 1);
+  const attachment = items[index];
+  const kind = fileKind(attachment.filename, attachment.mimeType);
+  const name = attachment.filename ?? t("thread:attachment.fallbackName");
+  const preview = useAttachmentPreview(attachment.id);
+  const [info, setInfo] = useState(() => {
+    try {
+      return localStorage.getItem(INFO_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const close = () => useUi.getState().set({ attachmentPreview: null });
+  const goTo = (i: number) => {
+    if (i < 0 || i >= items.length || i === index) return;
+    useUi.getState().set({ attachmentPreview: { ...state, index: i } });
+  };
+  const toggleInfo = () =>
+    setInfo((v) => {
+      try {
+        localStorage.setItem(INFO_KEY, v ? "0" : "1");
+      } catch {
+        /* storage unavailable - session-only */
+      }
+      return !v;
+    });
 
+  // Focus the dialog on open and hand focus back to whatever opened it.
   useEffect(() => {
-    setPreview(null);
-    setError(null);
-    if (!attachment) return;
-    let stale = false;
-    call("preview_attachment", { attachmentId: attachment.id })
-      .then((p) => {
-        if (!stale) setPreview(p);
-      })
-      .catch((e) => {
-        if (!stale) setError(errorMessage(e));
-      });
-    return () => {
-      stale = true;
-    };
-  }, [attachment?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const opener = document.activeElement as HTMLElement | null;
+    requestAnimationFrame(() => rootRef.current?.focus());
+    return () => opener?.focus?.();
+  }, []);
 
+  // Paging should feel instant: warm the neighbours.
   useEffect(() => {
-    if (attachment) requestAnimationFrame(() => panelRef.current?.focus());
-  }, [attachment]);
-
-  if (!attachment) return null;
+    if (items[index + 1]) prefetchAttachmentPreview(items[index + 1].id);
+    if (items[index - 1]) prefetchAttachmentPreview(items[index - 1].id);
+  }, [items, index]);
 
   const openExternally = async () => {
     try {
       const path = await call("get_attachment", { attachmentId: attachment.id });
-      if (!MOCK_MODE) await openPath(path);
+      if (MOCK_MODE) {
+        pushToast({ kind: "info", message: t("thread:attachment.savedMock", { name }) });
+        return;
+      }
+      await openPath(path);
     } catch (e) {
-      pushToast({
-        kind: "error",
-        message: t("thread:attachment.openFailed", { detail: errorMessage(e) }),
-      });
+      pushToast({ kind: "error", message: t("thread:attachment.openFailed", { detail: errorMessage(e) }) });
     }
   };
-
-  const name = attachment.filename ?? t("thread:attachment.fallbackName");
 
   const download = async () => {
     if (MOCK_MODE) {
@@ -74,322 +116,242 @@ export function AttachmentPreviewModal() {
       await call("save_attachment", { attachmentId: attachment.id, dest });
       pushToast({ kind: "info", message: t("thread:attachment.preview.downloaded", { name }) });
     } catch (e) {
-      pushToast({
-        kind: "error",
-        message: t("thread:attachment.openFailed", { detail: errorMessage(e) }),
-      });
+      pushToast({ kind: "error", message: t("thread:attachment.openFailed", { detail: errorMessage(e) }) });
     }
   };
 
+  const actions = useMemo(
+    () => ({ download: () => void download(), openExternally: () => void openExternally() }),
+    [attachment.id], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Renderer keys register first (child effects run before the parent's), so
+  // a sheet's arrow-key cell navigation wins over attachment paging here.
+  useViewerKeys((e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      void download();
+      return true;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return false;
+    switch (e.key) {
+      case "ArrowLeft":
+        goTo(index - 1);
+        return items.length > 1;
+      case "ArrowRight":
+        goTo(index + 1);
+        return items.length > 1;
+      case "i":
+        toggleInfo();
+        return true;
+      case "o":
+        void openExternally();
+        return true;
+    }
+    return false;
+  });
+
+  const meta = [kindName(kind, t), formatSize(attachment.size), from && addressName(from)].filter(Boolean).join(" · ");
+
   return (
-    <div
-      className="co-overlay flex items-center justify-center p-[4vh]"
-      onMouseDown={close}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          close();
-        }
-      }}
-    >
+    <ViewerActionsContext.Provider value={actions}>
       <div
-        ref={panelRef}
+        ref={rootRef}
         tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={name}
         data-testid="attachment-preview"
-        className="co-fade-in flex h-full w-full max-w-[960px] flex-col rounded-xl border border-hairline bg-bg1 outline-none"
-        style={{ boxShadow: "var(--elev-2)" }}
-        onMouseDown={(e) => e.stopPropagation()}
+        className="co-viewer co-viewer-in fixed inset-0 z-40 flex flex-col outline-none"
       >
-        <header className="co-hairline-b flex items-center gap-3 px-4 py-2.5">
+        <header className="co-hairline-b flex h-14 shrink-0 items-center gap-3 pr-3 pl-4">
+          <FileBadge kind={kind} size={32} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13.5px] font-semibold text-ink" title={name}>
               {name}
             </div>
-            <div className="text-[11.5px] text-ink-faint">
-              {[attachment.mimeType, formatSize(attachment.size)].filter(Boolean).join(" · ")}
-            </div>
+            <div className="truncate text-[11.5px] text-ink-faint">{meta}</div>
           </div>
-          <button
-            type="button"
-            className="co-chip flex items-center gap-1.5 cursor-pointer hover:!border-accent/50"
-            onClick={() => void download()}
-            title={t("thread:attachment.preview.download")}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <path d="M7 10l5 5 5-5" />
-              <path d="M12 15V3" />
-            </svg>
-            {t("thread:attachment.preview.download")}
-          </button>
-          <button
-            type="button"
-            className="co-chip cursor-pointer hover:!border-accent/50"
-            onClick={() => void openExternally()}
-          >
-            {t("thread:attachment.preview.openExternally")}
-          </button>
-          <button
-            type="button"
-            className="co-chip cursor-pointer hover:!border-accent/50"
-            aria-label={t("common:close")}
-            onClick={close}
-          >
-            ✕
-          </button>
+
+          {items.length > 1 && (
+            <div className="flex items-center gap-0.5 rounded-lg bg-bg2 p-0.5">
+              <IconButton icon="chevronLeft" label={t("thread:attachment.preview.prevFile")} shortcut="←" disabled={index === 0} onClick={() => goTo(index - 1)} size={28} />
+              <span className="px-1.5 text-[12px] font-medium text-ink-muted tabular-nums">
+                {t("thread:attachment.preview.counter", { n: index + 1, total: items.length })}
+              </span>
+              <IconButton
+                icon="chevronRight"
+                label={t("thread:attachment.preview.nextFile")}
+                shortcut="→"
+                disabled={index === items.length - 1}
+                onClick={() => goTo(index + 1)}
+                size={28}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-1">
+            <IconButton icon="info" label={t("thread:attachment.preview.details")} shortcut="I" active={info} onClick={toggleInfo} />
+            <IconButton icon="external" label={t("thread:attachment.preview.openExternally")} shortcut="O" onClick={() => void openExternally()} />
+            <button type="button" className="co-viewer-action is-primary ml-1" onClick={() => void download()} title={`${t("thread:attachment.preview.download")} (⌘S)`}>
+              <ViewerIcon name="download" size={14} />
+              {t("thread:attachment.preview.download")}
+            </button>
+            <span className="mx-1.5 h-5 w-px bg-hairline-strong" aria-hidden />
+            <IconButton icon="close" label={t("action.close")} shortcut="Esc" onClick={close} />
+          </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-bg0 p-4">
-          {error ? (
-            <Notice text={t("thread:attachment.preview.failed", { detail: error })} />
-          ) : !preview ? (
-            <Notice text={t("thread:attachment.preview.loading")} />
-          ) : (
-            <PreviewBody preview={preview} />
+        <div className="flex min-h-0 flex-1">
+          <main className="relative min-w-0 flex-1 bg-bg0">
+            {preview.isError ? (
+              <EmptyState
+                icon={<span className="text-danger"><ViewerIcon name="alert" size={40} /></span>}
+                title={t("thread:attachment.preview.failedTitle")}
+                body={errorMessage(preview.error)}
+              >
+                <ViewerFallbackActions />
+              </EmptyState>
+            ) : !preview.data ? (
+              <LoadingPage />
+            ) : (
+              <PreviewBody key={attachment.id} preview={preview.data} kind={kind} />
+            )}
+          </main>
+
+          {info && (
+            <aside className="co-viewer-scroll co-hairline-l w-[300px] shrink-0 overflow-y-auto bg-bg1 p-5 text-[12.5px]">
+              {from && (
+                <Section title={t("thread:attachment.preview.sentBy")}>
+                  <div className="flex items-center gap-2.5">
+                    <Avatar address={from} size={32} />
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-ink">{addressName(from)}</div>
+                      <div className="truncate text-ink-faint select-text">{from.email}</div>
+                    </div>
+                  </div>
+                  {date != null && <div className="mt-2 text-ink-muted">{longTime(date)}</div>}
+                </Section>
+              )}
+              {subject && (
+                <Section title={t("thread:attachment.preview.subject")}>
+                  <div className="leading-snug text-ink select-text">{subject}</div>
+                </Section>
+              )}
+              <Section title={t("thread:attachment.preview.fileDetails")}>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+                  <dt className="text-ink-faint">{t("thread:attachment.preview.type")}</dt>
+                  <dd className="truncate text-ink">{kindName(kind, t)}</dd>
+                  {attachment.size != null && (
+                    <>
+                      <dt className="text-ink-faint">{t("thread:attachment.preview.size")}</dt>
+                      <dd className="text-ink">{formatSize(attachment.size)}</dd>
+                    </>
+                  )}
+                  {attachment.mimeType && (
+                    <>
+                      <dt className="text-ink-faint">MIME</dt>
+                      <dd className="truncate font-mono text-[11px] text-ink-muted select-text" title={attachment.mimeType}>
+                        {attachment.mimeType}
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              </Section>
+              {items.length > 1 && (
+                <Section title={t("thread:attachment.preview.inMessage", { count: items.length })}>
+                  <div className="-mx-2 flex flex-col">
+                    {items.map((a, i) => (
+                      <SiblingRow key={a.id} attachment={a} active={i === index} onClick={() => goTo(i)} />
+                    ))}
+                  </div>
+                </Section>
+              )}
+            </aside>
           )}
         </div>
+
+        {items.length > 1 && (
+          <footer className="co-hairline-t flex h-[68px] shrink-0 items-center justify-center gap-2 overflow-x-auto px-4">
+            {items.map((a, i) => (
+              <button
+                key={a.id}
+                type="button"
+                className={`co-viewer-film ${i === index ? "is-active" : ""}`}
+                onClick={() => goTo(i)}
+                title={a.filename ?? t("thread:attachment.fallbackName")}
+                aria-label={a.filename ?? t("thread:attachment.fallbackName")}
+                aria-current={i === index ? "true" : undefined}
+              >
+                <AttachmentThumb attachment={a} size={44} />
+              </button>
+            ))}
+          </footer>
+        )}
       </div>
-    </div>
+    </ViewerActionsContext.Provider>
   );
 }
 
-function Notice({ text }: { text: string }) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center text-[13px] text-ink-faint">
-      {text}
-    </div>
+    <section className="co-hairline-b mb-4 pb-4 last:mb-0 last:border-0 last:pb-0">
+      <h3 className="mb-2 text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">{title}</h3>
+      {children}
+    </section>
   );
 }
 
-function PreviewBody({ preview }: { preview: AttachmentPreview }) {
+function SiblingRow({ attachment, active, onClick }: { attachment: AttachmentMeta; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${active ? "bg-bg3" : "hover:bg-bg2"}`}
+    >
+      <AttachmentThumb attachment={attachment} size={28} />
+      <span className="min-w-0 flex-1">
+        <span className={`block truncate ${active ? "font-medium text-ink" : "text-ink-muted"}`}>
+          {attachment.filename ?? t("thread:attachment.fallbackName")}
+        </span>
+        <span className="block text-[11px] text-ink-faint">{formatSize(attachment.size)}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Friendly file-type name ("PDF document", "Spreadsheet", "SKETCH file"). */
+function kindName(kind: FileKind, t: (k: string, o?: Record<string, unknown>) => string): string {
+  if (kind.family === "other") {
+    return kind.ext ? t("thread:attachment.kind.other", { ext: kind.ext.toUpperCase() }) : t("thread:attachment.kind.file");
+  }
+  return t(`thread:attachment.kind.${kind.family}`);
+}
+
+function PreviewBody({ preview, kind }: { preview: AttachmentPreview; kind: FileKind }) {
   const { t } = useTranslation();
   switch (preview.kind) {
     case "image":
-      return (
-        <div className="flex min-h-full items-center justify-center">
-          <img
-            src={preview.dataUri}
-            alt=""
-            className="max-h-full max-w-full rounded-md"
-            style={{ boxShadow: "var(--elev-1)" }}
-          />
-        </div>
-      );
+      return <ImageViewer src={preview.dataUri} />;
     case "pdf":
-      return <PdfPages base64={preview.base64} />;
+      return <PdfViewer base64={preview.base64} />;
     case "html":
-      return <SandboxedHtml html={preview.html} />;
+      return <DocViewer html={preview.html} />;
     case "sheet":
-      return <SheetTabs sheets={preview.sheets} />;
+      return <SheetViewer sheets={preview.sheets} />;
     case "slides":
-      return (
-        <div className="mx-auto flex max-w-[720px] flex-col gap-3">
-          {preview.slides.map((s, i) => (
-            <section key={i} className="rounded-lg border border-hairline bg-bg1 px-4 py-3">
-              <div className="mb-1 text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
-                {t("thread:attachment.preview.slide", { n: i + 1 })}
-              </div>
-              {s.lines.length === 0 ? (
-                <div className="text-[13px] text-ink-faint">
-                  {t("thread:attachment.preview.emptySlide")}
-                </div>
-              ) : (
-                s.lines.map((line, j) => (
-                  <p
-                    key={j}
-                    className={
-                      j === 0
-                        ? "text-[14.5px] font-semibold text-ink"
-                        : "text-[13px] leading-[1.55] text-ink"
-                    }
-                  >
-                    {line}
-                  </p>
-                ))
-              )}
-            </section>
-          ))}
-        </div>
-      );
+      return <SlidesViewer slides={preview.slides} />;
     case "text":
-      return (
-        <>
-          <pre className="mx-auto max-w-[90ch] font-mono text-[12.5px] leading-[1.55] whitespace-pre-wrap text-ink select-text">
-            {preview.text}
-          </pre>
-          {preview.truncated && <Truncated />}
-        </>
-      );
+      return <TextViewer text={preview.text} truncated={preview.truncated} />;
     case "unsupported":
       return (
-        <Notice
-          text={t(
-            preview.reason === "too_large"
-              ? "thread:attachment.preview.tooLarge"
-              : "thread:attachment.preview.unsupported",
-          )}
-        />
+        <EmptyState
+          icon={<FileBadge kind={kind} size={72} />}
+          title={preview.reason === "too_large" ? t("thread:attachment.preview.tooLargeTitle") : t("thread:attachment.preview.noPreviewTitle")}
+          body={t(preview.reason === "too_large" ? "thread:attachment.preview.tooLarge" : "thread:attachment.preview.unsupported")}
+        >
+          <ViewerFallbackActions />
+        </EmptyState>
       );
   }
-}
-
-function Truncated() {
-  const { t } = useTranslation();
-  return (
-    <div className="mt-2 text-center text-[11.5px] text-ink-faint">
-      {t("thread:attachment.preview.truncated")}
-    </div>
-  );
-}
-
-/** Ammonia-sanitized HTML in a sandboxed iframe (same isolation as email bodies). */
-function SandboxedHtml({ html }: { html: string }) {
-  const { t } = useTranslation();
-  const theme = useUi((s) => s.theme);
-  const srcDoc = useMemo(() => {
-    const root = getComputedStyle(document.documentElement);
-    const text = root.getPropertyValue("--text").trim() || "#222";
-    const muted = root.getPropertyValue("--text-muted").trim() || "#666";
-    const accent = root.getPropertyValue("--accent").trim() || "#714cb6";
-    const scheme = root.getPropertyValue("--iframe-scheme").trim() || "light";
-    return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
-<base target="_blank">
-<style>
-  :root { color-scheme: ${scheme}; }
-  body {
-    margin: 0 auto; max-width: 82ch;
-    font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: ${text}; overflow-wrap: break-word;
-  }
-  a { color: ${accent}; }
-  img { max-width: 100%; height: auto; }
-  pre { white-space: pre-wrap; }
-  blockquote { border-left: 2px solid ${muted}; margin-left: 0; padding-left: 12px; color: ${muted}; }
-  table { border-collapse: collapse; max-width: 100%; }
-  td, th { border: 1px solid ${muted}; padding: 4px 8px; }
-</style></head><body>${html}</body></html>`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [html, theme]);
-  return (
-    <iframe
-      data-app-iframe
-      sandbox="allow-same-origin"
-      srcDoc={srcDoc}
-      // Clicking inside steals keyboard focus, and WKWebView delivers keydowns
-      // in a scriptless sandboxed frame to no listener at all - hand focus
-      // back to the parent after each click so shortcuts keep working.
-      onLoad={(e) =>
-        e.currentTarget.contentDocument?.addEventListener("mouseup", reclaimIframeFocus)
-      }
-      className="h-full w-full rounded-md border-0 bg-bg1"
-      title={t("thread:attachment.preview.documentTitle")}
-    />
-  );
-}
-
-function SheetTabs({ sheets }: { sheets: SheetPreview[] }) {
-  const { t } = useTranslation();
-  const [active, setActive] = useState(0);
-  const sheet = sheets[Math.min(active, sheets.length - 1)];
-  return (
-    <div className="flex h-full flex-col gap-2">
-      {sheets.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {sheets.map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              className={`co-chip cursor-pointer ${i === active ? "!border-accent/60 text-ink" : ""}`}
-              onClick={() => setActive(i)}
-            >
-              {s.name || t("thread:attachment.preview.sheetFallback", { n: i + 1 })}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-hairline bg-bg1">
-        <table className="text-[12px] text-ink select-text">
-          <tbody>
-            {sheet.rows.map((row, ri) => (
-              <tr key={ri} className={ri === 0 ? "font-semibold" : ""}>
-                {row.map((cell, ci) => (
-                  <td
-                    key={ci}
-                    className="max-w-[320px] truncate border border-hairline px-2 py-1 align-top"
-                    title={cell.length > 40 ? cell : undefined}
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {sheet.truncated && <Truncated />}
-    </div>
-  );
-}
-
-/** Renders each PDF page to a canvas with lazily-loaded, bundled pdf.js. */
-function PdfPages({ base64 }: { base64: string }) {
-  const { t } = useTranslation();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    let cancelled = false;
-    let task: { destroy(): Promise<unknown> } | null = null;
-
-    (async () => {
-      const pdfjs = await import("pdfjs-dist");
-      const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-
-      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-      const loadingTask = pdfjs.getDocument({ data: bytes });
-      task = loadingTask;
-      const loaded = await loadingTask.promise;
-      if (cancelled) return;
-      setState("ready");
-
-      const width = Math.min(880, container.clientWidth - 8);
-      const dpr = window.devicePixelRatio || 1;
-      for (let n = 1; n <= loaded.numPages && !cancelled; n++) {
-        const page = await loaded.getPage(n);
-        const base = page.getViewport({ scale: 1 });
-        const scale = width / base.width;
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.className = "mx-auto mb-3 block rounded-md bg-white";
-        canvas.style.boxShadow = "var(--elev-1)";
-        container.appendChild(canvas);
-        const ctx = canvas.getContext("2d")!;
-        ctx.scale(dpr, dpr);
-        await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-      }
-    })().catch(() => {
-      if (!cancelled) setState("error");
-    });
-
-    return () => {
-      cancelled = true;
-      container.replaceChildren();
-      void task?.destroy();
-    };
-  }, [base64]);
-
-  return (
-    <div>
-      {state === "loading" && <Notice text={t("thread:attachment.preview.loading")} />}
-      {state === "error" && <Notice text={t("thread:attachment.preview.failed", { detail: "PDF" })} />}
-      <div ref={containerRef} />
-    </div>
-  );
 }

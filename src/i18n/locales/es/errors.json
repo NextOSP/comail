@@ -1,6 +1,7 @@
 {
   "db": "Error de base de datos",
   "io": "Error del sistema de archivos",
+  "network": "No se pudo conectar con el servidor. Comprueba tu conexión o el punto de conexión en Ajustes.",
   "imap": "Error del servidor de correo (IMAP)",
   "smtp": "No se pudo enviar (error SMTP)",
   "tls": "Error de conexión segura (TLS)",
@@ -10,9 +11,19 @@
   "mime": "Error de formato del mensaje",
   "not_found": "No encontrado",
   "offline": "Estás sin conexión",
+  "ai_not_configured": "La IA no está configurada. Añade una clave de API en Ajustes (no es necesaria para puntos de conexión locales como LM Studio).",
   "other": "Algo salió mal",
   "unknown": "Algo salió mal",
   "oauthFailed": "Error al iniciar sesión con OAuth",
   "connectionFailed": "Error de conexión",
-  "caldav": "Error del servidor de calendario"
+  "caldav": "Error del servidor de calendario",
+  "crash": {
+    "title": "Algo salió mal",
+    "body": "Esta vista encontró un error inesperado. Tu correo está a salvo: inténtalo de nuevo o recarga la aplicación.",
+    "details": "Detalles técnicos",
+    "copy": "Copiar detalles",
+    "copied": "Copiado",
+    "reload": "Recargar app",
+    "retry": "Reintentar"
+  }
 }

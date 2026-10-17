@@ -12,7 +12,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 [package]
 name = "comail"
-version = "0.2.30"
+version = "0.2.31"
 description = "Comail - a fast, offline-first, keyboard-driven email client"
 authors = ["hello@deanoss.com"]
 license = "AGPL-3.0-only"
@@ -27,7 +27,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 comail-core = { path = "crates/comail-core" }
-tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
@@ -41,6 +41,7 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-dialog = "2.7.1"
+tauri-plugin-clipboard-manager = "2"
 
 [profile.release]
 lto = true

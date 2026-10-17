@@ -74,7 +74,7 @@ const CHORD_TIMEOUT = 1500;
 let pendingSeq = "";
 let pendingAt = 0;
 
-function normalizeEvent(e: KeyboardEvent): string | null {
+export function normalizeEvent(e: KeyboardEvent): string | null {
   const raw = e.key;
   if (raw === "Meta" || raw === "Control" || raw === "Shift" || raw === "Alt") return null;
   const mod = IS_MAC ? e.metaKey : e.ctrlKey;

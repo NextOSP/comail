@@ -12,6 +12,7 @@ pub mod labels;
 pub mod messages;
 pub mod notifications;
 pub mod search;
+pub mod search_history;
 pub mod settings;
 pub mod snippets;
 pub mod snoozes;

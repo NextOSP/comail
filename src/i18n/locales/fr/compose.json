@@ -19,6 +19,21 @@
   "ccBcc": "Cc / Cci",
   "subject": "Objet",
   "aiBadge": "IA",
+  "ai": {
+    "write": "Rédiger avec l’IA",
+    "edit": "Modifier avec l’IA",
+    "voiceTip": "Rédiger dans votre style d’écriture appris",
+    "accept": "Accepter",
+    "retry": "Réessayer",
+    "shorten": "Raccourcir",
+    "lengthen": "Allonger",
+    "improve": "Améliorer le style",
+    "generate": "Générer",
+    "hint": "↵ générer · ⇧↵ nouvelle ligne · Échap fermer",
+    "addToCalendar": "Ajouter au calendrier",
+    "addToCalendarTip": "Créer un événement à partir de ce brouillon",
+    "dismiss": "Ignorer"
+  },
   "aiPlaceholder": "ex. accepter l’invitation, proposer mardi",
   "aiVoice": "Dans mon style",
   "drafting": "Rédaction…",
@@ -60,9 +75,11 @@
   "quickReply1": "Bien reçu, merci !",
   "quickReply2": "Ça me va, je m’en occupe.",
   "quickReply3": "Merci, je vais y jeter un œil.",
+  "quickRepliesLoading": "Génération des réponses suggérées…",
   "signature": {
     "label": "Signature",
-    "none": "Aucune signature"
+    "none": "Aucune signature",
+    "trigger": "Signature : {{name}}"
   },
   "fmt": {
     "bold": "Gras",
@@ -79,5 +96,11 @@
     "table": "Insérer un tableau"
   },
   "proofread": "Corriger",
-  "proofreadClean": "Tout est bon - rien à corriger."
+  "proofreadClean": "Tout est bon - rien à corriger.",
+  "teamsMeeting": "Réunion Teams",
+  "teamsMeetingTip": "Créer une réunion Microsoft Teams et ajouter le lien pour la rejoindre",
+  "teamsMeetingTitle": "Réunion Microsoft Teams",
+  "teamsMeetingJoin": "Rejoindre la réunion maintenant",
+  "teamsMeetingAdded": "Lien de la réunion Teams ajouté",
+  "teamsMeetingError": "Impossible de créer la réunion Teams : {{error}}"
 }

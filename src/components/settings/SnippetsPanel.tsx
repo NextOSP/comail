@@ -7,11 +7,12 @@ import { queryClient } from "../../queries/client";
 import { useSnippets } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import {
+  Button,
   ConfirmButton,
+  EmptyState,
   FormField,
-  ghostBtnCls,
   inputCls,
-  primaryBtnCls,
+  SettingsGroup,
 } from "./panelKit";
 
 /** Compat shim: snippet management moved into Settings → Snippets.
@@ -45,6 +46,18 @@ export function SnippetsSection() {
     }
   };
 
+  const expandHint = (
+    <Trans
+      i18nKey="settings:snippets.expandHint"
+      components={{ kbd: <span className="font-mono text-accent" /> }}
+    />
+  );
+  const newButton = (
+    <Button variant="primary" size="sm" icon="plus" onClick={() => setEditing("new")}>
+      {t("settings:snippets.new")}
+    </Button>
+  );
+
   return (
     <>
       {editing != null ? (
@@ -54,51 +67,38 @@ export function SnippetsSection() {
         />
       ) : (
         <>
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-[12px] text-ink-faint">
-              <Trans
-                i18nKey="settings:snippets.expandHint"
-                components={{ kbd: <span className="font-mono text-accent" /> }}
-              />
-            </p>
-            <button className={primaryBtnCls} onClick={() => setEditing("new")}>
-              {t("settings:snippets.new")}
-            </button>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {(snippets ?? []).map((s) => (
-              <div
-                key={s.id}
-                className="flex items-center gap-2.5 rounded-lg border border-hairline bg-bg0 px-3 py-2"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-[13.5px] text-ink">{s.name}</span>
-                  {s.shortcut && (
-                    <span className="ml-2 font-mono text-[11.5px] text-accent">;{s.shortcut}</span>
-                  )}
-                </span>
-                <span className="shrink-0 text-[11.5px] text-ink-faint tabular-nums">
-                  {t("settings:snippets.usedCount", { n: s.usageCount })}
-                </span>
-                <button
-                  className="rounded-md border border-hairline px-2.5 py-1 text-[12px] text-ink-muted hover:bg-bg2"
-                  onClick={() => setEditing(s)}
-                >
-                  {t("settings:snippets.edit")}
-                </button>
-                <ConfirmButton
-                  label={t("settings:snippets.delete")}
-                  confirmLabel={t("settings:snippets.reallyDelete")}
-                  onConfirm={() => void deleteSnippet(s.id)}
-                />
-              </div>
-            ))}
-            {(snippets ?? []).length === 0 && (
-              <p className="py-4 text-center text-[12.5px] text-ink-faint">
-                {t("settings:snippets.empty")}
-              </p>
-            )}
-          </div>
+          {(snippets ?? []).length === 0 ? (
+            <EmptyState
+              icon="notes"
+              title={t("settings:snippets.empty")}
+              hint={expandHint}
+              action={newButton}
+            />
+          ) : (
+            <SettingsGroup description={expandHint} actions={newButton}>
+              {(snippets ?? []).map((s) => (
+                <div key={s.id} className="flex items-center gap-2.5">
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="text-base text-ink">{s.name}</span>
+                    {s.shortcut && (
+                      <span className="ml-2 font-mono text-xs text-accent">;{s.shortcut}</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-xs text-ink-faint tabular-nums">
+                    {t("settings:snippets.usedCount", { n: s.usageCount })}
+                  </span>
+                  <Button size="sm" icon="edit" onClick={() => setEditing(s)}>
+                    {t("settings:snippets.edit")}
+                  </Button>
+                  <ConfirmButton
+                    label={t("settings:snippets.delete")}
+                    confirmLabel={t("settings:snippets.reallyDelete")}
+                    onConfirm={() => void deleteSnippet(s.id)}
+                  />
+                </div>
+              ))}
+            </SettingsGroup>
+          )}
         </>
       )}
     </>
@@ -167,7 +167,7 @@ function SnippetForm({ snippet, onDone }: { snippet: Snippet | null; onDone: () 
         </FormField>
         <FormField label={t("settings:snippets.shortcutLabel")}>
           <div className="flex items-center gap-1">
-            <span className="font-mono text-[13px] text-ink-faint">;</span>
+            <span className="font-mono text-base text-ink-faint">;</span>
             <input
               className={inputCls}
               value={shortcut}
@@ -196,16 +196,16 @@ function SnippetForm({ snippet, onDone }: { snippet: Snippet | null; onDone: () 
         />
       </FormField>
       <div className="mt-1 flex items-center gap-2">
-        <button type="submit" className={primaryBtnCls} disabled={busy || !name.trim() || !body.trim()}>
+        <Button type="submit" variant="primary" busy={busy} disabled={!name.trim() || !body.trim()}>
           {busy
             ? t("settings:snippets.saving")
             : snippet
               ? t("settings:snippets.saveChanges")
               : t("settings:snippets.create")}
-        </button>
-        <button type="button" className={ghostBtnCls} onClick={onDone}>
+        </Button>
+        <Button variant="ghost" onClick={onDone}>
           {t("settings:snippets.cancel")}
-        </button>
+        </Button>
       </div>
     </form>
   );

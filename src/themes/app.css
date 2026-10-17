@@ -32,6 +32,12 @@
   --row-hover: rgb(var(--ink) / 0.035);
   --selected-bg: color-mix(in srgb, var(--accent) 7%, transparent);
   --checked-bg: color-mix(in srgb, var(--accent) 14%, transparent);
+  --on-accent: #ffffff;
+  /* AI identity (Superhuman-style pink → violet → sky). Only AI-owned
+     surfaces use it, so it never competes with the brand accent. */
+  --ai-from: #d9539c;
+  --ai-via: #8a63d2;
+  --ai-to: #3d8fd9;
   --iframe-scheme: light;
 }
 
@@ -59,37 +65,11 @@
   --row-hover: rgb(var(--ink) / 0.045);
   --selected-bg: color-mix(in srgb, var(--accent) 11%, transparent);
   --checked-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+  --on-accent: #141413;
+  --ai-from: #ef7ab8; /* lifted for dark */
+  --ai-via: #a98be6;
+  --ai-to: #6fb0ef;
   --iframe-scheme: dark;
-}
-
-/* Holiday: a clean, neutral light body (so the mail stays readable) with a
-   beach-sunrise HEADER (see header.co-glass override below) and a gold sun mark.
-   The body palette is deliberately near-neutral - only the header is "the beach". */
-:root[data-theme="holiday"] {
-  color-scheme: light;
-  --bg0: #f4f7fa; /* canvas - clean near-white with the faintest sky cool */
-  --bg1: #ffffff; /* card/surface */
-  --bg2: #e7edf3; /* hover */
-  --bg3: #dbe3ea;
-  --bg4: #c6d2dd;
-  --ink: 18 42 66; /* deep ocean navy for text */
-  --text: rgb(var(--ink) / 0.92);
-  --text-muted: rgb(var(--ink) / 0.60);
-  --text-faint: rgb(var(--ink) / 0.42);
-  --accent: #0a84c2; /* ocean blue - carries selection + links */
-  --info: #1e9fd8; /* shallow-water sky blue */
-  --star: #f5a623; /* the sun - warm gold */
-  --danger: #d0524a;
-  --ok: #2f9e6f;
-  --hairline: rgb(var(--ink) / 0.09);
-  --hairline-strong: rgb(var(--ink) / 0.16);
-  --elev-1: 0 1px 2px rgb(18 42 66 / 0.05);
-  --elev-2: 0 4px 24px rgb(18 42 66 / 0.10), 0 1px 3px rgb(18 42 66 / 0.07);
-  --elev-card: 0 1px 3px rgb(18 42 66 / 0.07), 0 8px 22px rgb(18 42 66 / 0.10);
-  --row-hover: rgb(var(--ink) / 0.035);
-  --selected-bg: color-mix(in srgb, var(--accent) 8%, transparent);
-  --checked-bg: color-mix(in srgb, var(--accent) 15%, transparent);
-  --iframe-scheme: light;
 }
 
 @theme inline {
@@ -108,6 +88,28 @@
   --color-ok: var(--ok);
   --color-hairline: var(--hairline);
   --color-hairline-strong: var(--hairline-strong);
+  --color-on-accent: var(--on-accent);
+
+  /* Type scale. Components use these (text-xs … text-xl) instead of
+     arbitrary px sizes; tokens.test.ts ratchets the remaining stragglers. */
+  --text-2xs: 10.5px;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-base: 13.5px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 26px;
+
+  /* Radii: controls (buttons, inputs, menu items) < cards (popovers, modals,
+     cards) < sheets (large panels). Pills/avatars stay rounded-full. */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-sheet: 16px;
+
+  /* Theme-aware elevation as utilities (shadow-elev-1/2, shadow-card). */
+  --shadow-elev-1: var(--elev-1);
+  --shadow-elev-2: var(--elev-2);
+  --shadow-card: var(--elev-card);
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono:
@@ -243,12 +245,61 @@ textarea {
 .co-fade-in {
   animation: co-fade-in 150ms ease-out;
 }
+/* Small staggered entrance for chips that arrive late (AI quick replies). */
+@keyframes co-chip-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.co-chip-pop {
+  animation: co-chip-pop 240ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
 .co-toast-in {
   animation: co-toast-in 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .co-row-leaving {
   animation: co-row-out 150ms ease-in forwards;
   pointer-events: none;
+}
+/* New mail landing in the open list: the row drops in while the rows below
+   glide down to make room (.co-row-shift on their wrappers), then a soft
+   accent wash fades out so the eye catches what arrived. */
+@keyframes co-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes co-row-wash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.co-row-arrive {
+  animation: co-row-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.co-row-arrive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: co-row-wash 900ms ease-out 300ms both;
+}
+.co-row-shift {
+  transition: top 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .co-spinner {
   animation: co-spin 0.9s linear infinite;
@@ -331,9 +382,9 @@ textarea {
 .co-ai-shimmer {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--accent) 10%, var(--bg2)) 25%,
-    color-mix(in srgb, var(--accent) 42%, var(--bg2)) 50%,
-    color-mix(in srgb, var(--accent) 10%, var(--bg2)) 75%
+    color-mix(in srgb, var(--ai-via) 10%, var(--bg2)) 25%,
+    color-mix(in srgb, var(--ai-via) 42%, var(--bg2)) 50%,
+    color-mix(in srgb, var(--ai-via) 10%, var(--bg2)) 75%
   );
   background-size: 200% 100%;
   animation: co-shimmer 1.25s ease-in-out infinite;
@@ -400,6 +451,30 @@ textarea {
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
+/* Hover / cursor quick actions replace the timestamp, Superhuman-style.
+   Hidden on multi-selected rows so the bulk bar owns actions there. */
+.co-row-actions {
+  display: none;
+}
+/* Secondary row metadata (account dot, paperclip) stays out of the way until
+   the row is hovered or under the cursor, so the list reads like Superhuman's. */
+.co-row-meta {
+  opacity: 0;
+  transition: opacity 90ms ease;
+}
+.co-row:hover .co-row-meta,
+.co-row[data-selected="true"] .co-row-meta {
+  opacity: 1;
+}
+.co-row:hover:not([data-checked="true"]) .co-row-actions,
+.co-row[data-selected="true"]:not([data-checked="true"]) .co-row-actions {
+  display: flex;
+}
+.co-row:hover:not([data-checked="true"]) .co-row-time,
+.co-row[data-selected="true"]:not([data-checked="true"]) .co-row-time {
+  display: none;
+}
+
 .co-kbd {
   display: inline-flex;
   align-items: center;
@@ -423,6 +498,24 @@ textarea {
 
 .co-hairline-r {
   border-right: 1px solid var(--hairline);
+}
+
+.co-hairline-l {
+  border-left: 1px solid var(--hairline);
+}
+
+.co-hairline-t {
+  border-top: 1px solid var(--hairline);
+}
+
+/* Diagonal stripes: tentative/unanswered events and out-of-month days.
+   Layered over the element's own background color. */
+.co-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 5px,
+    var(--hairline) 5px 6px
+  );
 }
 
 /* Composer: typing fields must not glow (the big ring reads as clutter);
@@ -582,233 +675,6 @@ textarea {
   background: radial-gradient(closest-side, color-mix(in srgb, var(--bg0) 80%, transparent), transparent 100%);
 }
 
-/* First-run "into space" intro: full-bleed canvas layer. The canvas paints its
-   own deep-space background; z-index is toggled inline (cover during the warp,
-   drop behind the welcome card once settled). No blur here on purpose - the
-   starfield motion is done entirely on the canvas (see SpaceIntro.tsx). */
-.co-space-intro {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  /* Warm-black base under the canvas - guarantees the intro is never a white
-     flash even for the first frame or if the canvas is briefly unsized. */
-  background: #0c0a08;
-}
-/* Fill explicitly (not via % height, which needs a definite-height chain) so the
-   starfield always covers the viewport. */
-.co-space-canvas {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-/* Story stage: one full-screen line at a time, centered. Opacity + translateY
-   are driven per-frame from SpaceIntro.tsx (kept in sync with the starfield),
-   so there's no CSS animation here - just typography. */
-.co-intro-stage {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 38px;
-  pointer-events: none;
-}
-/* Top slot: the flipping photographs, in a fixed-height cell so the flips
-   never shift the layout below. */
-.co-intro-topslot {
-  display: grid;
-  place-items: center;
-  height: min(430px, 44vh);
-}
-.co-intro-topslot > * {
-  grid-area: 1 / 1;
-}
-/* A photographic print: aged paper frame, deeper bottom margin, real shadow.
-   The image is desaturated toward archive stock. Flip is driven per-frame. */
-.co-intro-photo {
-  padding: 12px 12px 32px;
-  background: #ece4d2;
-  border-radius: 3px;
-  box-shadow:
-    0 22px 60px rgba(0, 0, 0, 0.55),
-    0 2px 10px rgba(0, 0, 0, 0.4);
-  transform-origin: center;
-  will-change: opacity, transform;
-}
-.co-intro-photo img {
-  display: block;
-  width: min(580px, 58vw);
-  height: min(360px, 36vh);
-  object-fit: cover;
-  filter: sepia(0.38) contrast(0.92) brightness(0.94);
-}
-/* The finale layer: the title row and the continue button, centered on the
-   viewport independently of the story column, so the (by then empty) photo
-   slot never pushes them off middle. */
-.co-intro-titlelayer {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 42px;
-  pointer-events: none;
-}
-/* The story line: a typewriter, struck onto the frame letter by letter
-   (driven from SpaceIntro.tsx). Warm paper ink, slight aged softness. */
-.co-intro-line {
-  max-width: 86vw;
-  padding: 0 5vw;
-  text-align: center;
-  font-family: "American Typewriter", "Courier Prime", "Courier New", monospace;
-  font-size: clamp(22px, 3.2vw, 36px);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 1.4;
-  color: rgba(240, 231, 214, 0.92);
-  text-shadow: 0 1px 22px rgba(0, 0, 0, 0.5);
-  will-change: opacity;
-}
-/* The title card: the brand wordmark exactly as the app sets it (see
-   TopBar: uppercase, semibold, 0.14em tracking, the app sans), scaled up.
-   The end point of the story's typeface evolution. Opacity and a tiny
-   settle are driven per-frame from SpaceIntro.tsx. */
-.co-intro-title {
-  max-width: 92vw;
-  padding: 0 3vw;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(20px, 2.4vw, 34px);
-  text-align: center;
-  font-family: var(--font-sans);
-  font-size: clamp(36px, 5.6vw, 72px);
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1.08;
-  color: rgba(248, 247, 252, 0.97);
-  text-shadow: 0 2px 40px rgba(0, 0, 0, 0.55);
-  transform-origin: center;
-  will-change: opacity, transform;
-}
-/* Wide tracking also pads after the last letter; pull it back so the
-   wordmark sits optically centered next to the mark. */
-.co-intro-title > span {
-  margin-right: -0.14em;
-}
-/* The mark sits on the same line as the wordmark, sized to its cap height. */
-.co-intro-title-mark {
-  width: clamp(56px, 7vw, 92px);
-  height: clamp(56px, 7vw, 92px);
-  flex: none;
-}
-/* The held end-state's continue button: a translucent ring that glows on
-   hover, with the arrow nudging forward. Fade-in is driven from SpaceIntro.tsx. */
-.co-intro-cta {
-  width: 56px;
-  height: 56px;
-  border-radius: 9999px;
-  border: 1.5px solid rgba(245, 244, 250, 0.35);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(245, 244, 250, 0.9);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition:
-    border-color 200ms ease,
-    background 200ms ease,
-    box-shadow 200ms ease;
-  will-change: opacity;
-}
-.co-intro-cta:hover,
-.co-intro-cta:focus-visible {
-  border-color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 0 28px rgba(214, 168, 110, 0.4);
-  outline: none;
-}
-.co-intro-cta-arrow {
-  transition: transform 200ms ease;
-}
-.co-intro-cta:hover .co-intro-cta-arrow,
-.co-intro-cta:focus-visible .co-intro-cta-arrow {
-  transform: translateX(2px);
-}
-.co-intro-hint {
-  animation: co-fade-in 400ms ease-out;
-}
-
-/* ==========================================================================
-   Holiday - the top bar is a live, sunlit lagoon.
-
-   Structure:
-   - header background: a deep tropical gradient (the water body).
-   - header::before: slow, large caustic net (the swell), drifting right.
-   - header::after:  fast, fine sun-sparkle sheet, drifting left (parallax).
-   - text: header-scoped bump of the ink variables so the mark, title and
-     icons read crisply against bright water (fixes the "dim" look).
-   Everything is confined to <header>; the rest of the app stays neutral.
-   ========================================================================== */
-:root[data-theme="holiday"] header.co-glass {
-  /* the water itself - saturated so it never greys into an overcast look */
-  background: linear-gradient(178deg, #7fe4f0 0%, #29c6e0 54%, #0aa9cf 100%);
-  border-bottom: 1px solid rgb(9 68 92 / 0.16);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.68);
-  /* Header text: deeper, higher-contrast ink so nothing looks washed out. */
-  --ink: 8 54 74;
-  --text-muted: rgb(var(--ink) / 0.82);
-  --text-faint: rgb(var(--ink) / 0.66);
-}
-
-/* Two animated caustic layers, both behind the header content (z-index < 0). */
-:root[data-theme="holiday"] header.co-glass::before,
-:root[data-theme="holiday"] header.co-glass::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-repeat: repeat;
-  will-change: background-position;
-}
-/* Swell: broad caustic net + veins, slow drift right. */
-:root[data-theme="holiday"] header.co-glass::before {
-  z-index: -2;
-  opacity: 0.85;
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22300%22%20height=%2296%22%3E%3Cfilter%20id=%22c%22%20x=%220%22%20y=%220%22%20width=%22100%25%22%20height=%22100%25%22%3E%3CfeTurbulence%20type=%22turbulence%22%20baseFrequency=%220.028%200.05%22%20numOctaves=%223%22%20seed=%229%22%20stitchTiles=%22stitch%22%20result=%22c%22/%3E%3CfeColorMatrix%20in=%22c%22%20type=%22matrix%22%20values=%220%200%200%200%201%200%200%200%200%201%200%200%200%200%201%200.8%200%200%200%20-0.2%22/%3E%3C/filter%3E%3Crect%20width=%22300%22%20height=%2296%22%20filter=%22url(%23c)%22/%3E%3C/svg%3E");
-  background-size: 300px 100%;
-  animation: co-holiday-swell 26s linear infinite;
-}
-/* Sparkle sheet: fine glints, faster drift left, screened for glassy highlights. */
-:root[data-theme="holiday"] header.co-glass::after {
-  z-index: -1;
-  opacity: 0.9;
-  mix-blend-mode: screen;
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22240%22%20height=%2296%22%3E%3Cfilter%20id=%22s%22%20x=%220%22%20y=%220%22%20width=%22100%25%22%20height=%22100%25%22%3E%3CfeTurbulence%20type=%22fractalNoise%22%20baseFrequency=%220.06%200.15%22%20numOctaves=%222%22%20seed=%2221%22%20stitchTiles=%22stitch%22%20result=%22g%22/%3E%3CfeColorMatrix%20in=%22g%22%20type=%22matrix%22%20values=%220%200%200%200%201%200%200%200%200%201%200%200%200%200%201%201.9%200%200%200%20-1.42%22/%3E%3C/filter%3E%3Crect%20width=%22240%22%20height=%2296%22%20filter=%22url(%23s)%22/%3E%3C/svg%3E");
-  background-size: 240px 100%;
-  animation: co-holiday-sparkle 18s linear infinite;
-}
-/* Horizontal-only drift, one whole tile per cycle => perfectly seamless loop. */
-@keyframes co-holiday-swell {
-  from { background-position: 0 0; }
-  to { background-position: 300px 0; }
-}
-@keyframes co-holiday-sparkle {
-  from { background-position: 0 0; }
-  to { background-position: -240px 0; }
-}
-
-/* The wordmark IS the sun: a light, bright sun-yellow. A single tight shadow
-   (no blur halo) keeps it legible on the water without looking dark or doubled. */
-:root[data-theme="holiday"] header .co-wordmark {
-  color: #ffdc4a;
-  text-shadow: 0 1px 1px rgb(8 54 74 / 0.38);
-}
-
 .co-chip {
   display: inline-flex;
   align-items: center;
@@ -819,6 +685,30 @@ textarea {
   background: var(--bg1);
   font-size: 12.5px;
   color: var(--text);
+}
+
+/* AI identity utilities. `co-ai-border` paints a 1px gradient ring around a
+   surface whose fill comes from --ai-surface (defaults to bg1). */
+:root {
+  --ai-gradient: linear-gradient(100deg, var(--ai-from), var(--ai-via) 50%, var(--ai-to));
+}
+.co-ai-border {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--ai-surface, var(--bg1)), var(--ai-surface, var(--bg1))) padding-box,
+    var(--ai-gradient) border-box;
+}
+.co-ai-text {
+  background: var(--ai-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.co-ai-fill {
+  background: color-mix(in srgb, var(--ai-via) 9%, transparent);
+}
+.co-ai-icon {
+  color: var(--ai-via);
 }
 
 .co-overlay {
@@ -837,4 +727,625 @@ textarea {
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] input {
   -webkit-app-region: no-drag;
+}
+
+/* ---------------------------------------------------------------------------
+   Attachment viewer - always a dark stage (Carbon tokens re-scoped here, so
+   every bg-, text- and border- utility inside resolves dark in any app theme),
+   a notch deeper than Carbon's canvas so white pages and photos pop.
+--------------------------------------------------------------------------- */
+.co-viewer {
+  color-scheme: dark;
+  --bg0: #0f0f0e;
+  --bg1: #181816;
+  --bg2: #22221f;
+  --bg3: #2d2d29;
+  --bg4: #3a3a35;
+  --ink: 236 233 226;
+  --text: rgb(var(--ink) / 0.92);
+  --text-muted: rgb(var(--ink) / 0.62);
+  --text-faint: rgb(var(--ink) / 0.4);
+  --accent: #9d7fd8;
+  --danger: #e0705e;
+  --hairline: rgb(var(--ink) / 0.08);
+  --hairline-strong: rgb(var(--ink) / 0.16);
+  --elev-2: 0 8px 32px rgb(0 0 0 / 0.5), 0 2px 8px rgb(0 0 0 / 0.4);
+  --selected-bg: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: var(--bg1);
+  color: var(--text);
+}
+@keyframes co-viewer-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.co-viewer-in {
+  animation: co-viewer-in 170ms cubic-bezier(0.2, 0, 0, 1);
+}
+.co-viewer-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms;
+}
+.co-viewer-btn:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--text);
+}
+.co-viewer-btn.is-active {
+  background: var(--bg3);
+  color: var(--accent);
+}
+.co-viewer-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.co-viewer-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  background: color-mix(in srgb, var(--bg2) 94%, transparent);
+  box-shadow: var(--elev-2);
+}
+.co-viewer-input {
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg1);
+  color: var(--text);
+  outline: none;
+}
+.co-viewer-input:focus {
+  border-color: var(--accent);
+}
+.co-viewer-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg2);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms, filter 120ms;
+}
+.co-viewer-action:hover {
+  background: var(--bg3);
+}
+.co-viewer-action.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+.co-viewer-action.is-primary:hover {
+  filter: brightness(1.08);
+}
+.co-viewer-film {
+  flex-shrink: 0;
+  border-radius: 10px;
+  padding: 2px;
+  outline: 2px solid transparent;
+  outline-offset: 0;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 120ms, outline-color 120ms;
+}
+.co-viewer-film:hover {
+  opacity: 0.9;
+}
+.co-viewer-film.is-active {
+  opacity: 1;
+  outline-color: var(--accent);
+}
+.co-viewer-scroll {
+  scrollbar-color: var(--bg4) transparent;
+}
+/* Transparency checkerboard behind images. */
+.co-checker {
+  background-color: #fff;
+  background-image: conic-gradient(#e6e6e6 25%, transparent 0 50%, #e6e6e6 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+/* Slides read as paper regardless of theme. */
+.co-slide {
+  background: #fff;
+  color: #1c1e22;
+  --slide-accent: #714cb6;
+}
+
+/* Spreadsheet grid: sticky column letters + row numbers, frozen first row. */
+.co-sheet th,
+.co-sheet td {
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.co-sheet-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  min-width: 44px;
+  background: var(--bg1);
+}
+.co-sheet-col {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: 96px;
+  background: var(--bg1);
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+.co-sheet-row {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 0 8px;
+  background: var(--bg1);
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: right;
+}
+.co-sheet-col.is-sel,
+.co-sheet-row.is-sel {
+  background: var(--bg3);
+  color: var(--accent);
+}
+.co-sheet-cell {
+  max-width: 320px;
+  padding: 5px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: cell;
+  user-select: text;
+}
+.co-sheet-cell.is-sel {
+  background: var(--selected-bg);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.co-sheet-frozen > td,
+.co-sheet-frozen > th {
+  position: sticky;
+  top: 26px; /* below the column-letter row (SheetViewer HEAD_H) */
+  z-index: 1;
+  border-bottom-color: var(--hairline-strong);
+}
+.co-sheet-frozen > td {
+  background: var(--bg2);
+  font-weight: 600;
+}
+.co-sheet-frozen > td.is-sel {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg2));
+}
+.co-sheet-frozen > th {
+  z-index: 2;
+}
+.co-sheet-tab {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.co-sheet-tab:hover {
+  background: var(--bg2);
+}
+.co-sheet-tab.is-active {
+  background: var(--bg2);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   First-run guided setup (OnboardingFlow.tsx): the step on the left, a flat
+   stage on the right showing the real inbox UI (PreviewInbox) at true size,
+   scaled down and cropped by the stage edge. No gradients, no glows: the
+   surfaces are the app's own tokens. No blur either (WebKitGTK).
+-------------------------------------------------------------------------- */
+.co-onb {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg0);
+}
+.co-onb-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 42%);
+  min-width: 360px;
+  padding: 24px 48px 24px;
+}
+.co-onb-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 24px 8px;
+}
+.co-onb-stage {
+  position: relative;
+  flex: 1;
+  margin: 10px 10px 10px 0;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--bg2);
+}
+.co-onb-window {
+  position: absolute;
+  top: 56px;
+  left: 56px;
+}
+@media (max-width: 900px) {
+  .co-onb-stage {
+    display: none;
+  }
+  .co-onb-panel {
+    width: 100%;
+    min-width: 0;
+  }
+  .co-onb-content > * {
+    max-width: 440px;
+    margin: 0 auto;
+  }
+}
+
+.co-onb-title {
+  font-size: 26px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-wrap: balance;
+}
+.co-onb-body {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.co-onb-label {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+/* The flow's primary button: the app's primary Button, one size up. */
+.co-onb-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px 0 16px;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: filter 100ms ease;
+}
+.co-onb-cta:hover {
+  filter: brightness(1.08);
+}
+.co-onb-cta:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.co-onb-cta-kbd {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  opacity: 0.7;
+}
+.co-onb-check {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  color: var(--text-muted);
+  background: var(--bg2);
+}
+.co-onb-check.is-ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+.co-onb-link {
+  font-size: 13px;
+  color: var(--text-faint);
+  transition: color 100ms ease;
+}
+.co-onb-link:hover {
+  color: var(--text);
+}
+.co-onb-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.co-onb-or::before,
+.co-onb-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+.co-onb-connected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--hairline);
+  background: var(--bg1);
+  font-size: 14px;
+  color: var(--text);
+}
+.co-onb-dot {
+  display: block;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--text-muted);
+}
+
+/* Sign-in buttons: the secondary Button, full width, with the provider mark. */
+.co-provider-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg1);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 100ms ease;
+}
+.co-provider-btn:hover {
+  background: var(--bg2);
+}
+.co-provider-btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Personalize: theme cards and accent swatches. */
+.co-theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 6px 8px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--hairline);
+  background: var(--bg1);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.co-theme-card:hover {
+  border-color: var(--hairline-strong);
+}
+.co-theme-card.is-active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.co-theme-thumb-frame {
+  display: flex;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--ink) / 0.1);
+}
+.co-theme-thumb {
+  display: flex;
+  flex: 1;
+  background: #fbfaf8;
+}
+.co-theme-thumb.is-dark {
+  background: #1c1b1f;
+}
+.co-theme-thumb-side {
+  width: 28%;
+  background: rgb(0 0 0 / 0.045);
+}
+.co-theme-thumb.is-dark .co-theme-thumb-side {
+  background: rgb(255 255 255 / 0.05);
+}
+.co-theme-thumb-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 7px;
+}
+.co-theme-thumb-main i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.13);
+}
+.co-theme-thumb-main i:first-child {
+  width: 70%;
+  background: var(--accent);
+}
+.co-theme-thumb.is-dark .co-theme-thumb-main i:not(:first-child) {
+  background: rgb(255 255 255 / 0.16);
+}
+.co-theme-thumb-split .co-theme-thumb-side {
+  width: 40%;
+}
+.co-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+}
+.co-swatch-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 2px solid var(--accent);
+}
+
+/* Shortcuts: a big keycap for the prompt, chips for the full set. */
+.co-keycap {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-strong);
+  border-bottom-width: 3px;
+  background: var(--bg1);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  transition: transform 60ms ease, border-bottom-width 60ms ease, color 100ms ease;
+}
+.co-keycap.is-pressed {
+  transform: translateY(2px);
+  border-bottom-width: 1px;
+  color: var(--accent);
+}
+.co-move {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px 0 6px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--hairline);
+  background: var(--bg1);
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: border-color 100ms ease, background-color 100ms ease, color 100ms ease;
+}
+.co-move:hover {
+  background: var(--bg2);
+}
+.co-move.is-done {
+  color: var(--text);
+}
+.co-move.is-pressed {
+  border-color: var(--accent);
+}
+
+/* Sync: the live count and its progress rail. */
+.co-sync-card {
+  padding: 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--hairline);
+  background: var(--bg1);
+}
+.co-sync-track {
+  margin-top: 12px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--bg3);
+}
+.co-sync-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left;
+}
+
+/* While theme/accent pickers are up, colors cross-fade instead of snapping.
+   In the base layer so component transitions (utilities) still win. */
+@layer base {
+  :root.co-reskin,
+  :root.co-reskin * {
+    transition:
+      background-color 320ms ease,
+      border-color 320ms ease,
+      color 320ms ease,
+      fill 320ms ease;
+  }
+}
+
+/* The preview: a true-size app window, scaled down. Only a hairline and the
+   lightest elevation - it sits on the stage, it doesn't float. */
+.co-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--pv-w, 1180px);
+  /* Sized and scaled to the stage by OnboardingFlow (useStageFit), so it
+     always runs off the right and bottom edges by the same margin. */
+  height: var(--pv-h, 1100px);
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg0);
+  box-shadow: var(--elev-1);
+  color: var(--text);
+  transform: scale(var(--pv-scale, 0.78));
+  transform-origin: 0 0;
+  user-select: none;
+}
+.co-preview-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 120px;
+  background: color-mix(in srgb, var(--bg0) 60%, transparent);
+}
+.co-preview-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: co-caret 1s steps(1) infinite;
+}
+@keyframes co-caret {
+  50% {
+    opacity: 0;
+  }
 }

@@ -1,3 +1,4 @@
+mod apple_intents;
 mod commands;
 mod events;
 mod notifications;
@@ -29,7 +30,7 @@ fn mailto_from_args<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
 /// Bring the window forward and hand a `mailto:` link to the frontend (which
 /// opens a prefilled composer). De-duplicated because the same link can arrive
 /// twice on a cold start (launch argv *and* the deep-link plugin's callback).
-fn forward_mailto(app: &tauri::AppHandle, url: &str) {
+pub(crate) fn forward_mailto(app: &tauri::AppHandle, url: &str) {
     if !is_mailto(url) {
         return;
     }
@@ -214,6 +215,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -280,6 +282,7 @@ pub fn run() {
                 events::spawn_forwarder(handle.clone(), core.bus.subscribe());
                 let lang = resolve_lang(&core.get_settings().await.unwrap_or_default().language);
                 handle.manage(AppState { core: core.clone() });
+                apple_intents::install(&handle);
                 notifications::spawn_dispatcher(handle.clone(), core);
                 lang
             });
@@ -313,8 +316,16 @@ pub fn run() {
             let open = MenuItem::with_id(app, "open", &open_label, true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", &quit_label, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
+            // macOS menu bar wants a monochrome template image (the system
+            // tints it for light/dark/highlighted); elsewhere use the app icon.
+            #[cfg(target_os = "macos")]
+            let tray_icon =
+                tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))?;
+            #[cfg(not(target_os = "macos"))]
+            let tray_icon = app.default_window_icon().expect("window icon").clone();
             TrayIconBuilder::with_id("comail-tray")
-                .icon(app.default_window_icon().expect("window icon").clone())
+                .icon(tray_icon)
+                .icon_as_template(cfg!(target_os = "macos"))
                 .tooltip("Comail")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -377,6 +388,9 @@ pub fn run() {
             commands::suggest_contacts,
             commands::search,
             commands::warm_search_embedding,
+            commands::explain_search,
+            commands::record_search_open,
+            commands::clear_search_history,
             commands::list_snippets,
             commands::save_snippet,
             commands::delete_snippet,
@@ -384,7 +398,10 @@ pub fn run() {
             commands::list_splits,
             commands::save_split,
             commands::delete_split,
+            commands::preview_rule_change,
             commands::find_matching_split,
+            commands::explain_route,
+            commands::preview_split_condition,
             commands::reorder_tabs,
             commands::list_labels,
             commands::save_label,
@@ -396,7 +413,15 @@ pub fn run() {
             commands::relabel_auto,
             commands::reroute_all,
             commands::get_settings,
+            commands::sender_avatar,
             commands::set_settings,
+            commands::mcp_status,
+            commands::mcp_get_token,
+            commands::mcp_regenerate_token,
+            commands::mcp_activity,
+            commands::mcp_list_clients,
+            commands::mcp_client_snippet,
+            commands::mcp_install_client,
             commands::list_events,
             commands::events_for_message,
             commands::create_event,
@@ -412,15 +437,20 @@ pub fn run() {
             commands::set_default_calendar,
             commands::calendar_sync_now,
             commands::ai_status,
+            commands::latest_verification_code,
             commands::ai_list_models,
             commands::ai_usage_stats,
             commands::email_stats,
             commands::ai_plan_automation,
             commands::set_ai_key,
+            commands::set_decision_key,
+            commands::test_decision_provider,
+            commands::create_category,
             commands::ai_command,
             commands::ai_summarize,
             commands::ai_quick_replies,
             commands::ai_draft,
+            commands::ai_draft_actions,
             commands::ai_proofread,
             commands::ai_signature,
             commands::ai_learn_voice,

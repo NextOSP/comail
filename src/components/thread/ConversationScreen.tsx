@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AiCalendarSuggestion } from "../../ipc/types";
+import { calendarPrefill } from "../../lib/calendarSuggestion";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { performThreadAction } from "../../queries/actions";
@@ -10,6 +10,10 @@ import { useUi } from "../../stores/ui";
 import { MOD_LABEL, relativeTime } from "../../lib/format";
 import { latestUnsubscribeMessage, unsubscribeFromMessage } from "../../lib/unsubscribe";
 import { Composer } from "../compose/Composer";
+import { AiBadge, AiSurface } from "../ui/Ai";
+import { Button, IconButton } from "../ui/Button";
+import { SectionLabel } from "../ui/Field";
+import { Spinner } from "../ui/Spinner";
 import { MessageCard } from "./MessageCard";
 
 /** Any of these means the user took over scrolling, ending the on-open
@@ -325,6 +329,8 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
           )}
         </header>
 
+        {hasSummary && <AiThreadSummary key={threadId} threadId={threadId} onUseReply={useProposedReply} />}
+
         <div className="flex flex-col gap-1.5">
           {messages.map((m) => (
             <div
@@ -369,8 +375,6 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
         </footer>
       </div>
       </div>
-
-      {hasSummary && <AiSummarySidebar threadId={threadId} onUseReply={useProposedReply} />}
     </div>
   );
 }
@@ -384,48 +388,22 @@ function InlineComposerAnchor({ children }: { children: React.ReactNode }) {
   return <div ref={ref}>{children}</div>;
 }
 
-/** A section heading in the summary sidebar. */
+/** A titled group inside the thread summary. */
 function SummarySection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-[10.5px] font-semibold tracking-[0.12em] text-ink-faint uppercase">{title}</h2>
+    <section className="flex flex-col">
+      <SectionLabel>{title}</SectionLabel>
       {children}
     </section>
   );
 }
 
-function calendarPrefill(suggestion: AiCalendarSuggestion) {
-  const startText =
-    suggestion.allDay && /^\d{4}-\d{2}-\d{2}$/.test(suggestion.start)
-      ? `${suggestion.start}T00:00:00`
-      : suggestion.start;
-  const startsAt = Date.parse(startText);
-  if (!Number.isFinite(startsAt)) return null;
-  const endText = suggestion.end
-    ? suggestion.allDay && /^\d{4}-\d{2}-\d{2}$/.test(suggestion.end)
-      ? `${suggestion.end}T00:00:00`
-      : suggestion.end
-    : null;
-  const parsedEnd = endText ? Date.parse(endText) : Number.NaN;
-  const endsAt = Number.isFinite(parsedEnd)
-    ? parsedEnd
-    : startsAt + (suggestion.allDay ? 86_400_000 : 30 * 60_000);
-  return {
-    summary: suggestion.title,
-    startsAt,
-    endsAt,
-    allDay: suggestion.allDay,
-    location: suggestion.location ?? undefined,
-    description: suggestion.description ?? undefined,
-  };
-}
-
 /**
- * The structured AI thread read, docked to the right of the conversation
- * (opened with Cmd/Ctrl+J). Timeline, key points, the one next action, and a
- * proposed reply the user can drop straight into the composer.
+ * The structured AI thread read, a collapsible block at the top of the
+ * conversation (opened with Cmd/Ctrl+J). Key points, the one next action, a
+ * timeline, and a proposed reply the user can drop straight into the composer.
  */
-function AiSummarySidebar({
+function AiThreadSummary({
   threadId,
   onUseReply,
 }: {
@@ -435,6 +413,7 @@ function AiSummarySidebar({
   const { t, i18n } = useTranslation();
   const entry = useUi((s) => s.aiSummaries[threadId]);
   const set = useUi((s) => s.set);
+  const [collapsed, setCollapsed] = useState(false);
   if (!entry) return null;
 
   const dismiss = () => {
@@ -447,39 +426,54 @@ function AiSummarySidebar({
   const suggestedEvent = s?.calendarSuggestion ?? null;
   const eventPrefill = suggestedEvent ? calendarPrefill(suggestedEvent) : null;
 
-  return (
-    <aside
-      data-testid="ai-summary"
-      className="co-fade-in flex w-[326px] shrink-0 flex-col overflow-y-auto border-l border-hairline bg-bg1"
-    >
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-hairline bg-bg1 px-4 py-3">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.12em] text-accent uppercase">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2zM19 14l.9 2.6L22.5 17l-2.6.9L19 20l-.9-2.1L15.5 17l2.6-.4L19 14z" />
-          </svg>
-          {t("thread:aiSummary.title")}
-          {entry.pending && (
-            <span className="co-spinner ml-1 size-2.5 rounded-full border border-hairline-strong border-t-accent" />
-          )}
-        </div>
-        <button
-          className="shrink-0 rounded-md px-1.5 py-0.5 text-[13px] text-ink-faint hover:bg-bg2 hover:text-ink"
-          onClick={dismiss}
-          aria-label={t("thread:aiSummary.dismiss")}
-        >
-          ✕
-        </button>
-      </div>
+  const toggleLabel = collapsed ? t("thread:aiSummary.expand") : t("thread:aiSummary.collapse");
 
-      {entry.pending && !s ? (
-        <div className="flex items-center gap-2 px-4 py-4 text-[13px] text-ink-faint italic">
-          <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-          {t("thread:aiSummary.pending")}
+  return (
+    <div data-testid="ai-summary" className="co-fade-in">
+      <AiSurface as="section" className="overflow-hidden">
+        <div className="flex items-center gap-1 py-1.5 pr-1.5 pl-3.5">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            title={t("thread:aiSummary.shortcutHint", { kbd: `${MOD_LABEL}J` })}
+          >
+            <AiBadge label={t("thread:aiSummary.title")} className="text-sm" />
+            {entry.pending && <Spinner className="co-ai-icon" />}
+          </button>
+          <IconButton
+            icon={collapsed ? "chevronDown" : "chevronUp"}
+            label={toggleLabel}
+            size="xs"
+            onClick={() => setCollapsed((c) => !c)}
+          />
+          <IconButton icon="close" label={t("thread:aiSummary.dismiss")} size="xs" onClick={dismiss} />
         </div>
-      ) : !s ? (
-        <div className="px-4 py-4 text-[13px] text-ink-faint">{t("thread:aiSummary.empty")}</div>
-      ) : (
-        <div className="flex flex-col gap-5 px-4 py-4">
+
+        {collapsed ? null : entry.pending && !s ? (
+          <div className="px-3.5 pt-1 pb-3.5 text-base text-ink-faint italic">{t("thread:aiSummary.pending")}</div>
+        ) : !s ? (
+          <div className="px-3.5 pt-1 pb-3.5 text-base text-ink-faint">{t("thread:aiSummary.empty")}</div>
+        ) : (
+        <div className="flex flex-col gap-4 px-3.5 pt-1 pb-3.5">
+          {s.keyPoints.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {s.keyPoints.map((p, i) => (
+                <li key={i} className="flex gap-2 text-base leading-snug text-ink">
+                  <span className="mt-[0.5em] size-1 shrink-0 rounded-full bg-ink-faint" />
+                  <span>{p}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {s.nextAction && (
+            <SummarySection title={t("thread:aiSummary.nextAction")}>
+              <p className="co-ai-fill rounded-control px-3 py-2 text-sm leading-snug text-ink">{s.nextAction}</p>
+            </SummarySection>
+          )}
+
           {s.timeline.length > 0 && (
             <SummarySection title={t("thread:aiSummary.timeline")}>
               <ol className="flex flex-col gap-2.5">
@@ -489,7 +483,7 @@ function AiSummarySidebar({
                       <span className="size-1.5 shrink-0 rounded-full bg-accent" />
                       {i < s.timeline.length - 1 && <span className="mt-1 w-px flex-1 bg-hairline" />}
                     </span>
-                    <p className="text-[12.5px] leading-snug text-ink-muted">
+                    <p className="text-sm leading-snug text-ink-muted">
                       <span className="font-medium text-ink">{e.actor}</span> {e.event}
                     </p>
                   </li>
@@ -498,69 +492,49 @@ function AiSummarySidebar({
             </SummarySection>
           )}
 
-          {s.keyPoints.length > 0 && (
-            <SummarySection title={t("thread:aiSummary.keyPoints")}>
-              <ul className="flex flex-col gap-1.5">
-                {s.keyPoints.map((p, i) => (
-                  <li key={i} className="flex gap-2 text-[12.5px] leading-snug text-ink-muted">
-                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-ink-faint" />
-                    <span>{p}</span>
-                  </li>
-                ))}
-              </ul>
-            </SummarySection>
-          )}
-
-          {s.nextAction && (
-            <SummarySection title={t("thread:aiSummary.nextAction")}>
-              <p
-                className="border border-hairline bg-bg0 px-3 py-2 text-[12.5px] leading-snug text-ink"
-                style={{ borderLeft: "3px solid var(--accent)" }}
-              >
-                {s.nextAction}
-              </p>
-            </SummarySection>
-          )}
-
           {suggestedEvent && eventPrefill && (
             <SummarySection title={t("thread:aiSummary.calendarSuggestion")}>
-              <div className="rounded-lg border border-hairline bg-bg0 px-3 py-2.5">
-                <p className="text-[12.5px] font-medium text-ink">{suggestedEvent.title}</p>
-                <p className="mt-1 text-[11.5px] leading-snug text-ink-muted">
+              <div className="rounded-control border border-hairline bg-bg0 px-3 py-2.5">
+                <p className="text-sm font-medium text-ink">{suggestedEvent.title}</p>
+                <p className="mt-1 text-xs leading-snug text-ink-muted">
                   {new Date(eventPrefill.startsAt).toLocaleString(i18n.language, {
                     dateStyle: "medium",
                     ...(suggestedEvent.allDay ? {} : { timeStyle: "short" as const }),
                   })}
                 </p>
                 {suggestedEvent.location && (
-                  <p className="mt-0.5 text-[11.5px] text-ink-faint">{suggestedEvent.location}</p>
+                  <p className="mt-0.5 text-xs text-ink-faint">{suggestedEvent.location}</p>
                 )}
-                <button
-                  type="button"
-                  className="mt-2 rounded-md border border-accent/50 px-2.5 py-1 text-[12px] font-medium text-accent hover:bg-accent/10"
+                <Button
+                  size="sm"
+                  icon="plus"
+                  className="mt-2"
                   onClick={() => set({ eventCreate: { prefill: eventPrefill } })}
                 >
-                  + {t("thread:aiSummary.createEvent")}
-                </button>
+                  {t("thread:aiSummary.createEvent")}
+                </Button>
               </div>
             </SummarySection>
           )}
 
           {s.proposedReply && (
             <SummarySection title={t("thread:aiSummary.proposedReply")}>
-              <p className="border border-hairline bg-bg0 px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-muted">
+              <p className="rounded-control border border-hairline bg-bg0 px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-ink-muted">
                 {s.proposedReply}
               </p>
-              <button
-                className="mt-0.5 self-start rounded-md bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90"
+              <Button
+                variant="primary"
+                size="sm"
+                className="mt-2 self-start"
                 onClick={() => onUseReply(s.proposedReply!)}
               >
                 {t("thread:aiSummary.useReply")}
-              </button>
+              </Button>
             </SummarySection>
           )}
         </div>
-      )}
-    </aside>
+        )}
+      </AiSurface>
+    </div>
   );
 }

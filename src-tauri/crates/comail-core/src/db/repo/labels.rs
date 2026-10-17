@@ -125,6 +125,34 @@ pub fn restore_auto_defaults(conn: &Connection) -> Result<i64> {
     Ok(restored)
 }
 
+/// Insert a custom AI category: a local-only auto label (never pushed to
+/// IMAP) with a unique `ComailAutoC…` keyword, after the existing ones.
+pub fn create_auto(conn: &Connection, name: &str, color: &str) -> Result<Label> {
+    let position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), 999) + 1 FROM labels WHERE is_auto = 1",
+        [],
+        |r| r.get(0),
+    )?;
+    let base = format!("ComailAutoC{}", keyword_for(name));
+    let mut keyword = base.clone();
+    let mut n = 2;
+    while conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM labels WHERE keyword = ?1)",
+        params![keyword],
+        |r| r.get::<_, i64>(0),
+    )? != 0
+    {
+        keyword = format!("{base}{n}");
+        n += 1;
+    }
+    conn.execute(
+        "INSERT INTO labels (name, color, keyword, position, is_auto) VALUES (?1,?2,?3,?4,1)",
+        params![name, color, keyword, position],
+    )?;
+    let id = conn.last_insert_rowid();
+    Ok(get(conn, id)?.expect("just inserted"))
+}
+
 /// Label ids applied to any message in a thread.
 pub fn for_thread(conn: &Connection, thread_id: i64) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(
@@ -316,7 +344,9 @@ mod tests {
                 senders: Some(vec!["shop.example".into()]),
                 ..Default::default()
             },
-            Some(&format!("label:{auto_id}")),
+            None,
+            Some(crate::models::RouteKey::Label(auto_id)),
+            None,
         )
         .unwrap();
 

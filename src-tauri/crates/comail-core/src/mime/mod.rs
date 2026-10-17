@@ -3,6 +3,7 @@
 
 use crate::error::{CoreError, Result};
 use crate::models::Address;
+use mail_builder::mime::{BodyPart, MimePart};
 use mail_parser::MimeHeaders;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -896,6 +897,13 @@ mod selective_section_tests {
     }
 
     #[test]
+    fn sanitize_keeps_signature_block_class_only() {
+        let out = sanitize_html(r#"<div class="co-signature x">Best</div><p class="evil">hi</p>"#);
+        assert!(out.contains(r#"class="co-signature""#), "{out}");
+        assert!(!out.contains("evil"), "{out}");
+    }
+
+    #[test]
     fn decodes_charset_and_sanitizes_html_sections() {
         let plain = decode_text_section(
             TextSectionKind::Plain,
@@ -1061,6 +1069,9 @@ static SANITIZER: Lazy<ammonia::Builder<'static>> = Lazy::new(|| {
     .add_tag_attributes("img", ["src", "alt", "width", "height"])
     .add_tag_attributes("font", ["face", "size", "color"])
     .add_tag_attributes("a", ["href", "title"])
+    // The composer's signature block (src/lib/signatures.ts) must survive a
+    // draft round-trip so switching signature swaps it instead of appending.
+    .add_allowed_classes("div", ["co-signature"])
     .url_schemes(std::collections::HashSet::from([
         "http", "https", "mailto", "cid", "data",
     ]))
@@ -1637,18 +1648,46 @@ pub fn build_message(out: &OutgoingMessage) -> Result<(String, Vec<u8>)> {
             out.from.name.clone().unwrap_or_default(),
             out.from.email.clone(),
         ))
-        .subject(out.subject)
-        .text_body(out.body_text);
+        .subject(out.subject);
 
-    if let Some(html) = out.body_html {
-        if !html.trim().is_empty() {
+    // Body tree, built by hand: mail-builder's default lumps inline images
+    // into a flat multipart/mixed, where Gmail / Apple Mail / Outlook won't
+    // resolve `cid:` references (the image shows broken or as an attachment).
+    // The standard shape is
+    //   mixed( alternative( text, related( html, inline images… ) ), attachments… )
+    // with each wrapper only present when it has more than one child.
+    let text_part = MimePart::new("text/plain", BodyPart::Text(out.body_text.into()));
+    let mut body = match out.body_html.filter(|h| !h.trim().is_empty()) {
+        Some(html) => {
             let (html, inline_images) = extract_data_uri_images(html);
-            builder = builder.html_body(html);
-            for img in inline_images {
-                builder = builder.inline(img.mime_type, img.cid, img.bytes);
-            }
+            let html_part = MimePart::new("text/html", BodyPart::Text(html.into()));
+            let html_part = if inline_images.is_empty() {
+                html_part
+            } else {
+                let mut related = vec![html_part];
+                related.extend(inline_images.into_iter().map(|img| {
+                    MimePart::new(img.mime_type, BodyPart::Binary(img.bytes.into()))
+                        .inline()
+                        .cid(img.cid)
+                }));
+                MimePart::new("multipart/related", related)
+            };
+            MimePart::new("multipart/alternative", vec![text_part, html_part])
         }
+        None => text_part,
+    };
+    if !out.attachments.is_empty() {
+        let mut mixed = vec![body];
+        mixed.extend(out.attachments.iter().map(|att| {
+            MimePart::new(
+                att.mime_type.clone(),
+                BodyPart::Binary(att.bytes.as_slice().into()),
+            )
+            .attachment(att.filename.clone())
+        }));
+        body = MimePart::new("multipart/mixed", mixed);
     }
+    builder = builder.body(body);
 
     if !to_mb.is_empty() {
         builder = builder.to(to_mb);
@@ -1658,13 +1697,6 @@ pub fn build_message(out: &OutgoingMessage) -> Result<(String, Vec<u8>)> {
     }
     if !bcc_mb.is_empty() {
         builder = builder.bcc(bcc_mb);
-    }
-    for att in &out.attachments {
-        builder = builder.attachment(
-            att.mime_type.clone(),
-            att.filename.clone(),
-            att.bytes.clone(),
-        );
     }
     if let Some(irt) = out.in_reply_to {
         builder = builder.in_reply_to(irt.trim_matches(['<', '>']).to_string());
@@ -1858,6 +1890,40 @@ mod tests {
         assert!(s.contains("Content-ID"), "raw:\n{s}");
         assert!(s.contains("image/png"));
         assert!(s.contains("inline"));
+        // The image must sit in multipart/related next to the HTML, or mail
+        // clients won't resolve the cid: reference.
+        let related = s.find("multipart/related").expect("related part");
+        assert!(s.find("multipart/alternative").unwrap() < related);
+        assert!(related < s.find("text/html").unwrap());
+        assert!(s.find("text/html").unwrap() < s.find("image/png").unwrap());
+        assert!(
+            !s.contains("multipart/mixed"),
+            "no attachments, no mixed wrapper"
+        );
+    }
+
+    #[test]
+    fn inline_images_and_attachments_nest_correctly() {
+        let png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        let html = format!(r#"<img src="data:image/png;base64,{png_b64}">"#);
+        let mut out = outgoing("plain", Some(&html));
+        out.attachments.push(OutgoingAttachment {
+            filename: "notes.txt".into(),
+            mime_type: "text/plain".into(),
+            bytes: b"hello".to_vec(),
+        });
+        let (_, raw) = build_message(&out).unwrap();
+        let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
+        // The pasted image is not a user-facing attachment; notes.txt is.
+        let names: Vec<_> = parsed
+            .attachments()
+            .filter_map(|a| a.attachment_name())
+            .collect();
+        assert_eq!(names, ["notes.txt"]);
+        let s = String::from_utf8_lossy(&raw);
+        let mixed = s.find("multipart/mixed").unwrap();
+        assert!(mixed < s.find("multipart/alternative").unwrap());
+        assert!(s.find("multipart/related").unwrap() < s.find("notes.txt").unwrap());
     }
 
     #[test]

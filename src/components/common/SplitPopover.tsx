@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import { queryClient } from "../../queries/client";
 import { findCachedSummary } from "../../queries/actions";
-import { useAccounts, useSplits } from "../../queries/hooks";
+import { useAccounts, useLabels, useSplits } from "../../queries/hooks";
 import { domainSplitPrefill } from "../../lib/splitPrefill";
+import { nextTabPosition } from "../../lib/splitOrder";
 import { useUi } from "../../stores/ui";
+import { describeCondition } from "../settings/ConditionBuilder";
+import { Modal } from "../ui/Modal";
 
 /** Quick "split by sender / domain" popover (palette: Split by sender). */
 export function SplitPopover() {
@@ -17,8 +20,11 @@ export function SplitPopover() {
   const pushToast = useUi((s) => s.pushToast);
   const { data: accounts } = useAccounts();
   const { data: splits } = useSplits();
+  const { data: labels } = useLabels();
   const [cursor, setCursor] = useState(0);
   const [busy, setBusy] = useState(false);
+  const titleId = useId();
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const selfEmails = useMemo(
     () => new Set((accounts ?? []).map((a) => a.email.toLowerCase())),
@@ -39,17 +45,41 @@ export function SplitPopover() {
     staleTime: 30_000,
   });
 
-  if (target == null) return null;
+  // Why the thread sits where it does: the leaf conditions of the rule that
+  // matched (or none, when the AI classifier or heuristic routed it).
+  const { data: explanation } = useQuery({
+    queryKey: ["explainRoute", target],
+    queryFn: () => call("explain_route", { threadId: target as number }),
+    enabled: target != null,
+    staleTime: 30_000,
+  });
+  const matchedTrace = explanation?.decision.rules.find((r) => r.matched);
+  // A split whose AI check said yes (decided asynchronously, so the trace only
+  // knows the condition let it through).
+  const aiTrace = matchedTrace
+    ? undefined
+    : explanation?.decision.rules.find(
+        (r) => r.aiCheck && explanation.current === `split:${r.splitId}`,
+      );
 
   const close = () => {
     set({ splitTarget: null });
     setCursor(0);
   };
 
-  if (!sender) {
-    close();
-    return null;
-  }
+  // Nothing to split by (no cached participants): close from an effect, not
+  // during render.
+  const noSender = target != null && !sender;
+  useEffect(() => {
+    if (noSender) set({ splitTarget: null });
+  }, [noSender, set]);
+
+  // Listbox semantics: keyboard focus follows the highlighted option.
+  useEffect(() => {
+    optionRefs.current[cursor]?.focus();
+  }, [cursor, target]);
+
+  if (target == null || !sender) return null;
 
   const email = sender.email.trim().toLowerCase();
   const domainPrefill = domainSplitPrefill(email);
@@ -59,6 +89,7 @@ export function SplitPopover() {
     void queryClient.invalidateQueries({ queryKey: ["threads"] });
     void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
     void queryClient.invalidateQueries({ queryKey: ["matchingSplit"] });
+    void queryClient.invalidateQueries({ queryKey: ["explainRoute"] });
   };
 
   const create = async (name: string, needle: string) => {
@@ -66,7 +97,7 @@ export function SplitPopover() {
       split: {
         id: null,
         name,
-        position: (splits ?? []).length,
+        position: nextTabPosition(splits, labels),
         query: { senders: [needle] },
       },
     });
@@ -168,11 +199,9 @@ export function SplitPopover() {
   };
 
   return (
-    <div className="co-overlay flex items-start justify-center pt-[22vh]" onMouseDown={close}>
+    <Modal onClose={close} width={420} top="22vh" labelledBy={titleId}>
       <div
-        className="co-pop-in w-[420px] rounded-xl border border-hairline bg-bg1 p-2"
-        style={{ boxShadow: "var(--elev-2)" }}
-        onMouseDown={(e) => e.stopPropagation()}
+        className="p-2"
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();
@@ -190,29 +219,47 @@ export function SplitPopover() {
           }
         }}
       >
-        <p className="co-hairline-b px-3 py-2 text-[12px] font-semibold tracking-wide text-ink-faint uppercase">
+        <p id={titleId} className="co-hairline-b px-3 py-2 text-sm font-semibold tracking-wide text-ink-faint uppercase">
           {t("inbox:splitPopover.title")}
         </p>
-        <div className="pt-1">
+        <p className="px-3 pt-2 text-xs text-ink-faint">
+          {matchedTrace
+            ? t("settings:splits.why.rule", {
+                name: matchedTrace.name,
+                conditions: matchedTrace.leaves
+                  .filter((l) => l.passed)
+                  .map((l) => describeCondition(l.condition, t, labels ?? []))
+                  .join(", "),
+              })
+            : aiTrace
+              ? t("settings:splits.why.ai", { name: aiTrace.name })
+              : t("settings:splits.why.noRule")}
+        </p>
+        <div className="pt-1" role="listbox" aria-labelledby={titleId}>
           {options.map((o, i) => (
             <button
               key={o.key}
-              autoFocus={i === 0}
+              ref={(el) => {
+                optionRefs.current[i] = el;
+              }}
+              role="option"
+              aria-selected={i === cursor}
+              tabIndex={i === cursor ? 0 : -1}
               disabled={busy}
-              className={`flex w-full items-baseline gap-2 rounded-lg px-3 py-2 text-left ${
+              className={`flex w-full items-baseline gap-2 rounded-control px-3 py-2 text-start ${
                 i === cursor ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
               }`}
               onMouseMove={() => setCursor(i)}
               onClick={() => void run(o)}
             >
-              <span className="text-[13.5px] text-ink">{o.title}</span>
-              <span className="ml-auto truncate pl-3 text-[11.5px] text-ink-faint">
+              <span className="text-base text-ink">{o.title}</span>
+              <span className="ms-auto truncate ps-3 text-xs text-ink-faint">
                 {o.sub}
               </span>
             </button>
           ))}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

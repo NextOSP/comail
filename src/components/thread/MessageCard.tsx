@@ -9,7 +9,6 @@ import { useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import type { Address, AttachmentMeta, MessageDetail } from "../../ipc/types";
 import { addressName, formatSize, longTime, relativeTime } from "../../lib/format";
-import { domainSplitPrefill } from "../../lib/splitPrefill";
 import { adaptDocumentForDarkMode, fixInvisibleText } from "../../lib/emailDark";
 import {
   splitQuotedHtml,
@@ -19,38 +18,15 @@ import {
 } from "../../lib/quotes";
 import { InviteCard } from "../calendar/InviteCard";
 import { dispatchKeyboardEvent, reclaimIframeFocus } from "../../keyboard/registry";
-
-/** Maps a file to a short badge label + accent color by extension/mime. */
-function fileKind(filename: string | null, mimeType: string | null): { label: string; color: string } {
-  const ext = (filename?.split(".").pop() ?? "").toLowerCase();
-  const mime = mimeType?.toLowerCase() ?? "";
-  const pick = (label: string, color: string) => ({ label, color });
-  if (ext === "pdf" || mime.includes("pdf")) return pick("PDF", "#e5484d");
-  if (["doc", "docx", "rtf", "odt"].includes(ext) || mime.includes("word")) return pick("DOC", "#2f6fed");
-  if (["xls", "xlsx", "csv", "ods"].includes(ext) || mime.includes("sheet") || mime.includes("excel"))
-    return pick(ext === "csv" ? "CSV" : "XLS", "#1a9e5b");
-  if (["ppt", "pptx", "odp"].includes(ext) || mime.includes("presentation") || mime.includes("powerpoint"))
-    return pick("PPT", "#e8590c");
-  if (["zip", "rar", "7z", "tar", "gz"].includes(ext) || mime.includes("zip") || mime.includes("compressed"))
-    return pick("ZIP", "#a16207");
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic"].includes(ext) || mime.startsWith("image/"))
-    return pick("IMG", "#8b5cf6");
-  if (["mp4", "mov", "avi", "mkv", "webm"].includes(ext) || mime.startsWith("video/")) return pick("VID", "#db2777");
-  if (["mp3", "wav", "flac", "aac", "ogg", "m4a"].includes(ext) || mime.startsWith("audio/")) return pick("AUD", "#0891b2");
-  if (["txt", "md", "log"].includes(ext) || mime.startsWith("text/")) return pick("TXT", "#64748b");
-  return pick(ext ? ext.slice(0, 4).toUpperCase() : "FILE", "#64748b");
-}
+import { fileKind } from "../../lib/fileKind";
+import { AttachmentThumb } from "./viewer/AttachmentThumb";
+import { Icon } from "../ui/Icon";
+import { Button } from "../ui/Button";
 
 /** Clean, vertically-centered three-dot glyph for the "show trimmed content"
  *  toggle (the raw "⋯" character renders as a cramped, off-center box). */
 function DotsIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.7" />
-      <circle cx="12" cy="12" r="1.7" />
-      <circle cx="19" cy="12" r="1.7" />
-    </svg>
-  );
+  return <Icon name="dots" size={16} filled />;
 }
 
 async function openAttachment(a: AttachmentMeta) {
@@ -112,38 +88,31 @@ export function MessageCard({
     }
   }, [focused]);
 
-  const hasFile = message.attachments.some((a) => !a.isInline);
+  const files = message.attachments.filter((a) => !a.isInline);
+  const hasFile = files.length > 0;
   const recipients = message.to.map(addressName).join(", ") || "-";
   // The backend sets `via` only when the transmitting party (Sender:,
   // Return-Path or DKIM d=) does NOT align with the From: domain - mailing
   // lists, ESPs, send-on-behalf, and mail whose From: is spoofed.
   const viaDomain = message.via ? (message.via.split("@")[1] ?? message.via) : null;
-  // Split rules match the visible From address, not the potentially different
-  // transmitting party in `via`. Outgoing mail and drafts do not offer this
-  // action because they would create a rule for the user's own address.
-  const splitPrefill =
-    !message.isOutgoing && !message.isDraft
-      ? domainSplitPrefill(message.from.email)
-      : null;
-
   if (!expanded) {
     return (
       <div
         ref={ref}
-        className={`co-row flex cursor-pointer items-baseline gap-4 rounded-lg px-3 py-2.5 transition-colors hover:bg-bg1 ${
+        className={`co-row flex cursor-pointer items-baseline gap-4 rounded-control px-3 py-2.5 transition-colors hover:bg-bg1 ${
           focused ? "bg-bg1 ring-1 ring-inset ring-accent/60" : ""
         }`}
         onClick={message.isDraft && !isSendPending ? onEditDraft ?? onToggle : onToggle}
       >
-        <span className="w-32 shrink-0 truncate text-[13.5px] font-medium text-ink">
+        <span className="w-32 shrink-0 truncate text-base font-medium text-ink">
           {addressName(message.from)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-faint">
+        <span className="min-w-0 flex-1 truncate text-base text-ink-faint">
           {message.isDraft ? `${draftBadge} · ` : ""}
           {message.snippet}
         </span>
         {hasFile && <PaperclipIcon className="self-center" />}
-        <span className="shrink-0 text-[11.5px] text-ink-faint tabular-nums">{relativeTime(message.date)}</span>
+        <span className="shrink-0 text-xs text-ink-faint tabular-nums">{relativeTime(message.date)}</span>
       </div>
     );
   }
@@ -151,16 +120,12 @@ export function MessageCard({
   return (
     <article
       ref={ref}
-      className="co-fade-in overflow-hidden bg-bg1"
-      style={{
-        // Square, uniform hairline - no left accent bar. The selected message
-        // (reply target) reads clearly via a solid accent border plus a soft
-        // accent ring, so it's obvious which message a reply will go to.
-        boxShadow: focused
-          ? "var(--elev-card), 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent)"
-          : "var(--elev-card)",
-        border: `1px solid ${focused ? "var(--accent)" : "var(--hairline)"}`,
-      }}
+      // Square, uniform hairline - no left accent bar. The selected message
+      // (reply target) reads clearly via a solid accent border plus a soft
+      // accent ring, so it's obvious which message a reply will go to.
+      className={`co-fade-in overflow-hidden border bg-bg1 shadow-card ${
+        focused ? "border-accent ring-2 ring-accent/40" : "border-hairline"
+      }`}
     >
       <header
         className="flex cursor-default items-start justify-between gap-3 px-5 pt-4 pb-3"
@@ -168,10 +133,10 @@ export function MessageCard({
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-            <span className="text-[14px] font-semibold text-ink">{addressName(message.from)}</span>
+            <span className="text-md font-semibold text-ink">{addressName(message.from)}</span>
             <button
               type="button"
-              className="flex min-w-0 cursor-pointer items-baseline gap-1 text-[13px] text-ink-faint transition-colors hover:text-ink"
+              className="flex min-w-0 cursor-pointer items-baseline gap-1 text-base text-ink-faint transition-colors hover:text-ink"
               title={t("thread:details.toggle")}
               aria-expanded={detailsOpen}
               onClick={(e) => {
@@ -183,24 +148,15 @@ export function MessageCard({
                 {t("thread:msgTo")} {recipients}
                 {message.cc.length > 0 && <> · {t("thread:msgCc")} {message.cc.map(addressName).join(", ")}</>}
               </span>
-              <svg
+              <Icon
+                name="chevronDown"
+                size={11}
                 className={`shrink-0 self-center transition-transform ${detailsOpen ? "rotate-180" : ""}`}
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M6 9l6 6 6-6" />
-              </svg>
+              />
             </button>
             {message.isDraft && (
               <span
-                className={`rounded px-1.5 text-[10.5px] font-semibold tracking-wide uppercase ${
+                className={`rounded px-1.5 text-2xs font-semibold tracking-wide uppercase ${
                   sendFailed
                     ? "bg-danger/15 text-danger"
                     : isSendPending
@@ -213,37 +169,16 @@ export function MessageCard({
               </span>
             )}
           </div>
-          <div className="mt-0.5 truncate text-[11.5px] text-ink-faint" title={message.from.email}>
+          <div className="mt-0.5 truncate text-xs text-ink-faint" title={message.from.email}>
             {message.from.email}
             {viaDomain && <> · {t("thread:details.via")} {viaDomain}</>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          {splitPrefill && (
-            <button
-              type="button"
-              className="rounded-md border border-hairline px-2 py-1 text-[11.5px] font-medium text-ink-muted hover:border-accent/50 hover:bg-bg2 hover:text-accent"
-              title={t("thread:addRuleForDomain", { domain: splitPrefill.domain })}
-              aria-label={t("thread:addRuleForDomain", { domain: splitPrefill.domain })}
-              onClick={(event) => {
-                event.stopPropagation();
-                useUi.getState().set({
-                  panel: "settings",
-                  settingsTab: "splits",
-                  splitRulePrefill: {
-                    name: splitPrefill.name,
-                    senders: [splitPrefill.sender],
-                  },
-                });
-              }}
-            >
-              {t("thread:addRule")}
-            </button>
-          )}
           {message.isDraft && !isSendPending && (
             <button
               type="button"
-              className="rounded-md border border-hairline px-2 py-1 text-[11.5px] font-medium text-accent hover:border-accent/50 hover:bg-bg2"
+              className="rounded-control border border-hairline px-2 py-1 text-xs font-medium text-accent hover:border-accent/50 hover:bg-bg2"
               onClick={(event) => {
                 event.stopPropagation();
                 onEditDraft?.();
@@ -253,7 +188,7 @@ export function MessageCard({
             </button>
           )}
           {hasFile && <PaperclipIcon />}
-          <time className="text-[11.5px] whitespace-nowrap text-ink-faint">{longTime(message.date)}</time>
+          <time className="text-xs whitespace-nowrap text-ink-faint">{longTime(message.date)}</time>
         </div>
       </header>
 
@@ -261,21 +196,42 @@ export function MessageCard({
 
       <div className="px-5 pb-4 select-text">
         {sendFailed && (
-          <aside className="mb-4 rounded-lg border border-danger/30 bg-danger/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">
-            <div className="mb-1 text-[10.5px] font-semibold tracking-[0.1em] text-danger uppercase">
+          <aside className="mb-4 rounded-control border border-danger/30 bg-danger/5 px-3.5 py-3 text-base leading-relaxed text-ink">
+            <div className="mb-1 text-2xs font-semibold tracking-[0.1em] text-danger uppercase">
               {t("thread:sendFailedTitle")}
             </div>
             <div>{t("thread:sendFailedHint")}</div>
             {message.sendError && (
-              <div className="mt-1 text-[12px] text-ink-faint">{message.sendError}</div>
+              <div className="mt-1 text-sm text-ink-faint">{message.sendError}</div>
             )}
           </aside>
         )}
         <InviteCard messageId={message.id} />
+        {message.verificationCode && (
+          <div className="mb-3 flex items-center gap-2.5 text-[12.5px] text-ink-muted">
+            <span>{t("thread:verificationCode.found")}</span>
+            <span className="font-mono text-[14px] font-semibold tracking-[0.12em] text-ink">
+              {message.verificationCode}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="copy"
+              onClick={() =>
+                void copyToClipboard(
+                  message.verificationCode!,
+                  t("thread:verificationCode.copied"),
+                )
+              }
+            >
+              {t("thread:verificationCode.copy")}
+            </Button>
+          </div>
+        )}
         <MessageBody message={message} />
         {message.automationNote && (
-          <aside className="mt-4 rounded-lg border border-accent/25 bg-accent/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">
-            <div className="mb-1 text-[10.5px] font-semibold tracking-[0.1em] text-accent uppercase">
+          <aside className="mt-4 rounded-control border border-accent/25 bg-accent/5 px-3.5 py-3 text-base leading-relaxed text-ink">
+            <div className="mb-1 text-2xs font-semibold tracking-[0.1em] text-accent uppercase">
               {t("thread:automationNote")}
             </div>
             <div className="whitespace-pre-wrap">{message.automationNote}</div>
@@ -283,18 +239,16 @@ export function MessageCard({
         )}
       </div>
 
-      {message.attachments.filter((a) => !a.isInline).length > 0 && (
+      {files.length > 0 && (
         <footer className="flex flex-wrap gap-2 px-5 pb-4">
-          {message.attachments
-            .filter((a) => !a.isInline)
-            .map((a) => {
+          {files.map((a, i) => {
               const kind = fileKind(a.filename, a.mimeType);
               const size = formatSize(a.size);
               return (
                 <button
                   key={a.id}
                   type="button"
-                  className="group flex max-w-[16rem] cursor-pointer items-center gap-2.5 rounded-xl border border-hairline bg-bg1 py-1.5 pl-1.5 pr-2.5 text-left transition-colors hover:border-accent/40 hover:bg-bg2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  className="group flex max-w-[16rem] cursor-pointer items-center gap-2.5 rounded-card border border-hairline bg-bg1 py-1.5 pl-1.5 pr-2.5 text-left transition-colors hover:border-accent/40 hover:bg-bg2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                   title={`${t("thread:attachment.view")}${a.mimeType ? ` · ${a.mimeType}` : ""} · ${t("thread:attachment.openExternalHint")}`}
                   aria-label={`${t("thread:attachment.view")}: ${a.filename ?? t("thread:attachment.fallbackName")}`}
                   onClick={(e) => {
@@ -302,7 +256,16 @@ export function MessageCard({
                     // Plain click = safe in-app preview; Alt/middle-click keeps
                     // the old "open in the OS app" behavior.
                     if (e.altKey) void openAttachment(a);
-                    else useUi.getState().set({ attachmentPreview: a });
+                    else
+                      useUi.getState().set({
+                        attachmentPreview: {
+                          items: files,
+                          index: i,
+                          from: message.from,
+                          date: message.date,
+                          subject: message.subject,
+                        },
+                      });
                   }}
                   onAuxClick={(e) => {
                     if (e.button === 1) {
@@ -311,36 +274,22 @@ export function MessageCard({
                     }
                   }}
                 >
-                  {/* Colored file-type badge. */}
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[9px] font-bold uppercase tracking-tight text-white"
-                    style={{ backgroundColor: kind.color }}
-                  >
-                    {kind.label}
-                  </span>
+                  {/* Image thumbnail, or the colored file-type badge. */}
+                  <AttachmentThumb attachment={a} size={36} />
                   <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-[13px] font-medium leading-tight text-ink">
+                    <span className="truncate text-base font-medium leading-tight text-ink">
                       {a.filename ?? t("thread:attachment.fallbackName")}
                     </span>
-                    <span className="mt-0.5 truncate text-[11px] leading-tight text-ink-faint">
+                    <span className="mt-0.5 truncate text-xs leading-tight text-ink-faint">
                       {[kind.label, size].filter(Boolean).join(" · ")}
                     </span>
                   </span>
                   {/* Explicit "view" affordance so the card reads as openable. */}
-                  <svg
-                    className="ml-auto shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent"
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
+                  <Icon
+                    name="eye"
+                    size={15}
+                    className="ml-auto shrink-0 text-ink-faint opacity-40 transition-opacity group-hover:opacity-100 group-hover:text-accent group-focus-visible:opacity-100"
+                  />
                 </button>
               );
             })}
@@ -376,7 +325,7 @@ function AddressChip({ address }: { address: Address }) {
   return (
     <button
       type="button"
-      className="group inline-flex max-w-full items-center gap-1.5 rounded-full border border-hairline bg-bg1 py-0.5 pr-1.5 pl-2 text-[11.5px] transition-colors hover:border-accent/40 hover:bg-bg2"
+      className="group inline-flex max-w-full items-center gap-1.5 rounded-full border border-hairline bg-bg1 py-0.5 pr-1.5 pl-2 text-xs transition-colors hover:border-accent/40 hover:bg-bg2"
       title={`${addressLine(address)} · ${t("thread:details.copyAddress")}`}
       onClick={(e) => {
         e.stopPropagation();
@@ -389,9 +338,13 @@ function AddressChip({ address }: { address: Address }) {
       <span className="shrink-0 font-medium text-ink">{name}</span>
       {showEmail && <span className="min-w-0 truncate text-ink-faint">{address.email}</span>}
       {copied ? (
-        <CheckIcon className="shrink-0 text-accent" />
+        <Icon name="check" size={12} className="shrink-0 text-accent" />
       ) : (
-        <CopyIcon className="shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100" />
+        <Icon
+          name="copy"
+          size={12}
+          className="shrink-0 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100"
+        />
       )}
     </button>
   );
@@ -410,7 +363,7 @@ function AddressRow({ addresses }: { addresses: Address[] }) {
       {addresses.length > 1 && (
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium text-ink-faint transition-colors hover:bg-bg1 hover:text-accent"
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium text-ink-faint transition-colors hover:bg-bg1 hover:text-accent"
           title={t("thread:details.copyAllHint")}
           onClick={(e) => {
             e.stopPropagation();
@@ -418,7 +371,7 @@ function AddressRow({ addresses }: { addresses: Address[] }) {
             void copyToClipboard(joined, t("thread:details.copiedAll", { count: addresses.length }));
           }}
         >
-          <CopyIcon className="shrink-0" />
+          <Icon name="copy" size={12} className="shrink-0" />
           {t("thread:details.copyAll")}
         </button>
       )}
@@ -453,10 +406,10 @@ function MessageDetails({ message, viaDomain }: { message: MessageDetail; viaDom
   textRows.push([t("thread:details.date"), longTime(message.date)]);
   textRows.push([t("thread:details.subject"), message.subject || t("thread:noSubject")]);
   return (
-    <div className="co-fade-in mx-5 mb-3 grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-1.5 rounded-lg border border-hairline bg-bg2/50 px-3.5 py-3 text-[12px] select-text">
+    <div className="co-fade-in mx-5 mb-3 grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-1.5 rounded-control border border-hairline bg-bg2/50 px-3.5 py-3 text-sm select-text">
       {addressRows.map(([label, addresses]) => (
         <div key={label} className="contents">
-          <span className="self-center text-right text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+          <span className="self-center text-right text-2xs font-semibold tracking-wide text-ink-faint uppercase">
             {label}
           </span>
           <AddressRow addresses={addresses} />
@@ -464,32 +417,13 @@ function MessageDetails({ message, viaDomain }: { message: MessageDetail; viaDom
       ))}
       {textRows.map(([label, value]) => (
         <div key={label} className="contents">
-          <span className="self-start pt-0.5 text-right text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+          <span className="self-start pt-0.5 text-right text-2xs font-semibold tracking-wide text-ink-faint uppercase">
             {label}
           </span>
           <span className="min-w-0 break-words text-ink">{value}</span>
         </div>
       ))}
     </div>
-  );
-}
-
-/** Two overlapping squares - the standard copy affordance. */
-function CopyIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-    </svg>
-  );
-}
-
-/** Check confirming a chip's address landed on the clipboard. */
-function CheckIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
   );
 }
 
@@ -502,9 +436,7 @@ function PaperclipIcon({ className = "" }: { className?: string }) {
       title={t("common:threadRow.hasAttachments")}
       aria-label={t("common:threadRow.attachment")}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-      </svg>
+      <Icon name="paperclip" size={12} />
     </span>
   );
 }
@@ -526,7 +458,7 @@ function MessageBody({ message }: { message: MessageDetail }) {
   return (
     <div>
       {visible && (
-        <pre className="max-w-[90ch] font-sans text-[15px] leading-[1.6] whitespace-pre-wrap text-ink">
+        <pre className="max-w-[90ch] font-sans text-md leading-[1.6] whitespace-pre-wrap text-ink">
           {visible}
         </pre>
       )}
@@ -534,7 +466,7 @@ function MessageBody({ message }: { message: MessageDetail }) {
         <div className={visible ? "mt-3" : ""}>
           {!showQuoted ? (
             <button
-              className="inline-flex h-5 items-center rounded-md border border-hairline bg-bg2 px-2 text-ink-faint transition-colors hover:border-accent/40 hover:text-ink"
+              className="inline-flex h-5 items-center rounded-control border border-hairline bg-bg2 px-2 text-ink-faint transition-colors hover:border-accent/40 hover:text-ink"
               title={t("compose:showQuoted")}
               aria-label={t("compose:showQuoted")}
               onClick={() => setShowQuoted(true)}
@@ -544,12 +476,12 @@ function MessageBody({ message }: { message: MessageDetail }) {
           ) : (
             <div className="co-fade-in border-l-2 border-hairline-strong pl-3">
               <button
-                className="mb-1 text-[11px] text-ink-faint hover:text-ink"
+                className="mb-1 text-xs text-ink-faint hover:text-ink"
                 onClick={() => setShowQuoted(false)}
               >
                 {t("compose:hideQuoted")}
               </button>
-              <pre className="max-w-[90ch] font-sans text-[13.5px] leading-[1.6] whitespace-pre-wrap text-ink-faint">
+              <pre className="max-w-[90ch] font-sans text-base leading-[1.6] whitespace-pre-wrap text-ink-faint">
                 {stripQuoteMarkers(quoted)}
               </pre>
             </div>
@@ -567,7 +499,7 @@ function BodySkeleton({ snippet }: { snippet?: string | null }) {
   return (
     <div aria-busy="true">
       {snippet && (
-        <p className="mb-3 max-w-[90ch] text-[15px] leading-[1.6] text-ink-faint">{snippet}</p>
+        <p className="mb-3 max-w-[90ch] text-md leading-[1.6] text-ink-faint">{snippet}</p>
       )}
       <div className="flex flex-col gap-2.5">
         {[94, 100, 86, 68, 42].map((w, i) => (
@@ -743,6 +675,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     // Fit width once (may apply a zoom), then measure the resulting height.
     fitWidth();
     measure();
+    repaint();
     if (import.meta.env.DEV) {
       performance.mark(`message-painted:${messageId}`);
     }
@@ -826,26 +759,35 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
   // repaints the entire document, then we restore it. The change must span
   // frames - a same-frame round-trip (e.g. display none→block) is coalesced by
   // WebKit to the same computed value and never repaints the stale surface.
-  useEffect(() => {
-    let raf1 = 0;
-    let raf2 = 0;
-    const repaint = () => {
-      if (document.visibilityState === "hidden") return;
-      const body = iframeRef.current?.contentDocument?.body;
-      if (!body) return;
-      body.style.opacity = "0.9999";
-      // Two frames guarantee the translucent state is actually painted before
-      // we revert, so the full re-raster can't be optimized away.
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => {
-          const b = iframeRef.current?.contentDocument?.body;
-          if (b) b.style.opacity = "";
-          measure();
-        });
+  //
+  // The same stale surface bites on first open: a freshly loaded subframe that
+  // was hidden while being measured can come up blank until clicked, so this
+  // also runs once the frame is revealed and after every (re)load.
+  const rafRef = useRef<[number, number]>([0, 0]);
+  const repaint = () => {
+    if (document.visibilityState === "hidden") return;
+    const body = iframeRef.current?.contentDocument?.body;
+    if (!body) return;
+    body.style.opacity = "0.9999";
+    // Two frames guarantee the translucent state is actually painted before
+    // we revert, so the full re-raster can't be optimized away.
+    cancelAnimationFrame(rafRef.current[0]);
+    cancelAnimationFrame(rafRef.current[1]);
+    rafRef.current[0] = requestAnimationFrame(() => {
+      rafRef.current[1] = requestAnimationFrame(() => {
+        const b = iframeRef.current?.contentDocument?.body;
+        if (b) b.style.opacity = "";
+        measure();
       });
-    };
+    });
+  };
+
+  const measured = height !== null;
+  useEffect(() => {
+    if (measured) repaint();
+  }, [measured]);
+
+  useEffect(() => {
     document.addEventListener("visibilitychange", repaint);
     window.addEventListener("focus", repaint);
     // The DOM focus/visibility events don't always fire in a Tauri webview on
@@ -870,18 +812,17 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     return () => {
       disposed = true;
       unlisten?.();
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
+      cancelAnimationFrame(rafRef.current[0]);
+      cancelAnimationFrame(rafRef.current[1]);
       document.removeEventListener("visibilitychange", repaint);
       window.removeEventListener("focus", repaint);
     };
   }, []);
 
-  const measured = height !== null;
   return (
     <div className="relative">
       {hasRemoteImages && !loadRemoteImages && (
-        <div className="mb-2 flex items-center gap-3 rounded-md border border-hairline bg-bg2 px-3 py-1.5 text-[12px] text-ink-muted">
+        <div className="mb-2 flex items-center gap-3 rounded-control border border-hairline bg-bg2 px-3 py-1.5 text-sm text-ink-muted">
           <span className="min-w-0 flex-1 truncate">{t("thread:remoteImages.hidden")}</span>
           <button
             type="button"
@@ -903,14 +844,19 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
         sandbox="allow-same-origin allow-top-navigation-by-user-activation"
         srcDoc={srcDoc}
         onLoad={onLoad}
-        className={`w-full border-0 ${measured ? "co-fade-in" : "invisible absolute inset-x-0 top-0"}`}
+        // Hidden with opacity (not visibility) while unmeasured: WebKit skips
+        // rasterizing a visibility:hidden subframe and doesn't repaint it when
+        // it's revealed, so the body showed blank until clicked. No fade-in
+        // for the same reason - animating a just-revealed subframe's opacity
+        // leaves the same stale, empty layer.
+        className={`w-full border-0 ${measured ? "" : "pointer-events-none absolute inset-x-0 top-0 opacity-0"}`}
         style={{ height: height ?? "100%", transition: "height 140ms ease-out" }}
         title={t("thread:messageBodyTitle")}
       />
       {quotedHtml &&
         (!showQuoted ? (
           <button
-            className="mt-1 inline-flex h-5 items-center rounded-md border border-hairline bg-bg2 px-2 text-ink-faint transition-colors hover:border-accent/40 hover:text-ink"
+            className="mt-1 inline-flex h-5 items-center rounded-control border border-hairline bg-bg2 px-2 text-ink-faint transition-colors hover:border-accent/40 hover:text-ink"
             title={t("compose:showQuoted")}
             aria-label={t("compose:showQuoted")}
             onClick={() => setShowQuoted(true)}
@@ -919,7 +865,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
           </button>
         ) : (
           <button
-            className="mt-1 text-[11px] text-ink-faint hover:text-ink"
+            className="mt-1 text-xs text-ink-faint hover:text-ink"
             onClick={() => setShowQuoted(false)}
           >
             {t("compose:hideQuoted")}

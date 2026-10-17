@@ -8,6 +8,10 @@ import { getCommands, shortcutFor, type Command } from "../../keyboard/registry"
 import { useFolders } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import i18n from "../../i18n";
+import { AiBadge } from "../ui/Ai";
+import { Icon } from "../ui/Icon";
+import { Modal } from "../ui/Modal";
+import { Spinner } from "../ui/Spinner";
 
 const USAGE_KEY = "comail:cmd-usage";
 
@@ -183,12 +187,7 @@ export function CommandPalette() {
   };
 
   return (
-    <div className="co-overlay flex items-start justify-center pt-[16vh]" onMouseDown={() => set({ paletteOpen: false })}>
-      <div
-        className="co-pop-in w-[560px] overflow-hidden rounded-xl border border-hairline bg-bg1"
-        style={{ boxShadow: "var(--elev-2)" }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={() => set({ paletteOpen: false })} width={560} top="16vh" className="overflow-hidden">
         <input
           ref={inputRef}
           value={query}
@@ -207,16 +206,16 @@ export function CommandPalette() {
             }
           }}
           placeholder={t("common:palette.placeholder")}
-          className="co-hairline-b w-full bg-transparent px-5 py-4 text-[16px] text-ink outline-none placeholder:text-ink-faint"
+          className="co-hairline-b w-full bg-transparent px-5 py-4 text-lg text-ink outline-none placeholder:text-ink-faint"
           spellCheck={false}
         />
         <div ref={listRef} className="max-h-[46vh] overflow-y-auto p-1.5">
           {rows.length === 0 && (
-            <div className="px-4 py-6 text-center text-[13px] text-ink-faint">{t("common:palette.empty")}</div>
+            <div className="px-4 py-6 text-center text-base text-ink-faint">{t("common:palette.empty")}</div>
           )}
           {rows.map((row, i) => {
             const selected = i === cursor;
-            const rowCls = `flex w-full items-center justify-between gap-4 rounded-lg px-3.5 py-2 text-left ${
+            const rowCls = `flex w-full items-center justify-between gap-4 rounded-control px-3.5 py-2 text-left ${
               selected ? "bg-[var(--selected-bg)]" : "hover:bg-bg2"
             }`;
             if (row.kind === "command") {
@@ -230,8 +229,8 @@ export function CommandPalette() {
                   onClick={() => run(cmd)}
                 >
                   <span className="flex items-baseline gap-2.5 truncate">
-                    <span className="text-[14px] text-ink">{cmd.title ? cmd.title() : t(cmd.titleKey, cmd.titleParams)}</span>
-                    <span className="text-[11.5px] text-ink-faint">{t(`commands:section.${cmd.section}`)}</span>
+                    <span className="text-base text-ink">{cmd.title ? cmd.title() : t(cmd.titleKey, cmd.titleParams)}</span>
+                    <span className="text-xs text-ink-faint">{t(`commands:section.${cmd.section}`)}</span>
                   </span>
                   {shortcutFor(cmd) && (
                     <span className="flex shrink-0 gap-1">
@@ -240,7 +239,9 @@ export function CommandPalette() {
                         .map((part, j, arr) => (
                           <span key={j} className="flex items-center gap-1">
                             <kbd className="co-kbd">{part}</kbd>
-                            {j < arr.length - 1 && <span className="text-[10px] text-ink-faint">then</span>}
+                            {j < arr.length - 1 && (
+                              <span className="text-2xs text-ink-faint">{t("common:shortcutHelp.then")}</span>
+                            )}
                           </span>
                         ))}
                     </span>
@@ -259,8 +260,8 @@ export function CommandPalette() {
                   onClick={() => runSearch()}
                 >
                   <span className="flex min-w-0 items-center gap-2.5">
-                    <SearchIcon />
-                    <span className="truncate text-[14px] text-ink">
+                    <Icon name="search" size={15} className="shrink-0 text-ink-faint" />
+                    <span className="truncate text-base text-ink">
                       {t("commands:searchFor", { query: q })}
                     </span>
                   </span>
@@ -279,16 +280,14 @@ export function CommandPalette() {
                 onMouseMove={() => setCursor(i)}
                 onClick={() => void runAi()}
               >
-                <span className="flex min-w-0 items-baseline gap-2.5">
-                  <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10.5px] font-semibold tracking-wide text-accent uppercase">
-                    {t("commands:aiIntent.badge")}
-                  </span>
-                  <span className="truncate text-[14px] text-ink">
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <AiBadge label={t("commands:aiIntent.badge")} />
+                  <span className="truncate text-base text-ink">
                     {t("commands:aiIntent.row", { query: q })}
                   </span>
                 </span>
                 {aiPending ? (
-                  <span className="co-spinner size-3.5 shrink-0 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
+                  <Spinner className="co-ai-icon" />
                 ) : (
                   <kbd className="co-kbd shrink-0">↵</kbd>
                 )}
@@ -296,19 +295,6 @@ export function CommandPalette() {
             );
           })}
         </div>
-      </div>
-    </div>
-  );
-}
-
-/** Magnifier glyph for the "search mail for …" fallback row. */
-function SearchIcon() {
-  return (
-    <span className="shrink-0 text-ink-faint" aria-hidden>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="11" cy="11" r="7" />
-        <path d="M21 21l-4.3-4.3" />
-      </svg>
-    </span>
+    </Modal>
   );
 }

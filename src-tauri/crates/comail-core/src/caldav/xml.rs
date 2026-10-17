@@ -54,7 +54,10 @@ fn parse_status_line(s: &str) -> u16 {
 /// is collected per element, and element identity ignores prefixes.
 pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
     let mut reader = Reader::from_str(body);
-    reader.config_mut().trim_text(true);
+    // No per-event trimming: entity references split text into separate
+    // events, and trimming each would eat the spaces around them. Values are
+    // trimmed once at the closing tag instead.
+    reader.config_mut().trim_text(false);
 
     let mut out = Multistatus::default();
     let mut cur: Option<DavItem> = None;
@@ -117,7 +120,12 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
                 }
             }
             Event::Text(t) => {
-                text.push_str(&t.unescape().map_err(|e| err(format!("xml text: {e}")))?);
+                text.push_str(&t.decode().map_err(|e| err(format!("xml text: {e}")))?);
+            }
+            Event::GeneralRef(r) => {
+                let ent = crate::preview::xml_entity(&r)
+                    .ok_or_else(|| err(format!("xml entity: {r:?}")))?;
+                text.push_str(&ent);
             }
             Event::CData(t) => {
                 text.push_str(&String::from_utf8_lossy(&t.into_inner()));

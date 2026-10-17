@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useThread } from "../../queries/hooks";
 import { MessageCard } from "../thread/MessageCard";
+import { Button, IconButton } from "../ui/Button";
+import { Modal } from "../ui/Modal";
 
 // A lightweight, read-only thread preview shown as a modal over the search/Ask
 // screen. Opening a source this way keeps SearchScreen (and the in-flight Ask)
@@ -15,6 +18,7 @@ export function SourcePreview({
   onClose: () => void;
   onOpenFull: () => void;
 }) {
+  const { t } = useTranslation();
   const { data, isLoading, isError } = useThread(threadId);
   // Expand/collapse overrides; messages default to expanded for a quick read.
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
@@ -35,37 +39,29 @@ export function SourcePreview({
   const messages = data?.messages ?? [];
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-6"
-      onClick={onClose}
+    // bg0 so the expanded (bg1) message cards stand off the sheet.
+    <Modal
+      onClose={onClose}
+      center
+      width={760}
+      className="flex max-h-[82vh] flex-col overflow-hidden"
+      style={{ background: "var(--bg0)" }}
     >
-      <div
-        className="flex max-h-[82vh] w-full max-w-[760px] flex-col overflow-hidden rounded-xl bg-bg0 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="co-hairline-b flex shrink-0 items-center gap-3 px-4 py-3">
-          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">
-            {data?.thread.subject || "Conversation"}
+        <div className="co-hairline-b flex shrink-0 items-center gap-2 py-2.5 pr-2.5 pl-4">
+          <span className="min-w-0 flex-1 truncate text-md font-medium text-ink">
+            {data?.thread.subject || t("common:search.previewFallbackTitle")}
           </span>
-          <button
-            onClick={onOpenFull}
-            className="co-chip !py-1 text-[12px] text-ink-muted hover:bg-bg2"
-          >
-            Open full
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded-md px-2 py-1 text-[12px] text-ink-faint hover:bg-bg2"
-          >
-            Esc
-          </button>
+          <Button size="sm" onClick={onOpenFull}>
+            {t("common:search.openFull")}
+          </Button>
+          <IconButton icon="close" label={t("common:search.closePreview")} onClick={onClose} />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {isLoading ? (
-            <p className="text-[13px] text-ink-faint">Loading…</p>
+            <p className="text-base text-ink-faint">{t("common:loading")}</p>
           ) : isError || !data ? (
-            <p className="text-[13px] text-danger">Couldn't load this conversation.</p>
+            <p className="text-base text-danger">{t("common:search.previewFailed")}</p>
           ) : (
             <div className="flex flex-col gap-3">
               {messages.map((m) => (
@@ -82,7 +78,6 @@ export function SourcePreview({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

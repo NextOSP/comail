@@ -23,6 +23,19 @@ export function useCalendarColorMap(): Map<number, string> {
   }, [calendars]);
 }
 
+/** A calendar's color (theme accent when it has none) at `pct`% over
+ *  transparent - one color path for every surface, hex or not. */
+export function tint(hex: string | null, pct = 100): string {
+  const c = hex ?? "var(--accent)";
+  return pct >= 100 ? c : `color-mix(in srgb, ${c} ${pct}%, transparent)`;
+}
+
+/** calendarId -> hex lookup for one event (null = theme accent). */
+export function useEventHex(): (ev: { calendarId: number | null }) => string | null {
+  const map = useCalendarColorMap();
+  return (ev) => (ev.calendarId != null ? (map.get(ev.calendarId) ?? null) : null);
+}
+
 export interface EventColorStyles {
   /** Timed event block (matches bg-accent/10 border-accent/30). */
   block: CSSProperties;

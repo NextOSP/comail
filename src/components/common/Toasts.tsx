@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useUi } from "../../stores/ui";
+import { Button, IconButton } from "../ui/Button";
+import { Icon } from "../ui/Icon";
 
 export function Toasts() {
   const { t: tr } = useTranslation();
@@ -30,79 +32,59 @@ export function Toasts() {
             key={t.id}
             role={isError ? "alert" : "status"}
             aria-live={isError ? "assertive" : "polite"}
-            className={`co-toast-in pointer-events-auto relative flex max-w-[min(30rem,92vw)] items-center gap-2.5 overflow-hidden rounded-xl border py-2 pr-1.5 pl-3 text-[13px] text-ink ${
-              isError ? "border-danger/35 bg-danger/[0.06]" : "border-hairline bg-bg1"
+            className={`co-toast-in pointer-events-auto relative flex max-w-[min(30rem,92vw)] items-center gap-2.5 overflow-hidden rounded-card border py-2 pr-1.5 pl-3 text-base text-ink shadow-elev-2 ${
+              isError ? "border-danger/35" : "border-hairline bg-bg1"
             }`}
-            style={{ boxShadow: "var(--elev-2)" }}
+            style={{
+              // Tint mixed into the opaque surface: a translucent danger fill
+              // lets the list underneath show through the floating toast.
+              ...(isError && {
+                background: "color-mix(in srgb, var(--danger) 8%, var(--bg1))",
+              }),
+            }}
           >
-            <svg
-              className={`size-4 shrink-0 self-start ${isError ? "text-danger" : "text-ink-faint"}`}
+            <span
+              className={`shrink-0 self-start ${isError ? "text-danger" : "text-ink-faint"}`}
               style={{ marginTop: "0.1875rem" }}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
             >
-              <circle cx="12" cy="12" r="10" />
-              {isError ? (
-                <>
-                  <path d="M12 8v5" />
-                  <path d="M12 16.5v.01" />
-                </>
-              ) : (
-                <>
-                  <path d="M12 11.5v5" />
-                  <path d="M12 7.5v.01" />
-                </>
-              )}
-            </svg>
+              <Icon name={isError ? "alert" : "info"} size={16} />
+            </span>
             <span className="min-w-0 grow break-words py-0.5 leading-snug">
               {t.countdown ? t.message.replace("{s}", String(remaining)) : t.message}
             </span>
             {t.secondaryLabel && (
-              <button
-                className="rounded-md px-2 py-1 text-[12.5px] font-semibold text-accent hover:bg-bg2"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="px-2 font-semibold !text-accent"
                 onClick={() => {
                   t.onSecondary?.();
                   dismiss(t.id);
                 }}
               >
                 {t.secondaryLabel}
-              </button>
+              </Button>
             )}
             {t.actionLabel && (
-              <button
-                className="rounded-md px-2 py-1 text-[12.5px] font-semibold text-accent hover:bg-bg2"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="px-2 font-semibold !text-accent"
                 onClick={() => {
                   t.onAction?.();
                   dismiss(t.id);
                 }}
               >
                 {t.actionLabel}
-              </button>
+              </Button>
             )}
-            <button
-              // Icon rather than the "✕" glyph: the character renders at a
-              // different weight and baseline per platform font.
-              className="grid size-6 shrink-0 self-start place-items-center rounded-md text-ink-faint hover:bg-bg2 hover:text-ink-muted"
+            <IconButton
+              icon="close"
+              size="xs"
+              label={tr("common:action.dismiss")}
+              className="mt-0.5 self-start"
               onClick={() => dismiss(t.id)}
-              aria-label={tr("common:action.dismiss")}
-            >
-              <svg
-                className="size-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                aria-hidden
-              >
-                <path d="M6 6l12 12M18 6L6 18" />
-              </svg>
-            </button>
+            />
             {t.countdown && (
               // Thin progress bar draining along the bottom edge.
               <span

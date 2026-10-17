@@ -13,8 +13,8 @@ import { InboxScreen } from "./components/inbox/InboxScreen";
 import { MovePopover } from "./components/common/MovePopover";
 import { LabelPopover } from "./components/common/LabelPopover";
 import { ThreadContextMenu } from "./components/inbox/ThreadContextMenu";
-import { Onboarding } from "./components/onboarding/Onboarding";
-import { SpaceIntro } from "./components/onboarding/SpaceIntro";
+import { AddAccountCard } from "./components/onboarding/Onboarding";
+import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
 import { SearchScreen } from "./components/search/SearchScreen";
 import { Sidebar } from "./components/common/Sidebar";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -25,8 +25,9 @@ import { LabelsPanel } from "./components/settings/LabelsPanel";
 import { SnoozePopover } from "./components/common/SnoozePopover";
 import { SplitPopover } from "./components/common/SplitPopover";
 import { Toasts } from "./components/common/Toasts";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { TopBar } from "./components/common/TopBar";
-import { setLanguage } from "./i18n";
+import i18n, { setLanguage } from "./i18n";
 import { ALL_COMMANDS } from "./keyboard/commands";
 import {
   installIframeFocusGuard,
@@ -37,7 +38,8 @@ import {
 import { call } from "./ipc/commands";
 import { checkForUpdate } from "./ipc/updater";
 import { useInstallUpdate } from "./lib/useInstallUpdate";
-import { hasSeenIntro, markIntroSeen } from "./lib/intro";
+import { applyAccent, DEFAULT_ACCENT } from "./lib/accent";
+import { applyFont } from "./lib/font";
 import { initSounds } from "./lib/sound";
 import { useDockBadge } from "./queries/dockBadge";
 import { useBackendEvents } from "./queries/events";
@@ -47,18 +49,16 @@ import { useUi, type Screen } from "./stores/ui";
 registerCommands(ALL_COMMANDS);
 
 /**
- * Preview flag: force the first-run "into space" intro + onboarding, regardless
- * of saved accounts or whether the intro was already seen. Enable it by baking
- * `VITE_INTRO=1` into the build/run - works in dev (`VITE_INTRO=1 pnpm dev`) and
- * in a test build (`VITE_INTRO=1 pnpm tauri build`) so the packaged app can show
- * it on demand. A normal shipping build (no VITE_INTRO) leaves this off, so the
- * intro only plays on a genuine first run. In dev, `?intro` on the URL also works.
+ * Preview flag: force the first-run guided setup regardless of saved accounts.
+ * Bake `VITE_ONBOARDING=1` into a run or build (`VITE_ONBOARDING=1 pnpm tauri
+ * build`) to show it in a packaged app; in dev, `?onboarding` on the URL also
+ * works. A normal shipping build leaves this off.
  */
-const PREVIEW_INTRO =
-  import.meta.env.VITE_INTRO === "1" ||
+const PREVIEW_ONBOARDING =
+  import.meta.env.VITE_ONBOARDING === "1" ||
   (import.meta.env.DEV &&
     typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).has("intro"));
+    new URLSearchParams(window.location.search).has("onboarding"));
 
 export default function App() {
   useBackendEvents();
@@ -78,20 +78,19 @@ export default function App() {
   const calendarScreen = useUi((s) => s.calendarScreen);
   const inboxEmpty = useInboxEmpty();
 
-  // First-run "into space" intro. Space is only the intro: it plays, then an exit
-  // warp fades the scene out to reveal the onboarding on its gradient backdrop.
-  // `cardReady` mounts the card (under the fading space) at reveal; `showIntro`
-  // drops the intro once the fade completes.
-  const [showIntro, setShowIntro] = useState(() => PREVIEW_INTRO || !hasSeenIntro());
-  const [cardReady, setCardReady] = useState(false);
+  // The guided setup runs from first sight of an empty account list until
+  // its last step hands off, so it outlives the moment the first account is
+  // connected (personalize, shortcuts, and sync come after). Existing
+  // installs with accounts never enter it. Derived-state update during
+  // render: React re-renders immediately, without painting the inbox first.
+  const [inFlow, setInFlow] = useState(PREVIEW_ONBOARDING);
+  if (!inFlow && !accountsLoading && accounts?.length === 0) setInFlow(true);
 
-  // Tell the backend when the startup show is out of the way (or absent):
-  // it holds back the account sync - whose OAuth token loads are the first
-  // OS keyring access - so the keychain prompt never lands on the intro.
-  // The window also launches hidden (no white flash of unstyled webview);
-  // the intro reveals it itself, and every other launch reveals it here.
+  // Tell the backend the UI is up: it holds back the account sync - whose
+  // OAuth token loads are the first OS keyring access - until the window has
+  // something to show behind a keychain prompt. The window also launches
+  // hidden (no white flash of unstyled webview) and is revealed here.
   useEffect(() => {
-    if (showIntro) return;
     void call("ui_ready", {});
     void (async () => {
       if (!("__TAURI_INTERNALS__" in window)) return;
@@ -106,11 +105,11 @@ export default function App() {
         /* the window may already be visible */
       }
     })();
-  }, [showIntro]);
+  }, []);
 
   // Replies/forwards render inside the conversation (thread stays visible);
   // only a brand-new message takes over the screen as its own compose view.
-  const screen: Screen = PREVIEW_INTRO || (!accountsLoading && accounts?.length === 0)
+  const screen: Screen = inFlow
     ? "onboarding"
     : composer != null && composer.replyTo == null
       ? "compose"
@@ -125,42 +124,33 @@ export default function App() {
   return (
     <div className="relative isolate flex h-full flex-col bg-bg0 text-ink">
       <ThreadOrderSync />
-      {(screen === "onboarding" || (screen === "inbox" && inboxEmpty)) && <AppBackdrop />}
+      {screen === "inbox" && inboxEmpty && <AppBackdrop />}
       {screen !== "onboarding" && <TopBar />}
 
-      {accountsLoading && !PREVIEW_INTRO ? (
+      {accountsLoading && !PREVIEW_ONBOARDING ? (
         <div className="flex flex-1 items-center justify-center">
           <span className="co-spinner size-5 rounded-full border-2 border-hairline-strong border-t-accent" />
         </div>
       ) : screen === "onboarding" ? (
-        <>
-          {showIntro && (
-            <SpaceIntro
-              onReveal={() => {
-                if (!PREVIEW_INTRO) markIntroSeen();
-                setCardReady(true);
-              }}
-              onFinished={() => setShowIntro(false)}
-            />
-          )}
-          {(!showIntro || cardReady) && <Onboarding />}
-        </>
+        <OnboardingFlow onDone={() => setInFlow(false)} />
       ) : (
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {screen === "compose" ? (
-            <Composer
-              key={`${composer!.mode}-${composer!.replyTo?.id ?? "new"}-${composer!.draftId ?? 0}`}
-              state={composer!}
-            />
-          ) : screen === "calendar" ? (
-            <CalendarScreen />
-          ) : screen === "conversation" ? (
-            <ConversationScreen threadId={openThreadId!} />
-          ) : screen === "search" ? (
-            <SearchScreen />
-          ) : (
-            <InboxScreen />
-          )}
+          <ErrorBoundary resetKey={`${screen}:${openThreadId ?? ""}`}>
+            {screen === "compose" ? (
+              <Composer
+                key={`${composer!.mode}-${composer!.replyTo?.id ?? "new"}-${composer!.draftId ?? 0}`}
+                state={composer!}
+              />
+            ) : screen === "calendar" ? (
+              <CalendarScreen />
+            ) : screen === "conversation" ? (
+              <ConversationScreen threadId={openThreadId!} />
+            ) : screen === "search" ? (
+              <SearchScreen />
+            ) : (
+              <InboxScreen />
+            )}
+          </ErrorBoundary>
           <CalendarDrawer />
         </div>
       )}
@@ -246,7 +236,7 @@ function useInboxEmpty(): boolean {
  * alpha - motion is pure GPU transform, so unlike a blurred layer it doesn't
  * pin WebKitGTK's compositor. Sits at z-0 under the z-10 content and shows
  * through the translucent glass chrome and inbox-zero screen. Only mounted on
- * inbox-zero (and onboarding) - with mail still in the list the chrome sits on
+ * inbox-zero - with mail still in the list the chrome sits on
  * plain opaque bg0.
  */
 function AppBackdrop() {
@@ -266,7 +256,7 @@ function AddAccountOverlay() {
   if (!open) return null;
   return (
     <div className="co-overlay flex">
-      <Onboarding onClose={() => set({ addAccountOpen: false })} />
+      <AddAccountCard onClose={() => set({ addAccountOpen: false })} />
     </div>
   );
 }
@@ -297,7 +287,7 @@ function ThreadOrderSync() {
 
   const ids = useMemo(() => {
     if (searchOpen && searchQuery.trim()) {
-      return (searchResults.data ?? []).map((t) => t.id);
+      return (searchResults.data?.threads ?? []).map((t) => t.id);
     }
     return flattenThreads(threadsQuery.data).map((t) => t.id);
   }, [searchOpen, searchQuery, searchResults.data, threadsQuery.data]);
@@ -318,6 +308,7 @@ function useThemeSync() {
   const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
   const accountThemes = settings?.accountThemes;
+  const accentColor = settings?.accentColor ?? DEFAULT_ACCENT;
   // A per-account theme override only applies while the inbox is filtered to
   // that one account. The "All accounts" view (no filter) always uses the
   // global theme - even with a single account connected - so the Preferences
@@ -329,6 +320,18 @@ function useThemeSync() {
       set({ theme: settings.theme });
     }
   }, [settings?.theme, set]);
+
+  // Follow the persisted interface font.
+  const fontFamily = settings?.fontFamily;
+  useEffect(() => {
+    if (fontFamily === undefined) return;
+    applyFont(fontFamily, () =>
+      useUi.getState().pushToast({
+        kind: "error",
+        message: i18n.t("settings:font.loadFailed", { name: fontFamily }),
+      }),
+    );
+  }, [fontFamily]);
 
   // Follow the persisted language setting.
   useEffect(() => {
@@ -348,6 +351,7 @@ function useThemeSync() {
     const apply = () => {
       const resolved = chosen === "system" ? (mq.matches ? "carbon" : "snow") : chosen;
       document.documentElement.dataset.theme = resolved;
+      applyAccent(accentColor, resolved);
       try {
         localStorage.setItem("comail:theme", resolved);
       } catch {
@@ -359,5 +363,5 @@ function useThemeSync() {
       mq.addEventListener("change", apply);
       return () => mq.removeEventListener("change", apply);
     }
-  }, [theme, effectiveAccountId, accountThemes]);
+  }, [theme, effectiveAccountId, accountThemes, accentColor]);
 }

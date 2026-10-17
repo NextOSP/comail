@@ -1,14 +1,4 @@
 {
-  "intro": {
-    "skipHint": "按任意键跳过",
-    "lines": [
-      "电子邮件，二十年未曾改变。",
-      "今天，它变了。",
-      "快速。安静。简约之美。"
-    ],
-    "title": "Comail",
-    "continue": "开始"
-  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",
@@ -54,5 +44,324 @@
   "connectionFailed": "连接失败",
   "accountConnected": "{{email}} 已连接。同步中…",
   "oauthConnected": "账户已连接。同步中…",
-  "oauthNotConfigured": "请先添加 OAuth 客户端 ID。正在打开设置，请查看 OAuth 应用下的分步指南。"
+  "oauthNotConfigured": "请先添加 OAuth 客户端 ID。正在打开设置，请查看 OAuth 应用下的分步指南。",
+  "flow": {
+    "stepOf": "第 {{n}} 步，共 {{total}} 步",
+    "back": "返回",
+    "continue": "继续",
+    "skip": "跳过",
+    "welcome": {
+      "title": "欢迎使用 Comail。",
+      "body": "快速、以键盘为先的收件箱。连接账户、选择外观、学会三个按键，即可开始。大约只需一分钟。",
+      "cta": "开始使用"
+    },
+    "connect": {
+      "title": "接入你的收件箱。",
+      "body": "Comail 直接与你的邮件服务商通信。你的密码和邮件始终不会离开这台电脑。",
+      "imap": "其他服务商（IMAP）",
+      "waiting": "等待浏览器…",
+      "waitingHint": "完成登录后，再回到这里。",
+      "cancel": "取消",
+      "connected": "已连接为 {{email}}",
+      "addAnother": "添加另一个账户"
+    },
+    "personalize": {
+      "title": "选择外观。",
+      "body": "之后可随时在命令面板（{{mod}}K）或设置中更改。",
+      "theme": "主题",
+      "accent": "强调色",
+      "themes": {
+        "snow": "浅色",
+        "carbon": "深色",
+        "system": "跟随系统"
+      }
+    },
+    "shortcuts": {
+      "title": "学会这些按键。",
+      "body": "Comail 专为键盘操作而设计。逐个试试吧，右侧的收件箱只是沙盒，不会影响你的邮件。",
+      "press": "按",
+      "groups": {
+        "navigate": "移动",
+        "triage": "整理",
+        "act": "操作",
+        "ai": "AI"
+      },
+      "down": "移到下一个会话",
+      "up": "移到上一个会话",
+      "search": "搜索一切",
+      "done": "将会话标记为完成",
+      "star": "加星标",
+      "snooze": "暂停，稍后再处理",
+      "reply": "回复",
+      "palette": "打开命令面板，无所不能",
+      "downShort": "下一个",
+      "upShort": "上一个",
+      "searchShort": "搜索",
+      "doneShort": "标记完成",
+      "starShort": "加星标",
+      "snoozeShort": "暂停",
+      "replyShort": "回复",
+      "paletteShort": "命令面板",
+      "allDone": "基础操作已掌握。在 Comail 中随时按 ? 查看所有快捷键。",
+      "progress": "已试 {{n}}/{{total}} 个",
+      "then": "然后",
+      "summarize": "总结会话",
+      "summarizeShort": "总结",
+      "aiWrite": "打开回复，然后让 AI 来写",
+      "aiWriteShort": "用 AI 撰写",
+      "proofread": "校对你的草稿",
+      "proofreadShort": "校对",
+      "ask": "打开搜索，然后向 AI 询问关于邮件的任何问题",
+      "askShort": "询问 AI",
+      "back": "返回收件箱",
+      "aiDone": "这就是 AI 工具箱。{{mod}}J 随处可用，它会读取当前上下文。"
+    },
+    "sync": {
+      "title": "{{name}}，正在准备你的邮件。",
+      "titleNoName": "正在准备你的邮件。",
+      "connecting": "正在连接服务器…",
+      "fetching": "正在获取收件箱…",
+      "ready": "收件箱已就绪。",
+      "history": "较早的邮件会在后台继续同步。",
+      "open": "打开收件箱",
+      "openAnyway": "立即打开收件箱",
+      "ofTotal_one": "/ 共 {{total}} 封邮件",
+      "ofTotal_other": "/ 共 {{total}} 封邮件"
+    },
+    "or": "或",
+    "ai": {
+      "title": "AI 只需一个键：{{mod}}J。",
+      "body": "它会识别你所在的位置。在会话中它会总结，在草稿中它会撰写，在搜索中它会回答。在沙盒中试试吧。"
+    }
+  },
+  "preview": {
+    "title": "收件箱",
+    "allAccounts": "所有账户",
+    "checkingMail": "正在检查邮件",
+    "tabs": [
+      {
+        "name": "重要",
+        "count": 6
+      },
+      {
+        "name": "GitHub",
+        "count": 3
+      },
+      {
+        "name": "新闻",
+        "count": 7
+      },
+      {
+        "name": "其他",
+        "count": 0
+      }
+    ],
+    "today": "今天",
+    "doneToast": "已标记完成",
+    "undo": "撤销",
+    "replyText": "谢谢，看起来不错。我今晚会审越一下，明天在把意见发给你。",
+    "palettePlaceholder": "输入命令…",
+    "paletteItems": [
+      {
+        "title": "标记为完成",
+        "section": "整理",
+        "key": "E"
+      },
+      {
+        "title": "暂停…",
+        "section": "整理",
+        "key": "H"
+      },
+      {
+        "title": "回复全部",
+        "section": "撰写",
+        "key": "⇧R"
+      },
+      {
+        "title": "前往已加星标",
+        "section": "导航",
+        "key": "G S"
+      }
+    ],
+    "labels": {
+      "work": "工作",
+      "followUp": "待跟进",
+      "personal": "个人"
+    },
+    "rows": [
+      {
+        "from": "林安娜",
+        "labels": [
+          "personal"
+        ],
+        "subject": "第三季度路线图评审 - 最终版幻灯片",
+        "snippet": "附件是明天评审用的最终版幻灯片，第 4-6 页有改动",
+        "time": "09:41",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "周涛",
+        "count": 4,
+        "subject": "回复：同步引擎 - 网络不稳时的 IDLE 重连",
+        "snippet": "草案看起来不错。有个小问题：退避时间每次都会重置",
+        "time": "09:12",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "北极星财务",
+        "labels": [
+          "work",
+          "followUp"
+        ],
+        "subject": "报销单缺少一张收据",
+        "snippet": "你的报销单 EXP-1187 缺少团队聚餐的一张收据",
+        "time": "08:30",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "王蕾",
+        "labels": [
+          "work"
+        ],
+        "subject": "录用通知 - 高级后端工程师",
+        "snippet": "李娜今早已口头接受，正在发送相关文件",
+        "time": "周六",
+        "starred": true,
+        "group": "earlier"
+      },
+      {
+        "from": "陈一鸣",
+        "count": 3,
+        "subject": "回复：周四一起吃晚饭？",
+        "snippet": "他来。我把你的问题转给他了，他说",
+        "time": "周六",
+        "group": "earlier"
+      },
+      {
+        "from": "刘思雨",
+        "count": 2,
+        "subject": "回复：八月去里斯本 - 换房住？",
+        "snippet": "两周对我们来说可以，房子带阳台，而且",
+        "time": "周六",
+        "group": "earlier"
+      },
+      {
+        "from": "GitHub",
+        "subject": "[comail] PR #68 已批准",
+        "snippet": "已批准，无需修改。可以合并了",
+        "time": "周五",
+        "group": "earlier"
+      },
+      {
+        "from": "方丽雅",
+        "subject": "工作室照片 + 九月日期",
+        "snippet": "开放日的照片在附件里！椅子做出来",
+        "time": "周五",
+        "group": "earlier"
+      },
+      {
+        "from": "白明",
+        "count": 2,
+        "subject": "渗透测试报告 - 待办事项",
+        "snippet": "H-1 和 H-3 已在预发布环境修复，H-2 需要决定",
+        "time": "周四",
+        "group": "earlier"
+      }
+    ],
+    "earlier": "本周",
+    "snoozeToast": "已暂停到明天",
+    "searchPlaceholder": "搜索邮件",
+    "searchQuery": "from:ana",
+    "thread": {
+      "back": "返回",
+      "position": "1/9",
+      "meta": "2 封邮件 · {{from}} · {{time}}",
+      "to": "发给你",
+      "date": "今天 09:41",
+      "body": "你好！附件是明天评审用的最终版幻灯片。第 4-6 页在周五同步会后有改动，其余部分和你之前看到的一样。能在 10 点前看一下吗？",
+      "draft": "草稿",
+      "draftTo": "发给 {{from}}",
+      "toLabel": "收件人",
+      "send": "发送"
+    },
+    "searchTitle": "搜索",
+    "search": {
+      "placeholder": "搜索邮件…",
+      "query": "from:ana",
+      "chip": "发件人：ana",
+      "hint": "来自 ana 的邮件，最新的在前。",
+      "modeSearch": "搜索",
+      "modeAsk": "询问 AI",
+      "askQuery": "路线图评审是什么时候？",
+      "askAnswer": "明天 10:00。安娜今早发来了最终版幻灯片，请你在那之前看一下第 4-6 页。",
+      "sources": "来源",
+      "results": [
+        {
+          "from": "林安娜",
+          "labels": [
+            "personal"
+          ],
+          "subject": "第三季度路线图评审 - 最终版幻灯片",
+          "snippet": "附件是明天评审用的最终版幻灯片",
+          "time": "09:41",
+          "unread": true,
+          "group": "today"
+        },
+        {
+          "from": "林安娜",
+          "subject": "董事会更新草稿 - 六月",
+          "snippet": "六月董事会更新的草稿在这里，欢迎提意见",
+          "time": "周四",
+          "group": "today"
+        },
+        {
+          "from": "林安娜",
+          "subject": "回复：会议差旅预算",
+          "snippet": "已批准，趁机票涨价前订好",
+          "time": "周二",
+          "group": "today"
+        }
+      ]
+    },
+    "summary": {
+      "title": "摘要",
+      "points": [
+        "安娜发来了明天评审用的第三季度路线图最终版幻灯片。",
+        "第 4-6 页在周五同步会后有改动，其余未变。",
+        "她希望你在 10:00 前看一下。"
+      ],
+      "nextAction": "下一步",
+      "next": "查看第 4-6 页，并在 10:00 前回复。"
+    },
+    "aiWritten": "由 AI 撰写",
+    "aiText": "谢谢发过来。我今晚会仔细看一遍，明天一早把意见反馈给你。",
+    "proofread": {
+      "badge": "校对 · 2 处修正",
+      "parts": [
+        [
+          "谢谢，看起来不错。我今晚会",
+          false
+        ],
+        [
+          "审阅",
+          true
+        ],
+        [
+          "一下，明天",
+          false
+        ],
+        [
+          "再",
+          true
+        ],
+        [
+          "把意见发给你。",
+          false
+        ]
+      ]
+    }
+  }
 }

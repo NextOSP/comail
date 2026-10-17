@@ -3,10 +3,10 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import type { CalendarEvent } from "../../ipc/types";
-import { useCalendarEvents } from "../../queries/hooks";
+import { useVisibleCalendarEvents } from "../../queries/hooks";
+import { DAY_MS } from "../../lib/calendarGrid";
 import { useUi } from "../../stores/ui";
-
-const DAY_MS = 86_400_000;
+import { isCancelled, timeLabel } from "./eventUtils";
 
 function startOfToday(): number {
   const d = new Date();
@@ -14,22 +14,10 @@ function startOfToday(): number {
   return d.getTime();
 }
 
-function timeLabel(ms: number): string {
-  return new Date(ms).toLocaleTimeString(i18n.language, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 function dayHeading(dayStart: number, todayStart: number): string {
   if (dayStart === todayStart) return i18n.t("calendar:today");
   if (dayStart === todayStart + DAY_MS) return i18n.t("calendar:tomorrow");
   return new Date(dayStart).toLocaleDateString(i18n.language, { weekday: "long", month: "short", day: "numeric" });
-}
-
-function isCancelled(ev: CalendarEvent): boolean {
-  return ev.status?.toUpperCase() === "CANCELLED" || ev.method?.toUpperCase() === "CANCEL";
 }
 
 /** Right-side calendar peek: `0` = today, `2` = next 7 days. `-`/`=` page
@@ -44,7 +32,7 @@ export function CalendarDrawer() {
   const anchor = focusDay ?? todayStart;
   const spanDays = mode === "week" ? 7 : 1;
   const rangeEnd = anchor + spanDays * DAY_MS;
-  const { data: events, isLoading } = useCalendarEvents(anchor, rangeEnd, mode != null);
+  const { data: events, isLoading } = useVisibleCalendarEvents(anchor, rangeEnd, mode != null);
 
   const byDay = useMemo(() => {
     const groups = new Map<number, CalendarEvent[]>();

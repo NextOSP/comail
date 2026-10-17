@@ -1,14 +1,4 @@
 {
-  "intro": {
-    "skipHint": "Nhấn phím bất kỳ để bỏ qua",
-    "lines": [
-      "Email đã hai mươi năm không thay đổi.",
-      "Hôm nay, điều đó thay đổi.",
-      "Nhanh. Tĩnh lặng. Đẹp trong sự giản đơn."
-    ],
-    "title": "Comail",
-    "continue": "Bắt đầu"
-  },
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",
@@ -54,5 +44,324 @@
   "connectionFailed": "Kết nối thất bại",
   "accountConnected": "Đã kết nối {{email}}. Đang đồng bộ…",
   "oauthConnected": "Đã kết nối tài khoản. Đang đồng bộ…",
-  "oauthNotConfigured": "Hãy thêm client ID OAuth của bạn trước. Đang mở Cài đặt, xem hướng dẫn từng bước trong mục Ứng dụng OAuth."
+  "oauthNotConfigured": "Hãy thêm client ID OAuth của bạn trước. Đang mở Cài đặt, xem hướng dẫn từng bước trong mục Ứng dụng OAuth.",
+  "flow": {
+    "stepOf": "Bước {{n}}/{{total}}",
+    "back": "Quay lại",
+    "continue": "Tiếp tục",
+    "skip": "Bỏ qua",
+    "welcome": {
+      "title": "Chào mừng đến với Comail.",
+      "body": "Hộp thư nhanh, ưu tiên bàn phím. Kết nối tài khoản, chọn giao diện, học ba phím là xong. Chỉ mất khoảng một phút.",
+      "cta": "Bắt đầu"
+    },
+    "connect": {
+      "title": "Kết nối hộp thư của bạn.",
+      "body": "Comail kết nối trực tiếp với nhà cung cấp của bạn. Mật khẩu và thư của bạn không bao giờ rời khỏi máy tính này.",
+      "imap": "Nhà cung cấp khác (IMAP)",
+      "waiting": "Đang chờ trình duyệt…",
+      "waitingHint": "Hoàn tất đăng nhập rồi quay lại đây.",
+      "cancel": "Hủy",
+      "connected": "Đã kết nối với {{email}}",
+      "addAnother": "Thêm tài khoản khác"
+    },
+    "personalize": {
+      "title": "Chọn giao diện.",
+      "body": "Bạn có thể đổi bất cứ lúc nào từ thanh lệnh ({{mod}}K) hoặc Cài đặt.",
+      "theme": "Giao diện",
+      "accent": "Màu nhấn",
+      "themes": {
+        "snow": "Sáng",
+        "carbon": "Tối",
+        "system": "Hệ thống"
+      }
+    },
+    "shortcuts": {
+      "title": "Học các phím tắt.",
+      "body": "Comail được thiết kế để điều khiển bằng bàn phím. Hãy thử từng phím, hộp thư bên phải chỉ là bản thử nghiệm và không ảnh hưởng đến thư của bạn.",
+      "press": "Nhấn",
+      "groups": {
+        "navigate": "Di chuyển",
+        "triage": "Phân loại",
+        "act": "Thao tác",
+        "ai": "AI"
+      },
+      "down": "Chuyển đến cuộc hội thoại tiếp theo",
+      "up": "Chuyển đến cuộc hội thoại trước",
+      "search": "Tìm kiếm mọi thứ",
+      "done": "Đánh dấu cuộc hội thoại là hoàn tất",
+      "star": "Gắn sao",
+      "snooze": "Tạm ẩn đến lúc khác",
+      "reply": "Trả lời",
+      "palette": "Mở thanh lệnh, làm được mọi thứ",
+      "downShort": "Tiếp",
+      "upShort": "Trước",
+      "searchShort": "Tìm kiếm",
+      "doneShort": "Hoàn tất",
+      "starShort": "Gắn sao",
+      "snoozeShort": "Tạm ẩn",
+      "replyShort": "Trả lời",
+      "paletteShort": "Thanh lệnh",
+      "allDone": "Bạn đã nắm được những điều cơ bản. Nhấn ? ở bất kỳ đâu trong Comail để xem mọi phím tắt.",
+      "progress": "Đã thử {{n}}/{{total}}",
+      "then": "rồi",
+      "summarize": "Tóm tắt cuộc hội thoại",
+      "summarizeShort": "Tóm tắt",
+      "aiWrite": "Mở thư trả lời, rồi để AI viết giúp",
+      "aiWriteShort": "Viết bằng AI",
+      "proofread": "Soát lỗi bản nháp",
+      "proofreadShort": "Soát lỗi",
+      "ask": "Mở tìm kiếm, rồi hỏi AI bất cứ điều gì về thư của bạn",
+      "askShort": "Hỏi AI",
+      "back": "Quay lại hộp thư đến",
+      "aiDone": "Đó là bộ công cụ AI. {{mod}}J hoạt động ở mọi nơi, nó tự hiểu ngữ cảnh."
+    },
+    "sync": {
+      "title": "Đang chuẩn bị thư cho bạn, {{name}}.",
+      "titleNoName": "Đang chuẩn bị thư của bạn.",
+      "connecting": "Đang kết nối với máy chủ…",
+      "fetching": "Đang tải hộp thư đến…",
+      "ready": "Hộp thư đến đã sẵn sàng.",
+      "history": "Thư cũ hơn tiếp tục được đồng bộ ở chế độ nền.",
+      "open": "Mở hộp thư đến",
+      "openAnyway": "Mở hộp thư đến ngay",
+      "ofTotal_one": "trên {{total}} thư",
+      "ofTotal_other": "trên {{total}} thư"
+    },
+    "or": "hoặc",
+    "ai": {
+      "title": "Một phím cho AI: {{mod}}J.",
+      "body": "Nó hiểu bạn đang ở đâu. Trong cuộc hội thoại thì tóm tắt, trong bản nháp thì viết, trong tìm kiếm thì trả lời. Hãy thử trên bản thử nghiệm."
+    }
+  },
+  "preview": {
+    "title": "Hộp thư đến",
+    "allAccounts": "Tất cả tài khoản",
+    "checkingMail": "Đang kiểm tra thư",
+    "tabs": [
+      {
+        "name": "Quan trọng",
+        "count": 6
+      },
+      {
+        "name": "GitHub",
+        "count": 3
+      },
+      {
+        "name": "Tin tức",
+        "count": 7
+      },
+      {
+        "name": "Khác",
+        "count": 0
+      }
+    ],
+    "today": "Hôm nay",
+    "doneToast": "Đã đánh dấu hoàn tất",
+    "undo": "Hoàn tác",
+    "replyText": "Cảm ơn, trông ổn đấy. Tối nay mình sẽ xme lại và gửi góp ý vào ngày mia.",
+    "palettePlaceholder": "Nhập một lệnh…",
+    "paletteItems": [
+      {
+        "title": "Đánh dấu hoàn tất",
+        "section": "Phân loại",
+        "key": "E"
+      },
+      {
+        "title": "Tạm ẩn…",
+        "section": "Phân loại",
+        "key": "H"
+      },
+      {
+        "title": "Trả lời tất cả",
+        "section": "Soạn thư",
+        "key": "⇧R"
+      },
+      {
+        "title": "Đến mục Gắn sao",
+        "section": "Điều hướng",
+        "key": "G S"
+      }
+    ],
+    "labels": {
+      "work": "Công việc",
+      "followUp": "Cần theo dõi",
+      "personal": "Cá nhân"
+    },
+    "rows": [
+      {
+        "from": "Ana Moreau",
+        "labels": [
+          "personal"
+        ],
+        "subject": "Duyệt lộ trình Q3 - bản trình chiếu cuối",
+        "snippet": "Đính kèm bản trình chiếu cuối cho buổi duyệt ngày mai, slide 4-6 đã thay đổi",
+        "time": "09:41",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Tom Okafor",
+        "count": 4,
+        "subject": "Re: Công cụ đồng bộ - kết nối lại IDLE khi wifi chập chờn",
+        "snippet": "Phác thảo ổn đấy. Có một vấn đề nhỏ: thời gian chờ thử lại bị đặt lại mỗi",
+        "time": "09:12",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Northbeam Finance",
+        "labels": [
+          "work",
+          "followUp"
+        ],
+        "subject": "Báo cáo chi phí cần bổ sung hóa đơn",
+        "snippet": "Báo cáo EXP-1187 của bạn còn thiếu một hóa đơn cho bữa tối của nhóm",
+        "time": "08:30",
+        "unread": true,
+        "group": "today"
+      },
+      {
+        "from": "Priya Raman",
+        "labels": [
+          "work"
+        ],
+        "subject": "Thư mời nhận việc - kỹ sư backend cấp cao",
+        "snippet": "Rina đã đồng ý miệng sáng nay, mình đang gửi giấy tờ",
+        "time": "T7",
+        "starred": true,
+        "group": "earlier"
+      },
+      {
+        "from": "Jonas Wehrli",
+        "count": 3,
+        "subject": "Re: Ăn tối thứ Năm nhé?",
+        "snippet": "Anh ấy tham gia. Mình đã chuyển câu hỏi của bạn và anh ấy bảo",
+        "time": "T7",
+        "group": "earlier"
+      },
+      {
+        "from": "Sofia Lindqvist",
+        "count": 2,
+        "subject": "Re: Lisbon tháng Tám - đổi nhà nhé?",
+        "snippet": "Hai tuần là ổn với bọn mình, căn hộ có ban công và",
+        "time": "T7",
+        "group": "earlier"
+      },
+      {
+        "from": "GitHub",
+        "subject": "[comail] PR #68 đã được phê duyệt",
+        "snippet": "Đã phê duyệt, không yêu cầu thay đổi. Sẵn sàng để merge",
+        "time": "T6",
+        "group": "earlier"
+      },
+      {
+        "from": "Léa Fontaine",
+        "subject": "Ảnh xưởng + lịch tháng Chín",
+        "snippet": "Đính kèm ảnh từ ngày mở cửa! Mấy chiếc ghế trông",
+        "time": "T6",
+        "group": "earlier"
+      },
+      {
+        "from": "Marcus Bell",
+        "count": 2,
+        "subject": "Báo cáo kiểm thử xâm nhập - việc cần làm",
+        "snippet": "H-1 và H-3 đã được vá trên staging, H-2 cần ra quyết định",
+        "time": "T5",
+        "group": "earlier"
+      }
+    ],
+    "earlier": "Tuần này",
+    "snoozeToast": "Đã tạm ẩn đến ngày mai",
+    "searchPlaceholder": "Tìm thư",
+    "searchQuery": "from:ana",
+    "thread": {
+      "back": "Quay lại",
+      "position": "1 trên 9",
+      "meta": "2 thư · {{from}} · {{time}}",
+      "to": "gửi bạn",
+      "date": "Hôm nay, 09:41",
+      "body": "Chào bạn! Mình đính kèm bản trình chiếu cuối cho buổi duyệt ngày mai. Slide 4-6 đã thay đổi sau buổi họp hôm thứ Sáu, phần còn lại giữ nguyên như bạn đã xem. Bạn xem qua trước 10 giờ được không?",
+      "draft": "Bản nháp",
+      "draftTo": "gửi {{from}}",
+      "toLabel": "Đến",
+      "send": "Gửi"
+    },
+    "searchTitle": "Tìm kiếm",
+    "search": {
+      "placeholder": "Tìm thư…",
+      "query": "from:ana",
+      "chip": "Từ: ana",
+      "hint": "Email từ ana, mới nhất trước.",
+      "modeSearch": "Tìm kiếm",
+      "modeAsk": "Hỏi AI",
+      "askQuery": "Buổi duyệt lộ trình là khi nào?",
+      "askAnswer": "Ngày mai lúc 10:00. Sáng nay Ana đã gửi bản trình chiếu cuối và nhờ bạn xem slide 4-6 trước giờ đó.",
+      "sources": "Nguồn",
+      "results": [
+        {
+          "from": "Ana Moreau",
+          "labels": [
+            "personal"
+          ],
+          "subject": "Duyệt lộ trình Q3 - bản trình chiếu cuối",
+          "snippet": "Đính kèm bản trình chiếu cuối cho buổi duyệt ngày mai",
+          "time": "09:41",
+          "unread": true,
+          "group": "today"
+        },
+        {
+          "from": "Ana Moreau",
+          "subject": "Bản nháp báo cáo hội đồng quản trị - tháng Sáu",
+          "snippet": "Bản nháp báo cáo hội đồng quản trị tháng Sáu đây, mời góp ý",
+          "time": "T5",
+          "group": "today"
+        },
+        {
+          "from": "Ana Moreau",
+          "subject": "Re: Ngân sách đi hội nghị",
+          "snippet": "Đã duyệt, đặt vé máy bay trước khi giá tăng nhé",
+          "time": "T3",
+          "group": "today"
+        }
+      ]
+    },
+    "summary": {
+      "title": "Tóm tắt",
+      "points": [
+        "Ana đã gửi bản trình chiếu lộ trình Q3 cuối cùng cho buổi duyệt ngày mai.",
+        "Slide 4-6 đã thay đổi sau buổi họp thứ Sáu; phần còn lại giữ nguyên.",
+        "Chị ấy muốn bạn xem trước 10:00."
+      ],
+      "nextAction": "Việc tiếp theo",
+      "next": "Xem slide 4-6 và trả lời trước 10:00."
+    },
+    "aiWritten": "Viết bằng AI",
+    "aiText": "Cảm ơn bạn đã gửi. Tối nay mình sẽ xem kỹ và gửi góp ý cho bạn ngay đầu giờ sáng mai.",
+    "proofread": {
+      "badge": "Soát lỗi · 2 chỗ sửa",
+      "parts": [
+        [
+          "Cảm ơn, trông ổn đấy. Tối nay mình sẽ ",
+          false
+        ],
+        [
+          "xem",
+          true
+        ],
+        [
+          " lại và gửi góp ý vào ngày ",
+          false
+        ],
+        [
+          "mai",
+          true
+        ],
+        [
+          ".",
+          false
+        ]
+      ]
+    }
+  }
 }

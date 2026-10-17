@@ -20,3 +20,20 @@
 - When an `en` key changes, update every locale's matching key. Missing keys
   fall back to English automatically (i18next `fallbackLng: "en"`).
 - `zh` and `vi` have no plural forms: their `_one`/`_other` variants are identical.
+
+## Glossary: Split inbox
+
+Use one name for the feature and one word for a tab, everywhere (Settings,
+tab bar, palette commands, popover, tips). Don't mix in "group"/"division".
+
+| Locale | Feature name | One tab |
+|--------|--------------|---------|
+| `en`   | Split inbox | split / tab |
+| `es`   | Bandeja dividida | pestaña |
+| `fr`   | Boîte de réception scindée | onglet |
+| `vi`   | Hộp thư chia tab | tab |
+| `zh`   | 分栏收件箱 | 分栏 |
+
+Rule descriptions join value lists with `Intl.ListFormat` (see
+`SplitsPanel.tsx`), so translations take the already-joined `{{senders}}` etc.
+`splits.routesTo` carries the arrow so RTL locales can flip it.

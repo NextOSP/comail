@@ -7,6 +7,7 @@ import {
   layoutDay,
   monthGridDays,
   msToY,
+  packSpans,
   placePopover,
   shiftEvent,
   snapMinutes,
@@ -263,5 +264,58 @@ describe("layoutDay", () => {
   it("gives a minimum height to zero-length events", () => {
     const [p] = layoutDay([mkEvent(FRI + 9 * 3_600_000, null)], FRI);
     expect(p.height).toBeGreaterThanOrEqual(18);
+  });
+});
+
+describe("packSpans", () => {
+  let seq = 1;
+  const mk = (startsAt: number, endsAt: number, allDay = true): CalendarEvent => ({
+    id: seq++,
+    accountId: 1,
+    messageId: null,
+    summary: "e",
+    location: null,
+    organizer: null,
+    description: null,
+    attendees: [],
+    joinUrl: null,
+    rsvpStatus: null,
+    isLocal: true,
+    calendarId: null,
+    rrule: null,
+    startsAt,
+    endsAt,
+    allDay,
+    status: "CONFIRMED",
+    method: "REQUEST",
+  });
+  const week = Array.from({ length: 7 }, (_, i) => at(2026, 6, 6 + i)); // Mon 6 .. Sun 12
+
+  it("spans a multi-day event across its columns, end exclusive", () => {
+    const [s] = packSpans([mk(at(2026, 6, 7), at(2026, 6, 10))], week);
+    expect([s.startCol, s.endCol, s.row]).toEqual([1, 3, 0]);
+    expect(s.clippedStart || s.clippedEnd).toBe(false);
+  });
+
+  it("clips events that run past the visible range", () => {
+    const [s] = packSpans([mk(at(2026, 6, 1), at(2026, 6, 20))], week);
+    expect([s.startCol, s.endCol]).toEqual([0, 6]);
+    expect(s.clippedStart).toBe(true);
+    expect(s.clippedEnd).toBe(true);
+  });
+
+  it("stacks overlapping bars and reuses free rows", () => {
+    const long = mk(at(2026, 6, 6), at(2026, 6, 9)); // cols 0-2
+    const mid = mk(at(2026, 6, 8), at(2026, 6, 10)); // cols 2-3, collides
+    const late = mk(at(2026, 6, 11), at(2026, 6, 12)); // col 5, free in row 0
+    const spans = packSpans([mid, late, long], week);
+    const rowOf = (ev: CalendarEvent) => spans.find((s) => s.ev.id === ev.id)!.row;
+    expect(rowOf(long)).toBe(0);
+    expect(rowOf(mid)).toBe(1);
+    expect(rowOf(late)).toBe(0);
+  });
+
+  it("drops events outside the range", () => {
+    expect(packSpans([mk(at(2026, 6, 20), at(2026, 6, 21))], week)).toEqual([]);
   });
 });

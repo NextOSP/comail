@@ -6,33 +6,14 @@ import { errorMessage } from "../../ipc/errors";
 import type { CalendarEvent, RsvpResponse } from "../../ipc/types";
 import { hasConflict } from "../../lib/availability";
 import { useCalendarEvents, useMessageEvents, useRsvpEvent } from "../../queries/hooks";
+import { DAY_MS } from "../../lib/calendarGrid";
 import { useUi } from "../../stores/ui";
-
-const DAY_MS = 86_400_000;
+import { recurrenceKey } from "./eventUtils";
 
 function startOfDay(ms: number): number {
   const d = new Date(ms);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
-}
-
-/** Short, human recurrence label from an RRULE's FREQ (falls back to generic
- *  for rules we don't spell out, so any repeat is still surfaced). */
-function recurrenceKey(rrule: string | null): string | null {
-  if (!rrule) return null;
-  const freq = /FREQ=([A-Z]+)/i.exec(rrule)?.[1]?.toUpperCase();
-  switch (freq) {
-    case "DAILY":
-      return "calendar:recurrence.daily";
-    case "WEEKLY":
-      return "calendar:recurrence.weekly";
-    case "MONTHLY":
-      return "calendar:recurrence.monthly";
-    case "YEARLY":
-      return "calendar:recurrence.yearly";
-    default:
-      return "calendar:recurrence.generic";
-  }
 }
 
 function whenLabel(ev: CalendarEvent): string {

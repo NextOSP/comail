@@ -1,0 +1,34 @@
+<!doctype html>
+<!--
+  Source for background.tiff, the macOS .dmg window background (660x400 pt).
+  Icon centers come from bundle.macOS.dmg in tauri.conf.json: Comail at
+  (180,190), Applications at (480,190). The mid-tone tray keeps Finder's icon
+  labels readable in both light mode (black) and dark mode (white).
+  Regenerate: render at 1x and 2x (e.g. headless Chrome, 660x400 viewport),
+  then `tiffutil -cathidpicheck bg@1x.png bg@2x.png -out background.tiff`.
+--><html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:660px;height:400px;overflow:hidden;font-family:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif}
+body{background:
+  radial-gradient(520px 260px at 82% -10%, rgba(124,77,255,.55), transparent 70%),
+  radial-gradient(420px 240px at 0% 110%, rgba(80,50,170,.45), transparent 70%),
+  linear-gradient(180deg,#151023 0%,#0f0b19 100%);color:#fff;position:relative}
+.title{position:absolute;top:30px;left:0;right:0;text-align:center}
+.word{font-size:13px;letter-spacing:.42em;font-weight:600;color:#d9c8ff;padding-left:.42em}
+.sub{margin-top:8px;font-size:20px;font-weight:600;letter-spacing:-.01em;color:#fff}
+.tray{position:absolute;left:60px;right:60px;top:98px;height:192px;border-radius:22px;
+  background:linear-gradient(180deg,#8a77cf 0%,#7c68c2 100%);
+  box-shadow:0 0 0 1px rgba(255,255,255,.18) inset,0 20px 50px rgba(0,0,0,.45),0 0 80px rgba(124,77,255,.25)}
+.tray:before{content:"";position:absolute;inset:0;border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,0) 45%)}
+svg{position:absolute;left:0;top:0}
+.foot{position:absolute;bottom:30px;left:0;right:0;text-align:center;font-size:12px;color:rgba(230,222,255,.62);letter-spacing:.01em}
+.foot b{color:rgba(240,235,255,.85);font-weight:600}
+</style></head><body>
+<div class="title"><div class="word">COMAIL</div><div class="sub">Drag Comail into Applications</div></div>
+<div class="tray"></div>
+<svg width="660" height="400" viewBox="0 0 660 400">
+  <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient></defs>
+  <path d="M262 190 C 300 160, 360 160, 398 190" fill="none" stroke="url(#g)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 9"/>
+  <path d="M388.2 188.9 L 400 191 L 395.2 180" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+<div class="foot">Then open Comail from Launchpad or Spotlight &nbsp;·&nbsp; <b>Free &amp; open source</b></div>
+</body></html>

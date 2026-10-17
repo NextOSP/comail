@@ -12,21 +12,14 @@ import { appVersion, checkForUpdate } from "../../ipc/updater";
 import { HEATMAP_OPACITY, heatmapLevel } from "../../lib/heatmap";
 import { useInstallUpdate } from "../../lib/useInstallUpdate";
 import type {
-  AiAutomationAction,
-  AiAutomationPlan,
-  AiAutomationRule,
   AiTier,
-  Provider,
   Settings,
-  Signature,
   SyncBackgroundPhase,
   SyncState,
   SyncStatus,
 } from "../../ipc/types";
 import { normalizeSyncStatus } from "../../lib/syncStatus";
 import { inboxTabOrder } from "../../lib/splitOrder";
-import { textToHtml } from "../../lib/richtext";
-import { RichBody } from "../compose/RichBody";
 import { queryClient } from "../../queries/client";
 import {
   useAccounts,
@@ -42,22 +35,39 @@ import {
 } from "../../queries/hooks";
 import { commandScore } from "../../keyboard/commandScore";
 import { useUi, type SettingsTab } from "../../stores/ui";
+import { AccountsSection } from "./AccountsSettings";
 import { CalendarSettings } from "./CalendarSettings";
-import { LabelsSection, SWATCHES } from "./LabelsPanel";
-import { accountColor, accountLabel } from "../../lib/format";
+import { SignaturesSection } from "./SignaturesSettings";
+import { InboxUiPicker } from "./InboxUiPicker";
+import { LabelsSection } from "./LabelsPanel";
+import { McpSection } from "./McpSettings";
+import {
+  ACCENT_PRESETS,
+  accentHex,
+  DEFAULT_ACCENT,
+  isCustomAccent,
+} from "../../lib/accent";
+import { FONT_PRESETS, normalizeFontFamily } from "../../lib/font";
+import { splitModelTags, tagsFor, toggleModelTag } from "../../lib/modelTags";
 import { SnippetsSection } from "./SnippetsPanel";
 import { SplitInboxSection } from "./SplitsPanel";
+import { CategoriesEditor } from "./CategoriesEditor";
+import { DecisionSettings } from "./DecisionSettings";
+import { RulesEditor } from "./RulesEditor";
+import { AiBadge } from "../ui/Ai";
+import { Icon } from "../ui/Icon";
 import {
-  BusyLabel,
-  ConfirmButton,
-  ghostBtnCls,
+  Button,
+  Checkbox,
+  EmptyState,
   inputCls,
+  PageHeader,
   PanelShell,
-  primaryBtnCls,
   SectionLabel,
   Segmented,
   Select,
   SettingRow,
+  SettingsGroup,
   Toggle,
 } from "./panelKit";
 
@@ -72,8 +82,13 @@ const LANGUAGE_NAMES: Record<string, string> = {
 
 const DEFAULT_SETTINGS: Settings = {
   theme: "system",
+  accentColor: DEFAULT_ACCENT,
+  fontFamily: "",
   language: "system",
   calendarWeekStart: "monday",
+  inboxUi: "classic",
+  showSenderPhotos: true,
+  showBundles: true,
   undoSendSeconds: 10,
   loadRemoteImages: false,
   aiBaseUrl: "",
@@ -99,12 +114,30 @@ const DEFAULT_SETTINGS: Settings = {
   notificationScope: "important",
   notificationTabs: [],
   soundEnabled: true,
+  copyVerificationCodes: true,
   autoAdvance: true,
   selectAdvance: true,
   autoLabelsEnabled: true,
   aiCategorize: false,
   aiCategoryPrompt: "",
   aiAutomationRules: [],
+  decisionProvider: "off",
+  decisionBaseUrl: "",
+  decisionFormat: "openrouter",
+  decisionModel: "",
+  decisionMinConfidence: 0.6,
+  decisionBackups: [],
+  decisionUseCategories: true,
+  decisionUseRules: true,
+  decisionUseSplits: true,
+  decisionChatFallback: true,
+  aiCategoryDescriptions: {},
+  mcpEnabled: false,
+  mcpPort: 47823,
+  mcpAllowDrafts: true,
+  mcpAllowSend: false,
+  mcpAllowActions: false,
+  mcpInstructions: "",
   aiTierCategorize: "instant",
   groupByDate: true,
   contactSuggestAllAccounts: false,
@@ -120,7 +153,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 /** Optimistic settings write: cache first, backend follows, rollback on error. */
-async function updateSettings(patch: Partial<Settings>) {
+export async function updateSettings(patch: Partial<Settings>) {
   const cur =
     queryClient.getQueryData<Settings>(["settings"]) ?? DEFAULT_SETTINGS;
   const next: Settings = { ...cur, ...patch };
@@ -140,12 +173,42 @@ async function updateSettings(patch: Partial<Settings>) {
 }
 
 function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
-  const paths: Record<SettingsTab, React.ReactNode> = {
-    general: (
+  if (tab === "ai") return <Icon name="sparkle" size={18} className="co-ai-icon" />;
+  const paths: Record<Exclude<SettingsTab, "ai">, React.ReactNode> = {
+    appearance: (
       <>
-        <path d="M4 7h6M14 7h6M4 17h9M17 17h3" />
-        <circle cx="12" cy="7" r="2" />
-        <circle cx="15" cy="17" r="2" />
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none" />
+      </>
+    ),
+    notifications: (
+      <>
+        <path d="M6 9a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9" />
+        <path d="M10 19a2 2 0 0 0 4 0" />
+      </>
+    ),
+    reading: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 7l9 6 9-6" />
+      </>
+    ),
+    compose: (
+      <>
+        <path d="M4 20h4L19 9l-4-4L4 16z" />
+        <path d="M13 7l4 4" />
+      </>
+    ),
+    calendar: (
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M3 10h18M8 3v4M16 3v4" />
+      </>
+    ),
+    about: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5M12 8h.01" />
       </>
     ),
     stats: (
@@ -173,17 +236,17 @@ function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
         <circle cx="8" cy="8" r="1.5" />
       </>
     ),
-    ai: (
-      <>
-        <path d="M12 3l1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2z" />
-        <path d="M18.5 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7zM5.5 14l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z" />
-      </>
-    ),
     ai_automation: (
       <>
         <path d="M5 4v5M5 15v5M19 4v5M19 15v5M5 12h14" />
         <circle cx="5" cy="12" r="3" />
         <circle cx="19" cy="12" r="3" />
+      </>
+    ),
+    mcp: (
+      <>
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path d="M7 9l2 1.5L7 12M11 12h4M9 20h6M12 16v4" />
       </>
     ),
     rag: (
@@ -236,20 +299,26 @@ export function SettingsPanel() {
   const { data: settings } = useSettings();
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [tab, setTab] = useState<SettingsTab>("appearance");
   const [query, setQuery] = useState("");
 
   const TAB_KEYS: SettingsTab[] = [
-    "general",
-    "stats",
+    "appearance",
+    "notifications",
+    "reading",
+    "compose",
+    "calendar",
     "splits",
     "snippets",
     "labels",
     "ai",
     "ai_automation",
     "rag",
+    "mcp",
     "accounts",
     "sync",
+    "stats",
+    "about",
   ];
 
   // Adopt a requested tab (sidebar chevron, "Split inbox rules" row, palette).
@@ -297,7 +366,11 @@ export function SettingsPanel() {
   };
 
   const TAB_LABELS: Record<SettingsTab, string> = {
-    general: t("settings:section.preferences"),
+    appearance: t("settings:section.appearance"),
+    notifications: t("settings:section.notifications"),
+    reading: t("settings:section.reading"),
+    compose: t("settings:section.compose"),
+    calendar: t("settings:section.calendar"),
     stats: t("settings:section.stats"),
     splits: t("settings:section.splitInbox"),
     snippets: t("settings:section.snippets"),
@@ -305,81 +378,137 @@ export function SettingsPanel() {
     ai: t("settings:section.ai"),
     ai_automation: t("settings:section.aiAutomation"),
     rag: t("settings:section.ragSearch"),
+    mcp: t("settings:section.mcp"),
     accounts: t("settings:section.accounts"),
     sync: t("settings:section.sync"),
+    about: t("settings:section.about"),
   };
 
   const TAB_GROUPS: { label: string; tabs: SettingsTab[] }[] = [
-    { label: t("settings:navigation.general"), tabs: ["general", "stats"] },
+    {
+      label: t("settings:navigation.general"),
+      tabs: ["appearance", "notifications", "reading", "compose", "calendar"],
+    },
     {
       label: t("settings:navigation.organization"),
       tabs: ["splits", "snippets", "labels"],
     },
     {
       label: t("settings:navigation.intelligence"),
-      tabs: ["ai", "ai_automation", "rag"],
+      tabs: ["ai", "ai_automation", "rag", "mcp"],
     },
-    { label: t("settings:navigation.system"), tabs: ["accounts", "sync"] },
+    {
+      label: t("settings:navigation.system"),
+      tabs: ["accounts", "sync", "stats", "about"],
+    },
   ];
 
   // Flat index of every setting, so search can jump straight to its tab.
   // `label` is localized (matches localized queries); `keywords` add English synonyms.
   const INDEX: { tab: SettingsTab; label: string; keywords: string }[] = [
     {
-      tab: "stats",
-      label: t("settings:section.stats"),
-      keywords: "statistics analytics activity sent received email heatmap volume",
+      tab: "mcp",
+      label: t("settings:section.mcp"),
+      keywords:
+        "mcp model context protocol claude code desktop chatgpt cursor vscode copilot windsurf codex gemini zed lm studio agent integration connector",
     },
     {
-      tab: "general",
+      tab: "stats",
+      label: t("settings:section.stats"),
+      keywords:
+        "statistics analytics activity sent received email heatmap volume",
+    },
+    {
+      tab: "appearance",
       label: t("settings:theme.label"),
       keywords: "appearance dark light snow carbon color",
     },
     {
-      tab: "general",
+      tab: "appearance",
+      label: t("settings:accent.label"),
+      keywords: "accent color colour highlight brand tint",
+    },
+    {
+      tab: "notifications",
+      label: t("settings:sound.label"),
+      keywords: "sound chime audio new mail",
+    },
+    {
+      tab: "notifications",
+      label: t("settings:verificationCodes.label"),
+      keywords: "verification code otp 2fa copy clipboard",
+    },
+    {
+      tab: "reading",
+      label: t("settings:selectAdvance.label"),
+      keywords: "select advance next selection",
+    },
+    {
+      tab: "calendar",
+      label: t("settings:meetingReminder.label"),
+      keywords: "meeting reminder event notify minutes before",
+    },
+    {
+      tab: "calendar",
+      label: t("settings:calendar.section"),
+      keywords: "calendar google outlook connect events",
+    },
+    {
+      tab: "appearance",
       label: t("settings:language.label"),
       keywords: "locale translation",
     },
     {
-      tab: "general",
+      tab: "calendar",
       label: t("settings:calendarWeekStart.label"),
       keywords: "calendar week start first day sunday monday",
     },
     {
-      tab: "general",
+      tab: "compose",
       label: t("settings:undoSend.label"),
       keywords: "undo send delay cancel",
     },
     {
-      tab: "general",
+      tab: "reading",
       label: t("settings:loadRemoteImages.label"),
       keywords: "images privacy tracking pixels remote",
     },
     {
-      tab: "general",
+      tab: "notifications",
       label: t("settings:notifications.label"),
       keywords:
         "notify alerts desktop scope important all tabs split inbox spam",
     },
     {
-      tab: "general",
+      tab: "notifications",
       label: t("settings:dockBadge.label"),
       keywords: "dock badge unread count icon red important",
     },
     {
-      tab: "general",
+      tab: "reading",
       label: t("settings:autoAdvance.label"),
       keywords: "auto advance next thread cursor",
     },
     {
-      tab: "general",
+      tab: "appearance",
+      label: t("settings:inboxUi.label"),
+      keywords: "inbox ui layout style avatar classic list rows look design view",
+    },
+    {
+      tab: "appearance",
+      label: t("settings:showSenderPhotos.label"),
+      keywords: "sender photos avatars gravatar pictures logos brand bimi company icons",
+    },
+    {
+      tab: "appearance",
       label: t("settings:groupByDate.label"),
       keywords: "group date today yesterday timeline headers sections",
     },
     {
-      tab: "general",
+      tab: "compose",
       label: t("settings:contactSuggestAllAccounts.label"),
-      keywords: "contacts autocomplete suggestions recipients to account domain all",
+      keywords:
+        "contacts autocomplete suggestions recipients to account domain all",
     },
     {
       tab: "splits",
@@ -407,9 +536,14 @@ export function SettingsPanel() {
       keywords: "ai provider model api key openai anthropic openrouter",
     },
     {
+      tab: "ai",
+      label: t("settings:decision.section"),
+      keywords: "decision model jev typesafe openai decisions confidence classify",
+    },
+    {
       tab: "ai_automation",
       label: t("settings:section.aiAutomation"),
-      keywords: "ai automation rules sort actions labels trash subject",
+      keywords: "ai automation rules condition sort actions labels trash subject decision",
     },
     {
       tab: "rag",
@@ -418,16 +552,17 @@ export function SettingsPanel() {
     },
     {
       tab: "ai",
-      label: "Writing voice",
+      label: t("settings:voice.section"),
       keywords: "voice draft style learn tone",
     },
     {
       tab: "accounts",
       label: t("settings:section.accounts"),
-      keywords: "accounts add remove gmail microsoft imap oauth color short name",
+      keywords:
+        "accounts add remove gmail microsoft imap oauth color short name theme",
     },
     {
-      tab: "accounts",
+      tab: "compose",
       label: t("settings:signature.section"),
       keywords: "signature sign-off footer",
     },
@@ -448,7 +583,7 @@ export function SettingsPanel() {
         "background cache caching history headers content indexing failed retry",
     },
     {
-      tab: "general",
+      tab: "about",
       label: t("settings:about.section"),
       keywords: "about version update upgrade release check",
     },
@@ -475,7 +610,7 @@ export function SettingsPanel() {
             groupIndex === 0 ? "pb-2" : "border-t border-hairline py-2"
           }
         >
-          <h3 className="mb-1 px-3 text-[10px] font-semibold tracking-[0.13em] text-ink-faint uppercase">
+          <h3 className="mb-1 px-3 text-2xs font-semibold tracking-[0.13em] text-ink-faint uppercase">
             {group.label}
           </h3>
           <div className="flex flex-col gap-0.5">
@@ -485,14 +620,14 @@ export function SettingsPanel() {
                 type="button"
                 onClick={() => goTab(k)}
                 aria-current={tab === k && q === "" ? "page" : undefined}
-                className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[13.5px] transition-colors ${
+                className={`group flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 text-left text-base transition-colors ${
                   tab === k && q === ""
                     ? "bg-accent/10 font-medium text-accent"
                     : "text-ink-muted hover:bg-bg2 hover:text-ink"
                 }`}
               >
                 <span
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-md ${
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-control ${
                     tab === k && q === ""
                       ? "bg-accent/10"
                       : "bg-bg1 group-hover:bg-bg0"
@@ -530,7 +665,7 @@ export function SettingsPanel() {
         width={940}
       >
         {results.length === 0 ? (
-          <p className="py-6 text-center text-[13px] text-ink-faint">
+          <p className="py-6 text-center text-base text-ink-faint">
             {t("settings:search.noResults", { query: q })}
           </p>
         ) : (
@@ -539,10 +674,10 @@ export function SettingsPanel() {
               <button
                 key={`${e.tab}-${i}`}
                 onClick={() => goTab(e.tab)}
-                className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-bg2"
+                className="flex items-center justify-between gap-3 rounded-control px-3 py-2 text-left hover:bg-bg2"
               >
-                <span className="text-[13.5px] text-ink">{e.label}</span>
-                <span className="shrink-0 rounded bg-bg2 px-1.5 py-px text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
+                <span className="text-base text-ink">{e.label}</span>
+                <span className="shrink-0 rounded bg-bg2 px-1.5 py-px text-2xs font-semibold tracking-wide text-ink-faint uppercase">
                   {TAB_LABELS[e.tab]}
                 </span>
               </button>
@@ -561,9 +696,21 @@ export function SettingsPanel() {
       search={search}
       width={940}
     >
-      <div className="flex flex-col gap-7">
-        {tab === "general" && (
-          <section className="flex flex-col gap-4">
+      <PageHeader
+        title={TAB_LABELS[tab]}
+        description={
+          tab === "stats"
+            ? t("settings:stats.intro")
+            : tab === "sync"
+              ? t("settings:sync.intro")
+              : t(`settings:page.${tab}`)
+        }
+        badge={tab === "ai" || tab === "ai_automation" || tab === "rag" ? <AiBadge /> : undefined}
+      />
+      <div>
+        {tab === "appearance" && (
+          <>
+            <SettingsGroup title={t("settings:groups.theme")}>
             <SettingRow
               label={t("settings:theme.label")}
               hint={t("settings:theme.hint")}
@@ -573,12 +720,70 @@ export function SettingsPanel() {
                 options={[
                   { value: "snow", label: t("settings:theme.snow") },
                   { value: "carbon", label: t("settings:theme.carbon") },
-                  { value: "holiday", label: t("settings:theme.holiday") },
                   { value: "system", label: t("settings:theme.system") },
                 ]}
                 onChange={(theme) => void updateSettings({ theme })}
               />
             </SettingRow>
+            <SettingRow
+              label={t("settings:accent.label")}
+              hint={t("settings:accent.hint")}
+            >
+              <AccentPicker
+                value={s.accentColor ?? DEFAULT_ACCENT}
+                onChange={(accentColor) => void updateSettings({ accentColor })}
+              />
+            </SettingRow>
+            </SettingsGroup>
+            <SettingsGroup title={t("settings:groups.font")}>
+              <FontPicker
+                value={s.fontFamily ?? ""}
+                onChange={(fontFamily) => void updateSettings({ fontFamily })}
+              />
+            </SettingsGroup>
+            <SettingsGroup title={t("settings:groups.inboxLayout")}>
+            <InboxUiPicker
+              value={s.inboxUi}
+              onChange={(inboxUi) => void updateSettings({ inboxUi })}
+            />
+            {s.inboxUi === "avatar" && (
+              <SettingRow
+                label={t("settings:showSenderPhotos.label")}
+                hint={t("settings:showSenderPhotos.hint")}
+              >
+                <Toggle
+                  label={t("settings:showSenderPhotos.label")}
+                  checked={s.showSenderPhotos}
+                  onChange={(showSenderPhotos) =>
+                    void updateSettings({ showSenderPhotos })
+                  }
+                />
+              </SettingRow>
+            )}
+            {s.inboxUi === "avatar" && (
+              <SettingRow
+                label={t("settings:showBundles.label")}
+                hint={t("settings:showBundles.hint")}
+              >
+                <Toggle
+                  label={t("settings:showBundles.label")}
+                  checked={s.showBundles}
+                  onChange={(showBundles) => void updateSettings({ showBundles })}
+                />
+              </SettingRow>
+            )}
+            <SettingRow
+              label={t("settings:groupByDate.label")}
+              hint={t("settings:groupByDate.hint")}
+            >
+              <Toggle
+                label={t("settings:groupByDate.label")}
+                checked={s.groupByDate}
+                onChange={(groupByDate) => void updateSettings({ groupByDate })}
+              />
+            </SettingRow>
+            </SettingsGroup>
+            <SettingsGroup title={t("settings:groups.language")}>
             <SettingRow
               label={t("settings:language.label")}
               hint={t("settings:language.hint")}
@@ -601,48 +806,13 @@ export function SettingsPanel() {
                 ))}
               </Select>
             </SettingRow>
-            <SettingRow
-              label={t("settings:calendarWeekStart.label")}
-              hint={t("settings:calendarWeekStart.hint")}
-            >
-              <Segmented
-                value={s.calendarWeekStart}
-                options={(["sunday", "monday"] as const).map((day) => ({
-                  value: day,
-                  label: t(`settings:calendarWeekStart.${day}`),
-                }))}
-                onChange={(calendarWeekStart) =>
-                  void updateSettings({ calendarWeekStart })
-                }
-              />
-            </SettingRow>
-            <SettingRow
-              label={t("settings:undoSend.label")}
-              hint={t("settings:undoSend.hint")}
-            >
-              <Segmented
-                value={s.undoSendSeconds}
-                options={[5, 10, 20, 30].map((n) => ({
-                  value: n,
-                  label: t("settings:undoSend.seconds", { n }),
-                }))}
-                onChange={(undoSendSeconds) =>
-                  void updateSettings({ undoSendSeconds })
-                }
-              />
-            </SettingRow>
-            <SettingRow
-              label={t("settings:loadRemoteImages.label")}
-              hint={t("settings:loadRemoteImages.hint")}
-            >
-              <Toggle
-                label={t("settings:loadRemoteImages.label")}
-                checked={s.loadRemoteImages}
-                onChange={(loadRemoteImages) =>
-                  void updateSettings({ loadRemoteImages })
-                }
-              />
-            </SettingRow>
+            </SettingsGroup>
+          </>
+        )}
+
+        {tab === "notifications" && (
+          <>
+            <SettingsGroup title={t("settings:groups.alerts")}>
             <SettingRow
               label={t("settings:notifications.label")}
               hint={t("settings:notifications.hint")}
@@ -684,23 +854,15 @@ export function SettingsPanel() {
                   {s.notificationScope === "tabs" && (
                     <div className="flex flex-col items-end gap-1.5 pt-1">
                       {notifyTabOptions.map((opt) => (
-                        <label
+                        <Checkbox
                           key={opt.key}
-                          className="flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-muted select-none"
-                        >
-                          <span>{opt.name}</span>
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-accent"
-                            checked={s.notificationTabs.includes(opt.key)}
-                            onChange={(e) =>
-                              toggleNotifyTab(opt.key, e.target.checked)
-                            }
-                          />
-                        </label>
+                          label={opt.name}
+                          checked={s.notificationTabs.includes(opt.key)}
+                          onChange={(on) => toggleNotifyTab(opt.key, on)}
+                        />
                       ))}
                       {notifyTabOptions.length === 0 && (
-                        <span className="text-[12px] text-ink-muted">
+                        <span className="text-sm text-ink-muted">
                           {t("settings:notificationScope.noTabs")}
                         </span>
                       )}
@@ -721,6 +883,20 @@ export function SettingsPanel() {
                 }
               />
             </SettingRow>
+            <SettingRow
+              label={t("settings:verificationCodes.label")}
+              hint={t("settings:verificationCodes.hint")}
+            >
+              <Toggle
+                label={t("settings:verificationCodes.label")}
+                checked={s.copyVerificationCodes}
+                onChange={(copyVerificationCodes) =>
+                  void updateSettings({ copyVerificationCodes })
+                }
+              />
+            </SettingRow>
+            </SettingsGroup>
+            <SettingsGroup title={t("settings:groups.dockBadge")}>
             <SettingRow
               label={t("settings:dockBadge.label")}
               hint={t("settings:dockBadge.hint")}
@@ -756,6 +932,24 @@ export function SettingsPanel() {
                 />
               </SettingRow>
             )}
+            </SettingsGroup>
+          </>
+        )}
+
+        {tab === "reading" && (
+          <SettingsGroup title={t("settings:groups.reading")}>
+            <SettingRow
+              label={t("settings:loadRemoteImages.label")}
+              hint={t("settings:loadRemoteImages.hint")}
+            >
+              <Toggle
+                label={t("settings:loadRemoteImages.label")}
+                checked={s.loadRemoteImages}
+                onChange={(loadRemoteImages) =>
+                  void updateSettings({ loadRemoteImages })
+                }
+              />
+            </SettingRow>
             <SettingRow
               label={t("settings:autoAdvance.label")}
               hint={t("settings:autoAdvance.hint")}
@@ -773,17 +967,30 @@ export function SettingsPanel() {
               <Toggle
                 label={t("settings:selectAdvance.label")}
                 checked={s.selectAdvance}
-                onChange={(selectAdvance) => void updateSettings({ selectAdvance })}
+                onChange={(selectAdvance) =>
+                  void updateSettings({ selectAdvance })
+                }
               />
             </SettingRow>
+          </SettingsGroup>
+        )}
+
+        {tab === "compose" && (
+          <>
+            <SettingsGroup title={t("settings:groups.sending")}>
             <SettingRow
-              label={t("settings:groupByDate.label")}
-              hint={t("settings:groupByDate.hint")}
+              label={t("settings:undoSend.label")}
+              hint={t("settings:undoSend.hint")}
             >
-              <Toggle
-                label={t("settings:groupByDate.label")}
-                checked={s.groupByDate}
-                onChange={(groupByDate) => void updateSettings({ groupByDate })}
+              <Segmented
+                value={s.undoSendSeconds}
+                options={[5, 10, 20, 30].map((n) => ({
+                  value: n,
+                  label: t("settings:undoSend.seconds", { n }),
+                }))}
+                onChange={(undoSendSeconds) =>
+                  void updateSettings({ undoSendSeconds })
+                }
               />
             </SettingRow>
             <SettingRow
@@ -795,6 +1002,29 @@ export function SettingsPanel() {
                 checked={s.contactSuggestAllAccounts}
                 onChange={(contactSuggestAllAccounts) =>
                   void updateSettings({ contactSuggestAllAccounts })
+                }
+              />
+            </SettingRow>
+            </SettingsGroup>
+            <SignaturesSection settings={s} />
+          </>
+        )}
+
+        {tab === "calendar" && (
+          <>
+            <SettingsGroup title={t("settings:groups.calendarView")}>
+            <SettingRow
+              label={t("settings:calendarWeekStart.label")}
+              hint={t("settings:calendarWeekStart.hint")}
+            >
+              <Segmented
+                value={s.calendarWeekStart}
+                options={(["sunday", "monday"] as const).map((day) => ({
+                  value: day,
+                  label: t(`settings:calendarWeekStart.${day}`),
+                }))}
+                onChange={(calendarWeekStart) =>
+                  void updateSettings({ calendarWeekStart })
                 }
               />
             </SettingRow>
@@ -819,39 +1049,51 @@ export function SettingsPanel() {
                 ))}
               </Select>
             </SettingRow>
-            <AboutSection />
-          </section>
+            </SettingsGroup>
+            <CalendarSettings />
+          </>
         )}
+
+        {tab === "about" && <AboutSection />}
 
         {tab === "stats" && <EmailStatsDashboard />}
 
         {tab === "splits" && (
           <>
-            <SettingRow
-              label={t("settings:autoLabels.label")}
-              hint={t("settings:autoLabels.hint")}
-            >
-              <Toggle
+            <SettingsGroup>
+              <SettingRow
                 label={t("settings:autoLabels.label")}
-                checked={s.autoLabelsEnabled}
-                onChange={(autoLabelsEnabled) =>
-                  void updateSettings({ autoLabelsEnabled })
-                }
-              />
-            </SettingRow>
+                hint={t("settings:autoLabels.hint")}
+              >
+                <Toggle
+                  label={t("settings:autoLabels.label")}
+                  checked={s.autoLabelsEnabled}
+                  onChange={(autoLabelsEnabled) =>
+                    void updateSettings({ autoLabelsEnabled })
+                  }
+                />
+              </SettingRow>
+            </SettingsGroup>
             <SplitInboxSection />
           </>
         )}
 
         {tab === "snippets" && <SnippetsSection />}
 
-        {tab === "labels" && <LabelsSection />}
+        {tab === "labels" && (
+          <LabelsSection
+            settings={s}
+            commitRules={(aiAutomationRules) =>
+              void updateSettings({ aiAutomationRules })
+            }
+          />
+        )}
 
         {tab === "ai" && (
           <>
-            <AiUsageDashboard />
-            <AiSection settings={s} page="models" />
             <VoiceSection settings={s} />
+            <AiSection settings={s} page="models" />
+            <AiUsageDashboard />
           </>
         )}
 
@@ -861,11 +1103,11 @@ export function SettingsPanel() {
 
         {tab === "rag" && <SemanticSearchSection settings={s} />}
 
+        {tab === "mcp" && <McpSection settings={s} />}
+
         {tab === "accounts" && (
           <>
             <AccountsSection />
-            <CalendarSettings />
-            <SignaturesSection settings={s} />
             <OAuthSection settings={s} />
           </>
         )}
@@ -876,6 +1118,199 @@ export function SettingsPanel() {
   );
 }
 
+/** Accent swatches (each previews its color under the active theme), plus a
+ *  rainbow swatch that opens the system color picker for any custom color. */
+function AccentPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  const resolved = document.documentElement.dataset.theme ?? "snow";
+  const custom = isCustomAccent(value);
+  // The native picker fires on every drag step; preview live through the
+  // accent variable and persist once (on change end / blur), not per step.
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (draft == null) return;
+    document.documentElement.style.setProperty("--accent", accentHex(draft, resolved));
+    const id = setTimeout(() => {
+      onChange(draft.toLowerCase());
+      setDraft(null);
+    }, 400);
+    return () => clearTimeout(id);
+  }, [draft, resolved, onChange]);
+  const commit = () => {
+    if (draft != null) {
+      onChange(draft.toLowerCase());
+      setDraft(null);
+    }
+  };
+  return (
+    <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t("settings:accent.label")}>
+      {ACCENT_PRESETS.map((p) => {
+        const selected = p.key === value;
+        const name = t(`settings:accent.colors.${p.key}`);
+        return (
+          <button
+            key={p.key}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={name}
+            title={name}
+            onClick={() => onChange(p.key)}
+            className={`flex size-6 items-center justify-center rounded-full transition-transform hover:scale-110 ${
+              selected ? "ring-2 ring-offset-2 ring-offset-bg1" : ""
+            }`}
+            style={{
+              background: accentHex(p.key, resolved),
+              ["--tw-ring-color" as string]: accentHex(p.key, resolved),
+            }}
+          >
+            {selected && <Icon name="check" size={12} className="text-on-accent" />}
+          </button>
+        );
+      })}
+      <span className="mx-1 h-5 w-px bg-hairline" aria-hidden="true" />
+      <label
+        title={t("settings:accent.custom")}
+        className={`relative flex size-6 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110 ${
+          custom ? "ring-2 ring-offset-2 ring-offset-bg1" : ""
+        }`}
+        style={{
+          background: custom
+            ? accentHex(value, resolved)
+            : "conic-gradient(#e5484d, #f5a524, #46a758, #12a5b0, #3e63dd, #8e4ec6, #e5484d)",
+          ["--tw-ring-color" as string]: custom ? accentHex(value, resolved) : undefined,
+        }}
+      >
+        {custom ? (
+          <Icon name="check" size={12} className="text-on-accent" />
+        ) : (
+          <span className="size-2.5 rounded-full bg-bg1" />
+        )}
+        <input
+          type="color"
+          aria-label={t("settings:accent.custom")}
+          className="absolute inset-0 cursor-pointer opacity-0"
+          value={custom ? value : accentHex(value, "snow")}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+        />
+      </label>
+      {custom && (
+        <span className="ml-1 font-mono text-xs text-ink-faint uppercase tabular-nums">
+          {value}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Curated font cards (each previewed in its own face) plus any Google Font by name. */
+function FontPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (family: string) => void;
+}) {
+  const { t } = useTranslation();
+  const isPreset = (FONT_PRESETS as readonly string[]).includes(value);
+  const [custom, setCustom] = useState(isPreset ? "" : value);
+
+  // Preload the preset faces so each card previews in its own font.
+  useEffect(() => {
+    const id = "comail-font-previews";
+    if (document.getElementById(id)) return;
+    const families = FONT_PRESETS.filter(Boolean)
+      .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}:wght@400;600`)
+      .join("&");
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+    document.head.appendChild(link);
+  }, []);
+
+  const applyCustom = () => {
+    const name = normalizeFontFamily(custom);
+    setCustom(name);
+    if (name && name !== value) onChange(name);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-xs text-ink-faint">{t("settings:font.hint")}</div>
+      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("settings:groups.font")}>
+        {FONT_PRESETS.map((family) => {
+          const selected = family === value;
+          const name = family || t("settings:font.system");
+          return (
+            <button
+              key={family || "system"}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => {
+                setCustom("");
+                onChange(family);
+              }}
+              className={`flex flex-col items-start gap-0.5 rounded-control border px-3 py-2 text-left transition-colors ${
+                selected
+                  ? "border-accent bg-accent/10"
+                  : "border-hairline hover:bg-bg2"
+              }`}
+              style={family ? { fontFamily: `"${family}", var(--font-sans)` } : undefined}
+            >
+              <span className="text-lg font-semibold text-ink">Aa</span>
+              <span className={`truncate text-sm ${selected ? "text-accent" : "text-ink-muted"}`}>
+                {name}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          className={`${inputCls} min-w-0 flex-1 ${!isPreset ? "!border-accent/60" : ""}`}
+          placeholder={t("settings:font.customPlaceholder")}
+          aria-label={t("settings:font.custom")}
+          value={custom}
+          spellCheck={false}
+          onChange={(e) => setCustom(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") applyCustom();
+          }}
+        />
+        <Button
+          size="sm"
+          disabled={!normalizeFontFamily(custom) || normalizeFontFamily(custom) === value}
+          onClick={applyCustom}
+        >
+          {t("settings:font.apply")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void openUrl("https://fonts.google.com")}
+        >
+          {t("settings:font.browse")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Sentinel base URL the core routes to Apple's on-device model. */
+const APPLE_AI_BASE_URL = "apple://intelligence";
+
+const isAppleAi = (baseUrl: string) =>
+  baseUrl.trim().toLowerCase().startsWith("apple:");
+
 /** Known OpenAI-compatible providers; picking one fills the base URL. */
 const AI_PROVIDER_PRESETS: {
   id: string;
@@ -884,22 +1319,28 @@ const AI_PROVIDER_PRESETS: {
   defaultModel?: string;
 }[] = [
   {
+    id: "apple",
+    label: "Apple Intelligence (on-device)",
+    baseUrl: APPLE_AI_BASE_URL,
+    defaultModel: "apple-intelligence",
+  },
+  {
     id: "openrouter",
     label: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
-    defaultModel: "openai/gpt-5.6-luna",
+    defaultModel: "openai/gpt-6-luna",
   },
   {
     id: "anthropic",
     label: "Anthropic (Claude)",
     baseUrl: "https://api.anthropic.com/v1",
-    defaultModel: "claude-sonnet-5",
+    defaultModel: "claude-sonnet-5-5",
   },
   {
     id: "openai",
     label: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
-    defaultModel: "gpt-5.6-luna",
+    defaultModel: "gpt-6-luna",
   },
   {
     id: "lmstudio",
@@ -921,19 +1362,19 @@ const AI_PROVIDER_PRESETS: {
     id: "kimi",
     label: "Kimi (Moonshot)",
     baseUrl: "https://api.moonshot.ai/v1",
-    defaultModel: "kimi-k2.6",
+    defaultModel: "kimi-k3",
   },
   {
     id: "zai",
     label: "Z.ai (GLM)",
     baseUrl: "https://api.z.ai/api/paas/v4",
-    defaultModel: "glm-5.2",
+    defaultModel: "glm-5.3",
   },
   {
     id: "deepseek",
     label: "DeepSeek",
     baseUrl: "https://api.deepseek.com/v1",
-    defaultModel: "deepseek-v4-flash",
+    defaultModel: "deepseek-v4.1-flash",
   },
   {
     id: "gemini",
@@ -1010,36 +1451,29 @@ function AboutSection() {
   }
 
   return (
-    <section className="mt-3 flex flex-col gap-4 border-t border-hairline pt-5">
-      <SectionLabel>{t("settings:about.section")}</SectionLabel>
+    <SettingsGroup title={t("settings:about.section")}>
       <SettingRow
         label={t("settings:about.version")}
         hint={t("settings:about.versionHint")}
       >
         <div className="flex items-center gap-3">
-          <span className="text-[13px] tabular-nums text-ink-muted">
+          <span className="text-base tabular-nums text-ink-muted">
             {version || "…"}
           </span>
-          <button
-            className={ghostBtnCls}
-            onClick={() => void onCheck()}
-            disabled={checking}
-          >
-            {checking
-              ? <BusyLabel>{t("settings:about.checking")}</BusyLabel>
-              : t("settings:about.checkUpdates")}
-          </button>
+          <Button size="sm" busy={checking} onClick={() => void onCheck()}>
+            {checking ? t("settings:about.checking") : t("settings:about.checkUpdates")}
+          </Button>
         </div>
       </SettingRow>
       <SettingRow
         label={t("settings:about.logs")}
         hint={t("settings:about.logsHint")}
       >
-        <button className={ghostBtnCls} onClick={() => void onOpenLogs()}>
+        <Button size="sm" onClick={() => void onOpenLogs()}>
           {t("settings:about.openLogs")}
-        </button>
+        </Button>
       </SettingRow>
-    </section>
+    </SettingsGroup>
   );
 }
 
@@ -1051,12 +1485,14 @@ function TierModelField({
   label,
   hint,
   value,
+  baseUrl,
   placeholder,
   onCommit,
 }: {
   label: string;
   hint: string;
   value: string;
+  baseUrl: string;
   placeholder: string;
   onCommit: (v: string) => void;
 }) {
@@ -1064,6 +1500,14 @@ function TierModelField({
   useEffect(() => setV(value), [value]);
   return (
     <SettingRow label={label} hint={hint}>
+      <ModelTagChips
+        model={v}
+        baseUrl={baseUrl}
+        onChange={(next) => {
+          setV(next);
+          onCommit(next);
+        }}
+      />
       <input
         value={v}
         onChange={(e) => setV(e.target.value)}
@@ -1077,6 +1521,46 @@ function TierModelField({
         className={`${inputCls} !w-[280px]`}
       />
     </SettingRow>
+  );
+}
+
+/** Toggle chips for the `:tag` suffixes the endpoint understands (see
+ *  `lib/modelTags`); hidden when there are none or no model id yet. */
+function ModelTagChips({
+  model,
+  baseUrl,
+  onChange,
+}: {
+  model: string;
+  baseUrl: string;
+  onChange: (model: string) => void;
+}) {
+  const { t } = useTranslation();
+  const offered = tagsFor(baseUrl);
+  const [base, active] = splitModelTags(model.trim());
+  if (offered.length === 0 || !base) return null;
+  return (
+    <div className="mb-1.5 flex justify-end gap-1">
+      {offered.map((tag) => {
+        const on = active.includes(tag);
+        return (
+          <button
+            key={tag}
+            type="button"
+            aria-pressed={on}
+            title={t(`settings:ai.modelTag.${tag}`)}
+            onClick={() => onChange(toggleModelTag(model, tag))}
+            className={`rounded-full border px-2 py-0.5 font-mono text-2xs transition-colors ${
+              on
+                ? "border-transparent bg-accent/15 text-accent"
+                : "border-hairline text-ink-faint hover:bg-bg2"
+            }`}
+          >
+            :{tag}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1141,7 +1625,11 @@ function EmailStatsDashboard() {
     heatmapDays.push(new Date(cursor));
   }
   const countFor = (sent: number, received: number) =>
-    metric === "sent" ? sent : metric === "received" ? received : sent + received;
+    metric === "sent"
+      ? sent
+      : metric === "received"
+        ? received
+        : sent + received;
   const activityCounts = Array.from(dayByDate.values(), (day) =>
     countFor(day.sent, day.received),
   );
@@ -1182,24 +1670,17 @@ function EmailStatsDashboard() {
 
   return (
     <section className="flex flex-col gap-3">
-      <div>
-        <SectionLabel>{t("settings:stats.section")}</SectionLabel>
-        <p className="mt-1 text-[11.5px] leading-relaxed text-ink-faint">
-          {t("settings:stats.intro")}
-        </p>
-      </div>
-
       <div className="grid grid-cols-4 gap-2">
         {summaries.map((summary) => (
           <div
             key={summary.label}
-            className="rounded-xl border border-hairline bg-bg1 px-3 py-2.5"
+            className="rounded-card border border-hairline bg-bg1 px-3 py-2.5"
           >
-            <div className="truncate text-[10.5px] font-medium text-ink-faint">
+            <div className="truncate text-2xs font-medium text-ink-faint">
               {summary.label}
             </div>
             <div
-              className="mt-1 truncate text-[18px] font-semibold tabular-nums tracking-tight text-ink"
+              className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-ink"
               title={summary.value.toLocaleString(i18n.language)}
             >
               {formatMetricCount(summary.value)}
@@ -1208,13 +1689,13 @@ function EmailStatsDashboard() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3">
+      <div className="rounded-card border border-hairline bg-bg1 px-3.5 py-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <div className="text-[12px] font-medium text-ink-muted">
+            <div className="text-sm font-medium text-ink-muted">
               {t("settings:stats.activity")}
             </div>
-            <div className="mt-0.5 text-[10.5px] text-ink-faint">
+            <div className="mt-0.5 text-2xs text-ink-faint">
               {t("settings:stats.recent")}
             </div>
           </div>
@@ -1269,7 +1750,10 @@ function EmailStatsDashboard() {
                   className="aspect-square w-full rounded-[2px] ring-1 ring-inset ring-hairline"
                   style={
                     level > 0
-                      ? { background: heatColor, opacity: HEATMAP_OPACITY[level] }
+                      ? {
+                          background: heatColor,
+                          opacity: HEATMAP_OPACITY[level],
+                        }
                       : { background: "transparent" }
                   }
                   title={title}
@@ -1279,7 +1763,7 @@ function EmailStatsDashboard() {
             })}
           </div>
         </div>
-        <div className="mt-2 flex items-center justify-end gap-1 text-[9.5px] text-ink-faint">
+        <div className="mt-2 flex items-center justify-end gap-1 text-2xs text-ink-faint">
           <span>{t("settings:ai.usage.less")}</span>
           {HEATMAP_OPACITY.map((opacity, index) => (
             <span
@@ -1340,12 +1824,12 @@ function AiUsageDashboard() {
     <section className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <SectionLabel>{t("settings:ai.usage.section")}</SectionLabel>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-faint">
+          <SectionLabel className="!mb-0">{t("settings:ai.usage.section")}</SectionLabel>
+          <p className="mt-1 text-xs leading-relaxed text-ink-faint">
             {t("settings:ai.usage.intro")}
           </p>
         </div>
-        <span className="shrink-0 text-[11.5px] tabular-nums text-ink-faint">
+        <span className="shrink-0 text-xs tabular-nums text-ink-faint">
           {t("settings:ai.usage.requests", {
             count: usage?.totalRequests ?? 0,
           })}
@@ -1356,13 +1840,13 @@ function AiUsageDashboard() {
         {summaries.map((summary) => (
           <div
             key={summary.label}
-            className="rounded-xl border border-hairline bg-bg1 px-3 py-2.5"
+            className="rounded-card border border-hairline bg-bg1 px-3 py-2.5"
           >
-            <div className="truncate text-[10.5px] font-medium text-ink-faint">
+            <div className="truncate text-2xs font-medium text-ink-faint">
               {summary.label}
             </div>
             <div
-              className="mt-1 truncate text-[18px] font-semibold tabular-nums tracking-tight text-ink"
+              className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-ink"
               title={(summary.value ?? 0).toLocaleString(i18n.language)}
             >
               {formatMetricCount(summary.value)}
@@ -1371,12 +1855,12 @@ function AiUsageDashboard() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3">
+      <div className="rounded-card border border-hairline bg-bg1 px-3.5 py-3">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <span className="text-[12px] font-medium text-ink-muted">
+          <span className="text-sm font-medium text-ink-muted">
             {t("settings:ai.usage.activity")}
           </span>
-          <span className="text-[10.5px] text-ink-faint">
+          <span className="text-2xs text-ink-faint">
             {t("settings:ai.usage.recent")}
           </span>
         </div>
@@ -1432,7 +1916,7 @@ function AiUsageDashboard() {
             })}
           </div>
         </div>
-        <div className="mt-2 flex items-center justify-end gap-1 text-[9.5px] text-ink-faint">
+        <div className="mt-2 flex items-center justify-end gap-1 text-2xs text-ink-faint">
           <span>{t("settings:ai.usage.less")}</span>
           {HEATMAP_OPACITY.map((opacity, index) => (
             <span
@@ -1449,330 +1933,6 @@ function AiUsageDashboard() {
         </div>
       </div>
     </section>
-  );
-}
-
-function AiAutomationsEditor({ settings }: { settings: Settings }) {
-  const { t } = useTranslation();
-  const { data: labels } = useLabels();
-  const { data: splits } = useSplits();
-  const pushToast = useUi((s) => s.pushToast);
-  const [draft, setDraft] = useState<AiAutomationRule | null>(null);
-  const [plan, setPlan] = useState<AiAutomationPlan | null>(null);
-  const [trying, setTrying] = useState(false);
-
-  const commitRules = (rules: AiAutomationRule[]) =>
-    void updateSettings({ aiAutomationRules: rules });
-  const targetName = (value: string) => {
-    if (value === "important") return t("inbox:split.important");
-    if (value === "other") return t("inbox:split.other");
-    if (value.startsWith("split:"))
-      return (
-        splits?.find((s) => s.id === Number(value.slice(6)))?.name ?? value
-      );
-    if (value.startsWith("label:"))
-      return (
-        labels?.find((l) => l.id === Number(value.slice(6)))?.name ?? value
-      );
-    return value;
-  };
-  const describeAction = (action: AiAutomationAction) => {
-    const base = t(`settings:ai.actions.${action.kind}`);
-    if (action.kind === "route_to")
-      return `${base}: ${targetName(action.value)}`;
-    if (action.kind === "add_label" || action.kind === "remove_label") {
-      const name =
-        labels?.find((l) => l.id === Number(action.value))?.name ??
-        action.value;
-      return `${base}: ${name}`;
-    }
-    if (action.kind === "subject_prefix" || action.kind === "body_note")
-      return `${base}: ${action.value}`;
-    return base;
-  };
-  const openRule = (rule: AiAutomationRule) => {
-    const sourcePrompt =
-      rule.sourcePrompt?.trim() ||
-      `${rule.instruction}. ${rule.actions.map(describeAction).join(", ")}.`;
-    setDraft({ ...structuredClone(rule), sourcePrompt });
-    setPlan(null);
-  };
-  const closeEditor = () => {
-    setDraft(null);
-    setPlan(null);
-  };
-  const tryPrompt = async () => {
-    if (!draft?.sourcePrompt.trim() || trying) return;
-    setTrying(true);
-    try {
-      const next = await call("ai_plan_automation", {
-        prompt: draft.sourcePrompt.trim(),
-      });
-      setPlan(next);
-      if (next.supported) {
-        setDraft((current) =>
-          current
-            ? {
-                ...current,
-                name: next.name,
-                instruction: next.instruction,
-                actions: next.actions,
-              }
-            : current,
-        );
-      }
-    } catch (err) {
-      setPlan(null);
-      pushToast({ kind: "error", message: errorMessage(err) });
-    } finally {
-      setTrying(false);
-    }
-  };
-  const valid = !!draft && !!plan?.supported && draft.actions.length > 0;
-
-  if (draft) {
-    return (
-      <div className="rounded-xl border border-hairline bg-bg1 p-4 shadow-sm">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <div className="text-[14px] font-semibold text-ink">
-              {settings.aiAutomationRules.some((r) => r.id === draft.id)
-                ? t("settings:ai.automation.editTitle")
-                : t("settings:ai.automation.newTitle")}
-            </div>
-            <p className="mt-0.5 text-[11.5px] text-ink-faint">
-              {t("settings:ai.automation.editorHint")}
-            </p>
-          </div>
-          <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10.5px] font-semibold text-accent">
-            AI
-          </span>
-        </div>
-        <div className="flex flex-col gap-3.5">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[11.5px] font-medium text-ink-faint">
-              {t("settings:ai.automation.promptLabel")}
-            </span>
-            <textarea
-              className={`${inputCls} min-h-32 resize-y leading-relaxed`}
-              value={draft.sourcePrompt}
-              onChange={(e) => {
-                setDraft({ ...draft, sourcePrompt: e.target.value });
-                setPlan(null);
-              }}
-              placeholder={t("settings:ai.automation.promptPlaceholder")}
-              rows={5}
-              autoFocus
-            />
-            <span className="text-[10.5px] leading-relaxed text-ink-faint">
-              {t("settings:ai.automation.promptHint")}
-            </span>
-          </label>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className={`${primaryBtnCls}${trying ? " co-btn-busy" : ""}`}
-              disabled={trying || !draft.sourcePrompt.trim()}
-              onClick={() => void tryPrompt()}
-            >
-              {trying ? (
-                <BusyLabel>{t("settings:ai.automation.trying")}</BusyLabel>
-              ) : (
-                t("settings:ai.automation.try")
-              )}
-            </button>
-            <span className="text-[10.5px] text-ink-faint">
-              {t("settings:ai.automation.tryHint")}
-            </span>
-          </div>
-
-          {plan && (
-            <div className="co-fade-in rounded-xl border border-hairline bg-bg0 p-3.5">
-              <div className="flex items-start gap-2.5">
-                <span
-                  className="mt-1 size-2 shrink-0 rounded-full"
-                  style={{
-                    background: plan.supported ? "var(--ok)" : "var(--danger)",
-                  }}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-ink">
-                    {plan.supported
-                      ? t("settings:ai.automation.validated", {
-                          name: plan.name,
-                        })
-                      : t("settings:ai.automation.notDoable")}
-                  </div>
-                  {plan.summary && (
-                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-faint">
-                      {plan.summary}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {plan.supported ? (
-                <div className="mt-3 flex flex-col gap-2.5 border-t border-hairline pt-3">
-                  <div>
-                    <div className="text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
-                      {t("settings:ai.automation.understoodWhen")}
-                    </div>
-                    <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
-                      {plan.instruction}
-                    </p>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
-                      {t("settings:ai.automation.understoodActions")}
-                    </div>
-                    <div className="mt-1.5 flex flex-col gap-1.5">
-                      {plan.actions.map((action, index) => (
-                        <div
-                          key={`${action.kind}-${index}`}
-                          className="flex items-center gap-2 text-[12px] text-ink-muted"
-                        >
-                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-bg2 text-[10px] font-semibold text-ink-faint">
-                            {index + 1}
-                          </span>
-                          <span>{describeAction(action)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <ul className="mt-3 flex list-disc flex-col gap-1 border-t border-hairline pt-3 pl-5 text-[11.5px] leading-relaxed text-danger">
-                  {plan.issues.map((issue, index) => (
-                    <li key={`${issue}-${index}`}>{issue}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          <div className="mt-1 flex items-center gap-2 border-t border-hairline pt-3">
-            <button
-              type="button"
-              className={primaryBtnCls}
-              disabled={!valid}
-              onClick={() => {
-                const exists = settings.aiAutomationRules.some(
-                  (r) => r.id === draft.id,
-                );
-                commitRules(
-                  exists
-                    ? settings.aiAutomationRules.map((r) =>
-                        r.id === draft.id ? draft : r,
-                      )
-                    : [...settings.aiAutomationRules, draft],
-                );
-                closeEditor();
-              }}
-            >
-              {t("settings:ai.automation.save")}
-            </button>
-            <button type="button" className={ghostBtnCls} onClick={closeEditor}>
-              {t("settings:ai.automation.cancel")}
-            </button>
-            {!plan?.supported && (
-              <span className="ml-auto text-[10.5px] text-ink-faint">
-                {t("settings:ai.automation.saveAfterTry")}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-2.5">
-      {settings.aiAutomationRules.map((rule) => (
-        <div
-          key={rule.id}
-          className="rounded-xl border border-hairline bg-bg1 px-3.5 py-3"
-        >
-          <div className="flex items-start gap-3">
-            <Toggle
-              label={rule.name}
-              checked={rule.enabled}
-              onChange={(enabled) =>
-                commitRules(
-                  settings.aiAutomationRules.map((r) =>
-                    r.id === rule.id ? { ...r, enabled } : r,
-                  ),
-                )
-              }
-            />
-            <button
-              type="button"
-              className="min-w-0 flex-1 text-left"
-              onClick={() => openRule(rule)}
-            >
-              <span className="block truncate text-[13.5px] font-medium text-ink">
-                {rule.name}
-              </span>
-              <span className="mt-0.5 block line-clamp-2 text-[11.5px] leading-relaxed text-ink-faint">
-                {rule.sourcePrompt || rule.instruction}
-              </span>
-            </button>
-            <button
-              type="button"
-              className={ghostBtnCls}
-              onClick={() => openRule(rule)}
-            >
-              {t("settings:ai.automation.edit")}
-            </button>
-            <ConfirmButton
-              label={t("settings:ai.automation.delete")}
-              confirmLabel={t("settings:ai.automation.reallyDelete")}
-              onConfirm={() =>
-                commitRules(
-                  settings.aiAutomationRules.filter((r) => r.id !== rule.id),
-                )
-              }
-            />
-          </div>
-          <div className="mt-2.5 flex flex-wrap gap-1.5 pl-[52px]">
-            {rule.actions.map((action, index) => (
-              <span
-                key={`${action.kind}-${index}`}
-                className="max-w-full truncate rounded-full border border-hairline bg-bg0 px-2 py-0.5 text-[10.5px] text-ink-muted"
-              >
-                {describeAction(action)}
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
-      {settings.aiAutomationRules.length === 0 && (
-        <div className="rounded-xl border border-dashed border-hairline bg-bg1 px-4 py-5 text-center">
-          <div className="text-[12.5px] font-medium text-ink-muted">
-            {t("settings:ai.automation.emptyTitle")}
-          </div>
-          <p className="mx-auto mt-1 max-w-md text-[11.5px] leading-relaxed text-ink-faint">
-            {t("settings:ai.automation.emptyHint")}
-          </p>
-        </div>
-      )}
-      <button
-        type="button"
-        className={`${primaryBtnCls} mt-0.5 self-start`}
-        onClick={() =>
-          setDraft({
-            id: `automation-${Date.now().toString(36)}`,
-            name: "",
-            sourcePrompt: "",
-            instruction: "",
-            enabled: true,
-            actions: [],
-          })
-        }
-      >
-        {t("settings:ai.automation.add")}
-      </button>
-    </div>
   );
 }
 
@@ -1797,6 +1957,13 @@ function AiSection({
   const [resorting, setResorting] = useState(false);
   const baseUrlRef = useRef<HTMLInputElement>(null);
   const { data: models } = useAiModels(settings.aiBaseUrl);
+  const onDevice = isAppleAi(settings.aiBaseUrl);
+  const appleState = status?.appleIntelligence ?? "unsupported";
+  // Only offer Apple Intelligence on Macs that could run it (or if it's
+  // already selected, so the picker never shows a blank choice).
+  const presets = AI_PROVIDER_PRESETS.filter(
+    (p) => p.id !== "apple" || onDevice || appleState !== "unsupported",
+  );
 
   // Follow external settings refreshes (initial load, other writers).
   useEffect(() => setBaseUrl(settings.aiBaseUrl), [settings.aiBaseUrl]);
@@ -1856,15 +2023,15 @@ function AiSection({
   };
 
   return (
-    <section className="flex flex-col gap-4">
+    <section>
       {page === "models" ? (
         <>
-          <SectionLabel>{t("settings:section.ai")}</SectionLabel>
+          <SettingsGroup title={t("settings:groups.models")}>
           <SettingRow
             label={t("settings:ai.statusLabel")}
             hint={t("settings:ai.statusHint")}
           >
-            <span className="flex items-center gap-2 text-[12.5px] text-ink-muted">
+            <span className="flex items-center gap-2 text-sm text-ink-muted">
               <span
                 className="size-2 rounded-full"
                 style={{
@@ -1873,51 +2040,65 @@ function AiSection({
               />
               {status
                 ? status.configured
-                  ? t("settings:ai.configured", { model: status.model })
-                  : t("settings:ai.notConfigured")
+                  ? onDevice
+                    ? t("settings:ai.appleReady")
+                    : t("settings:ai.configured", { model: status.model })
+                  : onDevice
+                    ? t(`settings:ai.appleState.${appleState}`)
+                    : t("settings:ai.notConfigured")
                 : t("settings:ai.loading")}
             </span>
           </SettingRow>
-          <SettingRow
-            label={t("settings:ai.apiKeyLabel")}
-            hint={t("settings:ai.apiKeyHint")}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveKey();
-                }}
-                placeholder={t("settings:ai.apiKeyPlaceholder")}
-                autoComplete="off"
-                className={`${inputCls} !w-[220px]`}
-              />
-              <button
-                className={primaryBtnCls}
-                disabled={savingKey}
-                onClick={() => void saveKey()}
-              >
-                {t("settings:ai.save")}
-              </button>
-            </div>
-          </SettingRow>
+          {!onDevice && (
+            <SettingRow
+              label={t("settings:ai.apiKeyLabel")}
+              hint={t("settings:ai.apiKeyHint")}
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveKey();
+                  }}
+                  placeholder={t("settings:ai.apiKeyPlaceholder")}
+                  autoComplete="off"
+                  className={`${inputCls} !w-[220px]`}
+                />
+                <Button
+                  variant="primary"
+                  busy={savingKey}
+                  onClick={() => void saveKey()}
+                >
+                  {t("settings:ai.save")}
+                </Button>
+              </div>
+            </SettingRow>
+          )}
           <SettingRow
             label={t("settings:ai.providerLabel")}
-            hint={t("settings:ai.providerHint")}
+            hint={
+              onDevice
+                ? t("settings:ai.appleProviderHint")
+                : t("settings:ai.providerHint")
+            }
           >
             <Select
               value={
                 forceCustom
                   ? "custom"
-                  : (AI_PROVIDER_PRESETS.find(
-                      (p) => p.baseUrl === settings.aiBaseUrl,
-                    )?.id ?? "custom")
+                  : onDevice
+                    ? "apple"
+                    : (AI_PROVIDER_PRESETS.find(
+                        (p) => p.baseUrl === settings.aiBaseUrl,
+                      )?.id ?? "custom")
               }
               onChange={(e) => {
                 if (e.target.value === "custom") {
-                  // Keep whatever URL is set and hand focus to the field below.
+                  // Keep whatever URL is set and hand focus to the field below
+                  // (the on-device sentinel isn't a URL anyone wants to edit).
+                  if (onDevice) void updateSettings({ aiBaseUrl: "" });
                   setForceCustom(true);
                   baseUrlRef.current?.focus();
                   baseUrlRef.current?.select();
@@ -1937,7 +2118,7 @@ function AiSection({
               }}
               className="!w-[280px]"
             >
-              {AI_PROVIDER_PRESETS.map((p) => (
+              {presets.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                 </option>
@@ -1945,116 +2126,152 @@ function AiSection({
               <option value="custom">{t("settings:ai.customProvider")}</option>
             </Select>
           </SettingRow>
-          <SettingRow
-            label={t("settings:ai.baseUrlLabel")}
-            hint={t("settings:ai.baseUrlHint")}
-          >
-            <input
-              ref={baseUrlRef}
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              onBlur={() => commitField({ aiBaseUrl: baseUrl.trim() })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter")
-                  commitField({ aiBaseUrl: baseUrl.trim() });
-              }}
-              placeholder={t("settings:ai.baseUrlPlaceholder")}
-              spellCheck={false}
-              className={`${inputCls} !w-[280px]`}
-            />
-          </SettingRow>
-          <SettingRow
-            label={t("settings:ai.modelLabel")}
-            hint={
-              models && models.length > 0
-                ? t("settings:ai.modelsAvailable", { n: models.length })
-                : t("settings:ai.modelHintEmpty")
-            }
-          >
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              onBlur={() => commitField({ aiModel: model.trim() })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitField({ aiModel: model.trim() });
-              }}
-              placeholder={t("settings:ai.modelPlaceholder")}
-              spellCheck={false}
-              list="ai-model-options"
-              className={`${inputCls} !w-[280px]`}
-            />
-            <datalist id="ai-model-options">
-              {(models ?? []).map((id) => (
-                <option key={id} value={id} />
-              ))}
-            </datalist>
-          </SettingRow>
+          {!onDevice && (
+            <>
+              <SettingRow
+                label={t("settings:ai.baseUrlLabel")}
+                hint={t("settings:ai.baseUrlHint")}
+              >
+                <input
+                  ref={baseUrlRef}
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  onBlur={() => commitField({ aiBaseUrl: baseUrl.trim() })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter")
+                      commitField({ aiBaseUrl: baseUrl.trim() });
+                  }}
+                  placeholder={t("settings:ai.baseUrlPlaceholder")}
+                  spellCheck={false}
+                  className={`${inputCls} !w-[280px]`}
+                />
+              </SettingRow>
+              <SettingRow
+                label={t("settings:ai.modelLabel")}
+                hint={
+                  models && models.length > 0
+                    ? t("settings:ai.modelsAvailable", { n: models.length })
+                    : t("settings:ai.modelHintEmpty")
+                }
+              >
+                <ModelTagChips
+                  model={model}
+                  baseUrl={settings.aiBaseUrl}
+                  onChange={(next) => {
+                    setModel(next);
+                    commitField({ aiModel: next });
+                  }}
+                />
+                <input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  onBlur={() => commitField({ aiModel: model.trim() })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter")
+                      commitField({ aiModel: model.trim() });
+                  }}
+                  placeholder={t("settings:ai.modelPlaceholder")}
+                  spellCheck={false}
+                  list="ai-model-options"
+                  className={`${inputCls} !w-[280px]`}
+                />
+                <datalist id="ai-model-options">
+                  {(models ?? []).map((id) => (
+                    <option key={id} value={id} />
+                  ))}
+                </datalist>
+              </SettingRow>
+            </>
+          )}
+          </SettingsGroup>
+          <DecisionSettings
+            settings={settings}
+            update={(patch) => void updateSettings(patch)}
+          />
+          {!onDevice && (
+            <>
+              <SettingsGroup
+                title={t("settings:ai.tiersSection")}
+                description={t("settings:ai.tiersIntro")}
+              >
+              <TierModelField
+                label={t("settings:ai.tier.instant")}
+                hint={t("settings:ai.tierInstantHint")}
+                value={settings.aiModelInstant}
+                baseUrl={settings.aiBaseUrl}
+                placeholder={t("settings:ai.tierFallback")}
+                onCommit={(v) => commitField({ aiModelInstant: v })}
+              />
+              <TierModelField
+                label={t("settings:ai.tier.cheap")}
+                hint={t("settings:ai.tierCheapHint")}
+                value={settings.aiModelCheap}
+                baseUrl={settings.aiBaseUrl}
+                placeholder={t("settings:ai.tierFallback")}
+                onCommit={(v) => commitField({ aiModelCheap: v })}
+              />
+              <TierModelField
+                label={t("settings:ai.tier.intelligent")}
+                hint={t("settings:ai.tierIntelligentHint")}
+                value={settings.aiModelIntelligent}
+                baseUrl={settings.aiBaseUrl}
+                placeholder={t("settings:ai.tierFallback")}
+                onCommit={(v) => commitField({ aiModelIntelligent: v })}
+              />
+              </SettingsGroup>
 
-          <SectionLabel>{t("settings:ai.tiersSection")}</SectionLabel>
-          <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
-            {t("settings:ai.tiersIntro")}
-          </p>
-          <TierModelField
-            label={t("settings:ai.tier.instant")}
-            hint={t("settings:ai.tierInstantHint")}
-            value={settings.aiModelInstant}
-            placeholder={t("settings:ai.tierFallback")}
-            onCommit={(v) => commitField({ aiModelInstant: v })}
-          />
-          <TierModelField
-            label={t("settings:ai.tier.cheap")}
-            hint={t("settings:ai.tierCheapHint")}
-            value={settings.aiModelCheap}
-            placeholder={t("settings:ai.tierFallback")}
-            onCommit={(v) => commitField({ aiModelCheap: v })}
-          />
-          <TierModelField
-            label={t("settings:ai.tier.intelligent")}
-            hint={t("settings:ai.tierIntelligentHint")}
-            value={settings.aiModelIntelligent}
-            placeholder={t("settings:ai.tierFallback")}
-            onCommit={(v) => commitField({ aiModelIntelligent: v })}
-          />
-
-          <SectionLabel>{t("settings:ai.routingSection")}</SectionLabel>
-          <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
-            {t("settings:ai.routingIntro")}
-          </p>
-          <ScenarioRouteRow
-            label={t("settings:ai.routeAsk")}
-            hint={t("settings:ai.routeAskHint")}
-            value={settings.aiTierAsk}
-            onChange={(v) => commitField({ aiTierAsk: v })}
-            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-          />
-          <ScenarioRouteRow
-            label={t("settings:ai.routeDraft")}
-            hint={t("settings:ai.routeDraftHint")}
-            value={settings.aiTierDraft}
-            onChange={(v) => commitField({ aiTierDraft: v })}
-            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-          />
-          <ScenarioRouteRow
-            label={t("settings:ai.routeSummarize")}
-            hint={t("settings:ai.routeSummarizeHint")}
-            value={settings.aiTierSummarize}
-            onChange={(v) => commitField({ aiTierSummarize: v })}
-            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-          />
-          <ScenarioRouteRow
-            label={t("settings:ai.routeVoice")}
-            hint={t("settings:ai.routeVoiceHint")}
-            value={settings.aiTierVoice}
-            onChange={(v) => commitField({ aiTierVoice: v })}
-            tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-          />
+              <details className="group mb-6">
+                <summary className="mb-2 flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold tracking-[0.12em] text-ink-faint uppercase hover:text-ink-muted">
+                  <Icon
+                    name="chevronRight"
+                    size={12}
+                    className="transition-transform group-open:rotate-90"
+                  />
+                  {t("settings:groups.advanced")}
+                </summary>
+              <SettingsGroup
+                title={t("settings:ai.routingSection")}
+                description={t("settings:ai.routingIntro")}
+              >
+              <ScenarioRouteRow
+                label={t("settings:ai.routeAsk")}
+                hint={t("settings:ai.routeAskHint")}
+                value={settings.aiTierAsk}
+                onChange={(v) => commitField({ aiTierAsk: v })}
+                tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+              />
+              <ScenarioRouteRow
+                label={t("settings:ai.routeDraft")}
+                hint={t("settings:ai.routeDraftHint")}
+                value={settings.aiTierDraft}
+                onChange={(v) => commitField({ aiTierDraft: v })}
+                tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+              />
+              <ScenarioRouteRow
+                label={t("settings:ai.routeSummarize")}
+                hint={t("settings:ai.routeSummarizeHint")}
+                value={settings.aiTierSummarize}
+                onChange={(v) => commitField({ aiTierSummarize: v })}
+                tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+              />
+              <ScenarioRouteRow
+                label={t("settings:ai.routeVoice")}
+                hint={t("settings:ai.routeVoiceHint")}
+                value={settings.aiTierVoice}
+                onChange={(v) => commitField({ aiTierVoice: v })}
+                tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+              />
+              </SettingsGroup>
+              </details>
+            </>
+          )}
         </>
       ) : (
         <>
-          <SectionLabel>{t("settings:ai.categorizeSection")}</SectionLabel>
-          <p className="-mt-1 text-[12px] leading-relaxed text-ink-faint">
-            {t("settings:ai.categorizeIntro")}
-          </p>
+          <SettingsGroup
+            title={t("settings:ai.categorizeSection")}
+            description={t("settings:ai.categorizeIntro")}
+          >
           <SettingRow
             label={t("settings:ai.categorizeLabel")}
             hint={t("settings:ai.categorizeHint")}
@@ -2065,23 +2282,56 @@ function AiSection({
               onChange={(aiCategorize) => void updateSettings({ aiCategorize })}
             />
           </SettingRow>
+          {settings.aiCategorize && !onDevice && (
+            <ScenarioRouteRow
+              label={t("settings:ai.routeCategorize")}
+              hint={t("settings:ai.routeCategorizeHint")}
+              value={settings.aiTierCategorize}
+              onChange={(v) => commitField({ aiTierCategorize: v })}
+              tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
+            />
+          )}
+          <SettingRow
+            label={t("settings:ai.resortLabel")}
+            hint={t("settings:ai.resortHint")}
+          >
+            <Button size="sm" busy={resorting} onClick={() => void resort()}>
+              {resorting ? t("settings:ai.resorting") : t("settings:ai.resort")}
+            </Button>
+          </SettingRow>
+          </SettingsGroup>
+          <SettingsGroup
+            title={t("settings:rules.section")}
+            description={t("settings:rules.intro")}
+          >
+            <RulesEditor
+              settings={settings}
+              commit={(aiAutomationRules) =>
+                void updateSettings({ aiAutomationRules })
+              }
+            />
+          </SettingsGroup>
           {settings.aiCategorize && (
-            <>
-              <AiAutomationsEditor settings={settings} />
-              <details className="group rounded-xl border border-hairline bg-bg1">
-                <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-[12.5px] font-medium text-ink-muted">
+            <div className="flex flex-col gap-3">
+              <SettingsGroup
+                title={t("settings:categories.section")}
+                description={t("settings:categories.intro")}
+              >
+                <div className="px-4 py-3.5">
+                  <CategoriesEditor
+                    settings={settings}
+                    update={(patch) => void updateSettings(patch)}
+                  />
+                </div>
+              </SettingsGroup>
+              <details className="group rounded-card border border-hairline bg-bg1">
+                <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-sm font-medium text-ink-muted">
                   <span>{t("settings:ai.categoryPromptLabel")}</span>
-                  <svg
+                  <Icon
+                    name="chevronDown"
+                    size={14}
                     className="transition-transform group-open:rotate-180"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                  >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
+                  />
                 </summary>
                 <div className="flex flex-col gap-2 border-t border-hairline px-3.5 py-3">
                   <textarea
@@ -2096,38 +2346,15 @@ function AiSection({
                     rows={6}
                     spellCheck={false}
                     placeholder={t("settings:ai.categoryPromptPlaceholder")}
-                    className={`${inputCls} w-full resize-y !text-[12px] leading-relaxed`}
+                    className={`${inputCls} w-full resize-y !text-sm leading-relaxed`}
                   />
-                  <p className="text-[11.5px] text-ink-faint">
+                  <p className="text-xs text-ink-faint">
                     {t("settings:ai.categoryPromptHint")}
                   </p>
                 </div>
               </details>
-              <ScenarioRouteRow
-                label={t("settings:ai.routeCategorize")}
-                hint={t("settings:ai.routeCategorizeHint")}
-                value={settings.aiTierCategorize}
-                onChange={(v) => commitField({ aiTierCategorize: v })}
-                tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
-              />
-            </>
+            </div>
           )}
-          <SettingRow
-            label={t("settings:ai.resortLabel")}
-            hint={t("settings:ai.resortHint")}
-          >
-            <button
-              className={`${primaryBtnCls}${resorting ? " co-btn-busy" : ""}`}
-              disabled={resorting}
-              onClick={() => void resort()}
-            >
-              {resorting ? (
-                <BusyLabel>{t("settings:ai.resorting")}</BusyLabel>
-              ) : (
-                t("settings:ai.resort")
-              )}
-            </button>
-          </SettingRow>
         </>
       )}
     </section>
@@ -2151,8 +2378,23 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
   const { data: status } = useEmbeddingStatus();
   const pushToast = useUi((s) => s.pushToast);
   const [reindexing, setReindexing] = useState(false);
+  const [clearingHistory, setClearingHistory] = useState(false);
 
   const on = settings.embeddingBackend === "local";
+
+  // Search learns from the results you open; this forgets all of it.
+  const clearHistory = async () => {
+    setClearingHistory(true);
+    try {
+      await call("clear_search_history", {});
+      pushToast({ kind: "info", message: t("settings:rag.historyCleared"), durationMs: 2500 });
+      void queryClient.invalidateQueries({ queryKey: ["search"] });
+    } catch (err) {
+      pushToast({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setClearingHistory(false);
+    }
+  };
   const pct =
     status && status.total > 0
       ? Math.round((status.embedded / status.total) * 100)
@@ -2164,7 +2406,7 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
       const n = await call("semantic_reindex", {});
       pushToast({
         kind: "info",
-        message: `Re-indexing ${n} messages…`,
+        message: t("settings:rag.reindexToast", { count: n }),
         durationMs: 2500,
       });
       void queryClient.invalidateQueries({ queryKey: ["embeddingStatus"] });
@@ -2176,30 +2418,24 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
   };
 
   return (
-    <section className="flex flex-col gap-4">
-      <SectionLabel>{t("settings:section.ragSearch")}</SectionLabel>
+    <SettingsGroup>
       <SettingRow
-        label="Semantic search"
-        hint="Runs a small model on-device to find mail by meaning, not just keywords. Fully offline."
+        label={t("settings:rag.toggleLabel")}
+        hint={t("settings:rag.toggleHint")}
       >
-        <Segmented
-          value={settings.embeddingBackend}
-          options={[
-            { value: "local", label: "On (local)" },
-            { value: "off", label: "Off" },
-          ]}
-          onChange={(embeddingBackend) =>
-            void updateSettings({
-              embeddingBackend: embeddingBackend as "local" | "off",
-            })
+        <Toggle
+          label={t("settings:rag.toggleLabel")}
+          checked={on}
+          onChange={(enabled) =>
+            void updateSettings({ embeddingBackend: enabled ? "local" : "off" })
           }
         />
       </SettingRow>
       {on && (
         <>
           <SettingRow
-            label="Model"
-            hint="Larger models are more accurate but slower to index."
+            label={t("settings:rag.modelLabel")}
+            hint={t("settings:rag.modelHint")}
           >
             <Select
               value={settings.embeddingModel}
@@ -2216,12 +2452,22 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
             </Select>
           </SettingRow>
           <SettingRow
-            label="Index"
+            label={t("settings:rag.indexLabel")}
             hint={
               status
                 ? status.ready
-                  ? `${status.embedded.toLocaleString()} / ${status.total.toLocaleString()} messages indexed${status.pending ? ` · ${status.pending.toLocaleString()} queued` : ""}`
-                  : "Loading model…"
+                  ? `${t("settings:rag.indexStatus", {
+                      embedded: status.embedded.toLocaleString(i18n.language),
+                      total: status.total.toLocaleString(i18n.language),
+                    })}${
+                      status.pending
+                        ? ` · ${t("settings:rag.indexQueued", {
+                            count: status.pending,
+                            n: status.pending.toLocaleString(i18n.language),
+                          })}`
+                        : ""
+                    }`
+                  : t("settings:rag.loadingModel")
                 : "…"
             }
           >
@@ -2236,23 +2482,28 @@ function SemanticSearchSection({ settings }: { settings: Settings }) {
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <button
-                className={ghostBtnCls}
-                disabled={reindexing}
-                onClick={() => void reindex()}
-              >
-                {reindexing ? <BusyLabel>Rebuilding…</BusyLabel> : "Rebuild"}
-              </button>
+              <Button size="sm" busy={reindexing} onClick={() => void reindex()}>
+                {reindexing ? t("settings:rag.rebuilding") : t("settings:rag.rebuild")}
+              </Button>
             </div>
           </SettingRow>
         </>
       )}
-    </section>
+      <SettingRow
+        label={t("settings:rag.historyLabel")}
+        hint={t("settings:rag.historyHint")}
+      >
+        <Button size="sm" busy={clearingHistory} onClick={() => void clearHistory()}>
+          {t("settings:rag.historyClear")}
+        </Button>
+      </SettingRow>
+    </SettingsGroup>
   );
 }
 
 /** Writing voice: learn a style profile from sent mail and draft in it. */
 function VoiceSection({ settings }: { settings: Settings }) {
+  const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
   const learn = useLearnVoice();
   const [profile, setProfile] = useState(settings.voiceProfile);
@@ -2266,7 +2517,7 @@ function VoiceSection({ settings }: { settings: Settings }) {
         setProfile(p);
         pushToast({
           kind: "info",
-          message: "Learned your writing voice",
+          message: t("settings:voice.learnedToast"),
           durationMs: 2500,
         });
       },
@@ -2275,55 +2526,53 @@ function VoiceSection({ settings }: { settings: Settings }) {
   };
 
   return (
-    <section className="flex flex-col gap-4">
-      <SectionLabel>Writing voice</SectionLabel>
+    <SettingsGroup title={t("settings:voice.section")}>
       <SettingRow
-        label="Draft in my voice"
-        hint="AI drafts imitate how you write, learned from your sent mail and similar past replies."
+        label={t("settings:voice.draftLabel")}
+        hint={t("settings:voice.draftHint")}
       >
         <Toggle
-          label="Draft in my voice"
+          label={t("settings:voice.draftLabel")}
           checked={settings.voiceDrafting}
           onChange={(voiceDrafting) => void updateSettings({ voiceDrafting })}
         />
       </SettingRow>
       <SettingRow
-        label="Voice profile"
+        label={t("settings:voice.profileLabel")}
         hint={
           learned
-            ? `Learned ${new Date(settings.voiceLearnedAt).toLocaleDateString(i18n.language)}`
-            : "Not learned yet - needs some sent mail."
+            ? t("settings:voice.learnedOn", {
+                date: new Date(settings.voiceLearnedAt).toLocaleDateString(i18n.language),
+              })
+            : t("settings:voice.notLearned")
         }
       >
-        <button
-          className={`${primaryBtnCls}${learn.isPending ? " co-btn-busy" : ""}`}
-          disabled={learn.isPending}
-          onClick={runLearn}
-        >
-          {learn.isPending ? (
-            <BusyLabel>Learning…</BusyLabel>
-          ) : learned ? (
-            "Re-learn my voice"
-          ) : (
-            "Learn my voice"
-          )}
-        </button>
+        <Button variant="ai" size="sm" busy={learn.isPending} onClick={runLearn}>
+          {learn.isPending
+            ? t("settings:voice.learning")
+            : learned
+              ? t("settings:voice.relearn")
+              : t("settings:voice.learn")}
+        </Button>
       </SettingRow>
       {(learned || profile) && (
-        <textarea
-          value={profile}
-          onChange={(e) => setProfile(e.target.value)}
-          onBlur={() => {
-            if (profile !== settings.voiceProfile)
-              void updateSettings({ voiceProfile: profile });
-          }}
-          rows={5}
-          spellCheck={false}
-          placeholder="Your writing-style profile"
-          className={`${inputCls} w-full resize-y font-mono !text-[12px] leading-relaxed`}
-        />
+        <div>
+          <textarea
+            value={profile}
+            onChange={(e) => setProfile(e.target.value)}
+            onBlur={() => {
+              if (profile !== settings.voiceProfile)
+                void updateSettings({ voiceProfile: profile });
+            }}
+            rows={5}
+            spellCheck={false}
+            placeholder={t("settings:voice.profilePlaceholder")}
+            aria-label={t("settings:voice.profileLabel")}
+            className={`${inputCls} w-full resize-y font-mono !text-sm leading-relaxed`}
+          />
+        </div>
       )}
-    </section>
+    </SettingsGroup>
   );
 }
 
@@ -2400,18 +2649,18 @@ function OAuthGuide() {
     },
   ];
   return (
-    <details className="rounded-lg border border-hairline bg-bg0 px-3.5 py-2.5">
-      <summary className="cursor-pointer text-[12.5px] font-medium text-ink-muted select-none">
+    <details>
+      <summary className="cursor-pointer text-sm font-medium text-ink-muted select-none">
         {t("settings:oauth.guide.title")}
       </summary>
-      <div className="mt-3 flex flex-col gap-4 text-[12.5px] leading-relaxed text-ink-muted">
+      <div className="mt-3 flex flex-col gap-4 text-sm leading-relaxed text-ink-muted">
         {providers.map((p) => (
           <div key={p.key}>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <span className="font-semibold text-ink">{p.title}</span>
-              <button className={ghostBtnCls} onClick={() => open(p.url)}>
+              <Button size="sm" onClick={() => open(p.url)}>
                 {p.linkLabel}
-              </button>
+              </Button>
             </div>
             <ol className="flex list-decimal flex-col gap-1 pl-5">
               {p.steps.map((k) => (
@@ -2419,19 +2668,19 @@ function OAuthGuide() {
               ))}
             </ol>
             {p.note && (
-              <p className="mt-2 rounded-md bg-bg2 px-2.5 py-1.5 text-[11.5px] text-ink-faint">
+              <p className="mt-2 rounded-control bg-bg2 px-2.5 py-1.5 text-xs text-ink-faint">
                 {p.note}
               </p>
             )}
           </div>
         ))}
         <div className="flex items-center justify-between gap-2 border-t border-hairline pt-3">
-          <span className="text-[11.5px] text-ink-faint">
+          <span className="text-xs text-ink-faint">
             {t("settings:oauth.guide.docsHint")}
           </span>
-          <button className={ghostBtnCls} onClick={() => open(OAUTH_DOCS_URL)}>
+          <Button size="sm" onClick={() => open(OAUTH_DOCS_URL)}>
             {t("settings:oauth.guide.viewDocs")}
-          </button>
+          </Button>
         </div>
       </div>
     </details>
@@ -2441,14 +2690,15 @@ function OAuthGuide() {
 function OAuthSection({ settings }: { settings: Settings }) {
   const { t } = useTranslation();
   return (
-    <section className="flex flex-col gap-4">
-      <SectionLabel>{t("settings:section.oauthApps")}</SectionLabel>
-      <p className="text-[12.5px] leading-relaxed text-ink-faint">
+    <SettingsGroup
+      title={t("settings:section.oauthApps")}
+      description={
         <Trans
           i18nKey="settings:oauth.description"
           components={{ b: <b />, code: <code /> }}
         />
-      </p>
+      }
+    >
       <OAuthGuide />
       <OAuthField
         settings={settings}
@@ -2479,7 +2729,7 @@ function OAuthSection({ settings }: { settings: Settings }) {
         placeholder={t("settings:oauth.msClientSecretPlaceholder")}
         secret
       />
-    </section>
+    </SettingsGroup>
   );
 }
 
@@ -2579,20 +2829,10 @@ function SyncSection() {
   };
 
   return (
-    <section className="flex flex-col gap-4">
-      <div>
-        <SectionLabel>{t("settings:section.sync")}</SectionLabel>
-        <p className="text-[12.5px] leading-relaxed text-ink-faint">
-          {t("settings:sync.intro")}
-        </p>
-      </div>
-
-      {(accounts ?? []).length === 0 && (
-        <p className="rounded-lg border border-hairline bg-bg0 px-3 py-4 text-[12.5px] text-ink-faint">
-          {t("settings:sync.noAccounts")}
-        </p>
-      )}
-
+    (accounts ?? []).length === 0 ? (
+      <EmptyState icon="repeat" title={t("settings:sync.noAccounts")} />
+    ) : (
+    <SettingsGroup>
       {(accounts ?? []).map((account) => {
         const status: SyncStatus = syncStatuses[account.id] ?? {
           accountId: account.id,
@@ -2617,29 +2857,27 @@ function SyncSection() {
             : 0;
 
         return (
-          <div
-            key={account.id}
-            className="rounded-xl border border-hairline bg-bg0/50 p-4"
-          >
+          <div key={account.id} className="!py-4">
             <div className="flex items-center gap-2.5">
               <span
                 className="size-2 shrink-0 rounded-full"
                 style={{ background: SYNC_DOT[status.state] }}
               />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13.5px] font-medium text-ink">
+                <div className="truncate text-base font-medium text-ink">
                   {account.email}
                 </div>
-                <div className="text-[11.5px] text-ink-faint">
+                <div className="text-xs text-ink-faint">
                   {t(`settings:accounts.provider.${account.provider}`)} ·{" "}
                   {t(`common:syncState.${status.state}`)}
                 </div>
               </div>
               {status.state === "needs_reauth" &&
               account.provider !== "imap" ? (
-                <button
-                  type="button"
-                  className={primaryBtnCls}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  busy={reauthAccountId === account.id}
                   disabled={
                     reauthAccountId != null && reauthAccountId !== account.id
                   }
@@ -2651,16 +2889,16 @@ function SyncSection() {
                   {reauthAccountId === account.id
                     ? t("settings:sync.reauthWaiting")
                     : t("common:reauthBanner.action", {
-                        provider: t(`settings:accounts.provider.${account.provider}`),
+                        provider: t(
+                          `settings:accounts.provider.${account.provider}`,
+                        ),
                       })}
-                </button>
+                </Button>
               ) : (
-                <button
-                  type="button"
-                  className={primaryBtnCls}
-                  disabled={
-                    busyAccountId != null || status.foregroundPhase === "inbox"
-                  }
+                <Button
+                  size="sm"
+                  busy={busy || status.foregroundPhase === "inbox"}
+                  disabled={busyAccountId != null}
                   aria-label={t("settings:sync.syncNowAccount", {
                     email: account.email,
                   })}
@@ -2669,11 +2907,11 @@ function SyncSection() {
                   {busy || status.foregroundPhase === "inbox"
                     ? t("settings:sync.syncingNow")
                     : t("settings:sync.syncNow")}
-                </button>
+                </Button>
               )}
             </div>
 
-            <div className="mt-4 grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-hairline pt-3 text-[12.5px]">
+            <div className="mt-4 grid grid-cols-[110px_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-hairline pt-3 text-sm">
               <span className="text-ink-faint">
                 {t("settings:sync.foreground")}
               </span>
@@ -2710,7 +2948,7 @@ function SyncSection() {
                       style={{ width: `${percent}%` }}
                     />
                   </div>
-                  <div className="mt-1.5 text-[11.5px] text-ink-faint">
+                  <div className="mt-1.5 text-xs text-ink-faint">
                     {t("settings:sync.failed", { count: background.failed })}
                   </div>
                 </div>
@@ -2721,585 +2959,7 @@ function SyncSection() {
           </div>
         );
       })}
-    </section>
-  );
-}
-
-/** Rich signatures, many per account, with Gmail-style new/reply defaults. */
-function SignaturesSection({ settings }: { settings: Settings }) {
-  const { t } = useTranslation();
-  const { data: accounts } = useAccounts();
-  if ((accounts ?? []).length === 0) return null;
-  return (
-    <section className="flex flex-col gap-6">
-      <SectionLabel>{t("settings:signature.section")}</SectionLabel>
-      {(accounts ?? []).map((a) => (
-        <AccountSignatures
-          key={a.id}
-          accountId={a.id}
-          email={a.email}
-          displayName={a.displayName ?? ""}
-          settings={settings}
-        />
-      ))}
-    </section>
-  );
-}
-
-/** Persist a mutation of the signature list + defaults as a whole-object write. */
-function writeSignatures(
-  list: Signature[],
-  defaults: Record<string, { newId?: string | null; replyId?: string | null }>,
-) {
-  void updateSettings({ signatureList: list, signatureDefaults: defaults });
-}
-
-function AccountSignatures({
-  accountId,
-  email,
-  displayName,
-  settings,
-}: {
-  accountId: number;
-  email: string;
-  displayName: string;
-  settings: Settings;
-}) {
-  const { t } = useTranslation();
-  const key = String(accountId);
-  const sigs = settings.signatureList.filter((s) => s.accountId === accountId);
-  const defs = settings.signatureDefaults[key] ?? {};
-
-  const addSignature = () => {
-    const sig: Signature = {
-      id: crypto.randomUUID(),
-      accountId,
-      name: t("settings:signature.newName"),
-      html: "",
-    };
-    writeSignatures(
-      [...settings.signatureList, sig],
-      settings.signatureDefaults,
-    );
-  };
-
-  const deleteSignature = (id: string) => {
-    const list = settings.signatureList.filter((s) => s.id !== id);
-    // Drop the id from this account's defaults if it pointed at the removed sig.
-    const cur = settings.signatureDefaults[key] ?? {};
-    const next = {
-      ...settings.signatureDefaults,
-      [key]: {
-        newId: cur.newId === id ? null : cur.newId,
-        replyId: cur.replyId === id ? null : cur.replyId,
-      },
-    };
-    writeSignatures(list, next);
-  };
-
-  const setDefault = (field: "newId" | "replyId", id: string) => {
-    const cur = settings.signatureDefaults[key] ?? {};
-    writeSignatures(settings.signatureList, {
-      ...settings.signatureDefaults,
-      [key]: { ...cur, [field]: id || null },
-    });
-  };
-
-  // Convenience switch over the per-mode defaults: on = default both new and
-  // reply to a signature (keeping any specific picks already made), off = none.
-  const autoAdd = Boolean(defs.newId || defs.replyId);
-  const setAutoAdd = (enabled: boolean) => {
-    const cur = settings.signatureDefaults[key] ?? {};
-    const fallback = sigs[0]?.id ?? null;
-    writeSignatures(settings.signatureList, {
-      ...settings.signatureDefaults,
-      [key]: enabled
-        ? { newId: cur.newId ?? fallback, replyId: cur.replyId ?? fallback }
-        : { newId: null, replyId: null },
-    });
-  };
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 text-[12px] font-medium tracking-wide text-ink-muted">
-        <span
-          className="size-1.5 shrink-0 rounded-full bg-accent/60"
-          aria-hidden="true"
-        />
-        {email}
-      </div>
-
-      {sigs.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-hairline px-3 py-4 text-center text-[12.5px] text-ink-faint">
-          {t("settings:signature.empty")}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2.5">
-          {sigs.map((sig) => (
-            <SignatureEditor
-              key={sig.id}
-              sig={sig}
-              settings={settings}
-              email={email}
-              displayName={displayName}
-              onDelete={deleteSignature}
-            />
-          ))}
-        </div>
-      )}
-
-      <div>
-        <button type="button" className={ghostBtnCls} onClick={addSignature}>
-          {t("settings:signature.add")}
-        </button>
-      </div>
-
-      {sigs.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-hairline pt-3">
-          <SettingRow
-            label={t("settings:signature.autoAdd")}
-            hint={t("settings:signature.autoAddHint")}
-          >
-            <Toggle
-              label={t("settings:signature.autoAdd")}
-              checked={autoAdd}
-              onChange={setAutoAdd}
-            />
-          </SettingRow>
-          {autoAdd && (
-            <>
-              <DefaultSelect
-                label={t("settings:signature.forNew")}
-                value={defs.newId ?? ""}
-                sigs={sigs}
-                onChange={(id) => setDefault("newId", id)}
-              />
-              <DefaultSelect
-                label={t("settings:signature.forReply")}
-                value={defs.replyId ?? ""}
-                sigs={sigs}
-                onChange={(id) => setDefault("replyId", id)}
-              />
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DefaultSelect({
-  label,
-  value,
-  sigs,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  sigs: Signature[];
-  onChange: (id: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <SettingRow label={label}>
-      <Select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="!w-[240px]"
-      >
-        <option value="">{t("settings:signature.none")}</option>
-        {sigs.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </Select>
-    </SettingRow>
-  );
-}
-
-function SignatureEditor({
-  sig,
-  settings,
-  email,
-  displayName,
-  onDelete,
-}: {
-  sig: Signature;
-  settings: Settings;
-  email: string;
-  displayName: string;
-  onDelete: (id: string) => void;
-}) {
-  const { t } = useTranslation();
-  const pushToast = useUi((s) => s.pushToast);
-  const [name, setName] = useState(sig.name);
-  const [html, setHtml] = useState(sig.html);
-  const [generating, setGenerating] = useState(false);
-  useEffect(() => setName(sig.name), [sig.name]);
-  useEffect(() => setHtml(sig.html), [sig.html]);
-
-  // Commit a field back to the shared list on blur (mirrors the old textarea).
-  const commit = (patch: Partial<Signature>) => {
-    const list = settings.signatureList.map((s) =>
-      s.id === sig.id ? { ...s, ...patch } : s,
-    );
-    writeSignatures(list, settings.signatureDefaults);
-  };
-
-  // One-click AI: build a clean signature from the account name/email and drop
-  // it into the editor (persisted immediately so it survives without a blur).
-  const generate = async () => {
-    setGenerating(true);
-    try {
-      const text = await call("ai_signature", {
-        name: displayName || email,
-        email,
-      });
-      const nextHtml = textToHtml(text.trim());
-      setHtml(nextHtml);
-      commit({ html: nextHtml });
-    } catch (err) {
-      pushToast({ kind: "error", message: errorMessage(err) });
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  return (
-    <div className="overflow-hidden rounded-lg border border-hairline bg-bg0 focus-within:border-accent/50">
-      {/* Header strip: the name reads as an editable title, delete sits opposite. */}
-      <div className="flex items-center gap-2 border-b border-hairline bg-bg1/40 py-1.5 pr-2 pl-3">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() =>
-            name.trim() && name !== sig.name && commit({ name: name.trim() })
-          }
-          placeholder={t("settings:signature.newName")}
-          className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-ink outline-none placeholder:text-ink-faint"
-        />
-        <button
-          type="button"
-          onClick={() => void generate()}
-          disabled={generating}
-          title={t("settings:signature.aiHint")}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M12 2l1.9 4.9L19 8.8l-4.1 1.9L12 16l-1.9-5.3L6 8.8l5.1-1.9zM19 14l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z" />
-          </svg>
-          {generating
-            ? t("settings:signature.aiGenerating")
-            : t("settings:signature.ai")}
-        </button>
-        <ConfirmButton
-          label={t("settings:signature.delete")}
-          confirmLabel={t("settings:signature.deleteConfirm")}
-          onConfirm={() => onDelete(sig.id)}
-        />
-      </div>
-      {/* Editor body: toolbar + contenteditable share the card, no inner border. */}
-      <div className="px-3 pb-1">
-        <RichBody
-          value={html}
-          onChange={setHtml}
-          onBlur={() => html !== sig.html && commit({ html })}
-          placeholder={t("settings:signature.placeholder")}
-          minHeightClass="min-h-[72px]"
-        />
-      </div>
-    </div>
-  );
-}
-
-function AccountsSection() {
-  const { t } = useTranslation();
-  const { data: accounts } = useAccounts();
-  const { data: settings } = useSettings();
-  const accountThemes = settings?.accountThemes ?? {};
-  const accountColors = settings?.accountColors ?? {};
-  const accountShortNames = settings?.accountShortNames ?? {};
-  const pushToast = useUi((s) => s.pushToast);
-  const set = useUi((s) => s.set);
-  const [oauthBusy, setOauthBusy] = useState<Provider | null>(null);
-
-  const removeAccount = async (accountId: number, email: string) => {
-    try {
-      await call("remove_account", { accountId });
-      pushToast({
-        kind: "info",
-        message: t("settings:accounts.removed", { email }),
-      });
-    } catch (err) {
-      pushToast({
-        kind: "error",
-        message: t("settings:accounts.removeFailed", {
-          detail: errorMessage(err),
-        }),
-      });
-    } finally {
-      void queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      void queryClient.invalidateQueries({ queryKey: ["threads"] });
-      void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
-    }
-  };
-
-  const oauth = async (provider: "gmail" | "microsoft") => {
-    setOauthBusy(provider);
-    try {
-      await call("start_oauth", { provider });
-      await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      pushToast({ kind: "info", message: t("settings:accounts.connected") });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("errors:oauthFailed");
-      if (!message.includes("sign-in cancelled")) {
-        pushToast(
-          message.includes("no OAuth app configured")
-            ? {
-                kind: "info",
-                message: t("settings:accounts.configureOauthFirst"),
-                durationMs: 6000,
-              }
-            : { kind: "error", message },
-        );
-      }
-    } finally {
-      setOauthBusy(null);
-    }
-  };
-
-  const cancelOauth = () => {
-    void call("cancel_oauth", {}).catch(() => {});
-  };
-
-  const [reauthId, setReauthId] = useState<number | null>(null);
-  const reauth = async (accountId: number, email: string) => {
-    if (reauthId === accountId) {
-      cancelOauth();
-      return;
-    }
-    setReauthId(accountId);
-    try {
-      await call("reauth_account", { accountId });
-      await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      pushToast({
-        kind: "info",
-        message: t("settings:sync.reauthDone", { email }),
-      });
-    } catch (err) {
-      const message = errorMessage(err);
-      if (!message.includes("sign-in cancelled")) {
-        pushToast({
-          kind: "error",
-          message: t("settings:sync.reauthFailed", { email, detail: message }),
-        });
-      }
-    } finally {
-      setReauthId(null);
-    }
-  };
-
-  return (
-    <section>
-      <SectionLabel>{t("settings:section.accounts")}</SectionLabel>
-      <div className="mb-3">
-        <SettingRow
-          label={t("settings:accounts.showBadges")}
-          hint={t("settings:accounts.showBadgesHint")}
-        >
-          <Toggle
-            label={t("settings:accounts.showBadges")}
-            checked={settings?.showAccountBadges ?? true}
-            onChange={(showAccountBadges) =>
-              void updateSettings({ showAccountBadges })
-            }
-          />
-        </SettingRow>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {(accounts ?? []).map((a) => (
-          <div
-            key={a.id}
-            className={`flex flex-col gap-2 rounded-lg border bg-bg0 px-3 py-2 ${
-              a.syncState === "needs_reauth" ? "border-danger/40" : "border-hairline"
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-            <span
-              className="size-2 shrink-0 rounded-full"
-              style={{ background: SYNC_DOT[a.syncState] }}
-              title={t(`common:syncState.${a.syncState}`)}
-            />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate">
-                <span className="text-[13px] text-ink">{a.email}</span>
-                {a.displayName && (
-                  <span className="ml-2 text-[11.5px] text-ink-faint">
-                    {a.displayName}
-                  </span>
-                )}
-              </span>
-              {a.syncState === "needs_reauth" ? (
-                <span className="text-[11px] font-medium text-danger">
-                  {t("settings:accounts.signedOut")}
-                </span>
-              ) : a.syncState !== "idle" ? (
-                <span className="text-[11px] text-ink-faint">
-                  {t(`common:syncState.${a.syncState}`)}
-                </span>
-              ) : null}
-            </span>
-            <Select
-              className="!w-auto !py-1 !pr-8 !text-[12.5px]"
-              value={accountThemes[String(a.id)] ?? "system"}
-              title={t("settings:accounts.themeHint")}
-              onChange={(e) =>
-                void updateSettings({
-                  accountThemes: {
-                    ...accountThemes,
-                    [String(a.id)]: e.target.value as Settings["theme"],
-                  },
-                })
-              }
-            >
-              <option value="system">
-                {t("settings:accounts.themeInherit")}
-              </option>
-              <option value="snow">{t("settings:theme.snow")}</option>
-              <option value="carbon">{t("settings:theme.carbon")}</option>
-              <option value="holiday">{t("settings:theme.holiday")}</option>
-            </Select>
-            <span className="rounded bg-bg2 px-1.5 py-px text-[10.5px] font-semibold tracking-wide text-ink-faint uppercase">
-              {t(`settings:accounts.provider.${a.provider}`)}
-            </span>
-            {a.syncState === "needs_reauth" && a.provider !== "imap" && (
-              <button
-                type="button"
-                className={primaryBtnCls}
-                disabled={reauthId != null && reauthId !== a.id}
-                onClick={() => void reauth(a.id, a.email)}
-              >
-                {reauthId === a.id
-                  ? t("settings:sync.reauthWaiting")
-                  : t("common:reauthBanner.action", {
-                      provider: t(`settings:accounts.provider.${a.provider}`),
-                    })}
-              </button>
-            )}
-            <ConfirmButton
-              label={t("settings:accounts.remove")}
-              confirmLabel={t("settings:accounts.reallyRemove")}
-              onConfirm={() => void removeAccount(a.id, a.email)}
-            />
-            </div>
-            {(settings?.showAccountBadges ?? true) && (
-            <div className="flex flex-wrap items-center gap-3 pl-[18px]">
-              <input
-                className={`${inputCls} !w-40 !py-1 !text-[12.5px]`}
-                defaultValue={accountShortNames[String(a.id)] ?? ""}
-                placeholder={accountLabel(a)}
-                title={t("settings:accounts.shortNameHint")}
-                aria-label={t("settings:accounts.shortName")}
-                spellCheck={false}
-                maxLength={24}
-                onBlur={(e) => {
-                  const v = e.target.value.trim();
-                  if ((accountShortNames[String(a.id)] ?? "") === v) return;
-                  const next = { ...accountShortNames };
-                  if (v) next[String(a.id)] = v;
-                  else delete next[String(a.id)];
-                  void updateSettings({ accountShortNames: next });
-                }}
-              />
-              <div
-                className="flex items-center gap-1.5"
-                title={t("settings:accounts.colorHint")}
-              >
-                {SWATCHES.map((c) => {
-                  const picked = accountColors[String(a.id)] === c;
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      aria-label={c}
-                      aria-pressed={picked}
-                      onClick={() => {
-                        // Clicking the picked swatch clears back to automatic.
-                        const next = { ...accountColors };
-                        if (picked) delete next[String(a.id)];
-                        else next[String(a.id)] = c;
-                        void updateSettings({ accountColors: next });
-                      }}
-                      className={`size-4 rounded-full transition ${
-                        picked ? "ring-2 ring-accent ring-offset-2 ring-offset-bg0" : ""
-                      }`}
-                      style={{ background: c }}
-                    />
-                  );
-                })}
-                {!accountColors[String(a.id)] && (
-                  <span className="ml-1 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
-                    <span
-                      className="size-2.5 rounded-full"
-                      style={{ background: accountColor(a) }}
-                    />
-                    {t("settings:accounts.colorAuto")}
-                  </span>
-                )}
-              </div>
-            </div>
-            )}
-          </div>
-        ))}
-        {(accounts ?? []).length === 0 && (
-          <p className="py-1 text-[12.5px] text-ink-faint">
-            {t("settings:accounts.empty")}
-          </p>
-        )}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          className={ghostBtnCls}
-          onClick={() => set({ addAccountOpen: true })}
-        >
-          {t("settings:accounts.addImap")}
-        </button>
-        <button
-          className={ghostBtnCls}
-          disabled={oauthBusy != null && oauthBusy !== "gmail"}
-          onClick={() =>
-            oauthBusy === "gmail" ? cancelOauth() : void oauth("gmail")
-          }
-        >
-          {oauthBusy === "gmail"
-            ? t("settings:accounts.cancelWaiting", {
-                waiting: t("settings:accounts.waitingGoogle"),
-              })
-            : t("settings:accounts.signInGoogle")}
-        </button>
-        <button
-          className={ghostBtnCls}
-          disabled={oauthBusy != null && oauthBusy !== "microsoft"}
-          onClick={() =>
-            oauthBusy === "microsoft" ? cancelOauth() : void oauth("microsoft")
-          }
-        >
-          {oauthBusy === "microsoft"
-            ? t("settings:accounts.cancelWaiting", {
-                waiting: t("settings:accounts.waitingMicrosoft"),
-              })
-            : t("settings:accounts.signInMicrosoft")}
-        </button>
-      </div>
-    </section>
+    </SettingsGroup>
+    )
   );
 }

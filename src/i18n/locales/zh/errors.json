@@ -1,6 +1,7 @@
 {
   "db": "数据库错误",
   "io": "文件系统错误",
+  "network": "无法连接到服务器。请检查网络连接或设置中的端点。",
   "imap": "邮件服务器（IMAP）错误",
   "smtp": "无法发送（SMTP 错误）",
   "tls": "安全连接（TLS）错误",
@@ -10,9 +11,19 @@
   "mime": "邮件格式错误",
   "not_found": "未找到",
   "offline": "您已离线",
+  "ai_not_configured": "尚未配置 AI。请在设置中添加 API 密钥（LM Studio 等本地端点无需密钥）。",
   "other": "出错了",
   "unknown": "出错了",
   "oauthFailed": "OAuth 登录失败",
   "connectionFailed": "连接失败",
-  "caldav": "日历服务器错误"
+  "caldav": "日历服务器错误",
+  "crash": {
+    "title": "出错了",
+    "body": "此视图遇到意外错误。您的邮件是安全的——请重试或重新加载应用。",
+    "details": "技术详情",
+    "copy": "复制详情",
+    "copied": "已复制",
+    "reload": "重新加载应用",
+    "retry": "重试"
+  }
 }

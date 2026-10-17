@@ -803,6 +803,14 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
 
 fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
     let subject: String = row.get("subject")?;
+    let is_outgoing = row.get::<_, i64>("is_outgoing")? != 0;
+    let text_body: Option<String> = row.get("text_body")?;
+    let snippet: String = row.get("snippet")?;
+    let verification_code = if is_outgoing {
+        None
+    } else {
+        crate::otp::extract(&subject, text_body.as_deref().unwrap_or(&snippet))
+    };
     let prefix: String = row.get("local_subject_prefix")?;
     let automation_note = row.get::<_, String>("local_body_note")?;
     Ok(MessageDetail {
@@ -826,10 +834,10 @@ fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
         is_read: row.get::<_, i64>("is_read")? != 0,
         is_starred: row.get::<_, i64>("is_starred")? != 0,
         is_draft: row.get::<_, i64>("is_draft")? != 0,
-        is_outgoing: row.get::<_, i64>("is_outgoing")? != 0,
-        snippet: row.get("snippet")?,
+        is_outgoing,
+        snippet,
         body_state: row.get("body_state")?,
-        text_body: row.get("text_body")?,
+        text_body,
         html_body: row.get("html_body")?,
         automation_note: (!automation_note.trim().is_empty()).then_some(automation_note),
         attachments: Vec::new(),
@@ -838,6 +846,7 @@ fn detail_from_row(row: &rusqlite::Row) -> rusqlite::Result<MessageDetail> {
         via: row.get("sender_addr")?,
         send_state: row.get("send_state")?,
         send_error: row.get("send_error")?,
+        verification_code,
     })
 }
 
@@ -985,6 +994,20 @@ pub fn list_sent_bodies(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Received (non-draft, non-outgoing) messages dated at or after `since`,
+/// newest first, without attachments.
+pub fn recent_received(conn: &Connection, since: i64, limit: i64) -> Result<Vec<MessageDetail>> {
+    let sql = format!(
+        "SELECT m.*, b.text_body, b.html_body, {SEND_STATE_COLS}
+         FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
+         WHERE m.date >= ?1 AND m.is_outgoing = 0 AND m.is_draft = 0
+         ORDER BY m.date DESC LIMIT ?2"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![since, limit], detail_from_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
 /// Of `ids`, return those that are the user's own sent (non-draft) messages,

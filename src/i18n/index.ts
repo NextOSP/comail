@@ -86,6 +86,18 @@ async function loadLanguage(lng: string): Promise<void> {
   loaded.add(lng);
 }
 
+/** Languages written right-to-left (none ship yet; ready for when one does). */
+const RTL_LANGUAGES = new Set(["ar", "he", "fa", "ur"]);
+
+// Keep <html lang/dir> in step with the UI language, so screen readers pick
+// the right voice and logical (start/end) utilities flip for RTL.
+i18n.on("languageChanged", (lng) => {
+  if (typeof document === "undefined") return;
+  const base = lng.split("-")[0];
+  document.documentElement.lang = lng;
+  document.documentElement.dir = RTL_LANGUAGES.has(base) ? "rtl" : "ltr";
+});
+
 /** Switch the active language. Pass a setting value ("system" or a code). */
 export async function setLanguage(setting: string | null | undefined): Promise<void> {
   const lng = resolveLanguage(setting);

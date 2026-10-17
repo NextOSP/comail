@@ -2,8 +2,10 @@
 //! calls its async methods, and forwards `CoreEvent`s to the UI.
 
 pub mod accounts;
+pub mod addr;
 pub mod ai;
 pub mod autolabel;
+pub mod avatars;
 pub mod caldav;
 pub mod calendar;
 pub mod config;
@@ -14,9 +16,11 @@ pub mod events;
 pub mod graph;
 pub mod graphcal;
 pub mod imap;
+pub mod mcp;
 pub mod mime;
 pub mod models;
 pub mod oauth;
+pub mod otp;
 pub mod preview;
 pub mod queue;
 pub mod route;
@@ -37,13 +41,119 @@ use crate::models::*;
 use crate::oauth::tokens::TokenProvider;
 use crate::sync::engine::{AccountHandle, SyncCmd, SyncCtx, spawn_account};
 use rusqlite::OptionalExtension;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub use crate::db::repo::notifications::{NotificationOutboxItem, RoutedTab};
 
 /// An AI feature, each routed to a configurable model tier.
+
+/// The AI that answers typed questions for one feature, best first. See
+/// [`Core::deciders`].
+struct Deciders {
+    decision: Vec<ai::decisions::DecisionConfig>,
+    chat: Option<ai::AiConfig>,
+    min_confidence: f64,
+}
+
+impl Deciders {
+    fn any(&self) -> bool {
+        !self.decision.is_empty() || self.chat.is_some()
+    }
+
+    /// Yes/no checks `(id, instruction, min confidence)`; returns the ids that
+    /// held. Each decision endpoint is tried in order, then the chat model. An
+    /// error means every configured answerer failed (retry later); with none
+    /// configured, nothing holds.
+    async fn checks(
+        &self,
+        facts: &route::ThreadFacts,
+        checks: &[(String, String, f64)],
+    ) -> Result<HashSet<String>> {
+        if checks.is_empty() || !self.any() {
+            return Ok(HashSet::new());
+        }
+        let state = route::decision_state(&facts.from_addr, &facts.subject, &facts.snippet);
+        let questions: Vec<(String, ai::decisions::Question)> = checks
+            .iter()
+            .map(|(id, instr, _)| (id.clone(), route::check_question(instr)))
+            .collect();
+        let mut last_err = None;
+        for cfg in &self.decision {
+            match ai::decisions::decide(cfg, &state, &questions).await {
+                Ok(answers) => {
+                    return Ok(checks
+                        .iter()
+                        .filter(|(id, _, min)| answers.get(id).is_some_and(|a| a.yes(*min)))
+                        .map(|(id, _, _)| id.clone())
+                        .collect());
+                }
+                Err(e) => {
+                    tracing::warn!("decision provider {} failed: {e}", cfg.provider);
+                    last_err = Some(e);
+                }
+            }
+        }
+        if let Some(cfg) = &self.chat {
+            let pairs: Vec<(String, String)> = checks
+                .iter()
+                .map(|(id, instr, _)| (id.clone(), instr.clone()))
+                .collect();
+            let (msgs, schema) =
+                route::predicate_prompt(&pairs, &facts.from_addr, &facts.subject, &facts.snippet);
+            match ai::chat_structured(cfg, msgs, "checks", schema).await {
+                Ok(out) => match route::parse_predicates(&out) {
+                    Some(yes) => return Ok(yes),
+                    None => last_err = Some(CoreError::Other("ai checks: unreadable reply".into())),
+                },
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.unwrap_or_else(|| CoreError::Other("ai checks: no answer".into())))
+    }
+
+    /// The category keyword for an email (`None` = no category).
+    async fn category(
+        &self,
+        facts: &route::ThreadFacts,
+        prompt: &str,
+        catalog: &[route::CategoryDef],
+    ) -> Result<Option<String>> {
+        let state = route::decision_state(&facts.from_addr, &facts.subject, &facts.snippet);
+        let question = route::category_question(prompt, catalog);
+        let mut last_err = None;
+        for cfg in &self.decision {
+            match ai::decisions::decide(cfg, &state, &[("category".into(), question.clone())]).await
+            {
+                Ok(answers) => {
+                    return Ok(answers.get("category").and_then(|a| {
+                        route::category_from_answer(a, self.min_confidence, catalog)
+                    }));
+                }
+                Err(e) => {
+                    tracing::warn!("decision provider {} failed: {e}", cfg.provider);
+                    last_err = Some(e);
+                }
+            }
+        }
+        if let Some(cfg) = &self.chat {
+            let msgs = route::category_prompt_for(
+                prompt,
+                catalog,
+                &facts.from_addr,
+                &facts.subject,
+                &facts.snippet,
+            );
+            match ai::chat(cfg, msgs).await {
+                Ok(out) => return Ok(route::parse_category_for(&out, catalog)),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.unwrap_or_else(|| CoreError::Other("ai category: no answer".into())))
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Scenario {
     /// Ask-your-inbox agentic Q&A.
@@ -125,6 +235,8 @@ pub struct Core {
     /// Serializes AI routing passes so the background router and an inline
     /// re-sort never classify the same 'pending' threads twice.
     ai_router_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Local MCP server for AI clients (see `mcp`).
+    mcp: Arc<mcp::McpManager>,
 }
 
 impl Core {
@@ -144,6 +256,7 @@ impl Core {
             oauth_cancel: Arc::new(tokio::sync::Notify::new()),
             ui_ready: Arc::new(tokio::sync::Notify::new()),
             ai_router_lock: Arc::new(tokio::sync::Mutex::new(())),
+            mcp: Arc::new(mcp::McpManager::default()),
         };
 
         // Make saved OAuth app registrations available before any actor
@@ -304,6 +417,11 @@ impl Core {
             tokio::spawn(async move { c.ai_router_loop().await });
         }
 
+        // MCP server for AI clients, when the user turned it on.
+        if let Err(e) = core.mcp_apply_settings().await {
+            tracing::warn!("mcp: start failed: {e}");
+        }
+
         Ok(core)
     }
 
@@ -313,17 +431,33 @@ impl Core {
     async fn ai_router_loop(&self) {
         use tokio::sync::broadcast::error::RecvError;
         let mut rx = self.bus.subscribe();
+        // Consecutive failed passes; drives an exponential pause (5s doubling,
+        // capped at 10 min) so an unreachable model or exhausted quota isn't
+        // hammered on every mail change.
+        let mut failures: u32 = 0;
         loop {
             match rx.recv().await {
                 Ok(CoreEvent::MailUpdated { .. }) => loop {
-                    match self.classify_pending(50).await {
-                        Ok(0) => break,
-                        Ok(_) => continue,
-                        Err(e) => {
-                            tracing::warn!("ai routing pass failed: {e}");
-                            break;
-                        }
+                    // Automations first: a matching rule's route_to then wins
+                    // over the category the classifier would pick.
+                    let automated = self.run_automations(50).await;
+                    let classified = self.classify_pending(50).await;
+                    let progressed =
+                        matches!(automated, Ok(n) if n > 0) || matches!(classified, Ok(n) if n > 0);
+                    if progressed {
+                        failures = 0;
+                        continue;
                     }
+                    let Some(e) = automated.err().or(classified.err()) else {
+                        break;
+                    };
+                    failures = failures.saturating_add(1);
+                    let wait = std::time::Duration::from_secs((5u64 << failures.min(7)).min(600));
+                    tracing::warn!("ai routing pass failed, pausing {wait:?}: {e}");
+                    tokio::time::sleep(wait).await;
+                    // Events that piled up while paused are stale.
+                    rx = rx.resubscribe();
+                    break;
                 },
                 Ok(_) => {}
                 Err(RecvError::Lagged(_)) => continue,
@@ -1157,6 +1291,27 @@ impl Core {
                     touched_accounts.push(account_id);
                 }
             }
+        }
+
+        // A label split ("has label Invoices") must follow manual labelling
+        // straight away, not only on the next full re-sort.
+        if matches!(args.kind, ActionKind::AddLabel | ActionKind::RemoveLabel) {
+            let thread_ids = args.thread_ids.clone();
+            self.db
+                .write(move |conn| {
+                    let splits = repo::splits::list(conn)?;
+                    if splits.is_empty() {
+                        return Ok(());
+                    }
+                    let s = repo::settings::get(conn)?;
+                    let fallback =
+                        route::Fallback::from_settings(s.auto_labels_enabled, s.ai_categorize);
+                    for tid in thread_ids {
+                        route::reroute_after_label_change(conn, &splits, fallback, tid)?;
+                    }
+                    Ok(())
+                })
+                .await?;
         }
 
         self.bus.emit(CoreEvent::MailUpdated {
@@ -2749,48 +2904,172 @@ impl Core {
         settings: &Settings,
         scenario: Scenario,
     ) -> Result<ai::AiConfig> {
+        let on_device = ai::apple::is_apple(&settings.ai_base_url);
         let api_key = match credentials::load_async(0, Slot::AiApiKey).await {
-            Ok(k) => k,
-            // Local endpoints (LM Studio, Ollama over http://) need no key;
-            // hosted ones do, so fail early with a pointer to Settings.
-            Err(_) if settings.ai_base_url.starts_with("http://") => String::new(),
-            Err(_) => return Err(CoreError::AiNotConfigured),
+            Ok(k) if !on_device => k,
+            // Apple Intelligence runs on-device; local endpoints (LM Studio,
+            // Ollama over http://) need no key either. Hosted ones do, so fail
+            // early with a pointer to Settings.
+            _ if on_device || settings.ai_base_url.starts_with("http://") => String::new(),
+            _ => return Err(CoreError::AiNotConfigured),
         };
         Ok(ai::AiConfig {
             base_url: settings.ai_base_url.clone(),
-            model: resolve_ai_model(settings, scenario),
+            // The on-device provider has exactly one model, whatever the tier.
+            model: if on_device {
+                ai::apple::MODEL_ID.to_string()
+            } else {
+                resolve_ai_model(settings, scenario)
+            },
             api_key,
             language: ai::ui_language_name(&settings.language).map(str::to_string),
-            usage_sink: {
-                let db = self.db.clone();
-                let scenario = scenario.as_str().to_string();
-                Some(Arc::new(move |usage: ai::AiUsage| {
-                    let db = db.clone();
-                    let scenario = scenario.clone();
-                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                        handle.spawn(async move {
-                            let result = db
-                                .write(move |conn| {
-                                    repo::ai_usage::record(
-                                        conn,
-                                        now_ms(),
-                                        &usage.model,
-                                        &scenario,
-                                        usage.prompt_tokens,
-                                        usage.completion_tokens,
-                                        usage.total_tokens,
-                                        usage.exact,
-                                    )
-                                })
-                                .await;
-                            if let Err(e) = result {
-                                tracing::warn!("recording ai usage: {e}");
-                            }
-                        });
-                    }
-                }))
-            },
+            usage_sink: self.usage_sink(scenario),
         })
+    }
+
+    /// Records each model call's token usage under `scenario`.
+    fn usage_sink(&self, scenario: Scenario) -> Option<Arc<dyn Fn(ai::AiUsage) + Send + Sync>> {
+        let db = self.db.clone();
+        let scenario = scenario.as_str().to_string();
+        Some(Arc::new(move |usage: ai::AiUsage| {
+            let db = db.clone();
+            let scenario = scenario.clone();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    let result = db
+                        .write(move |conn| {
+                            repo::ai_usage::record(
+                                conn,
+                                now_ms(),
+                                &usage.model,
+                                &scenario,
+                                usage.prompt_tokens,
+                                usage.completion_tokens,
+                                usage.total_tokens,
+                                usage.exact,
+                            )
+                        })
+                        .await;
+                    if let Err(e) = result {
+                        tracing::warn!("recording ai usage: {e}");
+                    }
+                });
+            }
+        }))
+    }
+
+    /// The primary decision endpoint followed by the backups, in order.
+    fn decision_endpoints(settings: &Settings) -> Vec<DecisionEndpoint> {
+        let mut out = vec![DecisionEndpoint {
+            provider: settings.decision_provider.clone(),
+            model: settings.decision_model.clone(),
+            base_url: settings.decision_base_url.clone(),
+            format: settings.decision_format.clone(),
+        }];
+        out.extend(settings.decision_backups.iter().cloned());
+        out.retain(|e| e.provider != "off" && !e.provider.is_empty());
+        out
+    }
+
+    /// One endpoint resolved to a callable config, or `None` when it's
+    /// incomplete or keyless. OpenRouter and custom endpoints fall back to the
+    /// chat AI key; OpenAI does only when the chat endpoint is OpenAI too.
+    async fn decision_config(
+        &self,
+        settings: &Settings,
+        ep: &DecisionEndpoint,
+    ) -> Option<ai::decisions::DecisionConfig> {
+        use ai::decisions::{self as dec, Dialect};
+        let (url, dialect, default_model, slot) = match ep.provider.as_str() {
+            "openrouter" => (
+                dec::OPENROUTER_URL.to_string(),
+                Dialect::OpenRouter,
+                dec::DEFAULT_OPENROUTER_MODEL,
+                Slot::DecisionApiKey,
+            ),
+            "openai" => (
+                dec::OPENAI_URL.to_string(),
+                Dialect::OpenAi,
+                dec::DEFAULT_OPENAI_MODEL,
+                Slot::DecisionOpenAiKey,
+            ),
+            "custom" if !ep.base_url.trim().is_empty() => {
+                let dialect = Dialect::from_setting(&ep.format);
+                let model = match dialect {
+                    Dialect::OpenRouter => dec::DEFAULT_OPENROUTER_MODEL,
+                    Dialect::OpenAi => dec::DEFAULT_OPENAI_MODEL,
+                };
+                (
+                    ep.base_url.trim().to_string(),
+                    dialect,
+                    model,
+                    Slot::DecisionCustomKey,
+                )
+            }
+            _ => return None,
+        };
+        let share_ai_key = match ep.provider.as_str() {
+            "openai" => settings.ai_base_url.contains("api.openai.com"),
+            _ => true,
+        };
+        let api_key = match credentials::load_async(0, slot).await {
+            Ok(k) => k,
+            Err(_) => match credentials::load_async(0, Slot::AiApiKey).await {
+                Ok(k) if share_ai_key => k,
+                // Local custom endpoints may need no key.
+                _ if url.starts_with("http://") => String::new(),
+                _ => return None,
+            },
+        };
+        let model = ep.model.trim();
+        Some(dec::DecisionConfig {
+            provider: ep.provider.clone(),
+            url,
+            model: if model.is_empty() {
+                default_model.to_string()
+            } else {
+                model.to_string()
+            },
+            api_key,
+            dialect,
+            min_confidence: settings.decision_min_confidence.clamp(0.0, 1.0),
+            usage_sink: self.usage_sink(Scenario::Categorize),
+        })
+    }
+
+    /// Every usable decision endpoint, primary first.
+    async fn decision_configs(&self, settings: &Settings) -> Vec<ai::decisions::DecisionConfig> {
+        let mut out = Vec::new();
+        for ep in Self::decision_endpoints(settings) {
+            if let Some(cfg) = self.decision_config(settings, &ep).await {
+                out.push(cfg);
+            }
+        }
+        out
+    }
+
+    /// Who answers AI checks and categories for one feature: decision models
+    /// (when enabled for it), then the chat model (API, local, or Apple
+    /// on-device) when allowed. Empty = no AI: checks count as "no" and
+    /// categories use the built-in heuristic.
+    async fn deciders(&self, settings: &Settings, use_decision: bool) -> Deciders {
+        let decision = if use_decision {
+            self.decision_configs(settings).await
+        } else {
+            Vec::new()
+        };
+        let chat = if decision.is_empty() || settings.decision_chat_fallback {
+            self.ai_config_from(settings, Scenario::Categorize)
+                .await
+                .ok()
+        } else {
+            None
+        };
+        Deciders {
+            decision,
+            chat,
+            min_confidence: settings.decision_min_confidence.clamp(0.0, 1.0),
+        }
     }
 
     pub async fn ai_usage_stats(&self) -> Result<AiUsageStats> {
@@ -2823,7 +3102,13 @@ impl Core {
             .await?;
         let cfg = self.ai_config_from(&settings, Scenario::Categorize).await?;
         let messages = route::automation_planner_prompt(prompt, &labels, &splits);
-        let output = ai::chat(&cfg, messages).await?;
+        let output = ai::chat_structured(
+            &cfg,
+            messages,
+            "automation_plan",
+            route::automation_plan_schema(),
+        )
+        .await?;
         Ok(route::validate_automation_plan(
             route::parse_automation_plan(&output),
             &labels,
@@ -2839,14 +3124,48 @@ impl Core {
         credentials::store_async(0, Slot::AiApiKey, api_key.trim().to_string()).await
     }
 
+    /// Store (or, when empty, forget) the decision API key for one provider
+    /// ("openrouter" | "openai" | "custom"). Unset falls back to the chat AI key.
+    pub async fn set_decision_key(&self, provider: String, api_key: String) -> Result<()> {
+        let slot = || match provider.as_str() {
+            "openai" => Slot::DecisionOpenAiKey,
+            "custom" => Slot::DecisionCustomKey,
+            _ => Slot::DecisionApiKey,
+        };
+        let key = api_key.trim().to_string();
+        if key.is_empty() {
+            let slot = slot();
+            tokio::task::spawn_blocking(move || credentials::delete(0, slot))
+                .await
+                .map_err(|e| CoreError::Other(e.to_string()))?;
+            return Ok(());
+        }
+        credentials::store_async(0, slot(), key).await
+    }
+
     pub async fn ai_status(&self) -> Result<AiStatus> {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
-        let configured = credentials::load_async(0, Slot::AiApiKey).await.is_ok()
-            || settings.ai_base_url.starts_with("http://");
+        let apple = ai::apple::availability();
+        let decision = self.decision_configs(&settings).await.into_iter().next();
+        let (configured, model) = if ai::apple::is_apple(&settings.ai_base_url) {
+            (
+                apple == ai::apple::Availability::Available,
+                ai::apple::MODEL_ID.to_string(),
+            )
+        } else {
+            (
+                credentials::load_async(0, Slot::AiApiKey).await.is_ok()
+                    || settings.ai_base_url.starts_with("http://"),
+                settings.ai_model,
+            )
+        };
         Ok(AiStatus {
             configured,
-            model: settings.ai_model,
+            model,
             base_url: settings.ai_base_url,
+            apple_intelligence: apple.as_str().to_string(),
+            decision_configured: decision.is_some(),
+            decision_model: decision.map(|d| d.model).unwrap_or_default(),
         })
     }
 
@@ -2870,7 +3189,8 @@ impl Core {
     pub async fn ai_summarize(&self, thread_id: i64) -> Result<crate::models::AiThreadSummary> {
         let cfg = self.ai_config(Scenario::Summarize).await?;
         let detail = self.get_thread(thread_id).await?;
-        let context = ai::thread_context(&detail.messages, 24_000);
+        let budget = ai::apple::context_chars(&cfg.base_url, 24_000);
+        let context = ai::thread_context(&detail.messages, budget);
         let bus = self.bus.clone();
         ai::summarize_thread_stream(&cfg, &detail.thread.subject, &context, move |delta| {
             bus.emit(CoreEvent::AiSummaryDelta {
@@ -2888,7 +3208,8 @@ impl Core {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
         let cfg = self.ai_config_from(&settings, Scenario::QuickReply).await?;
         let detail = self.get_thread(thread_id).await?;
-        let context = ai::thread_context(&detail.messages, 12_000);
+        let budget = ai::apple::context_chars(&cfg.base_url, 12_000);
+        let context = ai::thread_context(&detail.messages, budget);
         // Match the user's learned voice when voice drafting is enabled, same as
         // full AI drafts; otherwise pass an empty profile for the neutral prompt.
         let profile = if settings.voice_drafting {
@@ -2901,16 +3222,23 @@ impl Core {
 
     /// Draft or rewrite email body text. With a thread, the reply is grounded
     /// in its content; without, it's freeform writing from the instruction.
+    /// A non-empty `current_draft` switches to edit mode: the model revises it
+    /// per the instruction instead of writing from scratch.
     /// When `voice` (or the persisted setting) is on, the draft imitates the
     /// user's learned writing style and their similar past sent emails.
+    /// With a `request_id`, answer text streams as [`CoreEvent::AiDraftDelta`]
+    /// while it's generated; the full draft is still returned at the end.
+    #[allow(clippy::too_many_arguments)]
     pub async fn ai_draft(
         &self,
         thread_id: Option<i64>,
         reply_to_message_id: Option<i64>,
         instruction: String,
+        current_draft: String,
         sender_name: String,
         voice: Option<bool>,
         has_signature: bool,
+        request_id: Option<String>,
     ) -> Result<String> {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
         let cfg = self.ai_config_from(&settings, Scenario::Draft).await?;
@@ -2921,50 +3249,86 @@ impl Core {
                 let detail = self.get_thread(tid).await?;
                 (
                     detail.thread.subject.clone(),
-                    ai::thread_context(&detail.messages, 24_000),
+                    ai::thread_context(
+                        &detail.messages,
+                        ai::apple::context_chars(&cfg.base_url, 24_000),
+                    ),
                     ai::reply_target_line(&detail.messages, reply_to_message_id),
                 )
             }
             None => (String::new(), String::new(), String::new()),
         };
 
-        if use_voice {
+        let prompt = if use_voice {
             let query = format!("{subject}\n{instruction}");
-            let examples = self.voice_examples(&query, 3).await.unwrap_or_default();
-            return ai::chat(
-                &cfg,
-                ai::apply_language(
-                    ai::draft_prompt_voiced(
-                        &subject,
-                        &context,
-                        &reply_target,
-                        &instruction,
-                        &sender_name,
-                        &settings.voice_profile,
-                        &examples,
-                        has_signature,
-                    ),
-                    &cfg,
-                ),
+            // The on-device model's small window fits one example, not three.
+            let n = if ai::apple::is_apple(&cfg.base_url) {
+                1
+            } else {
+                3
+            };
+            let examples = self.voice_examples(&query, n).await.unwrap_or_default();
+            ai::draft_prompt_voiced(
+                &subject,
+                &context,
+                &reply_target,
+                &instruction,
+                &current_draft,
+                &sender_name,
+                &settings.voice_profile,
+                &examples,
+                has_signature,
             )
-            .await;
-        }
+        } else {
+            ai::draft_prompt(
+                &subject,
+                &context,
+                &reply_target,
+                &instruction,
+                &current_draft,
+                &sender_name,
+                has_signature,
+            )
+        };
+        let messages = ai::apply_language(prompt, &cfg);
 
-        ai::chat(
-            &cfg,
-            ai::apply_language(
-                ai::draft_prompt(
-                    &subject,
-                    &context,
-                    &reply_target,
-                    &instruction,
-                    &sender_name,
-                    has_signature,
-                ),
-                &cfg,
-            ),
-        )
-        .await
+        match request_id {
+            Some(request_id) => {
+                let bus = self.bus.clone();
+                ai::chat_stream(&cfg, messages, move |delta| {
+                    bus.emit(CoreEvent::AiDraftDelta {
+                        request_id: request_id.clone(),
+                        delta: delta.to_owned(),
+                    });
+                })
+                .await
+            }
+            None => ai::chat(&cfg, messages).await,
+        }
+    }
+
+    /// Typed follow-ups for a finished draft (e.g. "create this event"),
+    /// decided by the model against a strict schema. Empty when none fit.
+    pub async fn ai_draft_actions(
+        &self,
+        thread_id: Option<i64>,
+        draft: String,
+    ) -> Result<Vec<AiDraftAction>> {
+        let cfg = self.ai_config(Scenario::Command).await?;
+        let (subject, context) = match thread_id {
+            Some(tid) => {
+                let detail = self.get_thread(tid).await?;
+                (
+                    detail.thread.subject.clone(),
+                    ai::thread_context(
+                        &detail.messages,
+                        ai::apple::context_chars(&cfg.base_url, 12_000),
+                    ),
+                )
+            }
+            None => (String::new(), String::new()),
+        };
+        ai::draft_actions(&cfg, &subject, &context, &draft).await
     }
 
     /// Copy-edit a draft body (plain text or simple HTML) without changing
@@ -3058,7 +3422,7 @@ impl Core {
         query: String,
         account_id: Option<i64>,
         limit: i64,
-    ) -> Result<Vec<ThreadSummary>> {
+    ) -> Result<repo::search::SearchResults> {
         let mut parsed = search::parse(&query);
         // Scope every branch (lexical, semantic, operator filters) to the UI's
         // active account when one is selected; None searches all accounts.
@@ -3073,7 +3437,7 @@ impl Core {
         let lex_fut = {
             let q = parsed.clone();
             self.db.read(move |conn| {
-                repo::search::lexical_thread_ids(conn, &q, repo::search::candidate_cap(limit))
+                repo::search::lexical_candidates(conn, &q, repo::search::candidate_cap(limit))
             })
         };
         let vec_fut = async {
@@ -3092,15 +3456,51 @@ impl Core {
         let parsed2 = parsed.clone();
         let out = self
             .db
-            .read(move |conn| repo::search::fuse(conn, &parsed2, lexical, &vec_hits, limit))
+            .read(move |conn| {
+                let now = chrono::Utc::now().timestamp_millis();
+                let mut out = repo::search::rank(conn, &parsed2, lexical, &vec_hits, limit, now)?;
+                out.explain = repo::search::explain(conn, &parsed2)?;
+                Ok(out)
+            })
             .await;
         tracing::debug!(
-            "search '{}': branches {:?}, fuse+hydrate {:?}",
+            "search '{}': branches {:?}, rank+hydrate {:?}",
             parsed.text,
             t_branches,
             t0.elapsed() - t_branches
         );
         out
+    }
+
+    /// What `query` will do - its understood filters and anything it could
+    /// not use - for the search box's live explain row. Cheap: parsing plus a
+    /// label-table lookup, so it can run on every keystroke.
+    pub async fn explain_search(&self, query: String) -> Result<search::SearchExplain> {
+        self.db
+            .read(move |conn| repo::search::explain(conn, &search::parse(&query)))
+            .await
+    }
+
+    /// Remember that `thread_id` was opened from a search for `query`, so
+    /// future searches rank it (and its sender) higher. Local only.
+    pub async fn record_search_open(&self, query: String, thread_id: i64) -> Result<()> {
+        let key = search::parse(&query).terms.join(" ");
+        self.db
+            .write(move |conn| {
+                repo::search_history::record(
+                    conn,
+                    &key,
+                    thread_id,
+                    chrono::Utc::now().timestamp_millis(),
+                )
+            })
+            .await
+    }
+
+    pub async fn clear_search_history(&self) -> Result<()> {
+        self.db
+            .write(|conn| repo::search_history::clear(conn))
+            .await
     }
 
     /// Embed `text` as a query and return the top-`k` (message_id, score) hits
@@ -3190,8 +3590,13 @@ impl Core {
         const MAX_ROUNDS: usize = 4;
         let cfg = self.ai_config(Scenario::Ask).await?;
 
+        // The on-device model has a small context window and no tool calling:
+        // it answers in one pass over fewer seed sources.
+        let on_device = ai::apple::is_apple(&cfg.base_url);
+
         // RAG seed: the model always starts from the best hybrid matches.
-        let mut sources = self.retrieve_search(&question, 8).await?;
+        let seed = if on_device { 4 } else { 8 };
+        let mut sources = self.retrieve_search(&question, seed).await?;
         if sources.is_empty() {
             return Ok(AskResult {
                 answer: "I couldn't find anything relevant in your mailbox. \
@@ -3220,7 +3625,8 @@ impl Core {
         // Agentic loop: let the model call search_inbox until it answers or we
         // hit the round cap. `answer = Some` means the model produced text.
         let mut answer: Option<String> = None;
-        for round in 0..MAX_ROUNDS {
+        let rounds = if on_device { 0 } else { MAX_ROUNDS };
+        for round in 0..rounds {
             match ai::chat_tools(&cfg, messages.clone(), tools.clone()).await {
                 Ok(ai::ChatStep::Content(text)) => {
                     answer = Some(text);
@@ -3461,13 +3867,44 @@ impl Core {
     pub async fn find_matching_split(&self, thread_id: i64) -> Result<Option<SplitRule>> {
         self.db
             .read(move |conn| {
-                for rule in repo::splits::list(conn)? {
-                    if route::split_matches(conn, thread_id, &rule.query)? {
-                        return Ok(Some(rule));
-                    }
-                }
-                Ok(None)
+                let rules = repo::splits::list(conn)?;
+                let decision = route::decide(&route::RuleSubject::load(conn, thread_id)?, &rules);
+                Ok(decision
+                    .matched_split
+                    .and_then(|id| rules.into_iter().find(|r| r.id == id)))
             })
+            .await
+    }
+
+    /// Why a thread is in its tab: the stored route plus a trace of every split
+    /// rule tried. `current` can differ from the rules' verdict when the AI
+    /// classifier or the heuristic routed the thread.
+    pub async fn explain_route(&self, thread_id: i64) -> Result<route::RouteExplanation> {
+        self.db
+            .read(move |conn| {
+                let current: Option<String> = conn
+                    .query_row(
+                        "SELECT routed_tab FROM threads WHERE id = ?1",
+                        rusqlite::params![thread_id],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .flatten();
+                let rules = repo::splits::list(conn)?;
+                let decision = route::explain(&route::RuleSubject::load(conn, thread_id)?, &rules);
+                Ok(route::RouteExplanation { current, decision })
+            })
+            .await
+    }
+
+    /// Dry-run a draft condition against recent mail for the rule editor.
+    pub async fn preview_split_condition(
+        &self,
+        condition: RuleCondition,
+        limit: usize,
+    ) -> Result<route::decide::ConditionPreview> {
+        self.db
+            .read(move |conn| route::decide::preview(conn, &condition, 2000, limit.min(50)))
             .await
     }
 
@@ -3477,27 +3914,138 @@ impl Core {
         name: String,
         position: i64,
         query: SplitRuleQuery,
-        target: Option<String>,
+        condition: Option<RuleCondition>,
+        target: Option<RouteKey>,
+        ai: Option<AiCheck>,
+        apply_existing: bool,
     ) -> Result<SplitRule> {
         let saved = self
             .db
             .write(move |conn| {
-                repo::splits::save(conn, id, &name, position, &query, target.as_deref())
+                if let Some(cond) = &condition {
+                    let user_labels: Vec<i64> = repo::labels::list(conn)?
+                        .into_iter()
+                        .filter(|l| !l.is_auto)
+                        .map(|l| l.id)
+                        .collect();
+                    let errs = cond.validate(&user_labels);
+                    if !errs.is_empty() {
+                        let msg = errs.iter().map(|e| e.to_string()).collect::<Vec<_>>();
+                        return Err(CoreError::Other(format!(
+                            "invalid rule condition: {}",
+                            msg.join("; ")
+                        )));
+                    }
+                }
+                route::reroute::validate_target(conn, id, target)?;
+                let before = repo::splits::list(conn)?;
+                let saved = repo::splits::save(
+                    conn,
+                    id,
+                    &name,
+                    position,
+                    &query,
+                    condition.as_ref(),
+                    target,
+                    ai.as_ref(),
+                )?;
+                Ok((saved, before))
             })
             .await?;
-        // Rules changed: re-resolve every thread and drop the AI cache so edited
-        // routing takes effect. AI (if any) runs in the background afterwards.
-        self.reroute_all_sync().await?;
+        let (saved, before) = saved;
+        self.apply_rule_change(before, apply_existing).await?;
         Ok(saved)
     }
 
-    pub async fn delete_split(&self, id: i64) -> Result<()> {
-        self.db
-            .write(move |conn| repo::splits::delete(conn, id))
+    /// Delete a split. Threads in its tab always fall back to the AI,
+    /// heuristic or Important/Other (they'd be invisible otherwise); with
+    /// `apply_existing`, other inbox threads it out-prioritized are re-sorted
+    /// too.
+    pub async fn delete_split(&self, id: i64, apply_existing: bool) -> Result<()> {
+        let before = self
+            .db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                let before = repo::splits::list(&tx)?;
+                route::reroute::detach_targets_to(&tx, id)?;
+                repo::splits::delete(&tx, id)?;
+                tx.commit()?;
+                Ok(before)
+            })
             .await?;
-        // A deleted rule's threads must fall back to the AI/heuristic/defaults.
-        self.reroute_all_sync().await?;
+        self.apply_rule_change(before, apply_existing).await?;
         Ok(())
+    }
+
+    /// What a pending rule edit, delete or reorder would do to existing inbox
+    /// mail, so the UI can ask "move N threads?" before saving. Read-only.
+    pub async fn preview_rule_change(
+        &self,
+        change: route::reroute::RuleChange,
+    ) -> Result<route::reroute::RuleChangeImpact> {
+        self.db
+            .read(move |conn| {
+                let before = repo::splits::list(conn)?;
+                let after = change.apply_to(&before);
+                route::reroute::impact(conn, &before, &after, 5)
+            })
+            .await
+    }
+
+    /// Bring stored routing in line with a rule change from `before` to the
+    /// current rules. Threads left in a tab that no longer exists are always
+    /// re-routed; with `apply_existing`, every inbox thread whose rule outcome
+    /// changed moves too (chunked, so sync can interleave). Never touches AI or
+    /// heuristic decisions the change doesn't affect. Returns threads moved.
+    async fn apply_rule_change(
+        &self,
+        before: Vec<SplitRule>,
+        apply_existing: bool,
+    ) -> Result<usize> {
+        let (after, fallback) = self
+            .db
+            .read(|conn| {
+                let s = repo::settings::get(conn)?;
+                Ok((
+                    repo::splits::list(conn)?,
+                    route::Fallback::from_settings(s.auto_labels_enabled, s.ai_categorize),
+                ))
+            })
+            .await?;
+        let mut moved = 0;
+        if apply_existing {
+            let ids = self
+                .db
+                .read(|conn| route::reroute::inbox_thread_ids(conn))
+                .await?;
+            for chunk in ids.chunks(route::reroute::CHUNK) {
+                let (chunk, b, a) = (chunk.to_vec(), before.clone(), after.clone());
+                moved += self
+                    .db
+                    .write(move |conn| {
+                        let tx = conn.transaction()?;
+                        let n = route::reroute::apply_diff(&tx, &b, &a, fallback, &chunk)?;
+                        tx.commit()?;
+                        Ok(n)
+                    })
+                    .await?;
+            }
+        }
+        moved += self
+            .db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                let orphans = route::reroute::orphaned_thread_ids(&tx)?;
+                for &id in &orphans {
+                    route::route_thread_deterministic(&tx, &after, fallback, id)?;
+                }
+                tx.commit()?;
+                Ok(orphans.len())
+            })
+            .await?;
+        // Also wakes the background AI router for any thread now 'pending'.
+        self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
+        Ok(moved)
     }
 
     /// Persist a single shared tab order across custom splits and auto-label
@@ -3508,8 +4056,12 @@ impl Core {
     /// Only re-resolves routing when the splits' relative priority actually
     /// changed (moving an auto-label around can't affect first-match-wins), so a
     /// pure label move stays cheap.
-    pub async fn reorder_tabs(&self, order: Vec<(String, i64)>) -> Result<()> {
-        let split_order_changed = self
+    pub async fn reorder_tabs(
+        &self,
+        order: Vec<(String, i64)>,
+        apply_existing: bool,
+    ) -> Result<()> {
+        let before = self
             .db
             .write(move |conn| {
                 let tx = conn.transaction()?;
@@ -3518,6 +4070,7 @@ impl Core {
                         .query_map([], |r| r.get(0))?
                         .collect()
                 };
+                let before_rules = repo::splits::list(&tx)?;
                 let before = split_ids(&tx)?;
                 for (i, (kind, id)) in order.iter().enumerate() {
                     let pos = i as i64;
@@ -3535,11 +4088,11 @@ impl Core {
                 }
                 let after = split_ids(&tx)?;
                 tx.commit()?;
-                Ok(before != after)
+                Ok((before != after).then_some(before_rules))
             })
             .await?;
-        if split_order_changed {
-            self.reroute_all_sync().await?;
+        if let Some(before) = before {
+            self.apply_rule_change(before, apply_existing).await?;
         } else {
             self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
         }
@@ -3564,8 +4117,47 @@ impl Core {
 
     pub async fn delete_label(&self, id: i64) -> Result<()> {
         self.db
-            .write(move |conn| repo::labels::delete(conn, id))
+            .write(move |conn| {
+                let was_category = repo::labels::get(conn, id)?.is_some_and(|l| l.is_auto);
+                repo::labels::delete(conn, id)?;
+                // Cached verdicts may name the deleted category.
+                if was_category {
+                    route::clear_cache(conn)?;
+                }
+                Ok(())
+            })
             .await
+    }
+
+    /// Add a custom AI category: an auto label the classifier can pick, with
+    /// optional guidance for the model. Cached verdicts are dropped so senders
+    /// are re-judged against the new list.
+    pub async fn create_category(
+        &self,
+        name: String,
+        color: String,
+        description: String,
+    ) -> Result<Label> {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err(CoreError::Other("category name is empty".into()));
+        }
+        let label = self
+            .db
+            .write(move |conn| {
+                let label = repo::labels::create_auto(conn, &name, &color)?;
+                if !description.trim().is_empty() {
+                    let mut settings = repo::settings::get(conn)?;
+                    settings
+                        .ai_category_descriptions
+                        .insert(label.keyword.clone(), description.trim().to_string());
+                    repo::settings::set(conn, &settings)?;
+                }
+                route::clear_cache(conn)?;
+                Ok(label)
+            })
+            .await?;
+        Ok(label)
     }
 
     pub async fn restore_auto_labels(&self) -> Result<i64> {
@@ -3585,63 +4177,68 @@ impl Core {
         self.reroute_all().await
     }
 
-    /// Re-resolve every thread's tab from scratch and drain the AI queue, so the
-    /// caller sees the final state. Used by the explicit "Re-sort" action and the
-    /// one-shot startup backfill.
+    /// Re-resolve every inbox thread's tab from scratch and drain the AI
+    /// queue, so the caller sees the final state. Used by the explicit
+    /// "Re-sort" action and the one-shot startup backfill.
     pub async fn reroute_all(&self) -> Result<i64> {
         let n = self.reroute_all_sync().await?;
-        // Drain the AI queue now so the caller sees the final state.
-        while self.classify_pending(200).await? > 0 {}
+        // Drain the AI queue now so the caller sees the final state. A failing
+        // model leaves the rest 'pending' for the background router.
+        while let Ok(done) = self.classify_pending(200).await {
+            if done == 0 {
+                break;
+            }
+        }
         Ok(n)
     }
 
-    /// Deterministic re-route only (rules + heuristic, or mark 'pending'); the
-    /// background router handles the AI pass. Fast enough to run on every rule
-    /// edit without blocking on model calls.
+    /// Deterministic re-route of every inbox thread (rules, then the heuristic
+    /// or the AI queue), in chunks so sync can interleave. Clears the AI
+    /// sender cache so an edited category prompt re-evaluates. Local AI
+    /// annotations are kept, and automations never re-run on mail they
+    /// already handled (`messages.automations_applied`).
     async fn reroute_all_sync(&self) -> Result<i64> {
-        let n = self
+        let (ids, splits, fallback) = self
             .db
             .write(|conn| {
-                let tx = conn.transaction()?;
-                // Keep the one-shot backfill marker; drop real sender decisions
-                // so an edited prompt/rules re-evaluates.
-                tx.execute(
+                // Keep the one-shot backfill marker; drop real sender decisions.
+                conn.execute(
                     "DELETE FROM route_cache WHERE sender_domain <> '__routing_backfill__'",
                     [],
                 )?;
-                tx.execute(
-                    "DELETE FROM message_labels WHERE label_id IN
-                     (SELECT id FROM labels WHERE is_auto = 1)",
-                    [],
-                )?;
-                tx.execute("UPDATE threads SET routed_tab = NULL", [])?;
-                tx.execute(
-                    "UPDATE messages SET local_subject_prefix = '', local_body_note = ''",
-                    [],
-                )?;
-                let settings = repo::settings::get(&tx)?;
-                let mut n = 0i64;
-                if settings.auto_labels_enabled {
-                    let splits = repo::splits::list(&tx)?;
-                    let ids: Vec<i64> = {
-                        let mut stmt = tx.prepare("SELECT id FROM threads")?;
-                        let rows = stmt
-                            .query_map([], |r| r.get(0))?
-                            .collect::<rusqlite::Result<Vec<_>>>()?;
-                        rows
-                    };
-                    for id in ids {
-                        route::route_thread_deterministic(
-                            &tx,
-                            &splits,
-                            settings.ai_categorize,
-                            id,
-                        )?;
-                        n += 1;
+                let s = repo::settings::get(conn)?;
+                Ok((
+                    route::reroute::inbox_thread_ids(conn)?,
+                    repo::splits::list(conn)?,
+                    route::Fallback::from_settings(s.auto_labels_enabled, s.ai_categorize),
+                ))
+            })
+            .await?;
+        let mut n = 0i64;
+        for chunk in ids.chunks(route::reroute::CHUNK) {
+            let (chunk, splits) = (chunk.to_vec(), splits.clone());
+            n += self
+                .db
+                .write(move |conn| {
+                    let tx = conn.transaction()?;
+                    for &id in &chunk {
+                        route::route_thread_deterministic(&tx, &splits, fallback, id)?;
                     }
+                    tx.commit()?;
+                    Ok(chunk.len() as i64)
+                })
+                .await?;
+        }
+        n += self
+            .db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                let orphans = route::reroute::orphaned_thread_ids(&tx)?;
+                for &id in &orphans {
+                    route::route_thread_deterministic(&tx, &splits, fallback, id)?;
                 }
                 tx.commit()?;
-                Ok(n)
+                Ok(orphans.len() as i64)
             })
             .await?;
         // Routing changed across many threads; a blanket refresh is fine here.
@@ -3650,28 +4247,43 @@ impl Core {
         Ok(n)
     }
 
-    /// Classify up to `limit` pending threads. With no custom automations this
-    /// preserves the low-cost sender-domain category cache. Compound rules are
-    /// evaluated per message (their conditions may depend on subject/body), and
-    /// only their preconfigured action allow-lists are executed.
+    /// Resolve up to `limit` threads waiting as `pending`: first the AI
+    /// checks of split rules (in rule order), then the category. Each AI step
+    /// tries the decision models, then the chat model; with no AI configured
+    /// at all, checks count as "no" and categories use the built-in heuristic,
+    /// so nothing stays pending for want of an API key. A configured AI that
+    /// fails leaves the thread pending for a later retry.
     pub async fn classify_pending(&self, limit: i64) -> Result<i64> {
         let _guard = self.ai_router_lock.lock().await;
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
-        if !settings.ai_categorize {
-            return Ok(0);
-        }
-        let cfg = match self.ai_config_from(&settings, Scenario::Categorize).await {
-            Ok(c) => c,
-            // No key: leave threads 'pending' (still shown in Important/Other).
-            Err(_) => return Ok(0),
-        };
+        let fallback =
+            route::Fallback::from_settings(settings.auto_labels_enabled, settings.ai_categorize);
+        let descriptions = settings.ai_category_descriptions.clone();
 
-        let (jobs, cache) = self
+        // (thread id, facts if it has inbound mail, rule facts)
+        let (jobs, cache, splits, catalog) = self
             .db
             .read(move |conn| {
+                let ids: Vec<i64> = conn
+                    .prepare(
+                        "SELECT id FROM threads WHERE routed_tab = 'pending'
+                         ORDER BY last_message_at DESC LIMIT ?1",
+                    )?
+                    .query_map(rusqlite::params![limit], |r| r.get(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                let mut jobs = Vec::new();
+                for id in ids {
+                    jobs.push((
+                        id,
+                        route::thread_facts(conn, id)?,
+                        route::RuleSubject::load(conn, id)?,
+                    ));
+                }
                 Ok((
-                    route::pending_threads(conn, limit)?,
+                    jobs,
                     route::load_cache(conn)?,
+                    repo::splits::list(conn)?,
+                    route::category_catalog(conn, &descriptions)?,
                 ))
             })
             .await?;
@@ -3679,92 +4291,129 @@ impl Core {
             return Ok(0);
         }
 
-        let prompt = settings.ai_category_prompt.clone();
-        let rules: Vec<AiAutomationRule> = settings
-            .ai_automation_rules
-            .iter()
-            .filter(|rule| rule.enabled && !rule.actions.is_empty())
-            .cloned()
-            .collect();
-        let compound = !rules.is_empty();
-        // Resolved (thread id, category keyword, configured actions).
-        let mut resolved: Vec<(i64, Option<String>, Vec<AiAutomationAction>)> = Vec::new();
-        let mut decided: std::collections::HashMap<String, Option<autolabel::Category>> =
-            std::collections::HashMap::new();
-        let mut cache_writes: Vec<(String, String)> = Vec::new();
+        let split_ai = if splits.iter().any(|s| s.ai.is_some()) {
+            self.deciders(&settings, settings.decision_use_splits).await
+        } else {
+            Deciders {
+                decision: Vec::new(),
+                chat: None,
+                min_confidence: 0.0,
+            }
+        };
+        let cat_ai = if fallback == route::Fallback::Ai {
+            self.deciders(&settings, settings.decision_use_categories)
+                .await
+        } else {
+            Deciders {
+                decision: Vec::new(),
+                chat: None,
+                min_confidence: 0.0,
+            }
+        };
 
-        for (tid, facts) in jobs {
-            let domain = route::sender_domain(&facts.from_addr);
-            if compound {
-                let msgs = route::automation_prompt(
-                    &prompt,
-                    &rules,
-                    &facts.from_addr,
-                    &facts.subject,
-                    &facts.snippet,
-                );
-                match ai::chat(&cfg, msgs).await {
-                    Ok(out) => {
-                        let decision = route::parse_automation_decision(&out);
-                        let selected: std::collections::HashSet<&str> =
-                            decision.rule_ids.iter().map(String::as_str).collect();
-                        // Preserve the user's rule/action order, not the model's
-                        // output order, so compound behavior is deterministic.
-                        let actions = rules
-                            .iter()
-                            .filter(|rule| selected.contains(rule.id.as_str()))
-                            .flat_map(|rule| rule.actions.iter().cloned())
-                            .collect();
-                        resolved.push((
-                            tid,
-                            decision.category.map(|c| c.keyword().to_string()),
-                            actions,
-                        ));
-                    }
-                    Err(e) => {
-                        tracing::warn!("ai automation failed for thread {tid}: {e}");
+        enum Verdict {
+            /// A split (or other route key) claimed the thread.
+            Route(String),
+            /// AI category keyword, `None` = no category.
+            Category(Option<String>),
+            /// No AI: built-in header heuristic.
+            Heuristic(route::ThreadFacts),
+            Unrouted,
+        }
+        let mut resolved: Vec<(i64, Verdict)> = Vec::new();
+        let mut decided: HashMap<String, Option<String>> = HashMap::new();
+        let mut cache_writes: Vec<(String, String)> = Vec::new();
+        let mut failures = 0usize;
+
+        for (tid, facts, subject) in jobs {
+            // 1. Split rules, with their AI checks answered.
+            let candidates = route::decide::ai_candidates(&subject, &splits);
+            let mut yes: HashSet<i64> = HashSet::new();
+            if !candidates.is_empty() {
+                if let Some(facts) = &facts {
+                    let checks: Vec<(String, String, f64)> = candidates
+                        .iter()
+                        .filter_map(|sp| {
+                            let ai = sp.ai.as_ref()?;
+                            Some((
+                                format!("split_{}", sp.id),
+                                ai.instruction.clone(),
+                                ai.min_confidence.unwrap_or(split_ai.min_confidence),
+                            ))
+                        })
+                        .collect();
+                    match split_ai.checks(facts, &checks).await {
+                        Ok(ids) => {
+                            yes = candidates
+                                .iter()
+                                .filter(|sp| ids.contains(&format!("split_{}", sp.id)))
+                                .map(|sp| sp.id)
+                                .collect();
+                        }
+                        Err(e) => {
+                            failures += 1;
+                            tracing::warn!("split ai checks failed for thread {tid}: {e}");
+                            continue;
+                        }
                     }
                 }
+            }
+            if let Some(key) = route::decide::decide_with_answers(&subject, &splits, &yes).route {
+                resolved.push((tid, Verdict::Route(key.to_string())));
                 continue;
             }
 
-            let category: Option<autolabel::Category> = if let Some(hit) = cache.get(&domain) {
-                // Cache stores the category keyword, "" = no category.
-                autolabel::Category::from_keyword(hit)
-            } else if let Some(d) = decided.get(&domain) {
-                *d
-            } else {
-                let msgs = route::category_prompt(
-                    &prompt,
-                    &facts.from_addr,
-                    &facts.subject,
-                    &facts.snippet,
-                );
-                match ai::chat(&cfg, msgs).await {
-                    Ok(out) => {
-                        let cat = route::parse_category(&out);
-                        decided.insert(domain.clone(), cat);
-                        // Persist the decision keyed by domain ("" = no category).
-                        let key = cat.map(|c| c.keyword().to_string()).unwrap_or_default();
-                        cache_writes.push((domain.clone(), key));
-                        cat
-                    }
-                    // Transient failure: leave this thread 'pending' so it retries
-                    // on the next pass, and don't poison the cache for the sender.
-                    Err(e) => {
-                        tracing::warn!("ai categorize failed for thread {tid}: {e}");
-                        continue;
-                    }
-                }
+            // 2. Category.
+            let Some(facts) = facts else {
+                resolved.push((tid, Verdict::Unrouted));
+                continue;
             };
-            resolved.push((tid, category.map(|c| c.keyword().to_string()), Vec::new()));
+            match fallback {
+                route::Fallback::Off => resolved.push((tid, Verdict::Unrouted)),
+                route::Fallback::Heuristic => resolved.push((tid, Verdict::Heuristic(facts))),
+                route::Fallback::Ai if !cat_ai.any() => {
+                    resolved.push((tid, Verdict::Heuristic(facts)))
+                }
+                route::Fallback::Ai => {
+                    let domain = route::sender_domain(&facts.from_addr);
+                    let kw = if let Some(hit) = cache.get(&domain) {
+                        // Cache stores the category keyword, "" = no category.
+                        (!hit.is_empty()).then(|| hit.clone())
+                    } else if let Some(d) = decided.get(&domain) {
+                        d.clone()
+                    } else {
+                        match cat_ai
+                            .category(&facts, &settings.ai_category_prompt, &catalog)
+                            .await
+                        {
+                            Ok(kw) => {
+                                decided.insert(domain.clone(), kw.clone());
+                                cache_writes.push((domain.clone(), kw.clone().unwrap_or_default()));
+                                kw
+                            }
+                            // Transient failure: leave this thread 'pending' so it
+                            // retries, and don't poison the cache for the sender.
+                            Err(e) => {
+                                failures += 1;
+                                tracing::warn!("ai categorize failed for thread {tid}: {e}");
+                                continue;
+                            }
+                        }
+                    };
+                    resolved.push((tid, Verdict::Category(kw)));
+                }
+            }
         }
 
-        let action_plans: Vec<(i64, Vec<AiAutomationAction>)> = resolved
-            .iter()
-            .map(|(tid, _, actions)| (*tid, actions.clone()))
-            .collect();
-        // One write pass: apply category/tab routing and local annotations.
+        if resolved.is_empty() && failures > 0 {
+            // Every model call failed (offline, quota, bad key). Report it so
+            // the router backs off instead of retrying in a tight loop; the
+            // threads stay 'pending' and keep their Important/Other fallback.
+            return Err(CoreError::Other(format!(
+                "ai routing: all {failures} classification call(s) failed"
+            )));
+        }
+
         let count = self
             .db
             .write(move |conn| {
@@ -3773,28 +4422,185 @@ impl Core {
                     route::cache_put(conn, domain, key)?;
                 }
                 let mut count = 0i64;
-                for (tid, kw, actions) in &resolved {
-                    let key = match kw {
-                        Some(k) => {
-                            let id: Option<i64> = conn
-                                .query_row(
-                                    "SELECT id FROM labels WHERE keyword = ?1 AND is_auto = 1",
-                                    rusqlite::params![k],
-                                    |r| r.get(0),
-                                )
-                                .optional()?;
-                            id.map(|id| format!("label:{id}"))
-                        }
-                        None => None,
+                for (tid, verdict) in &resolved {
+                    let key = match verdict {
+                        Verdict::Route(k) => Some(k.clone()),
+                        Verdict::Category(Some(kw)) => conn
+                            .query_row(
+                                "SELECT id FROM labels WHERE keyword = ?1 AND is_auto = 1",
+                                rusqlite::params![kw],
+                                |r| r.get::<_, i64>(0),
+                            )
+                            .optional()?
+                            .map(|id| format!("label:{id}")),
+                        Verdict::Category(None) | Verdict::Unrouted => None,
+                        Verdict::Heuristic(facts) => route::heuristic_key(conn, facts)?,
                     };
-                    route::apply_tab(conn, *tid, key.as_deref())?;
+                    // Sync or a rule edit routed the thread while the model was
+                    // thinking: that newer decision wins.
+                    if route::apply_ai_tab(conn, *tid, key.as_deref())? {
+                        count += 1;
+                    }
+                }
+                Ok(count)
+            })
+            .await?;
+        if count > 0 {
+            self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
+        }
+        Ok(count)
+    }
 
+    /// Run the user's automation rules on newly received mail, once per
+    /// message. A rule matches when its condition (the rule decision API) holds
+    /// and, if it has an AI instruction, the decision model (or the chat
+    /// classifier as fallback) says yes. Only the rule's own action allow-list
+    /// runs. Returns the number of threads processed.
+    pub async fn run_automations(&self, limit: i64) -> Result<i64> {
+        /// Mail older than this is never automated, so a fresh account's
+        /// backfill or a long outage can't archive history.
+        const MAX_AGE_MS: i64 = 3 * 24 * 60 * 60 * 1000;
+        let _guard = self.ai_router_lock.lock().await;
+        let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        let rules: Vec<AiAutomationRule> = settings
+            .ai_automation_rules
+            .iter()
+            .filter(|rule| {
+                rule.enabled
+                    && !rule.actions.is_empty()
+                    && (rule.condition.is_some() || !rule.instruction.trim().is_empty())
+            })
+            .cloned()
+            .collect();
+        let cutoff = now_ms() - MAX_AGE_MS;
+        let no_rules = rules.is_empty();
+
+        // (thread id, newest inbound message id, rule facts, AI facts)
+        let jobs = self
+            .db
+            .write(move |conn| {
+                // Mail nothing will ever automate is settled right away, so
+                // creating a rule later doesn't sweep up a backlog.
+                if no_rules {
+                    conn.execute(
+                        "UPDATE messages SET automations_applied = 1 WHERE automations_applied = 0",
+                        [],
+                    )?;
+                    return Ok(Vec::new());
+                }
+                conn.execute(
+                    "UPDATE messages SET automations_applied = 1
+                     WHERE automations_applied = 0
+                       AND (date < ?1 OR is_outgoing = 1 OR is_draft = 1)",
+                    rusqlite::params![cutoff],
+                )?;
+                let mut stmt = conn.prepare(
+                    "SELECT thread_id, MAX(id) FROM messages
+                     WHERE automations_applied = 0 AND is_outgoing = 0 AND is_draft = 0
+                     GROUP BY thread_id ORDER BY MAX(date) DESC LIMIT ?1",
+                )?;
+                let rows = stmt
+                    .query_map(rusqlite::params![limit], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                let mut out = Vec::new();
+                for (tid, mid) in rows {
+                    let subject = route::RuleSubject::load(conn, tid)?;
+                    let facts = route::thread_facts(conn, tid)?;
+                    out.push((tid, mid, subject, facts));
+                }
+                Ok(out)
+            })
+            .await?;
+        if jobs.is_empty() {
+            return Ok(0);
+        }
+
+        let needs_ai = rules.iter().any(|r| !r.instruction.trim().is_empty());
+        let ai = if needs_ai {
+            self.deciders(&settings, settings.decision_use_rules).await
+        } else {
+            Deciders {
+                decision: Vec::new(),
+                chat: None,
+                min_confidence: 0.0,
+            }
+        };
+
+        // (thread id, newest message id, actions to run in rule order)
+        let mut plans: Vec<(i64, i64, Vec<AiAutomationAction>)> = Vec::new();
+        let mut failures = 0usize;
+        for (tid, mid, subject, facts) in jobs {
+            // Deterministic gate first; only survivors with an AI check cost a
+            // model call.
+            let gated: Vec<&AiAutomationRule> = rules
+                .iter()
+                .filter(|r| {
+                    r.condition
+                        .as_ref()
+                        .is_none_or(|c| route::decide::matches(c, &subject))
+                })
+                .collect();
+            let checks: Vec<(String, String, f64)> = gated
+                .iter()
+                .filter(|r| !r.instruction.trim().is_empty())
+                .map(|r| {
+                    (
+                        r.id.clone(),
+                        r.instruction.clone(),
+                        r.min_confidence.unwrap_or(ai.min_confidence),
+                    )
+                })
+                .collect();
+            let mut yes: HashSet<String> = HashSet::new();
+            if let (false, Some(facts)) = (checks.is_empty(), &facts) {
+                match ai.checks(facts, &checks).await {
+                    Ok(ids) => yes = ids,
+                    // A configured model that failed: retry this message on a
+                    // later pass rather than silently dropping its AI rules.
+                    Err(e) => {
+                        failures += 1;
+                        tracing::warn!("automation checks failed for thread {tid}: {e}");
+                        continue;
+                    }
+                }
+            }
+            let ai_yes: HashSet<&str> = yes.iter().map(String::as_str).collect();
+            plans.push((tid, mid, actions_for(&gated, &ai_yes)));
+        }
+
+        fn actions_for(
+            gated: &[&AiAutomationRule],
+            ai_yes: &std::collections::HashSet<&str>,
+        ) -> Vec<AiAutomationAction> {
+            // The user's rule/action order, so compound behavior is deterministic.
+            gated
+                .iter()
+                .filter(|r| r.instruction.trim().is_empty() || ai_yes.contains(r.id.as_str()))
+                .flat_map(|r| r.actions.iter().cloned())
+                .collect()
+        }
+
+        if plans.is_empty() && failures > 0 {
+            return Err(CoreError::Other(format!(
+                "automations: all {failures} decision call(s) failed"
+            )));
+        }
+
+        // One write pass: routing and local annotations, then the marker.
+        let processed = plans.len() as i64;
+        let action_plans = self
+            .db
+            .write(move |conn| {
+                let mut out: Vec<(i64, Vec<AiAutomationAction>)> = Vec::new();
+                for (tid, mid, actions) in plans {
                     let mut prefixes = Vec::new();
                     let mut notes = Vec::new();
-                    for action in actions {
+                    for action in &actions {
                         match action.kind.as_str() {
                             "route_to" if valid_automation_route(conn, &action.value)? => {
-                                route::apply_tab(conn, *tid, Some(&action.value))?;
+                                route::apply_tab(conn, tid, Some(&action.value))?;
                             }
                             "subject_prefix" if !action.value.trim().is_empty() => {
                                 prefixes.push(action.value.as_str());
@@ -3807,17 +4613,23 @@ impl Core {
                     }
                     if !prefixes.is_empty() || !notes.is_empty() {
                         conn.execute(
-                            "UPDATE messages
-                             SET local_subject_prefix = ?2, local_body_note = ?3
-                             WHERE id = (SELECT id FROM messages
-                                         WHERE thread_id = ?1 AND is_outgoing = 0 AND is_draft = 0
-                                         ORDER BY date DESC LIMIT 1)",
-                            rusqlite::params![tid, prefixes.concat(), notes.join("\n\n")],
+                            "UPDATE messages SET local_subject_prefix = ?2, local_body_note = ?3
+                             WHERE id = ?1",
+                            rusqlite::params![mid, prefixes.concat(), notes.join("\n\n")],
                         )?;
                     }
-                    count += 1;
+                    // Older unhandled messages in the thread are settled too:
+                    // rules judge the conversation as of its newest message.
+                    conn.execute(
+                        "UPDATE messages SET automations_applied = 1
+                         WHERE thread_id = ?1 AND id <= ?2 AND automations_applied = 0",
+                        rusqlite::params![tid, mid],
+                    )?;
+                    if !actions.is_empty() {
+                        out.push((tid, actions));
+                    }
                 }
-                Ok(count)
+                Ok(out)
             })
             .await?;
 
@@ -3828,6 +4640,7 @@ impl Core {
             .filter(|(_, actions)| actions.iter().any(|a| a.kind == "add_label"))
             .map(|(tid, _)| *tid)
             .collect();
+        let changed = !action_plans.is_empty();
 
         // Mailbox mutations reuse the normal optimistic + queued action path,
         // so IMAP state, retries, and UI refreshes behave exactly like a click.
@@ -3885,8 +4698,67 @@ impl Core {
                 })
                 .await?;
         }
-        self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
-        Ok(count)
+        if changed {
+            self.bus.emit(CoreEvent::MailUpdated { thread_ids: vec![] });
+        }
+        Ok(processed)
+    }
+
+    /// Send one tiny question to every configured decision provider, in chain
+    /// order, so Settings can show which are reachable (and how fast).
+    pub async fn test_decision_provider(&self) -> Result<Vec<DecisionTestResult>> {
+        let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        let mut out = Vec::new();
+        for ep in Self::decision_endpoints(&settings) {
+            let Some(cfg) = self.decision_config(&settings, &ep).await else {
+                out.push(DecisionTestResult {
+                    provider: ep.provider.clone(),
+                    model: ep.model.clone(),
+                    ok: false,
+                    latency_ms: 0,
+                    probability: 0.0,
+                    error: "missing API key or endpoint".into(),
+                });
+                continue;
+            };
+            let started = std::time::Instant::now();
+            let result = ai::decisions::decide(
+                &cfg,
+                "From: billing@example.com\nSubject: Your invoice #1042\n\nAmount due: $40.",
+                &[("invoice".into(), route::check_question("It is an invoice"))],
+            )
+            .await;
+            let latency_ms = started.elapsed().as_millis() as i64;
+            out.push(match result {
+                Ok(answers) => match answers.get("invoice") {
+                    Some(ai::decisions::Answer::Predicate { probability }) => DecisionTestResult {
+                        provider: cfg.provider,
+                        model: cfg.model,
+                        ok: true,
+                        latency_ms,
+                        probability: *probability,
+                        error: String::new(),
+                    },
+                    _ => DecisionTestResult {
+                        provider: cfg.provider,
+                        model: cfg.model,
+                        ok: false,
+                        latency_ms,
+                        probability: 0.0,
+                        error: "no answer for the test question".into(),
+                    },
+                },
+                Err(e) => DecisionTestResult {
+                    provider: cfg.provider,
+                    model: cfg.model,
+                    ok: false,
+                    latency_ms,
+                    probability: 0.0,
+                    error: e.to_string(),
+                },
+            });
+        }
+        Ok(out)
     }
 
     /// Exact unread counts for every split tab and sidebar row in one call.
@@ -3900,6 +4772,98 @@ impl Core {
             .await
     }
 
+    /// The newest verification code received in the last `max_age_minutes`.
+    pub async fn latest_verification_code(
+        &self,
+        max_age_minutes: i64,
+    ) -> Result<Option<VerificationCode>> {
+        let since = now_ms() - max_age_minutes.max(1) * 60_000;
+        let recent = self
+            .db
+            .read(move |conn| repo::messages::recent_received(conn, since, 50))
+            .await?;
+        Ok(recent.into_iter().find_map(|m| {
+            let code = m.verification_code?;
+            Some(VerificationCode {
+                code,
+                message_id: m.id,
+                thread_id: m.thread_id,
+                sender: m
+                    .from
+                    .name
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or(m.from.email),
+                subject: m.subject,
+                received_at: m.date,
+            })
+        }))
+    }
+
+    /// A spoken briefing over the newest unread Important threads (Siri's
+    /// "catch me up"). Falls back to a plain sender/subject rundown when no AI
+    /// provider is configured or the call fails.
+    pub async fn inbox_brief(&self) -> Result<String> {
+        let page = self
+            .list_threads(View::Inbox, Some(-1), None, None, None, None, 40)
+            .await?;
+        let unread: Vec<ThreadSummary> = page
+            .threads
+            .into_iter()
+            .filter(|t| t.unread_count > 0)
+            .take(6)
+            .collect();
+        if unread.is_empty() {
+            return Ok("You're all caught up - no unread important email.".into());
+        }
+        let sender = |t: &ThreadSummary| {
+            t.participants
+                .first()
+                .map(|a| {
+                    a.name
+                        .clone()
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or(a.email.clone())
+                })
+                .unwrap_or_default()
+        };
+        let lines: String = unread
+            .iter()
+            .map(|t| format!("- {}: {} - {}\n", sender(t), t.subject, t.snippet))
+            .collect();
+        if let Ok(cfg) = self.ai_config(Scenario::Summarize).await {
+            match ai::chat(&cfg, ai::brief_prompt(&lines)).await {
+                Ok(text) if !text.trim().is_empty() => return Ok(text.trim().to_string()),
+                Ok(_) => {}
+                Err(e) => tracing::warn!("inbox brief via ai failed: {e}"),
+            }
+        }
+        let rundown: Vec<String> = unread
+            .iter()
+            .take(3)
+            .map(|t| format!("{} about \"{}\"", sender(t), t.subject))
+            .collect();
+        Ok(format!(
+            "You have {} unread important conversation{}. Latest: {}.",
+            unread.len(),
+            if unread.len() == 1 { "" } else { "s" },
+            rundown.join("; ")
+        ))
+    }
+
+    /// The verification code in one message, if any (for notifications).
+    pub async fn message_verification_code(&self, message_id: i64) -> Result<Option<String>> {
+        let detail = self
+            .db
+            .read(move |conn| repo::messages::detail(conn, message_id))
+            .await?;
+        Ok(detail.verification_code)
+    }
+
+    /// Sender picture (Gravatar, BIMI brand logo, or site icon) as a data URL.
+    pub async fn sender_avatar(&self, email: &str) -> Option<String> {
+        avatars::resolve(&self.paths.data_dir, email).await
+    }
+
     pub async fn get_settings(&self) -> Result<Settings> {
         self.db.read(|conn| repo::settings::get(conn)).await
     }
@@ -3907,8 +4871,22 @@ impl Core {
     pub async fn set_settings(&self, settings: Settings) -> Result<()> {
         apply_oauth_settings(&settings);
         self.db
-            .write(move |conn| repo::settings::set(conn, &settings))
-            .await
+            .write(move |conn| {
+                // New category guidance invalidates cached sender verdicts.
+                let before = repo::settings::get(conn)?;
+                if before.ai_category_descriptions != settings.ai_category_descriptions
+                    || before.ai_category_prompt != settings.ai_category_prompt
+                {
+                    route::clear_cache(conn)?;
+                }
+                repo::settings::set(conn, &settings)
+            })
+            .await?;
+        // Start/stop/move the MCP server if its settings changed.
+        if let Err(e) = self.mcp_apply_settings().await {
+            tracing::warn!("mcp: apply settings failed: {e}");
+        }
+        Ok(())
     }
 
     /// Return notifications that are ready for the native host to dispatch.
@@ -4175,18 +5153,11 @@ fn apply_oauth_settings(settings: &Settings) {
 /// Validate a model-selected route against current local rows. The model only
 /// receives configured values, but this protects stale/deleted targets too.
 fn valid_automation_route(conn: &rusqlite::Connection, target: &str) -> Result<bool> {
-    if matches!(target, "important" | "other") {
-        return Ok(true);
-    }
-    let (table, id) = if let Some(id) = target.strip_prefix("split:") {
-        ("split_rules", id)
-    } else if let Some(id) = target.strip_prefix("label:") {
-        ("labels", id)
-    } else {
-        return Ok(false);
-    };
-    let Some(id) = id.parse::<i64>().ok() else {
-        return Ok(false);
+    let (table, id) = match target.parse::<models::RouteKey>() {
+        Ok(models::RouteKey::Important | models::RouteKey::Other) => return Ok(true),
+        Ok(models::RouteKey::Split(id)) => ("split_rules", id),
+        Ok(models::RouteKey::Label(id)) => ("labels", id),
+        Ok(models::RouteKey::Pending) | Err(_) => return Ok(false),
     };
     let sql = format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = ?1)");
     Ok(conn.query_row(&sql, rusqlite::params![id], |row| row.get::<_, i64>(0))? != 0)

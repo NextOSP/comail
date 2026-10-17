@@ -16,5 +16,14 @@
   "unknown": "Something went wrong",
   "oauthFailed": "OAuth sign-in failed",
   "connectionFailed": "Connection failed",
-  "caldav": "Calendar server error"
+  "caldav": "Calendar server error",
+  "crash": {
+    "title": "Something went wrong",
+    "body": "This view hit an unexpected error. Your mail is safe — try again, or reload the app.",
+    "details": "Technical details",
+    "copy": "Copy details",
+    "copied": "Copied",
+    "reload": "Reload app",
+    "retry": "Try again"
+  }
 }

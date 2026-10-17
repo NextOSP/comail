@@ -2,7 +2,7 @@
   "zero": {
     "allDone": "Bạn đã xong hết",
     "nothingIn": "Không có gì trong {{view}} · {{date}}",
-    "hintNextSplit": "nhóm tiếp theo",
+    "hintNextSplit": "tab tiếp theo",
     "hintCompose": "soạn thư",
     "hintShortcuts": "phím tắt"
   },
@@ -11,11 +11,11 @@
     "other": "Khác"
   },
   "splitPopover": {
-    "title": "Nhóm mới",
+    "title": "Tab mới",
     "fromSender": "Thư từ {{email}}",
     "fromDomain": "Tất cả @{{domain}}",
     "tabName": "tab: {{name}}",
-    "created": "Đã tạo nhóm \"{{name}}\"",
+    "created": "Đã tạo tab \"{{name}}\"",
     "excludeSender": "Loại trừ {{email}} khỏi quy tắc hiện tại",
     "excludeDomain": "Loại trừ mọi người @{{domain}} khỏi quy tắc hiện tại",
     "excluded": "Đã loại trừ khỏi \"{{name}}\""
@@ -25,5 +25,15 @@
     "recent": "Cuộc trò chuyện gần đây",
     "noRecent": "Không có cuộc trò chuyện nào khác",
     "noSubject": "(không có chủ đề)"
+  },
+  "tips": {
+    "done": "để đánh dấu xong",
+    "remind": "để nhắc tôi",
+    "compose": "để soạn thư",
+    "search": "để tìm kiếm",
+    "command": "cho mọi lệnh",
+    "dismiss": "Ẩn mẹo",
+    "splits": "để chuyển tab hộp thư. Tự tạo tab trong Cài đặt › Hộp thư chia tab.",
+    "splitsOpen": "Thiết lập tab"
   }
 }
