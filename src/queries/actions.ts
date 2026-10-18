@@ -4,6 +4,7 @@ import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import type {
   ActionKind,
+  SearchResults,
   ThreadDetail,
   ThreadPage,
   ThreadSummary,
@@ -67,13 +68,17 @@ export function applyOptimistic(
     };
   });
 
-  // Search results are flat summary arrays; keep them in step so acting on a
-  // result (Done, read, star...) is visible without leaving the search screen.
-  queryClient.setQueriesData<ThreadSummary[]>({ queryKey: ["search"] }, (data) => {
+  // Preserve search metadata and keep hits aligned with threads when an action
+  // removes results. Read/star changes update summaries until the next refetch.
+  queryClient.setQueriesData<SearchResults>({ queryKey: ["search"] }, (data) => {
     if (!data) return data;
-    return removes
-      ? data.filter((t) => !ids.has(t.id))
-      : data.map((t) => (ids.has(t.id) ? patchSummary(t, kind, params) : t));
+    return {
+      ...data,
+      threads: removes
+        ? data.threads.filter((t) => !ids.has(t.id))
+        : data.threads.map((t) => (ids.has(t.id) ? patchSummary(t, kind, params) : t)),
+      hits: removes ? data.hits.filter((h) => !ids.has(h.threadId)) : data.hits,
+    };
   });
 
   for (const id of threadIds) {
@@ -178,9 +183,9 @@ export function findCachedSummary(threadId: number): ThreadSummary | undefined {
     const hit = data?.pages.flatMap((p) => p.threads).find((t) => t.id === threadId);
     if (hit) return hit;
   }
-  const searches = queryClient.getQueriesData<ThreadSummary[]>({ queryKey: ["search"] });
+  const searches = queryClient.getQueriesData<SearchResults>({ queryKey: ["search"] });
   for (const [, data] of searches) {
-    const hit = data?.find((t) => t.id === threadId);
+    const hit = data?.threads.find((t) => t.id === threadId);
     if (hit) return hit;
   }
   return undefined;
