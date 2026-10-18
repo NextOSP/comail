@@ -92,6 +92,7 @@
     "aiFilterAnswer": "Ou tapez une réponse…",
     "aiFilterFailed": "Impossible de créer le filtre : {{error}}",
     "aiFilterCancel": "Annuler",
+    "aiFilterSettings": "Ouvrir les réglages IA",
     "modeSearch": "Rechercher",
     "modeAsk": "Demander à l’IA",
     "askPlaceholder": "Posez une question sur vos messages…",

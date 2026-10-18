@@ -92,6 +92,7 @@
     "aiFilterAnswer": "Or type an answer…",
     "aiFilterFailed": "Couldn't make a filter: {{error}}",
     "aiFilterCancel": "Cancel",
+    "aiFilterSettings": "Open AI settings",
     "modeSearch": "Search",
     "modeAsk": "Ask AI",
     "askPlaceholder": "Ask anything about your mailbox…",

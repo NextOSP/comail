@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
-import { errorMessage } from "../../ipc/errors";
+import { errorMessage, isAiKeyRejected } from "../../ipc/errors";
 import type { AiFilterTurn } from "../../ipc/types";
 import {
   useAccounts,
@@ -54,6 +54,8 @@ type AiFilterState = {
   pending: boolean;
   ask: { question: string; options: { label: string; value: string }[] } | null;
   error: string | null;
+  /** the error is a rejected API key: offer a jump to Settings → AI */
+  keyRejected?: boolean;
 };
 
 // The most recent line of the model's reasoning, for the clipped one-line trace.
@@ -254,7 +256,14 @@ export function SearchScreen() {
       })
       .catch((err) => {
         if (seq !== aiFilterSeq.current) return;
-        setAiFilter({ request, history, pending: false, ask: null, error: errorMessage(err) });
+        setAiFilter({
+          request,
+          history,
+          pending: false,
+          ask: null,
+          error: errorMessage(err),
+          keyRejected: isAiKeyRejected(err),
+        });
       });
   };
   const answerAiFilter = (answer: string) => {
@@ -400,23 +409,33 @@ export function SearchScreen() {
               className="w-full bg-transparent py-1 text-lg text-ink outline-none placeholder:text-ink-faint"
               spellCheck={false}
             />
-            {mode === "search" && input.trim() !== "" && !aiFilter && (
+            {mode === "search" && (
               <button
                 type="button"
+                disabled={input.trim() === "" || aiFilter != null}
+                tabIndex={input.trim() === "" || aiFilter != null ? -1 : undefined}
                 title={t("common:search.aiFilterHint", { shortcut: `${MOD_LABEL}O` })}
                 onClick={() => runAiFilter(input.trim(), [])}
-                className="co-chip shrink-0 !py-0.5 !text-xs text-ink-muted hover:bg-bg2"
+                className={`co-chip shrink-0 !py-0.5 !text-xs text-ink-muted hover:bg-bg2 ${
+                  input.trim() === "" || aiFilter != null ? "invisible" : ""
+                }`}
               >
                 <AiBadge label={t("common:search.aiFilter")} className="!text-xs" />
                 <kbd className="co-kbd !text-2xs">{MOD_LABEL}O</kbd>
               </button>
             )}
-            {(isFetching || ask.status === "pending" || ask.status === "streaming") && (
-              <Spinner className={mode === "ask" ? "co-ai-icon" : "text-ink-faint"} />
-            )}
-            {mode === "search" && storedQuery.trim() !== "" && rows.length > 0 && (
+            {/* Fixed slot: the spinner blinks on every keystroke's refetch, and
+                mounting it in the row would shove the input sideways. */}
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              {(isFetching || ask.status === "pending" || ask.status === "streaming") && (
+                <Spinner className={mode === "ask" ? "co-ai-icon" : "text-ink-faint"} />
+              )}
+            </span>
+            {mode === "search" && (
               <span
-                className="co-chip shrink-0 !py-0.5 !text-xs tabular-nums text-ink-muted"
+                className={`co-chip min-w-[3rem] shrink-0 justify-center !py-0.5 !text-xs tabular-nums text-ink-muted ${
+                  storedQuery.trim() !== "" && rows.length > 0 ? "" : "invisible"
+                }`}
                 title={`${rows.length}${rows.length >= 60 ? "+" : ""} result${
                   rows.length === 1 ? "" : "s"
                 }`}
@@ -558,8 +577,19 @@ export function SearchScreen() {
                   </div>
                 )}
                 {aiFilter.error && (
-                  <div className="text-sm text-danger">
-                    {t("common:search.aiFilterFailed", { error: aiFilter.error })}
+                  <div className="flex items-center gap-3 text-sm text-danger">
+                    <span className="min-w-0 flex-1">
+                      {t("common:search.aiFilterFailed", { error: aiFilter.error })}
+                    </span>
+                    {aiFilter.keyRejected && (
+                      <button
+                        type="button"
+                        onClick={() => set({ panel: "settings", settingsTab: "ai" })}
+                        className="co-chip shrink-0 !py-0.5 !text-xs text-ink hover:bg-bg2"
+                      >
+                        {t("common:search.aiFilterSettings")}
+                      </button>
+                    )}
                   </div>
                 )}
                 {aiFilter.ask && !aiFilter.pending && (

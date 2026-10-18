@@ -92,6 +92,7 @@
     "aiFilterAnswer": "或输入回答…",
     "aiFilterFailed": "无法生成筛选条件：{{error}}",
     "aiFilterCancel": "取消",
+    "aiFilterSettings": "打开 AI 设置",
     "modeSearch": "搜索",
     "modeAsk": "询问 AI",
     "askPlaceholder": "询问关于你邮箱的任何问题…",

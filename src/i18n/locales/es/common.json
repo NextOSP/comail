@@ -92,6 +92,7 @@
     "aiFilterAnswer": "O escribe una respuesta…",
     "aiFilterFailed": "No se pudo crear el filtro: {{error}}",
     "aiFilterCancel": "Cancelar",
+    "aiFilterSettings": "Abrir ajustes de IA",
     "modeSearch": "Buscar",
     "modeAsk": "Preguntar a la IA",
     "askPlaceholder": "Pregunta lo que quieras sobre tu correo…",

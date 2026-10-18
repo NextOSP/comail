@@ -459,6 +459,9 @@ export function useBackendEvents() {
       lastRecoveryAt = now;
       void refreshMailQueries();
       void refreshStatusSnapshot();
+      // Back from sleep: the reconnect backoff timer doesn't advance while the
+      // Mac sleeps, so nudge an offline actor to retry right away.
+      if (useUi.getState().offline) void call("sync_now", {}).catch(() => {});
     };
     const onVisibility = () => {
       if (document.visibilityState === "visible") recoverVisibleMail();

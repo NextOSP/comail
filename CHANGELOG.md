@@ -9,6 +9,19 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.36] - 2026-10-18
+
+### Fixed
+
+- Comail no longer stays stuck on "Offline" after the Mac wakes from a long
+  sleep. Signing back in to the mail server now gives up after 30 seconds
+  instead of waiting forever on a dead connection, and switching back to the
+  Comail window while it shows Offline makes it reconnect right away.
+- When the AI search filter fails because the AI provider rejected your API
+  key, the error says so and offers an "Open AI settings" button.
+- The search bar no longer jumps sideways while you type: the loading spinner,
+  AI filter button and result count keep fixed places.
+
 ## [0.2.35] - 2026-10-18
 
 ### Added
@@ -453,7 +466,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.35...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.36...HEAD
+[0.2.36]: https://github.com/NextOSP/comail/releases/tag/v0.2.36
 [0.2.35]: https://github.com/NextOSP/comail/releases/tag/v0.2.35
 [0.2.34]: https://github.com/NextOSP/comail/releases/tag/v0.2.34
 [0.2.33]: https://github.com/NextOSP/comail/releases/tag/v0.2.33

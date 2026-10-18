@@ -12,6 +12,7 @@
   "not_found": "Không tìm thấy",
   "offline": "Bạn đang ngoại tuyến",
   "ai_not_configured": "AI chưa được cấu hình. Thêm khóa API trong Cài đặt (không cần với máy chủ cục bộ như LM Studio).",
+  "ai_key_rejected": "Nhà cung cấp AI đã từ chối khóa API. Mở Cài đặt → AI và dán khóa hợp lệ.",
   "other": "Đã xảy ra lỗi",
   "unknown": "Đã xảy ra lỗi",
   "oauthFailed": "Đăng nhập OAuth thất bại",

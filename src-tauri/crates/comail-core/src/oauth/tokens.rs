@@ -161,8 +161,25 @@ impl TokenProvider {
     }
 }
 
+/// Upper bound for one token-endpoint exchange (connect + TLS + response).
+const POST_FORM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Tiny HTTPS form POST over rustls (avoids pulling in a full HTTP client).
+///
+/// Bounded by `POST_FORM_TIMEOUT`: after a sleep/wake or network switch the
+/// socket can go silent without ever erroring, and an unbounded read here
+/// wedged the sync actor (and, via the token cache lock, every other
+/// connection) in "Offline" until the app was restarted.
 pub async fn post_form(url: &str, form: &[(String, String)]) -> Result<String> {
+    tokio::time::timeout(POST_FORM_TIMEOUT, post_form_inner(url, form))
+        .await
+        .map_err(|_| {
+            tracing::warn!(%url, "oauth: token POST: timed out after 30s");
+            CoreError::Network(format!("token POST {url}: timed out"))
+        })?
+}
+
+async fn post_form_inner(url: &str, form: &[(String, String)]) -> Result<String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let parsed = url::Url::parse(url).map_err(|e| CoreError::Auth(e.to_string()))?;

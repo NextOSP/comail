@@ -12,6 +12,7 @@
   "not_found": "No encontrado",
   "offline": "Estás sin conexión",
   "ai_not_configured": "La IA no está configurada. Añade una clave de API en Ajustes (no es necesaria para puntos de conexión locales como LM Studio).",
+  "ai_key_rejected": "Tu proveedor de IA rechazó la clave de API. Abre Ajustes → IA y pega una clave válida.",
   "other": "Algo salió mal",
   "unknown": "Algo salió mal",
   "oauthFailed": "Error al iniciar sesión con OAuth",

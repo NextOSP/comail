@@ -39,6 +39,7 @@ export function parseError(err: unknown): BackendError {
  */
 export function errorMessage(err: unknown): string {
   const { code, message } = parseError(err);
+  if (isAiKeyRejected(err)) return i18n.t("errors:ai_key_rejected");
   const localized = i18n.t(`errors:${code}`, { defaultValue: message });
   // CalDAV/calendar failures are opaque without the server's own reason (an
   // HTTP status, "no calendars found", a redirect target). The generic label
@@ -58,6 +59,12 @@ export function errorMessage(err: unknown): string {
     if (detail && detail !== localized) return truncate(detail);
   }
   return localized;
+}
+
+/** The AI endpoint refused the saved API key (HTTP 401/403): a settings fix,
+ *  not a retry. */
+export function isAiKeyRejected(err: unknown): boolean {
+  return /ai api error 40[13]\b/i.test(parseError(err).message);
 }
 
 /** Cap an error detail so a long backend blob stays a readable one-line toast. */

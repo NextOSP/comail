@@ -12,6 +12,7 @@
   "not_found": "Not found",
   "offline": "You're offline",
   "ai_not_configured": "AI is not configured. Add an API key in Settings (not needed for local endpoints like LM Studio).",
+  "ai_key_rejected": "Your AI provider rejected the API key. Open Settings → AI and paste a valid key.",
   "other": "Something went wrong",
   "unknown": "Something went wrong",
   "oauthFailed": "OAuth sign-in failed",

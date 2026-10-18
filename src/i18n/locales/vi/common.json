@@ -92,6 +92,7 @@
     "aiFilterAnswer": "Hoặc nhập câu trả lời…",
     "aiFilterFailed": "Không tạo được bộ lọc: {{error}}",
     "aiFilterCancel": "Hủy",
+    "aiFilterSettings": "Mở cài đặt AI",
     "modeSearch": "Tìm kiếm",
     "modeAsk": "Hỏi AI",
     "askPlaceholder": "Hỏi bất cứ điều gì về hộp thư của bạn…",
