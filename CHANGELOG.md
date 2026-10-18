@@ -453,7 +453,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.35...HEAD [0.2.35]: https://github.com/NextOSP/comail/compare/v0.2.34...v0.2.35
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.35...HEAD
+[0.2.35]: https://github.com/NextOSP/comail/releases/tag/v0.2.35
 [0.2.34]: https://github.com/NextOSP/comail/releases/tag/v0.2.34
 [0.2.33]: https://github.com/NextOSP/comail/releases/tag/v0.2.33
 [0.2.32]: https://github.com/NextOSP/comail/releases/tag/v0.2.32
