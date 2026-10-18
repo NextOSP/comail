@@ -849,6 +849,9 @@ pub struct SplitInput {
     /// Optional AI check answered by the decision model.
     #[serde(default)]
     pub ai: Option<AiCheck>,
+    /// Badge every conversation in the tab, not just the unread ones.
+    #[serde(default)]
+    pub count_all: bool,
 }
 
 #[tauri::command]
@@ -872,6 +875,7 @@ pub async fn save_split(
             split.condition,
             split.target,
             split.ai,
+            split.count_all,
             apply_existing.unwrap_or(true),
         )
         .await

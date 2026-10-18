@@ -4106,6 +4106,7 @@ impl Core {
         condition: Option<RuleCondition>,
         target: Option<RouteKey>,
         ai: Option<AiCheck>,
+        count_all: bool,
         apply_existing: bool,
     ) -> Result<SplitRule> {
         let saved = self
@@ -4137,6 +4138,7 @@ impl Core {
                     condition.as_ref(),
                     target,
                     ai.as_ref(),
+                    count_all,
                 )?;
                 Ok((saved, before))
             })

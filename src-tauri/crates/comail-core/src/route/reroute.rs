@@ -107,6 +107,7 @@ impl RuleChange {
                     condition: condition.clone(),
                     target: *target,
                     ai: ai.clone(),
+                    count_all: false,
                 });
             }
             RuleChange::Delete { id } => {
@@ -300,6 +301,7 @@ mod tests {
             }),
             target,
             ai: None,
+            count_all: false,
         }
     }
 

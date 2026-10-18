@@ -39,7 +39,8 @@ function BundleRowImpl({
   photos: boolean;
   onOpen: (bundle: Bundle) => void;
 }) {
-  const unread = (bundle.unread ?? 0) > 0;
+  const { unread } = bundle;
+  const count = bundle.count ?? 0;
   const senders = bundleSenders(bundle.threads, selfEmails);
 
   return (
@@ -57,7 +58,7 @@ function BundleRowImpl({
         <span className={`truncate text-base ${unread ? "font-medium text-ink" : "text-ink-muted"}`}>
           {bundle.name}
         </span>
-        {unread && <span className="text-xs text-ink-faint tabular-nums">{bundle.unread}</span>}
+        {count > 0 && <span className="text-xs text-ink-faint tabular-nums">{count}</span>}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
         {senders.map((s) => (

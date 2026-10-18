@@ -400,6 +400,8 @@
     },
     "automatedHint": "Automated is bulk mail - newsletters, notifications, no-reply senders (detected from List-Unsubscribe / bulk headers). \"From a person\" is written by a human. \"Any\" ignores this.",
     "hasAttachmentLabel": "Only mail with an attachment",
+    "countAllLabel": "Count every conversation, not just unread",
+    "countAllHint": "The tab badge normally shows unread conversations only, so a tab you have read shows no number. Turn this on to badge everything this split holds.",
     "targetLabel": "Route matches to",
     "targetHint": "Its own tab gives this rule a new inbox tab. Pick Important, Other, or a category to drop matching mail into an existing tab instead.",
     "target": {

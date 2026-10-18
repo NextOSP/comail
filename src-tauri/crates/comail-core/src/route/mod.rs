@@ -1242,6 +1242,7 @@ mod tests {
             condition: None,
             target: Some(crate::models::RouteKey::Label(news)),
             ai: None,
+            count_all: false,
         };
         route_thread_deterministic(&c, &[rule], Fallback::Heuristic, t).unwrap();
         let key: Option<String> = c
@@ -1430,6 +1431,7 @@ mod tests {
             condition: None,
             target: Some(crate::models::RouteKey::Important),
             ai: None,
+            count_all: false,
         };
         route_thread_deterministic(&c, &[rule], Fallback::Heuristic, t).unwrap();
         assert_eq!(routed(&c, t).as_deref(), Some("important"));
@@ -1618,6 +1620,7 @@ mod tests {
             condition: None,
             target: None,
             ai: None,
+            count_all: false,
         };
         // Before the label exists: no split matches, so the tab is left as-is.
         assert!(!reapply_splits_only(&c, std::slice::from_ref(&rule), t).unwrap());
@@ -1760,6 +1763,7 @@ mod tests {
             condition: None,
             target: None,
             ai: None,
+            count_all: false,
         }];
         let raw = r#"```json
           {"supported":true,"name":"Invoices","instruction":"It is a vendor invoice","actions":[{"kind":"add_label","value":"7"},{"kind":"route_to","value":"split:3"}],"summary":"Label and route invoices","issues":[]}

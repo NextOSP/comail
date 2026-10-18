@@ -347,6 +347,7 @@ mod tests {
             None,
             Some(crate::models::RouteKey::Label(auto_id)),
             None,
+            false,
         )
         .unwrap();
 

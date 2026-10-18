@@ -377,6 +377,7 @@ async fn split_ai_check_uses_backup_and_works_without_ai() {
                 }),
                 None,
                 Some(invoice_split_check()),
+                false,
                 true,
             )
             .await

@@ -430,6 +430,7 @@ mod tests {
             condition: Some(cond),
             target,
             ai: None,
+            count_all: false,
         }
     }
 
