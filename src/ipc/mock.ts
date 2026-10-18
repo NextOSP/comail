@@ -3748,6 +3748,32 @@ export async function mockInvoke(
     case "ai_plan_automation":
       return delay(mockPlanAutomation(String(a.prompt ?? "")), 450);
 
+    case "ai_search_filter": {
+      // Offline stand-in: "from <name>" asks which person once, quoted text
+      // becomes the subject.
+      const req = String(a.request ?? "");
+      const history = (a.history as { question: string; answer: string }[] | undefined) ?? [];
+      const name = /\bfrom\s+([\p{L}.@-]+)/iu.exec(req)?.[1];
+      const subject = /"([^"]+)"/.exec(req)?.[1];
+      if (name && !name.includes("@") && history.length === 0) {
+        const n = name.toLowerCase();
+        return delay(
+          {
+            kind: "ask",
+            question: `Which ${name}?`,
+            options: [`${n}.nguyen@example.com`, `${n}.tran@example.com`].map((e) => ({
+              label: e,
+              value: e,
+            })),
+          },
+          400,
+        );
+      }
+      const from = history[history.length - 1]?.answer ?? name;
+      const parts = [from && `from:${from}`, subject && `subject:"${subject}"`].filter(Boolean);
+      return delay({ kind: "query", query: parts.join(" ") || req }, 400);
+    }
+
     case "ai_command": {
       // Tiny offline stand-in for the intent parser.
       const q = String(a.query ?? "");

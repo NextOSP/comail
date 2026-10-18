@@ -448,6 +448,13 @@ export function useAsk() {
     const offReasoning = onEvent("ai:ask:reasoning", (p) => {
       if (isCurrent(p.requestId)) setReasoning((prev) => prev + p.delta);
     });
+    // Text streamed as an answer was a preamble to a tool call: drop it.
+    const offReset = onEvent("ai:ask:reset", (p) => {
+      if (!isCurrent(p.requestId)) return;
+      streamed.current = "";
+      setAnswer("");
+      setStatus("pending");
+    });
 
     call("ai_ask", { question, requestId, accountId })
       .then((res) => {
@@ -471,6 +478,7 @@ export function useAsk() {
         offCitations();
         offToken();
         offReasoning();
+        offReset();
       });
   }, []);
 

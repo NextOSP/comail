@@ -731,6 +731,16 @@ export type AppleIntelligenceAvailability =
   | "unsupported";
 
 /** Structured action parsed by AI from a natural-language palette query. */
+/** One answered clarification round of `ai_search_filter`. */
+export interface AiFilterTurn {
+  question: string;
+  answer: string;
+}
+
+export type AiSearchFilter =
+  | { kind: "query"; query: string }
+  | { kind: "ask"; question: string; options: { label: string; value: string }[] };
+
 export interface AiIntent {
   /** "create_event" | "compose" | "search" | "go_to" | "none" */
   kind: string;
@@ -992,6 +1002,7 @@ export interface EventMap {
   "ai:ask:token": AskTokenEvent;
   "ai:ask:reasoning": AskReasoningEvent;
   "ai:ask:done": AskDoneEvent;
+  "ai:ask:reset": AskDoneEvent;
   "ai:summary:token": AiSummaryTokenEvent;
   "ai:draft:token": AiDraftTokenEvent;
   "calendar:updated": CalendarUpdatedEvent;
@@ -1261,6 +1272,8 @@ export interface Commands {
   create_category(args: { name: string; color: string; description: string }): Promise<Label>;
   /** Parse a natural-language palette query into an executable intent. */
   ai_command(args: { query: string }): Promise<AiIntent>;
+  /** Plain-language description → search query; may ask a clarifying question first. */
+  ai_search_filter(args: { request: string; history?: AiFilterTurn[] }): Promise<AiSearchFilter>;
   ai_summarize(args: { threadId: number }): Promise<AiThreadSummary>;
   /** Up to 3 short thread-grounded one-tap reply suggestions (instant tier). */
   ai_quick_replies(args: { threadId: number }): Promise<string[]>;

@@ -3186,6 +3186,40 @@ impl Core {
         ai::intent(&cfg, &query).await
     }
 
+    /// Turn a plain-language description ("all email from hoang with subject
+    /// software update") into a search query, grounded in matching contacts.
+    /// May instead return a clarifying question; the UI re-calls with the
+    /// answers in `history`.
+    pub async fn ai_search_filter(
+        &self,
+        request: String,
+        history: Vec<ai::search_filter::FilterTurn>,
+    ) -> Result<ai::search_filter::SearchFilter> {
+        let cfg = self.ai_config(Scenario::Command).await?;
+        let words = ai::search_filter::name_candidates(&request);
+        let (contacts, self_emails) = self
+            .db
+            .read(move |conn| {
+                let mut seen = HashSet::new();
+                let mut contacts = Vec::new();
+                for w in &words {
+                    for c in repo::contacts::suggest(conn, w, None, 6)? {
+                        if seen.insert(c.email.to_lowercase()) {
+                            contacts.push(c);
+                        }
+                    }
+                }
+                contacts.truncate(24);
+                let selves = repo::accounts::list(conn)?
+                    .into_iter()
+                    .map(|a| a.email)
+                    .collect::<Vec<_>>();
+                Ok((contacts, selves))
+            })
+            .await?;
+        ai::search_filter::search_filter(&cfg, &request, &history, &contacts, &self_emails).await
+    }
+
     pub async fn ai_summarize(&self, thread_id: i64) -> Result<crate::models::AiThreadSummary> {
         let cfg = self.ai_config(Scenario::Summarize).await?;
         let detail = self.get_thread(thread_id).await?;
@@ -3583,11 +3617,12 @@ impl Core {
     /// RAG: answer a natural-language question grounded in the most relevant
     /// messages, returning the answer plus its source citations.
     /// Answer a question about the mailbox. Seeds with a semantic-search RAG
-    /// pass, then hands the model a `search_inbox` tool so it can reformulate
-    /// queries and dig deeper on its own before answering. Falls back to a plain
+    /// pass, then hands the model `search_inbox` / `read_email` tools so it can
+    /// reformulate queries and read whole threads before answering. Every round
+    /// streams. Falls back to a plain
     /// one-shot RAG answer if the model/endpoint doesn't support tool calling.
     pub async fn ai_ask(&self, question: String, request_id: String) -> Result<AskResult> {
-        const MAX_ROUNDS: usize = 4;
+        const MAX_ROUNDS: usize = 6;
         let cfg = self.ai_config(Scenario::Ask).await?;
 
         // The on-device model has a small context window and no tool calling:
@@ -3596,7 +3631,7 @@ impl Core {
 
         // RAG seed: the model always starts from the best hybrid matches.
         let seed = if on_device { 4 } else { 8 };
-        let mut sources = self.retrieve_search(&question, seed).await?;
+        let sources = self.retrieve_search(&question, seed).await?;
         if sources.is_empty() {
             return Ok(AskResult {
                 answer: "I couldn't find anything relevant in your mailbox. \
@@ -3607,6 +3642,9 @@ impl Core {
         }
         // Surface the seed sources immediately; more are emitted as the model searches.
         self.emit_ask_citations(&request_id, &sources);
+        // Excerpts of mail whose body hasn't downloaded yet are just the
+        // snippet; fetch those so the model reads real text.
+        let mut sources = self.ensure_bodies(sources).await;
 
         let mut initial_context = String::new();
         for (i, m) in sources.iter().enumerate() {
@@ -3620,25 +3658,80 @@ impl Core {
                 "content": format!("Emails:\n\n{initial_context}\nQuestion: {question}"),
             }),
         ];
-        let tools = ai::search_inbox_tool();
+        let tools = ai::ask_tools();
 
-        // Agentic loop: let the model call search_inbox until it answers or we
-        // hit the round cap. `answer = Some` means the model produced text.
+        let reasoning = |text: String| {
+            self.bus.emit(CoreEvent::AskReasoning {
+                request_id: request_id.clone(),
+                delta: text,
+            });
+        };
+
+        // Agentic loop: let the model search and read until it answers or we
+        // hit the round cap. Every round streams, so a direct answer reaches
+        // the UI token by token. `answer = Some` means the model produced text.
         let mut answer: Option<String> = None;
         let rounds = if on_device { 0 } else { MAX_ROUNDS };
         for round in 0..rounds {
-            match ai::chat_tools(&cfg, messages.clone(), tools.clone()).await {
+            let emitted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (bus_a, rid_a, emitted_a) = (self.bus.clone(), request_id.clone(), emitted.clone());
+            let (bus_r, rid_r) = (self.bus.clone(), request_id.clone());
+            let step = ai::chat_tools_stream(
+                &cfg,
+                messages.clone(),
+                tools.clone(),
+                move |delta| {
+                    emitted_a.store(true, std::sync::atomic::Ordering::Relaxed);
+                    bus_a.emit(CoreEvent::AskDelta {
+                        request_id: rid_a.clone(),
+                        delta: delta.to_string(),
+                    });
+                },
+                move |delta| {
+                    bus_r.emit(CoreEvent::AskReasoning {
+                        request_id: rid_r.clone(),
+                        delta: delta.to_string(),
+                    });
+                },
+            )
+            .await;
+            let emitted = emitted.load(std::sync::atomic::Ordering::Relaxed);
+            match step {
                 Ok(ai::ChatStep::Content(text)) => {
+                    if !emitted && !text.trim().is_empty() {
+                        // Non-streaming fallback answered: emit it in one go.
+                        self.bus.emit(CoreEvent::AskDelta {
+                            request_id: request_id.clone(),
+                            delta: text.clone(),
+                        });
+                    } else if emitted && text.trim().is_empty() {
+                        self.bus.emit(CoreEvent::AskReset {
+                            request_id: request_id.clone(),
+                        });
+                    }
                     answer = Some(text);
                     break;
                 }
                 Ok(ai::ChatStep::Tools { assistant, calls }) => {
+                    if emitted {
+                        // That text was a preamble to the tool calls, not the answer.
+                        self.bus.emit(CoreEvent::AskReset {
+                            request_id: request_id.clone(),
+                        });
+                    }
                     messages.push(assistant);
                     for call in calls {
-                        let (result, added) = if call.name == "search_inbox" {
-                            self.run_search_inbox(&call.arguments, &mut sources).await
-                        } else {
-                            (format!("Unknown tool: {}", call.name), 0)
+                        let (result, added) = match call.name.as_str() {
+                            "search_inbox" => {
+                                self.run_search_inbox(&call.arguments, &mut sources, &reasoning)
+                                    .await
+                            }
+                            "read_email" => (
+                                self.run_read_email(&call.arguments, &sources, &reasoning)
+                                    .await,
+                                0,
+                            ),
+                            other => (format!("Unknown tool: {other}"), 0),
                         };
                         messages.push(serde_json::json!({
                             "role": "tool",
@@ -3656,22 +3749,21 @@ impl Core {
                     // already have grounded sources, so fall through to a plain
                     // streamed answer over them instead of erroring out.
                     tracing::warn!("ai_ask tool round {round} failed, using plain fallback: {e}");
+                    if emitted {
+                        self.bus.emit(CoreEvent::AskReset {
+                            request_id: request_id.clone(),
+                        });
+                    }
                     break;
                 }
             }
         }
 
         let answer = match answer {
-            // The agentic path answered directly (chat_tools is non-streaming, so
-            // emit its text as one delta). Empty answers fall through to the
-            // streamed fallback below rather than settling on a blank result.
-            Some(text) if !text.trim().is_empty() => {
-                self.bus.emit(CoreEvent::AskDelta {
-                    request_id: request_id.clone(),
-                    delta: text.clone(),
-                });
-                text
-            }
+            // The agentic path answered directly (already streamed above).
+            // Empty answers fall through to the streamed fallback below rather
+            // than settling on a blank result.
+            Some(text) if !text.trim().is_empty() => text,
             _ => {
                 // Cap reached while still searching, a tool-less model, or a
                 // mid-loop failure: force a final streamed answer over everything
@@ -3679,9 +3771,9 @@ impl Core {
                 messages.push(serde_json::json!({
                     "role": "system",
                     "content": "Now answer the user's question using ONLY the numbered excerpts \
-                                above. Cite them like [1]. If the answer isn't there, say you \
-                                couldn't find it. Answer in the user's language, concisely; light \
-                                Markdown is fine, no preamble.",
+                                and emails above. Cite them like [1]. If the answer isn't there, \
+                                say you couldn't find it. Answer in the user's language, \
+                                concisely; light Markdown is fine, no preamble.",
                 }));
                 let (bus_a, rid_a) = (self.bus.clone(), request_id.clone());
                 let (bus_r, rid_r) = (self.bus.clone(), request_id.clone());
@@ -3756,6 +3848,7 @@ impl Core {
         &self,
         arguments: &str,
         sources: &mut Vec<MessageDetail>,
+        progress: &impl Fn(String),
     ) -> (String, usize) {
         let args: serde_json::Value =
             serde_json::from_str(arguments).unwrap_or_else(|_| serde_json::json!({}));
@@ -3769,11 +3862,17 @@ impl Core {
                 0,
             );
         }
+        progress(format!("\nSearching \u{201c}{query}\u{201d}\n"));
         let limit = args["limit"].as_u64().unwrap_or(6).clamp(1, 8) as usize;
         let details = self
             .retrieve_search(&query, limit)
             .await
             .unwrap_or_default();
+        let details: Vec<MessageDetail> = details
+            .into_iter()
+            .filter(|d| !sources.iter().any(|s| s.id == d.id))
+            .collect();
+        let details = self.ensure_bodies(details).await;
 
         let mut block = String::new();
         let mut added = 0;
@@ -3794,6 +3893,96 @@ impl Core {
             format!("Results for \"{query}\":\n\n{block}")
         };
         (text, added)
+    }
+
+    /// Execute a `read_email` tool call: the whole thread behind citation `n`,
+    /// with full bodies (fetched now if they haven't downloaded yet).
+    async fn run_read_email(
+        &self,
+        arguments: &str,
+        sources: &[MessageDetail],
+        progress: &impl Fn(String),
+    ) -> String {
+        let args: serde_json::Value =
+            serde_json::from_str(arguments).unwrap_or_else(|_| serde_json::json!({}));
+        let n = args["n"]
+            .as_u64()
+            .or_else(|| {
+                args["n"]
+                    .as_str()
+                    .and_then(|s| s.trim_matches(['[', ']']).parse().ok())
+            })
+            .unwrap_or(0) as usize;
+        let Some(src) = n.checked_sub(1).and_then(|i| sources.get(i)) else {
+            return format!("No excerpt [{n}]. Valid numbers are 1-{}.", sources.len());
+        };
+        progress(format!("\nReading \u{201c}{}\u{201d}\n", src.subject));
+        let thread_id = src.thread_id;
+        let messages = match self
+            .db
+            .read(move |conn| repo::messages::list_for_thread(conn, thread_id))
+            .await
+        {
+            Ok(m) if !m.is_empty() => m,
+            _ => vec![src.clone()],
+        };
+        let messages = self.ensure_bodies(messages).await;
+        format!(
+            "Full conversation for [{n}] (Subject: {}):\n\n{}",
+            src.subject,
+            ai::thread_context(&messages, 16_000)
+        )
+    }
+
+    /// Make sure `msgs` carry their bodies: request any not yet downloaded and
+    /// wait briefly for them, so the model reads real text instead of a
+    /// one-line snippet. Returns whatever is available when the wait ends.
+    async fn ensure_bodies(&self, msgs: Vec<MessageDetail>) -> Vec<MessageDetail> {
+        let missing = |m: &MessageDetail| {
+            m.text_body.as_deref().map_or(true, |b| b.trim().is_empty())
+                && (m.body_state == "none" || m.body_state == "fetching")
+        };
+        let pending: Vec<(i64, i64)> = msgs
+            .iter()
+            .filter(|m| missing(m))
+            .map(|m| (m.account_id, m.id))
+            .collect();
+        if pending.is_empty() {
+            return msgs;
+        }
+        for &(account_id, id) in &pending {
+            self.request_body(account_id, id).await;
+        }
+        let ids: Vec<i64> = pending.iter().map(|p| p.1).collect();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+        let mut fresh = loop {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let want = ids.clone();
+            let fresh: std::collections::HashMap<i64, MessageDetail> = self
+                .db
+                .read(move |conn| {
+                    Ok::<_, CoreError>(
+                        want.iter()
+                            .filter_map(|&id| repo::messages::detail(conn, id).ok())
+                            .map(|d| (d.id, d))
+                            .collect(),
+                    )
+                })
+                .await
+                .unwrap_or_default();
+            let done = ids
+                .iter()
+                .all(|id| fresh.get(id).map_or(true, |d| !missing(d)));
+            if done || std::time::Instant::now() >= deadline {
+                break fresh;
+            }
+        };
+        msgs.into_iter()
+            .map(|m| match fresh.remove(&m.id) {
+                Some(d) if !missing(&d) => d,
+                _ => m,
+            })
+            .collect()
     }
 
     fn emit_ask_citations(&self, request_id: &str, sources: &[MessageDetail]) {

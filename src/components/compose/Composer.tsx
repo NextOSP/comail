@@ -1206,7 +1206,10 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
               {t("compose:teamsMeeting")}
             </Button>
           )}
-          <span className="text-xs text-ink-faint">
+          <span
+            className="min-w-0 truncate whitespace-nowrap text-xs text-ink-faint"
+            title={t("compose:footerHints", { mod: MOD_LABEL })}
+          >
             {t("compose:footerHints", { mod: MOD_LABEL })}
           </span>
           <div className="grow" />
@@ -1230,7 +1233,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
                 const r = e.currentTarget.getBoundingClientRect();
                 setSignatureMenu(signatureMenu ? null : { x: r.left, y: r.bottom + 4 });
               }}
-              className="flex shrink-0 items-center gap-1 rounded-control px-1.5 py-0.5 text-xs text-ink-faint hover:bg-bg2 hover:text-ink-muted"
+              className="flex shrink-0 items-center gap-1 rounded-control px-1.5 py-0.5 text-xs whitespace-nowrap text-ink-faint hover:bg-bg2 hover:text-ink-muted"
             >
               {t("compose:signature.trigger", {
                 name: activeSig?.name ?? t("compose:signature.none"),
@@ -1266,7 +1269,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
               />
             </Popover>
           )}
-          <span className="text-xs text-ink-faint">
+          <span className="shrink-0 whitespace-nowrap text-xs text-ink-faint">
             {savedAt ? t("compose:draftSaved") : dirtyRef.current ? t("compose:unsaved") : ""}
           </span>
         </div>

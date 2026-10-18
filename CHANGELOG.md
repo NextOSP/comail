@@ -9,6 +9,33 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.35] - 2026-10-18
+
+### Added
+
+- **AI filter in search.** Describe the mail you want in plain words ("all
+  email from hoang with subject software update") and press `Cmd/Ctrl+O`. The
+  search box fills with the real filter, using your contacts' actual
+  addresses. If a name fits several people, Comail asks which one: pick with
+  `1`-`9` or a click, or type an answer.
+- **Keyboard navigation in the mailbox menu.** The hamburger menu takes focus
+  when it opens. `Up`/`Down` (or `J`/`K`) move through it, `Enter` opens a
+  row, and `Right`/`Left` expand and collapse folders.
+
+### Changed
+
+- **Ask AI reads more before answering.** It can open whole conversations
+  (including bodies that haven't downloaded yet), streams its answer as it
+  writes, and no longer shows "Let me search..." filler as the answer.
+
+### Fixed
+
+- The Avatar inbox layout shows the hamburger menu icon again, instead of a
+  home icon.
+- The composer footer no longer wraps the shortcut hint and "Draft saved"
+  onto several lines when space is tight.
+- A new search puts the highlight back on the first result.
+
 ## [0.2.34] - 2026-10-18
 
 ### Fixed
@@ -426,7 +453,7 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.34...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.35...HEAD [0.2.35]: https://github.com/NextOSP/comail/compare/v0.2.34...v0.2.35
 [0.2.34]: https://github.com/NextOSP/comail/releases/tag/v0.2.34
 [0.2.33]: https://github.com/NextOSP/comail/releases/tag/v0.2.33
 [0.2.32]: https://github.com/NextOSP/comail/releases/tag/v0.2.32

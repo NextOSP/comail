@@ -120,6 +120,9 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
                 json!({ "requestId": request_id, "delta": delta }),
             );
         }
+        CoreEvent::AskReset { request_id } => {
+            let _ = app.emit("ai:ask:reset", json!({ "requestId": request_id }));
+        }
         CoreEvent::AskDone { request_id } => {
             let _ = app.emit("ai:ask:done", json!({ "requestId": request_id }));
         }

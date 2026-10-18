@@ -67,6 +67,11 @@ pub enum CoreEvent {
         request_id: String,
         delta: String,
     },
+    /// Text streamed as answer turned out to be a preamble to a tool call
+    /// ("Let me search...") - the UI drops it and keeps waiting for the answer.
+    AskReset {
+        request_id: String,
+    },
     /// The streamed "ask" answer finished.
     AskDone {
         request_id: String,

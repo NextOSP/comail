@@ -24,7 +24,7 @@ export function TopBar() {
   const { data: accounts } = useAccounts();
   const { data: folders } = useFolders(accountFilter);
   const { data: settings } = useSettings();
-  // Avatar inbox UI: a quieter bar (home + search icons, no wordmark).
+  // Avatar inbox UI: a quieter bar (search icon, no wordmark).
   const avatarUi = settings?.inboxUi === "avatar";
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const sync = aggregateSyncStatuses(syncStatuses, accountFilter);
@@ -43,7 +43,7 @@ export function TopBar() {
       className="co-glass relative z-30 flex h-10 shrink-0 items-center gap-3 px-4 select-none"
     >
       <IconButton
-        icon={avatarUi ? "home" : "menu"}
+        icon="menu"
         label={t("common:topbar.menu")}
         title={`${t("common:topbar.menu")} (${displayShortcut("mod+\\")})`}
         className="-ml-1"

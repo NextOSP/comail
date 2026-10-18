@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
+import { errorMessage } from "../../ipc/errors";
+import type { AiFilterTurn } from "../../ipc/types";
 import {
   useAccounts,
   useAsk,
@@ -11,6 +13,7 @@ import {
   useSettings,
 } from "../../queries/hooks";
 import { useModHeld } from "../../lib/useModHeld";
+import { MOD_LABEL } from "../../lib/format";
 import { useUi } from "../../stores/ui";
 import { ThreadList } from "../inbox/ThreadList";
 import { Markdown } from "../common/Markdown";
@@ -43,6 +46,16 @@ const SEARCH_EXAMPLES: [string, string][] = [
 ];
 const STARTERS = OPERATOR_META.filter((m) => m.starter);
 
+// ⌘/Ctrl+O on a plain-language description: AI writes the query. It may ask
+// back first ("Which Hoang?"); answers accumulate in `history`.
+type AiFilterState = {
+  request: string;
+  history: AiFilterTurn[];
+  pending: boolean;
+  ask: { question: string; options: { label: string; value: string }[] } | null;
+  error: string | null;
+};
+
 // The most recent line of the model's reasoning, for the clipped one-line trace.
 function lastLine(text: string): string {
   const lines = text.split("\n").filter((l) => l.trim() !== "");
@@ -69,6 +82,11 @@ export function SearchScreen() {
   const [previewThreadId, setPreviewThreadId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const ask = useAsk();
+  const [aiFilter, setAiFilter] = useState<AiFilterState | null>(null);
+  // Bumped per request so a cancelled or superseded reply is ignored.
+  const aiFilterSeq = useRef(0);
+  const aiAnswerRef = useRef<HTMLInputElement>(null);
+  const aiOptionsRef = useRef<HTMLDivElement>(null);
   // ⌘/Ctrl held: reveal each result's jump-to number (⌘/Ctrl+1..9 opens it).
   const modHeld = useModHeld();
 
@@ -180,6 +198,19 @@ export function SearchScreen() {
     selectThread(0, rows[0].id);
   }, [rows, pendingListFocus, selectThread]);
 
+  // A new query puts the cursor back on the first result (and scrolls it into
+  // view) once that query's results land; otherwise the highlight stays on
+  // whatever row the previous search left it, often far down the list.
+  const cursorResetFor = useRef<string | null>(null);
+  useEffect(() => {
+    cursorResetFor.current = storedQuery;
+  }, [storedQuery]);
+  useEffect(() => {
+    if (cursorResetFor.current == null || isFetching) return;
+    cursorResetFor.current = null;
+    selectThread(0, rows[0]?.id ?? null);
+  }, [rows, isFetching, selectThread]);
+
   // Arrow keys from the input move the shared cursor through the results.
   const moveCursor = (delta: 1 | -1) => {
     if (rows.length === 0) return;
@@ -206,6 +237,45 @@ export function SearchScreen() {
   );
   const activeSuggestion: Suggestion | null =
     mode === "search" && !enterArmed ? (suggestions[0] ?? null) : null;
+
+  const runAiFilter = (request: string, history: AiFilterTurn[]) => {
+    const seq = ++aiFilterSeq.current;
+    setAiFilter({ request, history, pending: true, ask: null, error: null });
+    call("ai_search_filter", { request, history })
+      .then((res) => {
+        if (seq !== aiFilterSeq.current) return;
+        if (res.kind === "query") {
+          setAiFilter(null);
+          setInput(res.query);
+          inputRef.current?.focus();
+        } else {
+          setAiFilter({ request, history, pending: false, ask: res, error: null });
+        }
+      })
+      .catch((err) => {
+        if (seq !== aiFilterSeq.current) return;
+        setAiFilter({ request, history, pending: false, ask: null, error: errorMessage(err) });
+      });
+  };
+  const answerAiFilter = (answer: string) => {
+    if (!aiFilter?.ask || !answer.trim()) return;
+    runAiFilter(aiFilter.request, [
+      ...aiFilter.history,
+      { question: aiFilter.ask.question, answer: answer.trim() },
+    ]);
+  };
+  const cancelAiFilter = () => {
+    aiFilterSeq.current++;
+    setAiFilter(null);
+    inputRef.current?.focus();
+  };
+  // Move focus to the question as it appears so 1-9 / Enter pick right away.
+  useEffect(() => {
+    if (!aiFilter?.ask) return;
+    const first = aiOptionsRef.current?.querySelector("button");
+    if (first) first.focus();
+    else aiAnswerRef.current?.focus();
+  }, [aiFilter?.ask]);
 
   const applyCompletion = (insert: string) => {
     setInput(applySuggestion(input, tokenStart, insert));
@@ -259,6 +329,19 @@ export function SearchScreen() {
                   e.preventDefault();
                   e.stopPropagation();
                   setMode((m) => (m === "search" ? "ask" : "search"));
+                  return;
+                }
+                // Cmd/Ctrl+O: turn the plain-language text into a filter.
+                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (mode === "search" && input.trim()) runAiFilter(input.trim(), []);
+                  return;
+                }
+                if (aiFilter && e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  cancelAiFilter();
                   return;
                 }
                 // ⌘/Ctrl+1..9 jumps straight to the Nth result. Stop it here so
@@ -317,6 +400,17 @@ export function SearchScreen() {
               className="w-full bg-transparent py-1 text-lg text-ink outline-none placeholder:text-ink-faint"
               spellCheck={false}
             />
+            {mode === "search" && input.trim() !== "" && !aiFilter && (
+              <button
+                type="button"
+                title={t("common:search.aiFilterHint", { shortcut: `${MOD_LABEL}O` })}
+                onClick={() => runAiFilter(input.trim(), [])}
+                className="co-chip shrink-0 !py-0.5 !text-xs text-ink-muted hover:bg-bg2"
+              >
+                <AiBadge label={t("common:search.aiFilter")} className="!text-xs" />
+                <kbd className="co-kbd !text-2xs">{MOD_LABEL}O</kbd>
+              </button>
+            )}
             {(isFetching || ask.status === "pending" || ask.status === "streaming") && (
               <Spinner className={mode === "ask" ? "co-ai-icon" : "text-ink-faint"} />
             )}
@@ -420,7 +514,90 @@ export function SearchScreen() {
             </div>
             <kbd className="co-kbd shrink-0">Esc</kbd>
           </div>
-          {mode === "search" && (
+          {mode === "search" && aiFilter && (
+            <AiSurface className="co-fade-in mt-2.5 px-3 py-2.5">
+              <div
+                className="flex flex-col gap-2"
+                onKeyDown={(e) => {
+                  // Keep Esc / digits away from the global registry.
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cancelAiFilter();
+                    return;
+                  }
+                  const opts = aiFilter.ask?.options ?? [];
+                  if (e.target !== aiAnswerRef.current && /^[1-9]$/.test(e.key)) {
+                    e.stopPropagation();
+                    const o = opts[Number(e.key) - 1];
+                    if (o) {
+                      e.preventDefault();
+                      answerAiFilter(o.value);
+                    }
+                  }
+                }}
+              >
+                <div className="flex items-center gap-2 text-sm">
+                  <AiBadge label={t("common:search.aiFilter")} className="shrink-0 !text-xs" />
+                  <span className="min-w-0 flex-1 truncate text-ink-faint" title={aiFilter.request}>
+                    {aiFilter.request}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={cancelAiFilter}
+                    title={`${t("common:search.aiFilterCancel")} (Esc)`}
+                    className="shrink-0 text-xs text-ink-faint hover:text-ink"
+                  >
+                    {t("common:search.aiFilterCancel")}
+                  </button>
+                </div>
+                {aiFilter.pending && (
+                  <div className="flex items-center gap-2 text-sm text-ink-muted">
+                    <Spinner className="co-ai-icon" />
+                    {t("common:search.aiFilterWorking")}
+                  </div>
+                )}
+                {aiFilter.error && (
+                  <div className="text-sm text-danger">
+                    {t("common:search.aiFilterFailed", { error: aiFilter.error })}
+                  </div>
+                )}
+                {aiFilter.ask && !aiFilter.pending && (
+                  <>
+                    <div className="text-base text-ink">{aiFilter.ask.question}</div>
+                    {aiFilter.ask.options.length > 0 && (
+                      <div ref={aiOptionsRef} className="flex flex-wrap gap-1.5">
+                        {aiFilter.ask.options.map((o, i) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            onClick={() => answerAiFilter(o.value)}
+                            className="co-chip flex items-center gap-1.5 !py-1 text-sm text-ink hover:bg-bg2 focus-visible:outline focus-visible:outline-accent"
+                          >
+                            {i < 9 && <kbd className="co-kbd !text-2xs">{i + 1}</kbd>}
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      ref={aiAnswerRef}
+                      placeholder={t("common:search.aiFilterAnswer")}
+                      spellCheck={false}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          answerAiFilter(e.currentTarget.value);
+                        }
+                      }}
+                      className="w-full rounded-control border border-hairline bg-bg1 px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent/60"
+                    />
+                  </>
+                )}
+              </div>
+            </AiSurface>
+          )}
+          {mode === "search" && !aiFilter && (
             <div className="relative mt-2.5">
               {suggestions.length > 0 && (
                 // Completing the current token: a floating list of operators
@@ -597,7 +774,7 @@ export function SearchScreen() {
                     title={ask.reasoning}
                     className="mb-4 flex items-center gap-2 overflow-hidden text-sm text-ink-faint"
                   >
-                    {ask.status === "streaming" && <Spinner />}
+                    {(ask.status === "streaming" || ask.status === "pending") && <Spinner />}
                     <span className="truncate">{lastLine(ask.reasoning)}</span>
                   </p>
                 )}

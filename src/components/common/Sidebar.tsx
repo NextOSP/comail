@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { View } from "../../ipc/types";
 import { buildFolderTree, type FolderNode } from "../../lib/folders";
@@ -48,17 +48,64 @@ export function Sidebar() {
       return next;
     });
 
+  const asideRef = useRef<HTMLElement>(null);
+  // Keyboard: the drawer takes focus on open (on the current view's row) and
+  // owns the navigation keys while open, so ↑/↓ (or J/K) walk its rows
+  // instead of the thread list behind it. Enter opens the row, →/← expand and
+  // collapse a folder, Esc closes. Captured on window so the global registry
+  // never sees these keys.
   useEffect(() => {
     if (!open) return;
+    const rows = () =>
+      Array.from(asideRef.current?.querySelectorAll<HTMLButtonElement>("button[data-nav]") ?? []);
+    const raf = requestAnimationFrame(() => {
+      const list = rows();
+      (list.find((b) => b.dataset.active === "true") ?? list[1] ?? list[0])?.focus();
+    });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         useUi.getState().set({ sidebarOpen: false });
+        return;
       }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const list = rows();
+      if (list.length === 0) return;
+      const focused = list.indexOf(document.activeElement as HTMLButtonElement);
+      const current = focused >= 0 ? focused : list.findIndex((b) => b.dataset.active === "true");
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      let next: number | null = null;
+      if (key === "ArrowDown" || key === "j") next = current < 0 ? 0 : Math.min(list.length - 1, current + 1);
+      else if (key === "ArrowUp" || key === "k") next = current < 0 ? 0 : Math.max(0, current - 1);
+      else if (key === "Home") next = 0;
+      else if (key === "End") next = list.length - 1;
+      else if (key === "Enter") {
+        if (current < 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        list[current].click();
+        return;
+      } else if ((key === "ArrowRight" || key === "ArrowLeft") && current >= 0) {
+        const row = list[current];
+        const collapsed = row.dataset.collapsed;
+        if (collapsed && (collapsed === "true") === (key === "ArrowRight")) {
+          e.preventDefault();
+          e.stopPropagation();
+          row.querySelector<HTMLElement>("[data-toggle]")?.click();
+        }
+        return;
+      } else return;
+      e.preventDefault();
+      e.stopPropagation();
+      list[next].focus();
+      list[next].scrollIntoView({ block: "nearest" });
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKey, true);
+    };
   }, [open]);
 
   if (!open) return null;
@@ -93,11 +140,13 @@ export function Sidebar() {
     <div className="fixed inset-0 z-40" onMouseDown={close}>
       <div className="absolute inset-0 bg-bg0/40" />
       <aside
+        ref={asideRef}
         className="co-fade-in relative flex h-full w-[272px] flex-col overflow-y-auto border-r border-hairline bg-bg1 py-3 shadow-elev-2"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <button
-          className="mx-2 mb-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-control px-2 py-1.5 text-left hover:bg-bg2"
+          data-nav
+          className={`mx-2 mb-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-control px-2 py-1.5 text-left hover:bg-bg2 ${NAV_FOCUS}`}
           title={t("common:sidebar.accountSettings")}
           onClick={() => set({ panel: "settings", settingsTab: "accounts", sidebarOpen: false })}
         >
@@ -264,6 +313,9 @@ export function Sidebar() {
   );
 }
 
+// Keyboard-focus ring for drawer rows (keeps the active row's own background).
+const NAV_FOCUS = "outline-none focus-visible:ring-1 focus-visible:ring-accent/60";
+
 function SideRow({
   label,
   active,
@@ -284,7 +336,9 @@ function SideRow({
 }) {
   return (
     <button
-      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-control py-1.5 pe-3 text-start text-base ${
+      data-nav
+      data-active={active ? "true" : undefined}
+      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-control py-1.5 pe-3 text-start text-base ${NAV_FOCUS} ${
         indent ? "ps-7" : "ps-3"
       } ${
         active
@@ -376,7 +430,10 @@ function FolderRow({
 }) {
   return (
     <button
-      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-1.5 rounded-control py-1.5 pr-3 text-left text-base ${
+      data-nav
+      data-active={active ? "true" : undefined}
+      data-collapsed={expandable ? String(collapsed) : undefined}
+      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-1.5 rounded-control py-1.5 pr-3 text-left text-base ${NAV_FOCUS} ${
         active
           ? "bg-[var(--selected-bg)] font-medium text-ink"
           : "text-ink-muted hover:bg-bg2 hover:text-ink"
@@ -387,6 +444,7 @@ function FolderRow({
       {expandable ? (
         <span
           role="button"
+          data-toggle
           tabIndex={-1}
           aria-label="Toggle folder"
           className="grid size-4 shrink-0 place-items-center rounded text-ink-faint hover:text-ink"

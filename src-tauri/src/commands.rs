@@ -601,6 +601,19 @@ pub async fn ai_command(state: State<'_, AppState>, query: String) -> CmdResult<
 }
 
 #[tauri::command]
+pub async fn ai_search_filter(
+    state: State<'_, AppState>,
+    request: String,
+    history: Option<Vec<comail_core::ai::search_filter::FilterTurn>>,
+) -> CmdResult<comail_core::ai::search_filter::SearchFilter> {
+    state
+        .core
+        .ai_search_filter(request, history.unwrap_or_default())
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
 pub async fn ai_summarize(
     state: State<'_, AppState>,
     thread_id: i64,

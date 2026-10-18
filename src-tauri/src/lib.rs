@@ -447,6 +447,7 @@ pub fn run() {
             commands::test_decision_provider,
             commands::create_category,
             commands::ai_command,
+            commands::ai_search_filter,
             commands::ai_summarize,
             commands::ai_quick_replies,
             commands::ai_draft,
