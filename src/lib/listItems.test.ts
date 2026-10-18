@@ -21,7 +21,7 @@ const thread = (id: number, lastMessageAt: number): ThreadSummary => ({
   labels: [],
 });
 
-const bundle = (key: string): Bundle => ({ key, name: key, threads: [thread(99, NOW)] });
+const bundle = (key: string): Bundle => ({ key, name: key, unread: false, threads: [thread(99, NOW)] });
 
 const shape = (items: ReturnType<typeof buildListItems>) =>
   items.map((it) =>

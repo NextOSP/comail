@@ -118,11 +118,17 @@ export function InboxScreen() {
       bundleTabs.flatMap((tab, i) => {
         const page = bundleData[i];
         if (!page || page.threads.length === 0) return [];
-        const unread =
+        const count =
           tab.labelId != null ? counts?.labels[String(tab.labelId)] : splitCount(counts, tab.splitId ?? null);
-        return [{ ...tab, unread, threads: page.threads }];
+        // A count-all split's badge includes read mail, so it can't say whether
+        // anything is unread; the loaded threads can.
+        const countAll = splits?.find((s) => s.id === tab.splitId)?.countAll === true;
+        const unread = countAll
+          ? page.threads.some((th) => th.unreadCount > 0)
+          : (count ?? 0) > 0;
+        return [{ ...tab, count, unread, threads: page.threads }];
       }),
-    [bundleTabs, bundleData, counts],
+    [bundleTabs, bundleData, counts, splits],
   );
   const openBundle = useCallback((b: Bundle) => selectInboxTab(b), [selectInboxTab]);
 

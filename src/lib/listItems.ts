@@ -5,7 +5,9 @@ import { dateGroup, longDate } from "./format";
 export type BundleTab = { key: string; name: string; splitId?: number; labelId?: number };
 
 /** A non-Important inbox tab collapsed into one comfortable-list row. */
-export type Bundle = BundleTab & { unread?: number; threads: ThreadSummary[] };
+/** `count` is the tab's badge; `unread` says whether to style the row unread.
+ *  They differ for a split that badges every conversation (`countAll`). */
+export type Bundle = BundleTab & { count?: number; unread: boolean; threads: ThreadSummary[] };
 
 /** One virtualized row: a date header, a bundle, or a thread. Every item
  *  occupies one full row height so the list stays uniform-height (keeps the
