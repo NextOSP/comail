@@ -9,6 +9,23 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.37] - 2026-10-18
+
+### Changed
+
+- **AI model fields confirm saves.** Picking a model from the list saves it
+  right away and shows a short "Saved" check, on the main model and on every
+  tier (Instant, Cheap, Intelligent).
+
+### Fixed
+
+- Saving an AI API key now loads the endpoint's model list immediately, so
+  the model fields offer choices without reopening Settings.
+- Picking a model from the dropdown no longer gets lost when Settings is
+  closed right after (it used to save only on blur or Enter).
+- When the model list can't load, the hint says why (for example a rejected
+  key or being offline) instead of waiting for a list that never comes.
+
 ## [0.2.36] - 2026-10-18
 
 ### Fixed
@@ -466,7 +483,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.36...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.37...HEAD
+[0.2.37]: https://github.com/NextOSP/comail/releases/tag/v0.2.37
 [0.2.36]: https://github.com/NextOSP/comail/releases/tag/v0.2.36
 [0.2.35]: https://github.com/NextOSP/comail/releases/tag/v0.2.35
 [0.2.34]: https://github.com/NextOSP/comail/releases/tag/v0.2.34

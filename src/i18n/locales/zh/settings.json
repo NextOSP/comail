@@ -1,4 +1,5 @@
 {
+  "saved": "已保存",
   "title": "设置",
   "section": {
     "stats": "统计",
@@ -122,6 +123,7 @@
     "modelLabel": "默认模型",
     "modelsAvailable": "端点提供 {{n}} 个可用模型。当下方某档留空时会使用此模型。",
     "modelHintEmpty": "输入模型 id，或在端点列表加载后从中选择。",
+    "modelsFailed": "无法加载模型列表：{{error}}。请直接输入模型 id。",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "服务商",
     "providerHint": "预设会自动填入基础 URL；选择自定义端点可使用任何兼容 OpenAI 的 URL。本地服务器无需 API 密钥。",

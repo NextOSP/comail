@@ -153,7 +153,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 /** Optimistic settings write: cache first, backend follows, rollback on error. */
-export async function updateSettings(patch: Partial<Settings>) {
+export async function updateSettings(patch: Partial<Settings>): Promise<boolean> {
   const cur =
     queryClient.getQueryData<Settings>(["settings"]) ?? DEFAULT_SETTINGS;
   const next: Settings = { ...cur, ...patch };
@@ -161,6 +161,7 @@ export async function updateSettings(patch: Partial<Settings>) {
   if (patch.theme) useUi.getState().set({ theme: patch.theme });
   try {
     await call("set_settings", { settings: next });
+    return true;
   } catch (err) {
     useUi.getState().pushToast({
       kind: "error",
@@ -169,6 +170,7 @@ export async function updateSettings(patch: Partial<Settings>) {
       }),
     });
     void queryClient.invalidateQueries({ queryKey: ["settings"] });
+    return false;
   }
 }
 
@@ -1479,8 +1481,7 @@ function AboutSection() {
 
 const AI_TIERS: AiTier[] = ["instant", "cheap", "intelligent"];
 
-/** A model-id field for one tier; commits on blur / Enter, shares the global
- *  `ai-model-options` datalist. Empty means "fall back to the default model". */
+/** A model-id field for one tier. Empty means "fall back to the default model". */
 function TierModelField({
   label,
   hint,
@@ -1494,33 +1495,85 @@ function TierModelField({
   value: string;
   baseUrl: string;
   placeholder: string;
-  onCommit: (v: string) => void;
+  onCommit: (v: string) => Promise<boolean>;
 }) {
-  const [v, setV] = useState(value);
-  useEffect(() => setV(value), [value]);
   return (
     <SettingRow label={label} hint={hint}>
+      <ModelInput value={value} baseUrl={baseUrl} placeholder={placeholder} onCommit={onCommit} />
+    </SettingRow>
+  );
+}
+
+/** Model-id input sharing the global `ai-model-options` datalist. Commits on
+ *  blur / Enter, and right away when a listed model is picked (a datalist pick
+ *  fires no blur, so closing Settings would otherwise drop it). Flashes
+ *  "Saved" once the write lands. */
+function ModelInput({
+  value,
+  baseUrl,
+  placeholder,
+  onCommit,
+}: {
+  value: string;
+  baseUrl: string;
+  placeholder: string;
+  onCommit: (v: string) => Promise<boolean>;
+}) {
+  const { t } = useTranslation();
+  const [v, setV] = useState(value);
+  const [saved, setSaved] = useState(false);
+  const savedTimer = useRef<number | undefined>(undefined);
+  useEffect(() => setV(value), [value]);
+  useEffect(() => () => window.clearTimeout(savedTimer.current), []);
+  const commit = (next: string) => {
+    void onCommit(next).then((ok) => {
+      if (!ok) return;
+      setSaved(true);
+      window.clearTimeout(savedTimer.current);
+      savedTimer.current = window.setTimeout(() => setSaved(false), 1800);
+    });
+  };
+  const listed = (id: string) =>
+    Array.from(
+      document.querySelectorAll<HTMLOptionElement>("#ai-model-options option"),
+    ).some((o) => o.value === id);
+  return (
+    <>
       <ModelTagChips
         model={v}
         baseUrl={baseUrl}
         onChange={(next) => {
           setV(next);
-          onCommit(next);
+          commit(next);
         }}
       />
-      <input
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onBlur={() => onCommit(v.trim())}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onCommit(v.trim());
-        }}
-        placeholder={placeholder}
-        spellCheck={false}
-        list="ai-model-options"
-        className={`${inputCls} !w-[280px]`}
-      />
-    </SettingRow>
+      <div className="relative">
+        <input
+          value={v}
+          onChange={(e) => {
+            setV(e.target.value);
+            if (listed(e.target.value)) commit(e.target.value);
+          }}
+          onBlur={() => commit(v.trim())}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit(v.trim());
+          }}
+          placeholder={placeholder}
+          spellCheck={false}
+          list="ai-model-options"
+          className={`${inputCls} !w-[280px]`}
+        />
+        <span
+          aria-live="polite"
+          className={`pointer-events-none absolute top-full right-0 mt-0.5 flex items-center gap-1 text-2xs text-accent transition-opacity duration-300 ${
+            saved ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <Icon name="check" size={11} />
+          {t("settings:saved")}
+        </span>
+      </div>
+    </>
   );
 }
 
@@ -1956,7 +2009,7 @@ function AiSection({
   );
   const [resorting, setResorting] = useState(false);
   const baseUrlRef = useRef<HTMLInputElement>(null);
-  const { data: models } = useAiModels(settings.aiBaseUrl);
+  const { data: models, error: modelsError } = useAiModels(settings.aiBaseUrl);
   const onDevice = isAppleAi(settings.aiBaseUrl);
   const appleState = status?.appleIntelligence ?? "unsupported";
   // Only offer Apple Intelligence on Macs that could run it (or if it's
@@ -2006,6 +2059,8 @@ function AiSection({
       });
       setApiKey("");
       void queryClient.invalidateQueries({ queryKey: ["aiStatus"] });
+      // The list fetched before the key existed was refused; load it again.
+      void queryClient.invalidateQueries({ queryKey: ["aiModels"] });
     } catch (err) {
       pushToast({
         kind: "error",
@@ -2016,10 +2071,10 @@ function AiSection({
     }
   };
 
-  const commitField = (patch: Partial<Settings>) => {
+  const commitField = (patch: Partial<Settings>): Promise<boolean> => {
     const key = Object.keys(patch)[0] as keyof Settings;
-    if (patch[key] === settings[key]) return;
-    void updateSettings(patch);
+    if (patch[key] === settings[key]) return Promise.resolve(false);
+    return updateSettings(patch);
   };
 
   return (
@@ -2151,29 +2206,19 @@ function AiSection({
                 hint={
                   models && models.length > 0
                     ? t("settings:ai.modelsAvailable", { n: models.length })
-                    : t("settings:ai.modelHintEmpty")
+                    : modelsError
+                      ? t("settings:ai.modelsFailed", { error: errorMessage(modelsError) })
+                      : t("settings:ai.modelHintEmpty")
                 }
               >
-                <ModelTagChips
-                  model={model}
-                  baseUrl={settings.aiBaseUrl}
-                  onChange={(next) => {
-                    setModel(next);
-                    commitField({ aiModel: next });
-                  }}
-                />
-                <input
+                <ModelInput
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  onBlur={() => commitField({ aiModel: model.trim() })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter")
-                      commitField({ aiModel: model.trim() });
-                  }}
+                  baseUrl={settings.aiBaseUrl}
                   placeholder={t("settings:ai.modelPlaceholder")}
-                  spellCheck={false}
-                  list="ai-model-options"
-                  className={`${inputCls} !w-[280px]`}
+                  onCommit={(v) => {
+                    setModel(v);
+                    return commitField({ aiModel: v });
+                  }}
                 />
                 <datalist id="ai-model-options">
                   {(models ?? []).map((id) => (

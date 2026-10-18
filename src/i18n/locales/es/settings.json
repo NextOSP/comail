@@ -1,4 +1,5 @@
 {
+  "saved": "Guardado",
   "title": "Ajustes",
   "section": {
     "stats": "Estadísticas",
@@ -122,6 +123,7 @@
     "modelLabel": "Modelo predeterminado",
     "modelsAvailable": "{{n}} modelos disponibles en el endpoint. Se usa donde un nivel de abajo se deje en blanco.",
     "modelHintEmpty": "Escribe un id de modelo, o elige uno cuando cargue la lista del endpoint.",
+    "modelsFailed": "No se pudo cargar la lista de modelos: {{error}}. Escribe un id de modelo.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Proveedor",
     "providerHint": "Los preajustes rellenan la URL base; elige Endpoint personalizado para usar cualquier URL compatible con OpenAI. Los servidores locales no necesitan clave de API.",

@@ -1,4 +1,5 @@
 {
+  "saved": "Saved",
   "title": "Settings",
   "section": {
     "stats": "Stats",
@@ -122,6 +123,7 @@
     "modelLabel": "Default model",
     "modelsAvailable": "{{n}} models available from the endpoint. Used wherever a tier below is left blank.",
     "modelHintEmpty": "Type a model id, or pick one once the endpoint list loads.",
+    "modelsFailed": "Couldn't load the model list: {{error}}. Type a model id instead.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Provider",
     "providerHint": "Presets fill the base URL; pick Custom endpoint to use any OpenAI-compatible URL. Local servers need no API key.",

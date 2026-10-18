@@ -1,4 +1,5 @@
 {
+  "saved": "Đã lưu",
   "title": "Cài đặt",
   "section": {
     "stats": "Thống kê",
@@ -122,6 +123,7 @@
     "modelLabel": "Mô hình mặc định",
     "modelsAvailable": "Có {{n}} mô hình từ điểm cuối. Được dùng ở bất kỳ đâu nếu bậc bên dưới để trống.",
     "modelHintEmpty": "Nhập id mô hình, hoặc chọn một khi danh sách điểm cuối tải xong.",
+    "modelsFailed": "Không tải được danh sách mô hình: {{error}}. Hãy nhập id mô hình.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Nhà cung cấp",
     "providerHint": "Cài đặt sẵn điền URL cơ sở; chọn Điểm cuối tùy chỉnh để dùng bất kỳ URL tương thích OpenAI nào. Máy chủ cục bộ không cần khóa API.",

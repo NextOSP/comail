@@ -1,4 +1,5 @@
 {
+  "saved": "Enregistré",
   "title": "Paramètres",
   "section": {
     "stats": "Statistiques",
@@ -122,6 +123,7 @@
     "modelLabel": "Modèle par défaut",
     "modelsAvailable": "{{n}} modèles disponibles depuis le point de terminaison. Utilisé partout où un niveau ci-dessous est laissé vide.",
     "modelHintEmpty": "Saisissez un identifiant de modèle, ou choisissez-en un une fois la liste du point de terminaison chargée.",
+    "modelsFailed": "Impossible de charger la liste des modèles : {{error}}. Saisissez un identifiant de modèle.",
     "modelPlaceholder": "anthropic/claude-sonnet",
     "providerLabel": "Fournisseur",
     "providerHint": "Les préréglages remplissent l’URL de base ; choisissez Point de terminaison personnalisé pour utiliser toute URL compatible OpenAI. Les serveurs locaux ne nécessitent aucune clé API.",
