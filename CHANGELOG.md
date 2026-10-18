@@ -9,6 +9,23 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.39] - 2026-10-18
+
+### Added
+
+- **Splits can count every conversation.** Each split rule has a new
+  "count every conversation" option. When it is on, the tab badge counts
+  everything the split holds, not only unread mail. Splits count unread only
+  by default, as before.
+
+### Fixed
+
+- Bulk actions on search results (for example selecting several `is:unread`
+  results and pressing Read) now take effect. Before, they failed without
+  reaching your mailbox (#75, thanks @knothhe).
+- A bundled inbox row for a count-all split no longer looks unread when all
+  of its mail has been read.
+
 ## [0.2.38] - 2026-10-18
 
 ### Added
@@ -497,7 +514,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.38...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.39...HEAD
+[0.2.39]: https://github.com/NextOSP/comail/releases/tag/v0.2.39
 [0.2.38]: https://github.com/NextOSP/comail/releases/tag/v0.2.38
 [0.2.37]: https://github.com/NextOSP/comail/releases/tag/v0.2.37
 [0.2.36]: https://github.com/NextOSP/comail/releases/tag/v0.2.36
