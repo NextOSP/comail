@@ -9,6 +9,7 @@ import { MOCK_MODE } from "../../ipc/mock";
 import { subscribeEvent } from "../../ipc/events";
 import type { Address, AiDraftAction, DraftAttachment, MessageDetail, Snippet } from "../../ipc/types";
 import { RecipientField } from "./RecipientField";
+import { Checkbox } from "../ui/Field";
 import { onComposerAction } from "../../keyboard/commands";
 import { advanceAfter, buildCommandContext } from "../../keyboard/context";
 import { calendarPrefill } from "../../lib/calendarSuggestion";
@@ -218,6 +219,16 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     state.initial?.attachments ?? [],
   );
   const [dragOver, setDragOver] = useState(false);
+  /** forwarded originals still being extracted; sending waits for them */
+  const [forwardPending, setForwardPending] = useState(0);
+  const forwardPendingRef = useRef(0);
+  /** the original's extracted files, kept so the toggle can re-add them */
+  const forwardFilesRef = useRef<DraftAttachment[]>([]);
+  const [includeForwardFiles, setIncludeForwardFiles] = useState(true);
+  const includeForwardFilesRef = useRef(true);
+  const forwardFileCount = (state.replyTo?.attachments ?? []).filter((a) => !a.isInline).length;
+  const offerForwardFiles =
+    state.mode === "forward" && !state.initial && !state.draftId && forwardFileCount > 0;
 
   // Quoted original: collapsed behind "⋯", appended back on save/send.
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -326,6 +337,53 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSig]);
 
+  // A fresh forward carries the original's files (not inline images, which
+  // belong to the quoted body). Each is extracted to disk, then staged like a
+  // picked file when the draft saves.
+  useEffect(() => {
+    if (state.mode !== "forward" || state.initial || state.draftId) return;
+    const files = (state.replyTo?.attachments ?? []).filter((a) => !a.isInline);
+    if (files.length === 0) return;
+    let cancelled = false;
+    forwardPendingRef.current = files.length;
+    setForwardPending(files.length);
+    void Promise.all(
+      files.map(async (a) => {
+        try {
+          const filePath = await call("get_attachment", { attachmentId: a.id });
+          if (cancelled) return;
+          const file = { filePath, filename: a.filename ?? t("thread:attachment.fallbackName") };
+          forwardFilesRef.current.push(file);
+          if (!includeForwardFilesRef.current) return;
+          setAttachments((cur) =>
+            cur.some((x) => x.filePath === filePath) ? cur : [...cur, file],
+          );
+        } catch (e) {
+          if (!cancelled) {
+            pushToast({
+              kind: "error",
+              message: t("compose:forwardAttachFailed", {
+                name: a.filename ?? t("thread:attachment.fallbackName"),
+                detail: errorMessage(e),
+              }),
+            });
+          }
+        } finally {
+          if (!cancelled) {
+            forwardPendingRef.current -= 1;
+            setForwardPending(forwardPendingRef.current);
+          }
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+      forwardPendingRef.current = 0;
+      forwardFilesRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const markDirty = () => {
     if (!dirtyRef.current) {
       dirtyRef.current = true;
@@ -384,6 +442,10 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
       const f = fieldsRef.current;
       if (f.to.length === 0) {
         pushToast({ kind: "error", message: t("compose:addRecipient"), durationMs: 3000 });
+        return;
+      }
+      if (forwardPendingRef.current > 0 && includeForwardFilesRef.current) {
+        pushToast({ kind: "info", message: t("compose:forwardAttaching"), durationMs: 3000 });
         return;
       }
       if (sending) return;
@@ -541,6 +603,20 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     return () => unlisten?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Forward with or without the original's files. */
+  const toggleForwardFiles = () => {
+    const next = !includeForwardFilesRef.current;
+    includeForwardFilesRef.current = next;
+    setIncludeForwardFiles(next);
+    const files = forwardFilesRef.current;
+    const paths = new Set(files.map((f) => f.filePath));
+    setAttachments((cur) => {
+      const rest = cur.filter((a) => !paths.has(a.filePath));
+      return next ? [...rest, ...files] : rest;
+    });
+    markDirty();
+  };
 
   const removeAttachment = (filePath: string) => {
     setAttachments((cur) => cur.filter((a) => a.filePath !== filePath));
@@ -1073,8 +1149,23 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             </div>
           )}
 
-          {attachments.length > 0 && (
-            <div data-testid="attachment-chips" className="flex flex-wrap gap-2 py-2">
+          {(attachments.length > 0 || offerForwardFiles) && (
+            <div data-testid="attachment-chips" className="flex flex-wrap items-center gap-2 py-2">
+              {offerForwardFiles && (
+                <div className="text-xs [&_.text-base]:text-xs [&_.text-base]:text-ink-muted">
+                  <Checkbox
+                    checked={includeForwardFiles}
+                    onChange={toggleForwardFiles}
+                    label={t("compose:forwardIncludeFiles", { count: forwardFileCount })}
+                  />
+                </div>
+              )}
+              {includeForwardFiles && forwardPending > 0 && (
+                <span className="co-chip text-ink-faint">
+                  <Icon name="paperclip" size={11} />
+                  {t("compose:forwardAttachingCount", { count: forwardPending })}
+                </span>
+              )}
               {attachments.map((a) => (
                 <span key={a.filePath} className="co-chip" title={a.filePath}>
                   <Icon name="paperclip" size={11} />

@@ -223,6 +223,25 @@ pub async fn get_attachment(state: State<'_, AppState>, attachment_id: i64) -> C
     state.core.get_attachment(attachment_id).await.map_err(err)
 }
 
+/// Extract the attachment and open it in the OS default app. Opened from Rust
+/// so the webview's opener scope (which doesn't cover the app data dir) never
+/// sees an arbitrary path.
+#[tauri::command]
+pub async fn open_attachment(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    attachment_id: i64,
+) -> CmdResult<()> {
+    let path = state
+        .core
+        .get_attachment(attachment_id)
+        .await
+        .map_err(err)?;
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|e| err(comail_core::error::CoreError::Other(e.to_string())))
+}
+
 /// Reveal the folder holding `comail.log` (see `init_logging`) in the OS file
 /// manager. Creates it first so the command works even before anything has been
 /// logged.

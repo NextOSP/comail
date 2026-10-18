@@ -1091,6 +1091,7 @@ export interface Commands {
   unsubscribe_message(args: { messageId: number }): Promise<UnsubscribeOutcome>;
   /** Extracts the attachment to disk and returns the file path. */
   get_attachment(args: { attachmentId: number }): Promise<string>;
+  open_attachment(args: { attachmentId: number }): Promise<void>;
   /** Saves (downloads) the attachment to a chosen destination path. */
   save_attachment(args: { attachmentId: number; dest: string }): Promise<void>;
   /** Reveals the app's logs folder in the OS file manager. */

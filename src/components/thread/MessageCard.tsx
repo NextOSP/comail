@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { call } from "../../ipc/commands";
@@ -32,7 +32,6 @@ function DotsIcon() {
 async function openAttachment(a: AttachmentMeta) {
   const { pushToast } = useUi.getState();
   try {
-    const path = await call("get_attachment", { attachmentId: a.id });
     if (MOCK_MODE) {
       pushToast({
         kind: "info",
@@ -42,7 +41,7 @@ async function openAttachment(a: AttachmentMeta) {
       });
       return;
     }
-    await openPath(path);
+    await call("open_attachment", { attachmentId: a.id });
   } catch (e) {
     pushToast({ kind: "error", message: i18n.t("thread:attachment.openFailed", { detail: errorMessage(e) }) });
   }

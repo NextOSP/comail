@@ -371,6 +371,7 @@ pub fn run() {
             commands::thread_unsubscribe_message,
             commands::unsubscribe_message,
             commands::get_attachment,
+            commands::open_attachment,
             commands::save_attachment,
             commands::open_logs_dir,
             commands::focus_main_window,

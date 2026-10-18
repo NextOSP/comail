@@ -9,6 +9,20 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.38] - 2026-10-18
+
+### Added
+
+- **Forward with or without files.** Forwarding a message now carries its
+  attachments (not the images embedded in the body). An "Include N
+  attachments" checkbox in the composer turns them off or back on. Files
+  that haven't downloaded yet are fetched first, and Send waits for them.
+
+### Fixed
+
+- Opening an attachment in its default app no longer fails with "Not allowed
+  to open path".
+
 ## [0.2.37] - 2026-10-18
 
 ### Changed
@@ -483,7 +497,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.37...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.38...HEAD
+[0.2.38]: https://github.com/NextOSP/comail/releases/tag/v0.2.38
 [0.2.37]: https://github.com/NextOSP/comail/releases/tag/v0.2.37
 [0.2.36]: https://github.com/NextOSP/comail/releases/tag/v0.2.36
 [0.2.35]: https://github.com/NextOSP/comail/releases/tag/v0.2.35

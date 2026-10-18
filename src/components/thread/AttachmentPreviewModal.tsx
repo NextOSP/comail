@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { openPath } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
@@ -93,12 +92,11 @@ function Viewer({ state }: { state: AttachmentViewerState }) {
 
   const openExternally = async () => {
     try {
-      const path = await call("get_attachment", { attachmentId: attachment.id });
       if (MOCK_MODE) {
         pushToast({ kind: "info", message: t("thread:attachment.savedMock", { name }) });
         return;
       }
-      await openPath(path);
+      await call("open_attachment", { attachmentId: attachment.id });
     } catch (e) {
       pushToast({ kind: "error", message: t("thread:attachment.openFailed", { detail: errorMessage(e) }) });
     }
