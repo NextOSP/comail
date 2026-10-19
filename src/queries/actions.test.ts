@@ -53,6 +53,43 @@ beforeEach(() => {
 
 afterEach(() => queryClient.clear());
 
+describe("trash destination caches", () => {
+  it.each(["spam", "move"] as const)("waits for authoritative membership for %s", async (kind) => {
+    const data = { pages: [{ threads: [thread(1)], nextCursor: null }], pageParams: [null] };
+    const keys = [
+      ["threads", "all", null, 1, null, null],
+      ["threads", "trash", null, 1, null, null],
+      ["threads", "spam", null, 1, null, null],
+      ["threads", "all", null, 1, null, 42],
+    ];
+    for (const key of keys) queryClient.setQueryData(key, data);
+    queryClient.setQueryData(searchKey, results([thread(1)]));
+    applyOptimistic(kind, [1]);
+    for (const key of keys) expect(queryClient.getQueryData(key)).toEqual(data);
+    expect(queryClient.getQueryData<SearchResults>(searchKey)!.threads).toHaveLength(1);
+    await performThreadAction(kind, [1], { targetFolderId: 42 });
+    for (const key of keys) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
+  it("removes from normal lists but preserves existing Trash rows", () => {
+    const data = { pages: [{ threads: [thread(1), thread(2)], nextCursor: null }], pageParams: [null] };
+    for (const view of ["all", "starred", "trash", "spam"]) {
+      queryClient.setQueryData(["threads", view], data);
+    }
+    applyOptimistic("trash", [1]);
+    for (const view of ["all", "starred", "spam"]) {
+      expect(queryClient.getQueryData<typeof data>(["threads", view])!.pages[0].threads.map(t => t.id)).toEqual([2]);
+    }
+    expect(queryClient.getQueryData(["threads", "trash"])).toEqual(data);
+  });
+
+  it("reconciles destination lists even without a native event", async () => {
+    queryClient.setQueryData(["threads", "trash"], { pages: [], pageParams: [] });
+    await performThreadAction("trash", [1]);
+    expect(queryClient.getQueryState(["threads", "trash"])?.isInvalidated).toBe(true);
+  });
+});
+
 describe("actions on search results", () => {
   it("finds a thread cached only in search results", () => {
     const data = results([thread(1), thread(2, 3)]);

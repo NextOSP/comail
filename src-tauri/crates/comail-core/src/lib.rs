@@ -5354,6 +5354,95 @@ fn valid_automation_route(conn: &rusqlite::Connection, target: &str) -> Result<b
     Ok(conn.query_row(&sql, rusqlite::params![id], |row| row.get::<_, i64>(0))? != 0)
 }
 
+#[cfg(test)]
+mod trash_regression_tests {
+    use super::*;
+    use crate::db::testutil;
+
+    #[test]
+    fn trash_moves_custom_folder_mail_and_hides_it_from_normal_views() {
+        let mut c = testutil::conn();
+        testutil::seed_account(&c);
+        c.execute_batch(
+            "INSERT INTO folders(id,account_id,imap_name,role) VALUES
+            (2,1,'Trash','trash'),(3,1,'Spam','spam'),(4,1,'Custom',NULL);",
+        )
+        .unwrap();
+        let (tid, mid) = testutil::seed_message(&c, "sender@test.dev", "trash test", false);
+        c.execute(
+            "UPDATE messages SET folder_id=4, is_starred=1 WHERE id=?1",
+            [mid],
+        )
+        .unwrap();
+        repo::threads::recompute(&c, tid).unwrap();
+        let actions = apply_thread_action(&mut c, tid, ActionKind::Trash, None).unwrap();
+        assert_eq!(actions.len(), 1, "role-less folders must enqueue a move");
+        let folder: i64 = c
+            .query_row("SELECT folder_id FROM messages WHERE id=?1", [mid], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(folder, 2);
+        for view in [
+            View::All,
+            View::Starred,
+            View::Inbox,
+            View::Snoozed,
+            View::Sent,
+            View::Drafts,
+            View::Done,
+            View::Spam,
+            View::Trash,
+        ] {
+            let is_trash = matches!(view, View::Trash);
+            let page = repo::threads::list(
+                &c,
+                &repo::threads::ListArgs {
+                    view,
+                    tab: None,
+                    account_id: Some(1),
+                    folder_id: None,
+                    cursor: None,
+                    limit: 50,
+                },
+            )
+            .unwrap();
+            assert_eq!(page.threads.len(), usize::from(is_trash));
+        }
+        assert!(
+            apply_thread_action(&mut c, tid, ActionKind::Trash, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn spam_moves_custom_folder_mail_too() {
+        let mut c = testutil::conn();
+        testutil::seed_account(&c);
+        c.execute_batch(
+            "INSERT INTO folders(id,account_id,imap_name,role) VALUES
+            (2,1,'Spam','spam'),(3,1,'Custom',NULL);",
+        )
+        .unwrap();
+        let (tid, mid) = testutil::seed_message(&c, "sender@test.dev", "spam test", false);
+        c.execute("UPDATE messages SET folder_id=3 WHERE id=?1", [mid])
+            .unwrap();
+        assert_eq!(
+            apply_thread_action(&mut c, tid, ActionKind::Spam, None)
+                .unwrap()
+                .len(),
+            1
+        );
+        let folder: i64 = c
+            .query_row("SELECT folder_id FROM messages WHERE id=?1", [mid], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(folder, 2);
+    }
+}
+
 /// Optimistic local mutation + enqueue, in one transaction.
 /// Returns (action_id, account_id) pairs.
 fn apply_thread_action(
@@ -5503,7 +5592,9 @@ fn apply_thread_action(
             for (id, f, u, _r, _s, role) in &msgs {
                 let movable = match kind {
                     ActionKind::Archive => role == roles::INBOX || role == roles::DRAFTS,
-                    _ => role != target_role && !role.is_empty(),
+                    // Custom IMAP folders have no special-use role but are
+                    // valid move sources too. Compare concrete folder ids.
+                    _ => *f != Some(target),
                 };
                 if movable && f.is_some() {
                     let aid =

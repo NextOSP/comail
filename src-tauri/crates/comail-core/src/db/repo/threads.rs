@@ -234,6 +234,19 @@ const AUTO_BUCKET: &str = "(SELECT m.is_automated FROM messages m
         WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
         ORDER BY m.date DESC, m.id DESC LIMIT 1) = 1";
 
+/// A normal view needs at least one message outside Trash/Spam. Use EXISTS,
+/// not a thread-wide exclusion: mixed conversations can still contain live mail.
+/// LEFT JOIN preserves local-only drafts and user folders without special roles.
+pub(super) const HAS_VISIBLE_MAIL: &str = "EXISTS (
+    SELECT 1 FROM messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
+    WHERE vm.thread_id = t.id AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))";
+
+/// A star on discarded mail must not qualify a live, unstarred reply.
+pub(super) const HAS_VISIBLE_STAR: &str = "EXISTS (
+    SELECT 1 FROM messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
+    WHERE vm.thread_id = t.id AND vm.is_starred = 1
+      AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))";
+
 pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
     let mut where_clauses: Vec<String> = Vec::new();
     let mut bind: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -253,7 +266,7 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
             where_clauses.push(c);
             where_clauses.push("s.thread_id IS NULL".into());
         }
-        View::Starred => where_clauses.push("t.starred_count > 0".into()),
+        View::Starred => where_clauses.push(HAS_VISIBLE_STAR.into()),
         View::Snoozed => where_clauses.push("s.thread_id IS NOT NULL".into()),
         View::Sent => {
             let c = role_exists(roles::SENT, &mut bind);
@@ -282,6 +295,13 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
             where_clauses.push(c);
         }
         View::All => {}
+    }
+
+    // Explicit folders are concrete mailboxes; do not hide Trash/Spam when
+    // requested through a folder id. Other folder-specific views already scope
+    // membership by their role.
+    if args.folder_id.is_none() && matches!(args.view, View::All | View::Starred | View::Snoozed) {
+        where_clauses.push(HAS_VISIBLE_MAIL.into());
     }
 
     if let Some(acc) = args.account_id {
@@ -382,6 +402,59 @@ mod tests {
     use super::*;
     use crate::db::testutil;
     use crate::models::View;
+
+    #[test]
+    fn normal_views_hide_discarded_threads_but_keep_mixed_and_explicit_folders() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        c.execute_batch(
+            "INSERT INTO folders(id,account_id,imap_name,role) VALUES
+            (2,1,'Trash','trash'),(3,1,'Spam','spam');",
+        )
+        .unwrap();
+        let (tid, mid) = testutil::seed_message(&c, "sender@test.dev", "visible", false);
+        c.execute("UPDATE messages SET is_starred=1 WHERE thread_id=?1", [tid])
+            .unwrap();
+        let listed = |view, folder_id| {
+            list(
+                &c,
+                &ListArgs {
+                    view,
+                    folder_id,
+                    tab: None,
+                    account_id: None,
+                    cursor: None,
+                    limit: 50,
+                },
+            )
+            .unwrap()
+            .threads
+            .len()
+        };
+        for folder in [2, 3] {
+            c.execute(
+                "UPDATE messages SET folder_id=?1 WHERE id=?2",
+                rusqlite::params![folder, mid],
+            )
+            .unwrap();
+            assert_eq!(listed(View::All, None), 0);
+            assert_eq!(listed(View::Starred, None), 0);
+            assert_eq!(listed(View::All, Some(folder)), 1);
+            let counts = super::super::counts::unread_counts(&c, None, &[], &[]).unwrap();
+            assert_eq!(counts.views["starred"], 0);
+        }
+        let (_, other) = testutil::seed_message(&c, "reply@test.dev", "reply", false);
+        c.execute(
+            "UPDATE messages SET thread_id=?1 WHERE id=?2",
+            rusqlite::params![tid, other],
+        )
+        .unwrap();
+        assert_eq!(
+            listed(View::Starred, None),
+            0,
+            "a discarded star must not qualify a live unstarred reply"
+        );
+    }
 
     #[test]
     fn paging_never_skips_threads_sharing_a_timestamp() {

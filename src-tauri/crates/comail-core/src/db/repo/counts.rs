@@ -11,14 +11,16 @@ use std::collections::HashMap;
 struct Q {
     clauses: Vec<String>,
     bind: Vec<Box<dyn rusqlite::types::ToSql>>,
+    unread_only: bool,
 }
 
 impl Q {
     /// Base: threads with unread messages, optionally account-scoped.
     fn unread(account_id: Option<i64>) -> Self {
         let mut q = Q {
-            clauses: vec!["t.unread_count > 0".into()],
+            clauses: Vec::new(),
             bind: Vec::new(),
+            unread_only: true,
         };
         if let Some(acc) = account_id {
             q.bind.push(Box::new(acc));
@@ -32,6 +34,7 @@ impl Q {
         let mut q = Q {
             clauses: Vec::new(),
             bind: Vec::new(),
+            unread_only: false,
         };
         if let Some(acc) = account_id {
             q.bind.push(Box::new(acc));
@@ -57,6 +60,10 @@ impl Q {
     fn inbox(mut self) -> Self {
         let c = self.role_exists(roles::INBOX);
         self.clauses.push(c);
+        if self.unread_only {
+            self.clauses.push("EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='inbox')".into());
+            self.unread_only = false;
+        }
         self.clauses.push("s.thread_id IS NULL".into());
         self
     }
@@ -107,7 +114,10 @@ impl Q {
         self
     }
 
-    fn run(self, conn: &Connection) -> Result<i64> {
+    fn run(mut self, conn: &Connection) -> Result<i64> {
+        if self.unread_only {
+            self.clauses.push("EXISTS (SELECT 1 FROM messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
+        }
         let where_sql = if self.clauses.is_empty() {
             String::new()
         } else {
@@ -163,19 +173,21 @@ pub fn unread_counts(
     views.insert(
         "starred".to_string(),
         Q::unread(account_id)
-            .clause("t.starred_count > 0")
+            .clause(super::threads::HAS_VISIBLE_STAR)
+            .clause(super::threads::HAS_VISIBLE_MAIL)
             .run(conn)?,
     );
     views.insert(
         "snoozed".to_string(),
         Q::unread(account_id)
             .clause("s.thread_id IS NOT NULL")
+            .clause(super::threads::HAS_VISIBLE_MAIL)
             .run(conn)?,
     );
     // Spam is never notified, so its badge is the only signal that mail landed there.
-    let mut spam = Q::unread(account_id);
-    let c = spam.role_exists(roles::SPAM);
-    views.insert("spam".to_string(), spam.clause(c).run(conn)?);
+    views.insert("spam".to_string(), Q::any(account_id).clause(
+        "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='spam')"
+    ).run(conn)?);
     // Drafts badge = number of threads with a draft, unread or not.
     views.insert(
         "drafts".to_string(),
@@ -278,6 +290,38 @@ mod tests {
         assert_eq!(c.inbox, 2);
         assert_eq!(c.important, 1, "latest human reply belongs in Important");
         assert_eq!(c.other, 1, "latest automated reply belongs in Other");
+    }
+
+    #[test]
+    fn mixed_thread_badges_only_count_unread_in_their_scope() {
+        let conn = test_db();
+        conn.execute_batch("INSERT INTO folders(id,account_id,imap_name,role) VALUES (2,1,'Trash','trash'),(3,1,'Spam','spam');").unwrap();
+        seed_thread(&conn, 1, 1, false);
+        conn.execute("UPDATE messages SET folder_id=2 WHERE thread_id=1", [])
+            .unwrap();
+        append_incoming(&conn, 1, 2000, false);
+        conn.execute(
+            "UPDATE messages SET is_read=1,is_starred=1 WHERE folder_id=1",
+            [],
+        )
+        .unwrap();
+        let c = unread_counts(&conn, None, &[], &[]).unwrap();
+        assert_eq!(c.inbox, 0, "unread trash must not badge read inbox mail");
+        assert_eq!(c.views["starred"], 0);
+        conn.execute("UPDATE messages SET folder_id=3 WHERE folder_id=2", [])
+            .unwrap();
+        let c = unread_counts(&conn, None, &[], &[]).unwrap();
+        assert_eq!(c.views["spam"], 1);
+        assert_eq!(c.inbox, 0);
+        conn.execute(
+            "UPDATE messages SET is_read=CASE WHEN folder_id=3 THEN 1 ELSE 0 END",
+            [],
+        )
+        .unwrap();
+        let c = unread_counts(&conn, None, &[], &[]).unwrap();
+        assert_eq!(c.views["spam"], 0, "unread inbox must not badge read spam");
+        assert_eq!(c.inbox, 1);
+        assert_eq!(c.views["starred"], 1);
     }
 
     #[test]
