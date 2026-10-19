@@ -2847,6 +2847,13 @@ export async function mockInvoke(
       return delay({ ...acc }, 400);
     }
 
+    case "set_account_display_name": {
+      const acc = accounts.find((x) => x.id === a.accountId);
+      if (!acc) throw new Error("account not found");
+      acc.displayName = ((a.name as string) ?? "").trim() || null;
+      return delay({ ...acc });
+    }
+
     case "remove_account": {
       const i = accounts.findIndex((x) => x.id === a.accountId);
       if (i >= 0) accounts.splice(i, 1);

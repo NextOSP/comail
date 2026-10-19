@@ -362,8 +362,16 @@ async fn send_action(
         .await?;
 
     let (refs, in_reply_to) = references;
+    // The actor's config is a snapshot from when it started; read the sender
+    // name fresh so a rename in Settings applies to the next send.
+    let account_id = config.id;
+    let display_name = ctx
+        .db
+        .read(move |conn| repo::accounts::get(conn, account_id))
+        .await?
+        .map_or_else(|| config.display_name.clone(), |a| a.display_name);
     let from = Address {
-        name: config.display_name.clone(),
+        name: display_name,
         email: config.email.clone(),
     };
     let domain = config

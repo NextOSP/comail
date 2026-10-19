@@ -361,6 +361,7 @@ pub fn run() {
             commands::list_accounts,
             commands::add_account_password,
             commands::test_connection,
+            commands::set_account_display_name,
             commands::remove_account,
             commands::start_oauth,
             commands::reauth_account,

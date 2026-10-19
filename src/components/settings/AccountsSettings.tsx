@@ -228,8 +228,11 @@ function AccountRow({
   );
 }
 
-/** Edit one account: display name, marker color, theme. Saved in one write;
- *  removal sits in its own danger section. */
+/** Matches the backend cap (DISPLAY_NAME_MAX_CHARS) and Gmail's own limit. */
+const SENDER_NAME_MAX_LENGTH = 60;
+
+/** Edit one account: sender name, inbox label, marker color, theme. Saved in
+ *  one go; removal sits in its own danger section. */
 function AccountDialog({
   account: a,
   settings,
@@ -243,15 +246,19 @@ function AccountDialog({
   const pushToast = useUi((s) => s.pushToast);
   const key = String(a.id);
   const initial = {
+    senderName: a.displayName ?? "",
     name: settings.accountShortNames?.[key] ?? "",
     color: settings.accountColors?.[key] ?? "",
     theme: (settings.accountThemes?.[key] ?? "system") as AccountTheme,
   };
+  const [senderName, setSenderName] = useState(initial.senderName);
   const [name, setName] = useState(initial.name);
   const [color, setColor] = useState(initial.color);
   const [theme, setTheme] = useState<AccountTheme>(initial.theme);
   const [saving, setSaving] = useState(false);
-  const dirty = name.trim() !== initial.name || color !== initial.color || theme !== initial.theme;
+  const senderDirty = senderName.trim() !== initial.senderName;
+  const dirty =
+    senderDirty || name.trim() !== initial.name || color !== initial.color || theme !== initial.theme;
 
   const save = async () => {
     setSaving(true);
@@ -262,6 +269,10 @@ function AccountDialog({
     if (color) colors[key] = color;
     else delete colors[key];
     try {
+      if (senderDirty) {
+        await call("set_account_display_name", { accountId: a.id, name: senderName.trim() });
+        void queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      }
       await updateSettings({
         accountShortNames: names,
         accountColors: colors,
@@ -322,6 +333,22 @@ function AccountDialog({
       </header>
 
       <div className="flex flex-col gap-5 px-5 py-5">
+        <FormField label={t("settings:accounts.senderNameLabel")}>
+          <input
+            className={inputCls}
+            value={senderName}
+            placeholder={a.email}
+            maxLength={SENDER_NAME_MAX_LENGTH}
+            spellCheck={false}
+            autoFocus
+            onChange={(e) => setSenderName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && dirty) void save();
+            }}
+          />
+          <span className="text-xs text-ink-faint">{t("settings:accounts.senderNameHint")}</span>
+        </FormField>
+
         <FormField label={t("settings:accounts.nameLabel")}>
           <input
             className={inputCls}
@@ -329,7 +356,6 @@ function AccountDialog({
             placeholder={accountLabel(a)}
             maxLength={24}
             spellCheck={false}
-            autoFocus
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && dirty) void save();

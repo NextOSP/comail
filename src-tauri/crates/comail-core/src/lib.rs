@@ -656,6 +656,7 @@ impl Core {
         };
 
         let email = outcome.email.clone();
+        let name = outcome.name.clone();
         let id = self
             .db
             .write(move |conn| {
@@ -663,7 +664,7 @@ impl Core {
                     conn,
                     &repo::accounts::NewAccount {
                         email: &email,
-                        display_name: None,
+                        display_name: name.as_deref(),
                         provider,
                         auth_kind: AuthKind::Oauth2,
                         username: &email,
@@ -746,6 +747,16 @@ impl Core {
             )
             .await?;
 
+        // Accounts added before sign-in asked for the profile name have no
+        // sender name; fill it in, but never overwrite one the user set.
+        if account.display_name.is_none()
+            && let Some(name) = outcome.name
+        {
+            self.db
+                .write(move |conn| repo::accounts::set_display_name(conn, account_id, Some(&name)))
+                .await?;
+        }
+
         // Clear needs_reauth and wake the actor. The reauth pause loop retries
         // its connect on the next SyncNow; if no actor is live (e.g. reauth
         // right after launch), spawn one so the fresh tokens take effect.
@@ -768,6 +779,32 @@ impl Core {
 
         self.db
             .read(move |conn| repo::accounts::get(conn, account_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("account".into()))
+    }
+
+    /// Set the sender name used in the From: header (blank clears it, so mail
+    /// goes out as the bare address). Sends read it fresh, so it applies to
+    /// the next message without restarting the account's actor.
+    pub async fn set_account_display_name(&self, account_id: i64, name: &str) -> Result<Account> {
+        let name = name.trim();
+        if name.chars().count() > repo::accounts::DISPLAY_NAME_MAX_CHARS {
+            return Err(CoreError::Other(format!(
+                "sender name is longer than {} characters",
+                repo::accounts::DISPLAY_NAME_MAX_CHARS
+            )));
+        }
+        if name.chars().any(char::is_control) {
+            return Err(CoreError::Other(
+                "sender name has a line break or control character".into(),
+            ));
+        }
+        let name = (!name.is_empty()).then(|| name.to_string());
+        self.db
+            .write(move |conn| {
+                repo::accounts::set_display_name(conn, account_id, name.as_deref())?;
+                repo::accounts::get(conn, account_id)
+            })
             .await?
             .ok_or_else(|| CoreError::NotFound("account".into()))
     }

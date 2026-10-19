@@ -9,6 +9,28 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.40] - 2026-10-19
+
+### Added
+
+- **Sender name.** Each account's edit dialog has a new "Sender name" field,
+  the name recipients see next to your address. It takes up to 60
+  characters, enough for a full name plus an organization. Changes apply to
+  the next email you send.
+
+### Changed
+
+- The old "Display name" field is now called "Inbox label", to make clear
+  it only labels inbox rows and never shows to recipients.
+
+### Fixed
+
+- Mail sent from Google and Microsoft accounts went out as the bare email
+  address because sign-in never saved a name (#77). New sign-ins now pick up
+  the name from your Google or Microsoft profile. For an account you already
+  have, set the name under Settings › Accounts › Edit; signing in again also
+  fills it in if it is still empty.
+
 ## [0.2.39] - 2026-10-18
 
 ### Added
@@ -514,7 +536,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.39...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.40...HEAD
+[0.2.40]: https://github.com/NextOSP/comail/releases/tag/v0.2.40
 [0.2.39]: https://github.com/NextOSP/comail/releases/tag/v0.2.39
 [0.2.38]: https://github.com/NextOSP/comail/releases/tag/v0.2.38
 [0.2.37]: https://github.com/NextOSP/comail/releases/tag/v0.2.37

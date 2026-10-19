@@ -33,7 +33,8 @@ pub const GOOGLE: OAuthProviderConfig = OAuthProviderConfig {
     auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
     token_url: "https://oauth2.googleapis.com/token",
     // mail.google.com is the only scope Google accepts for IMAP/SMTP XOAUTH2.
-    scopes: &["https://mail.google.com/", "openid", "email"],
+    // `profile` adds the user's name to the id_token, used as the sender name.
+    scopes: &["https://mail.google.com/", "openid", "email", "profile"],
     client_id_env: "COMAIL_GOOGLE_CLIENT_ID",
     client_secret_env: "COMAIL_GOOGLE_CLIENT_SECRET",
 };
@@ -47,6 +48,7 @@ pub const MICROSOFT: OAuthProviderConfig = OAuthProviderConfig {
         "offline_access",
         "openid",
         "email",
+        "profile",
     ],
     client_id_env: "COMAIL_MS_CLIENT_ID",
     client_secret_env: "COMAIL_MS_CLIENT_SECRET",

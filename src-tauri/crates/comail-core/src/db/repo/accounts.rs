@@ -92,10 +92,42 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Longest sender name the app accepts; Gmail caps its own "Name" setting
+/// at the same length.
+pub const DISPLAY_NAME_MAX_CHARS: usize = 60;
+
+/// The name shown in the From: header of mail sent from this account.
+pub fn set_display_name(conn: &Connection, id: i64, name: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE accounts SET display_name = ?2 WHERE id = ?1",
+        params![id, name],
+    )?;
+    Ok(())
+}
+
 pub fn set_sync_state(conn: &Connection, id: i64, state: &str) -> Result<()> {
     conn.execute(
         "UPDATE accounts SET sync_state = ?2 WHERE id = ?1",
         params![id, state],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::testutil;
+
+    #[test]
+    fn set_display_name_sets_and_clears() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        set_display_name(&c, 1, Some("Ann Lee - Acme Customer Support Team")).unwrap();
+        assert_eq!(
+            get(&c, 1).unwrap().unwrap().display_name.as_deref(),
+            Some("Ann Lee - Acme Customer Support Team")
+        );
+        set_display_name(&c, 1, None).unwrap();
+        assert_eq!(get(&c, 1).unwrap().unwrap().display_name, None);
+    }
 }

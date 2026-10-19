@@ -12,6 +12,9 @@ use sha2::Digest;
 
 pub struct OAuthOutcome {
     pub email: String,
+    /// The account holder's name from the id_token (`profile` scope), used as
+    /// the default sender name. None when the provider leaves it out.
+    pub name: Option<String>,
     pub access_token: String,
     pub expires_in: Option<i64>,
     pub refresh_token: Option<String>,
@@ -37,13 +40,20 @@ struct ExchangeResponse {
     id_token: Option<String>,
 }
 
-fn email_from_id_token(id_token: &str) -> Option<String> {
+fn id_token_claims(id_token: &str) -> Option<serde_json::Value> {
     let payload = id_token.split('.').nth(1)?;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload)
         .ok()?;
-    let json: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    json["email"].as_str().map(|s| s.to_string())
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn claim(claims: &serde_json::Value, key: &str) -> Option<String> {
+    claims[key]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 pub async fn authorize(
@@ -163,14 +173,16 @@ pub async fn authorize_with(
         "oauth: token exchange succeeded"
     );
 
-    let email = tok
-        .id_token
-        .as_deref()
-        .and_then(email_from_id_token)
+    let claims = tok.id_token.as_deref().and_then(id_token_claims);
+    let email = claims
+        .as_ref()
+        .and_then(|c| claim(c, "email"))
         .ok_or_else(|| CoreError::Auth("could not determine account email".into()))?;
+    let name = claims.as_ref().and_then(|c| claim(c, "name"));
 
     Ok(OAuthOutcome {
         email,
+        name,
         access_token: tok.access_token,
         expires_in: tok.expires_in,
         refresh_token: tok.refresh_token,
@@ -188,4 +200,37 @@ fn urlencode(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id_token(claims: serde_json::Value) -> String {
+        let enc = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        format!("h.{}.sig", enc.encode(claims.to_string()))
+    }
+
+    #[test]
+    fn reads_email_and_name_claims() {
+        let c = id_token_claims(&id_token(serde_json::json!({
+            "email": "ann@example.com",
+            "name": "  Ann Lee - Acme Support ",
+        })))
+        .unwrap();
+        assert_eq!(claim(&c, "email").as_deref(), Some("ann@example.com"));
+        assert_eq!(claim(&c, "name").as_deref(), Some("Ann Lee - Acme Support"));
+    }
+
+    #[test]
+    fn missing_or_blank_name_is_none() {
+        let c = id_token_claims(&id_token(
+            serde_json::json!({ "email": "a@b.c", "name": " " }),
+        ))
+        .unwrap();
+        assert_eq!(claim(&c, "name"), None);
+        let c = id_token_claims(&id_token(serde_json::json!({ "email": "a@b.c" }))).unwrap();
+        assert_eq!(claim(&c, "name"), None);
+        assert!(id_token_claims("not-a-jwt").is_none());
+    }
 }

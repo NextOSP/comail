@@ -37,6 +37,19 @@ pub async fn test_connection(
 }
 
 #[tauri::command]
+pub async fn set_account_display_name(
+    state: State<'_, AppState>,
+    account_id: i64,
+    name: String,
+) -> CmdResult<Account> {
+    state
+        .core
+        .set_account_display_name(account_id, &name)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
 pub async fn remove_account(state: State<'_, AppState>, account_id: i64) -> CmdResult<()> {
     state.core.remove_account(account_id).await.map_err(err)
 }

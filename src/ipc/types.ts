@@ -1067,6 +1067,7 @@ export interface Commands {
   test_connection(args: {
     args: AddPasswordAccountArgs;
   }): Promise<ConnectionTestResult>;
+  set_account_display_name(args: { accountId: number; name: string }): Promise<Account>;
   remove_account(args: { accountId: number }): Promise<void>;
   start_oauth(args: { provider: Provider }): Promise<Account>;
   reauth_account(args: { accountId: number }): Promise<Account>;
