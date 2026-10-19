@@ -53,20 +53,28 @@ export function applyOptimistic(
   params?: { wakeAt?: number; labelId?: number },
 ) {
   const ids = new Set(threadIds);
-  const removes = REMOVAL_KINDS.includes(kind);
+  // Spam may leave reply drafts (including local-only drafts); Move may keep
+  // the thread in this view or target an already cached destination. Membership
+  // cannot be inferred from summaries. Reconcile these actions from the backend
+  // rather than optimistically removing rows and making them bounce back.
+  const removes = REMOVAL_KINDS.includes(kind) && kind !== "spam" && kind !== "move";
 
-  queryClient.setQueriesData<InfiniteData<ThreadPage>>({ queryKey: ["threads"] }, (data) => {
-    if (!data) return data;
-    return {
-      ...data,
-      pages: data.pages.map((p) => ({
-        ...p,
-        threads: removes
-          ? p.threads.filter((t) => !ids.has(t.id))
-          : p.threads.map((t) => (ids.has(t.id) ? patchSummary(t, kind, params) : t)),
-      })),
-    };
-  });
+  for (const [key] of queryClient.getQueriesData({ queryKey: ["threads"] })) {
+    // Destination lists must not animate an existing item out and back in.
+    const removesFromView = removes && !(kind === "trash" && key[1] === "trash");
+    queryClient.setQueryData<InfiniteData<ThreadPage>>(key, (data) => {
+      if (!data) return data;
+      return {
+        ...data,
+        pages: data.pages.map((p) => ({
+          ...p,
+          threads: removesFromView
+            ? p.threads.filter((t) => !ids.has(t.id))
+            : p.threads.map((t) => (ids.has(t.id) ? patchSummary(t, kind, params) : t)),
+        })),
+      };
+    });
+  }
 
   // Preserve search metadata and keep hits aligned with threads when an action
   // removes results. Read/star changes update summaries until the next refetch.
@@ -115,8 +123,12 @@ export function performThreadAction(
     .then(() => {
       // reconcile in the background: labels/counts may have shifted, and
       // operator filters (is:unread, in:...) must re-apply on the backend
-      void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
-      void queryClient.invalidateQueries({ queryKey: ["search"] });
+      if (REMOVAL_KINDS.includes(kind)) {
+        refetchLists();
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+        void queryClient.invalidateQueries({ queryKey: ["search"] });
+      }
     })
     .catch((err: unknown) => {
       useUi.getState().pushToast({
