@@ -72,6 +72,11 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
     const onKey = (e: KeyboardEvent) => {
       const activeElement = document.activeElement as HTMLElement | null;
       if (docked && !asideRef.current?.contains(activeElement)) return;
+      // The header remains interactive while the drawer is open.
+      if (!docked && activeElement?.closest("header") && e.key !== "Escape") {
+        if (!e.metaKey && !e.ctrlKey && !e.altKey) e.stopPropagation();
+        return;
+      }
       if (e.key === "Escape") {
         if (docked) return;
         e.preventDefault();
@@ -153,25 +158,15 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
   const inboxActive = view === "inbox";
 
   return (
-    <div className={docked ? "relative z-20 h-full w-[272px] shrink-0" : "fixed inset-0 z-40"} onMouseDown={docked ? undefined : close}>
+    <div className={docked ? "relative z-20 h-full w-[272px] shrink-0" : "absolute inset-0 z-40 overflow-hidden"} onMouseDown={docked ? undefined : close}>
       {!docked && <div className="absolute inset-0 bg-bg0/40" />}
       <aside
         ref={asideRef}
         aria-label={t("common:topbar.menu")}
-        className={`relative flex h-full w-[272px] max-w-full flex-col overflow-y-auto border-r border-hairline bg-bg1 py-3 ${docked ? "" : "co-fade-in shadow-elev-2"}`}
+        className={`relative flex h-full w-[272px] max-w-full flex-col overflow-hidden border-r border-hairline bg-bg1 ${docked ? "" : "co-sidebar-enter shadow-elev-2"}`}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          data-sidebar-control
-          aria-pressed={pinned}
-          title={t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
-          className={`mx-2 mb-2 flex shrink-0 items-center gap-2 rounded-control px-2 py-1.5 text-sm text-ink-muted hover:bg-bg2 ${NAV_FOCUS}`}
-          onClick={() => set({ sidebarPinned: !pinned, sidebarOpen: true })}
-        >
-          <Icon name="pin" size={16} />
-          {t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
-        </button>
+        <div data-sidebar-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-3">
         <button
           data-nav
           className={`mx-2 mb-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-control px-2 py-1.5 text-left hover:bg-bg2 ${NAV_FOCUS}`}
@@ -336,6 +331,20 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
           onClick={() => set({ panel: "settings", settingsTab: "labels", sidebarOpen: false })}
         />
         <SideRow label={t("common:sidebar.settings")} onClick={() => openPanel("settings")} />
+        </div>
+        <div className="shrink-0 border-t border-hairline bg-bg1 p-2">
+          <button
+            type="button"
+            data-sidebar-control
+            aria-pressed={pinned}
+            title={t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
+            className={`flex w-full items-center gap-2 rounded-control px-2 py-2 text-sm text-ink-muted hover:bg-bg2 ${NAV_FOCUS}`}
+            onClick={() => set({ sidebarPinned: !pinned, sidebarOpen: true })}
+          >
+            <Icon name={pinned ? "pushpinOff" : "pushpin"} size={16} />
+            {t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
+          </button>
+        </div>
       </aside>
     </div>
   );

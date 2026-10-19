@@ -250,6 +250,17 @@ textarea {
 .co-pop-in {
   animation: co-pop-in 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+@keyframes co-sidebar-enter {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.co-sidebar-enter {
+  animation: co-sidebar-enter 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .co-sidebar-enter { animation: none; }
+}
+
 .co-fade-in {
   animation: co-fade-in 150ms ease-out;
 }

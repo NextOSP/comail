@@ -136,8 +136,8 @@ export default function App() {
       ) : screen === "onboarding" ? (
         <OnboardingFlow onDone={() => setInFlow(false)} />
       ) : (
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {sidebarDocked && <Sidebar docked />}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <Sidebar docked={sidebarDocked} />
           <div className="flex min-w-0 flex-1 overflow-hidden">
           <ErrorBoundary resetKey={`${screen}:${openThreadId ?? ""}`}>
             {screen === "compose" ? (
@@ -159,7 +159,6 @@ export default function App() {
           </div>
         </div>
       )}
-      {screen !== "onboarding" && !sidebarDocked && <Sidebar />}
       <CommandPalette />
       <SnoozePopover />
       <MovePopover />

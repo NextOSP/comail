@@ -56,6 +56,12 @@ const PATHS = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  pushpin: <path d="M16 3l5 5-4 1-3 5v3l-7-7h3l5-3 1-4zM10 14l-7 7" />,
+  pushpinOff: (
+    <>
+      <path d="M16 3l5 5-4 1-2 3M10 14l-7 7M7 10l7 7v-3M3 3l18 18" />
+    </>
+  ),
   pin: (
     <>
       <path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
