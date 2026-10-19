@@ -18,9 +18,11 @@ import { Icon } from "../ui/Icon";
 const VIEWS: View[] = ["starred", "snoozed", "drafts", "sent", "done", "spam", "trash", "all"];
 
 /** Left drawer: mailboxes, splits, and management panels. */
-export function Sidebar() {
+export function Sidebar({ docked = false }: { docked?: boolean }) {
   const { t } = useTranslation();
-  const open = useUi((s) => s.sidebarOpen);
+  const drawerOpen = useUi((s) => s.sidebarOpen);
+  const pinned = useUi((s) => s.sidebarPinned);
+  const open = docked || drawerOpen;
   const view = useUi((s) => s.view);
   const splitId = useUi((s) => s.splitId);
   const accountFilter = useUi((s) => s.accountFilter);
@@ -49,6 +51,11 @@ export function Sidebar() {
     });
 
   const asideRef = useRef<HTMLElement>(null);
+  // Docking consumes the temporary drawer state; shrinking must not unexpectedly
+  // resurrect a modal overlay. Keep the persisted pin preference untouched.
+  useEffect(() => {
+    if (docked) set({ sidebarOpen: false });
+  }, [docked, set]);
   // Keyboard: the drawer takes focus on open (on the current view's row) and
   // owns the navigation keys while open, so ↑/↓ (or J/K) walk its rows
   // instead of the thread list behind it. Enter opens the row, →/← expand and
@@ -58,18 +65,27 @@ export function Sidebar() {
     if (!open) return;
     const rows = () =>
       Array.from(asideRef.current?.querySelectorAll<HTMLButtonElement>("button[data-nav]") ?? []);
-    const raf = requestAnimationFrame(() => {
+    const raf = docked ? null : requestAnimationFrame(() => {
       const list = rows();
       (list.find((b) => b.dataset.active === "true") ?? list[1] ?? list[0])?.focus();
     });
     const onKey = (e: KeyboardEvent) => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      if (docked && !asideRef.current?.contains(activeElement)) return;
       if (e.key === "Escape") {
+        if (docked) return;
         e.preventDefault();
         e.stopPropagation();
         useUi.getState().set({ sidebarOpen: false });
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // The pin control is not a mailbox row. Preserve its native Enter/Space
+      // activation, without leaking those keys to mail-list shortcuts.
+      if (activeElement?.closest("[data-sidebar-control]")) {
+        e.stopPropagation();
+        return;
+      }
       const list = rows();
       if (list.length === 0) return;
       const focused = list.indexOf(document.activeElement as HTMLButtonElement);
@@ -103,10 +119,10 @@ export function Sidebar() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => {
-      cancelAnimationFrame(raf);
+      if (raf !== null) cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [open]);
+  }, [open, docked]);
 
   if (!open) return null;
 
@@ -137,13 +153,25 @@ export function Sidebar() {
   const inboxActive = view === "inbox";
 
   return (
-    <div className="fixed inset-0 z-40" onMouseDown={close}>
-      <div className="absolute inset-0 bg-bg0/40" />
+    <div className={docked ? "relative z-20 h-full w-[272px] shrink-0" : "fixed inset-0 z-40"} onMouseDown={docked ? undefined : close}>
+      {!docked && <div className="absolute inset-0 bg-bg0/40" />}
       <aside
         ref={asideRef}
-        className="co-fade-in relative flex h-full w-[272px] flex-col overflow-y-auto border-r border-hairline bg-bg1 py-3 shadow-elev-2"
+        aria-label={t("common:topbar.menu")}
+        className={`relative flex h-full w-[272px] max-w-full flex-col overflow-y-auto border-r border-hairline bg-bg1 py-3 ${docked ? "" : "co-fade-in shadow-elev-2"}`}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        <button
+          type="button"
+          data-sidebar-control
+          aria-pressed={pinned}
+          title={t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
+          className={`mx-2 mb-2 flex shrink-0 items-center gap-2 rounded-control px-2 py-1.5 text-sm text-ink-muted hover:bg-bg2 ${NAV_FOCUS}`}
+          onClick={() => set({ sidebarPinned: !pinned, sidebarOpen: true })}
+        >
+          <Icon name="pin" size={16} />
+          {t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
+        </button>
         <button
           data-nav
           className={`mx-2 mb-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-control px-2 py-1.5 text-left hover:bg-bg2 ${NAV_FOCUS}`}
