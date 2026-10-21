@@ -23,6 +23,12 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
   const drawerOpen = useUi((s) => s.sidebarOpen);
   const pinned = useUi((s) => s.sidebarPinned);
   const open = docked || drawerOpen;
+  // Undocking keeps the visible panel in place until the pointer leaves it.
+  // This is distinct from opening a fresh drawer via the toolbar.
+  const [unpinPreview, setUnpinPreview] = useState(false);
+  useEffect(() => {
+    if (!open || docked) setUnpinPreview(false);
+  }, [open, docked]);
   const view = useUi((s) => s.view);
   const splitId = useUi((s) => s.splitId);
   const accountFilter = useUi((s) => s.accountFilter);
@@ -65,7 +71,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
     if (!open) return;
     const rows = () =>
       Array.from(asideRef.current?.querySelectorAll<HTMLButtonElement>("button[data-nav]") ?? []);
-    const raf = docked ? null : requestAnimationFrame(() => {
+    const raf = docked || unpinPreview ? null : requestAnimationFrame(() => {
       const list = rows();
       (list.find((b) => b.dataset.active === "true") ?? list[1] ?? list[0])?.focus();
     });
@@ -127,7 +133,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
       if (raf !== null) cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [open, docked]);
+  }, [open, docked, unpinPreview]);
 
   if (!open) return null;
 
@@ -163,8 +169,11 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
       <aside
         ref={asideRef}
         aria-label={t("common:topbar.menu")}
-        className={`relative flex h-full w-[272px] max-w-full flex-col overflow-hidden border-r border-hairline bg-bg1 ${docked ? "" : "co-sidebar-enter shadow-elev-2"}`}
+        className={`relative flex h-full w-[272px] max-w-full flex-col overflow-hidden border-r border-hairline bg-bg1 ${docked ? "" : unpinPreview ? "shadow-elev-2" : "co-sidebar-enter shadow-elev-2"}`}
         onMouseDown={(e) => e.stopPropagation()}
+        onPointerLeave={(e) => {
+          if (unpinPreview && !docked && e.pointerType !== "touch") close();
+        }}
       >
         <div data-sidebar-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-3">
         <button
@@ -339,7 +348,10 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
             aria-pressed={pinned}
             title={t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
             className={`flex w-full items-center gap-2 rounded-control px-2 py-2 text-sm text-ink-muted hover:bg-bg2 ${NAV_FOCUS}`}
-            onClick={() => set({ sidebarPinned: !pinned, sidebarOpen: true })}
+            onClick={() => {
+              setUnpinPreview(docked && pinned);
+              set({ sidebarPinned: !pinned, sidebarOpen: true });
+            }}
           >
             <Icon name={pinned ? "pushpinOff" : "pushpin"} size={16} />
             {t(pinned ? "common:sidebar.unpin" : "common:sidebar.pin")}
