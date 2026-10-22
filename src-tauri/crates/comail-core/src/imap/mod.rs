@@ -820,6 +820,41 @@ async fn create_folder_inner(session: &mut Session, name: &str) -> Result<()> {
         .map_err(|e| CoreError::Imap(e.to_string()))
 }
 
+/// Permanently delete one UID in the selected folder, without expunging other
+/// messages already marked \\Deleted. The caller must validate the folder and
+/// UIDVALIDITY before calling; this primitive does not enforce a Trash policy.
+/// A timeout requires discarding the session before retrying.
+pub async fn uid_delete_permanently(session: &mut Session, uid: u32) -> Result<()> {
+    if uid == 0 {
+        return Err(CoreError::Other(
+            "permanent delete requires a nonzero UID".into(),
+        ));
+    }
+    with_deadline("UID DELETE", METADATA_TIMEOUT, async {
+        let caps = session
+            .capabilities()
+            .await
+            .map_err(|e| CoreError::Imap(e.to_string()))?;
+        // Fail before STORE: plain EXPUNGE could delete another client's mail.
+        if !caps.has_str("UIDPLUS") {
+            return Err(CoreError::Other(
+                "permanent delete requires UIDPLUS; no unsafe EXPUNGE fallback".into(),
+            ));
+        }
+        store_flag_inner(session, uid, "\\Deleted", true).await?;
+        let stream = session
+            .uid_expunge(uid.to_string())
+            .await
+            .map_err(|e| CoreError::Imap(e.to_string()))?;
+        futures::pin_mut!(stream);
+        while let Some(item) = stream.next().await {
+            item.map_err(|e| CoreError::Imap(e.to_string()))?;
+        }
+        Ok(())
+    })
+    .await
+}
+
 /// Expunge all \Deleted messages in the selected folder.
 pub async fn expunge_all(session: &mut Session) -> Result<()> {
     with_deadline("EXPUNGE", METADATA_TIMEOUT, expunge_all_inner(session)).await
