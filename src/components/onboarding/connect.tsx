@@ -6,7 +6,7 @@ import type { AddPasswordAccountArgs } from "../../ipc/types";
 import { queryClient } from "../../queries/client";
 import { useUi } from "../../stores/ui";
 import { Button } from "../ui/Button";
-import { FormField as Field, inputCls, Select } from "../ui/Field";
+import { FormField as Field, inputCls, Segmented } from "../ui/Field";
 
 /**
  * Account connection, shared by the first-run flow (OnboardingFlow) and the
@@ -72,7 +72,7 @@ export function useOAuth({ onDone, onLeave }: { onDone?: () => void; onLeave?: (
       const raw = err instanceof Error ? err.message : String(err);
       if (raw.includes("no OAuth app configured")) {
         // Take the user straight to the fields they need to fill in.
-        useUi.getState().set({ panel: "settings" });
+        useUi.getState().set({ panel: "settings", settingsTab: "accounts" });
         onLeave?.();
         pushToast({
           kind: "info",
@@ -144,8 +144,17 @@ export function OAuthButtons({ oauth }: { oauth: ReturnType<typeof useOAuth> }) 
   );
 }
 
-/** The IMAP / SMTP form: tests the connection, then stores the account. */
-export function ImapForm({ onDone, onBack }: { onDone?: () => void; onBack: () => void }) {
+/** The IMAP / SMTP form: tests the connection, then stores the account.
+ *  Presets only ask for the address and password; their servers sit behind a
+ *  one-line summary. Custom shows the server fields, guessing the hosts from
+ *  the address domain until they're typed. */
+export function ImapForm({
+  onDone,
+  onBack,
+}: {
+  onDone?: () => void;
+  onBack: () => void;
+}) {
   const { t } = useTranslation();
   const [preset, setPreset] = useState<keyof typeof PRESETS>("fastmail");
   const [email, setEmail] = useState("");
@@ -155,11 +164,22 @@ export function ImapForm({ onDone, onBack }: { onDone?: () => void; onBack: () =
   const [imapPort, setImapPort] = useState(PRESETS.fastmail.imapPort);
   const [smtpHost, setSmtpHost] = useState(PRESETS.fastmail.smtpHost);
   const [smtpPort, setSmtpPort] = useState(PRESETS.fastmail.smtpPort);
+  const [editServers, setEditServers] = useState(false);
   const [busy, setBusy] = useState<"test" | "add" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const isCustom = preset === "custom";
+  const showServers = isCustom || editServers;
+  const domain = email.split("@")[1]?.trim().toLowerCase() || "";
+  const imapGuess = isCustom && domain ? `imap.${domain}` : "";
+  const smtpGuess = isCustom && domain ? `smtp.${domain}` : "";
+  const imapEffective = imapHost.trim() || imapGuess;
+  const smtpEffective = smtpHost.trim() || smtpGuess;
+
   const applyPreset = (key: keyof typeof PRESETS) => {
     setPreset(key);
+    setEditServers(false);
+    setError(null);
     const p = PRESETS[key];
     setImapHost(p.imapHost);
     setImapPort(p.imapPort);
@@ -172,9 +192,9 @@ export function ImapForm({ onDone, onBack }: { onDone?: () => void; onBack: () =
     displayName: displayName.trim() || null,
     username: email.trim(),
     password,
-    imapHost: imapHost.trim(),
+    imapHost: imapEffective,
     imapPort,
-    smtpHost: smtpHost.trim(),
+    smtpHost: smtpEffective,
     smtpPort,
   });
 
@@ -184,13 +204,22 @@ export function ImapForm({ onDone, onBack }: { onDone?: () => void; onBack: () =
     try {
       const test = await call("test_connection", { args: buildArgs() });
       if (!test.ok) {
-        setError(test.error ? errorMessage(test.error) : t("onboarding:connectionFailed"));
+        setError(
+          test.error
+            ? errorMessage(test.error)
+            : t("onboarding:connectionFailed"),
+        );
         return;
       }
       setBusy("add");
       await call("add_account_password", { args: buildArgs() });
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      useUi.getState().pushToast({ kind: "info", message: t("onboarding:accountConnected", { email: email.trim() }) });
+      useUi
+        .getState()
+        .pushToast({
+          kind: "info",
+          message: t("onboarding:accountConnected", { email: email.trim() }),
+        });
       onDone?.();
     } catch (err) {
       setError(errorMessage(err));
@@ -201,62 +230,118 @@ export function ImapForm({ onDone, onBack }: { onDone?: () => void; onBack: () =
 
   return (
     <form
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      <Field label={t("onboarding:field.provider")}>
-        <Select
+      <div className="self-start">
+        <Segmented
           value={preset}
-          onChange={(e) => applyPreset(e.target.value as keyof typeof PRESETS)}
-        >
-          {Object.keys(PRESETS).map((k) => (
-            <option key={k} value={k}>
-              {t(`onboarding:provider.${k}`)}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label={t("onboarding:field.email")}>
-        <Input value={email} onChange={setEmail} type="email" placeholder={t("onboarding:placeholder.email")} autoFocus />
-      </Field>
-      <Field label={t("onboarding:field.displayName")}>
-        <Input value={displayName} onChange={setDisplayName} placeholder={t("onboarding:placeholder.displayName")} />
-      </Field>
-      <Field label={t("onboarding:field.password")}>
-        <Input value={password} onChange={setPassword} type="password" placeholder={t("onboarding:placeholder.password")} />
-      </Field>
-      <div className="grid grid-cols-[1fr_88px] gap-2">
-        <Field label={t("onboarding:field.imapHost")}>
-          <Input value={imapHost} onChange={setImapHost} placeholder={t("onboarding:placeholder.imapHost")} />
-        </Field>
-        <Field label={t("onboarding:field.port")}>
-          <Input value={String(imapPort)} onChange={(v) => setImapPort(Number(v) || 0)} />
-        </Field>
+          onChange={applyPreset}
+          options={Object.keys(PRESETS).map((k) => ({
+            value: k,
+            label: t(`onboarding:provider.${k}`),
+          }))}
+        />
       </div>
-      <div className="grid grid-cols-[1fr_88px] gap-2">
-        <Field label={t("onboarding:field.smtpHost")}>
-          <Input value={smtpHost} onChange={setSmtpHost} placeholder={t("onboarding:placeholder.smtpHost")} />
+
+      <div className="flex flex-col gap-3">
+        <Field label={t("onboarding:field.email")}>
+          <Input
+            value={email}
+            onChange={setEmail}
+            type="email"
+            placeholder={t("onboarding:placeholder.email")}
+            autoFocus
+          />
         </Field>
-        <Field label={t("onboarding:field.port")}>
-          <Input value={String(smtpPort)} onChange={(v) => setSmtpPort(Number(v) || 0)} />
+        <Field label={t("onboarding:field.password")}>
+          <Input
+            value={password}
+            onChange={setPassword}
+            type="password"
+            placeholder={t("onboarding:placeholder.password")}
+          />
+          {PRESETS[preset].hasNote && (
+            <span className="text-xs text-ink-faint">
+              {t(`onboarding:note.${preset}`)}
+            </span>
+          )}
+        </Field>
+        <Field label={t("onboarding:field.displayName")}>
+          <Input
+            value={displayName}
+            onChange={setDisplayName}
+            placeholder={t("onboarding:placeholder.displayName")}
+            maxLength={60}
+          />
         </Field>
       </div>
 
-      {PRESETS[preset].hasNote && (
-        <p className="text-xs text-ink-faint">{t(`onboarding:note.${preset}`)}</p>
+      {showServers ? (
+        <div className="flex flex-col gap-3 rounded-control border border-hairline bg-bg0/60 p-3">
+          <ServerRow
+            label={t("onboarding:field.imapHost")}
+            host={imapHost}
+            onHost={setImapHost}
+            hostPlaceholder={imapGuess || t("onboarding:placeholder.imapHost")}
+            port={imapPort}
+            onPort={setImapPort}
+          />
+          <ServerRow
+            label={t("onboarding:field.smtpHost")}
+            host={smtpHost}
+            onHost={setSmtpHost}
+            hostPlaceholder={smtpGuess || t("onboarding:placeholder.smtpHost")}
+            port={smtpPort}
+            onPort={setSmtpPort}
+          />
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 rounded-control border border-hairline bg-bg0/60 px-3 py-2">
+          <div className="min-w-0 flex-1 text-xs text-ink-faint">
+            <div className="truncate font-mono">
+              {imapHost}:{imapPort}
+            </div>
+            <div className="truncate font-mono">
+              {smtpHost}:{smtpPort}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="co-onb-link shrink-0 text-sm"
+            onClick={() => setEditServers(true)}
+          >
+            {t("onboarding:editServers")}
+          </button>
+        </div>
       )}
-      {error && <p className="text-sm text-danger">{error}</p>}
 
-      <div className="mt-2 flex items-center gap-2">
+      {error && (
+        <p className="rounded-control border border-danger/25 bg-danger/5 px-3 py-2 text-sm text-danger">
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
         <Button
           type="submit"
           variant="primary"
-          disabled={busy != null || !email || !password || !imapHost}
+          disabled={
+            busy != null ||
+            !email.trim() ||
+            !password ||
+            !imapEffective ||
+            !smtpEffective
+          }
         >
-          {busy === "test" ? t("onboarding:testingConnection") : busy === "add" ? t("onboarding:adding") : t("onboarding:connect")}
+          {busy === "test"
+            ? t("onboarding:testingConnection")
+            : busy === "add"
+              ? t("onboarding:adding")
+              : t("onboarding:connect")}
         </Button>
         <Button variant="ghost" onClick={onBack}>
           {t("onboarding:back")}
@@ -266,18 +351,56 @@ export function ImapForm({ onDone, onBack }: { onDone?: () => void; onBack: () =
   );
 }
 
+/** Host and port for one server, on one line. */
+function ServerRow({
+  label,
+  host,
+  onHost,
+  hostPlaceholder,
+  port,
+  onPort,
+}: {
+  label: string;
+  host: string;
+  onHost: (v: string) => void;
+  hostPlaceholder: string;
+  port: number;
+  onPort: (v: number) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid grid-cols-[1fr_80px] gap-2">
+      <Field label={label}>
+        <Input value={host} onChange={onHost} placeholder={hostPlaceholder} />
+      </Field>
+      <Field label={t("onboarding:field.port")}>
+        <Input
+          value={port ? String(port) : ""}
+          onChange={(v) => onPort(Number(v.replace(/\D/g, "")) || 0)}
+          inputMode="numeric"
+          maxLength={5}
+        />
+      </Field>
+    </div>
+  );
+}
+
 function Input({
   value,
   onChange,
   type = "text",
   placeholder,
   autoFocus,
+  maxLength,
+  inputMode,
 }: {
   value: string;
   onChange: (v: string) => void;
   type?: string;
   placeholder?: string;
   autoFocus?: boolean;
+  maxLength?: number;
+  inputMode?: "numeric";
 }) {
   return (
     <input
@@ -286,6 +409,8 @@ function Input({
       type={type}
       placeholder={placeholder}
       autoFocus={autoFocus}
+      maxLength={maxLength}
+      inputMode={inputMode}
       spellCheck={false}
       className={inputCls}
     />

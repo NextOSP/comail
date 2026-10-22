@@ -2,7 +2,7 @@
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",
-    "gmail": "Gmail（手动）",
+    "gmail": "Gmail",
     "custom": "自定义"
   },
   "note": {
@@ -24,7 +24,7 @@
   "field": {
     "provider": "服务商",
     "email": "邮箱",
-    "displayName": "显示名称",
+    "displayName": "发件人名称",
     "password": "密码",
     "imapHost": "IMAP 主机",
     "smtpHost": "SMTP 主机",
@@ -363,5 +363,6 @@
         ]
       ]
     }
-  }
+  },
+  "editServers": "编辑"
 }

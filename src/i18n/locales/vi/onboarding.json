@@ -2,7 +2,7 @@
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",
-    "gmail": "Gmail (thủ công)",
+    "gmail": "Gmail",
     "custom": "Tùy chỉnh"
   },
   "note": {
@@ -24,7 +24,7 @@
   "field": {
     "provider": "Nhà cung cấp",
     "email": "Email",
-    "displayName": "Tên hiển thị",
+    "displayName": "Tên người gửi",
     "password": "Mật khẩu",
     "imapHost": "Máy chủ IMAP",
     "smtpHost": "Máy chủ SMTP",
@@ -363,5 +363,6 @@
         ]
       ]
     }
-  }
+  },
+  "editServers": "Sửa"
 }
