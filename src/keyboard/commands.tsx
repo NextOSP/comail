@@ -338,6 +338,7 @@ function gotoLabel(l: CachedLabel) {
   if (l.isAuto) {
     // auto categories are inbox tabs
     ui.set({
+      calendarScreen: false,
       view: "inbox",
       splitId: null,
       labelFilter: l.id,

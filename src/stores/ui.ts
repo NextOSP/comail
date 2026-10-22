@@ -337,6 +337,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   setView: (view, splitId) =>
     set({
+      calendarScreen: false,
       view,
       splitId: splitId !== undefined ? splitId : view === "inbox" ? SPLIT_IMPORTANT : null,
       labelFilter: null,
@@ -352,6 +353,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   selectLabel: (labelId) =>
     set({
+      calendarScreen: false,
       labelFilter: labelId,
       folderFilter: null,
       // Label filter spans folders, so show it against the "all" view.
@@ -368,6 +370,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   selectFolder: (folderId) =>
     set({
+      calendarScreen: false,
       folderFilter: folderId,
       labelFilter: null,
       // A folder is a concrete mailbox; show it against the unfiltered "all" list.
