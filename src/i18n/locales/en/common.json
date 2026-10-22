@@ -327,6 +327,8 @@
     "spam": "Mark as spam"
   },
   "sidebar": {
+    "pin": "Pin menu",
+    "unpin": "Unpin menu",
     "snippets": "Snippets",
     "splits": "Split inbox rules",
     "labels": "Labels",

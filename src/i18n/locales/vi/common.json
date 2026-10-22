@@ -327,6 +327,8 @@
     "spam": "Đánh dấu là spam"
   },
   "sidebar": {
+    "pin": "Ghim menu",
+    "unpin": "Bỏ ghim menu",
     "snippets": "Mẫu văn bản",
     "splits": "Quy tắc hộp thư chia tab",
     "labels": "Nhãn",

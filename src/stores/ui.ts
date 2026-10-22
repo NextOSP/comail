@@ -153,6 +153,7 @@ interface UiState {
   helpOpen: boolean;
   /** left mailbox drawer (hamburger) */
   sidebarOpen: boolean;
+  sidebarPinned: boolean;
   /** which management panel is open (settings / snippets / splits) */
   panel: PanelKind | null;
   /** which Settings tab to open with (consumed once by SettingsPanel) */
@@ -293,6 +294,7 @@ export const useUi = create<UiState>((set, get) => ({
   paletteOpen: false,
   helpOpen: false,
   sidebarOpen: false,
+  sidebarPinned: loadCalendarPref<unknown>("comail.sidebarPinned", false) === true,
   panel: null,
   settingsTab: null,
   splitTarget: null,
@@ -490,6 +492,8 @@ export const useUi = create<UiState>((set, get) => ({
 
 // Persist the calendar view prefs whenever they change.
 useUi.subscribe((s, prev) => {
+  if (s.sidebarPinned !== prev.sidebarPinned)
+    saveCalendarPref("comail.sidebarPinned", s.sidebarPinned);
   if (s.calendarSidebar !== prev.calendarSidebar)
     saveCalendarPref("comail.calendarSidebar", s.calendarSidebar);
   if (s.calendarHidden !== prev.calendarHidden)

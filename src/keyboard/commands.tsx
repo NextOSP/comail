@@ -3,6 +3,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import i18n from "../i18n";
+import { toggleSidebar } from "../lib/sidebar";
 import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { subscribeEvent } from "../ipc/events";
@@ -1226,7 +1227,7 @@ export const ALL_COMMANDS: Command[] = [
     keys: ["mod+\\"],
     section: "Meta",
     when: (ctx) => !ctx.composerOpen && !ctx.panelOpen,
-    run: () => useUi.getState().set({ sidebarOpen: !useUi.getState().sidebarOpen }),
+    run: toggleSidebar,
   },
   {
     id: "manage-snippets",
