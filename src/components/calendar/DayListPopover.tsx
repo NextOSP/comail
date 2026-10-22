@@ -51,7 +51,7 @@ export function DayListPopover() {
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onMouseDown={close} />
+      <div className="co-no-drag fixed inset-0 z-40" onMouseDown={close} />
       <div
         ref={cardRef}
         role="dialog"

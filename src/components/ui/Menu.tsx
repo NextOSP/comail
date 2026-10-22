@@ -45,7 +45,7 @@ export function Popover({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50" onMouseDown={onClose} onContextMenu={(e) => e.preventDefault()}>
+    <div className="co-no-drag fixed inset-0 z-50" onMouseDown={onClose} onContextMenu={(e) => e.preventDefault()}>
       <div
         ref={ref}
         role="menu"

@@ -365,7 +365,7 @@ function DetailCard({ event, anchor }: { event: CalendarEvent; anchor?: Anchor }
       }}
     >
       {/* Transparent click-catcher: any press outside the card dismisses. */}
-      <div className="fixed inset-0 z-40" onMouseDown={close} />
+      <div className="co-no-drag fixed inset-0 z-40" onMouseDown={close} />
       <div
         ref={cardRef}
         data-testid="event-detail"

@@ -55,7 +55,7 @@ function CrashCard({
   return (
     <div
       className={`flex flex-1 items-center justify-center bg-bg0 p-6 text-ink ${
-        fullScreen ? "fixed inset-0 z-[60]" : "min-h-0"
+        fullScreen ? "co-no-drag fixed inset-0 z-[60]" : "min-h-0"
       }`}
     >
       <div

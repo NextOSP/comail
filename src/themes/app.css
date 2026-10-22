@@ -747,6 +747,14 @@ textarea {
 [data-tauri-drag-region] input {
   -webkit-app-region: no-drag;
 }
+/* Drag regions are hit-tested by geometry, not by what's painted on top: a
+   modal over a drag region (Settings opened from onboarding, whose whole
+   screen drags) would drag the window on mousedown and swallow its scrollbar.
+   Full-screen layers opt out so everything above them stays clickable. */
+.co-overlay,
+.co-no-drag {
+  -webkit-app-region: no-drag;
+}
 
 /* ---------------------------------------------------------------------------
    Attachment viewer - always a dark stage (Carbon tokens re-scoped here, so
