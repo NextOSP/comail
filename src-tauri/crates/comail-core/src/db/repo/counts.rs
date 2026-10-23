@@ -51,7 +51,7 @@ impl Q {
     fn role_exists(&mut self, role: &str) -> String {
         self.bind.push(Box::new(role.to_string()));
         format!(
-            "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+            "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id = m.folder_id
                      WHERE m.thread_id = t.id AND f.role = ?{})",
             self.bind.len()
         )
@@ -61,7 +61,7 @@ impl Q {
         let c = self.role_exists(roles::INBOX);
         self.clauses.push(c);
         if self.unread_only {
-            self.clauses.push("EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='inbox')".into());
+            self.clauses.push("EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='inbox')".into());
             self.unread_only = false;
         }
         self.clauses.push("s.thread_id IS NULL".into());
@@ -80,7 +80,7 @@ impl Q {
         self.clauses.push(format!(
             "(t.routed_tab = '{forced}'
               OR ((t.routed_tab IS NULL OR t.routed_tab = 'pending')
-                  AND (SELECT m.is_automated FROM messages m
+                  AND (SELECT m.is_automated FROM visible_messages m
                        WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
                        ORDER BY m.date DESC, m.id DESC LIMIT 1) = {want}))"
         ));
@@ -107,7 +107,7 @@ impl Q {
     fn label(mut self, label_id: i64) -> Self {
         self.bind.push(Box::new(label_id));
         self.clauses.push(format!(
-            "EXISTS (SELECT 1 FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+            "EXISTS (SELECT 1 FROM message_labels ml JOIN visible_messages m ON m.id = ml.message_id
                      WHERE m.thread_id = t.id AND ml.label_id = ?{})",
             self.bind.len()
         ));
@@ -116,7 +116,7 @@ impl Q {
 
     fn run(mut self, conn: &Connection) -> Result<i64> {
         if self.unread_only {
-            self.clauses.push("EXISTS (SELECT 1 FROM messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
+            self.clauses.push("EXISTS (SELECT 1 FROM visible_messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
         }
         let where_sql = if self.clauses.is_empty() {
             String::new()
@@ -186,14 +186,14 @@ pub fn unread_counts(
     );
     // Spam is never notified, so its badge is the only signal that mail landed there.
     views.insert("spam".to_string(), Q::any(account_id).clause(
-        "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='spam')"
+        "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='spam')"
     ).run(conn)?);
     // Drafts badge = number of threads with a draft, unread or not.
     views.insert(
         "drafts".to_string(),
         Q::any(account_id)
             .clause(
-                "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+                "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id = m.folder_id
                          WHERE m.thread_id = t.id AND m.is_draft = 1 AND f.role = 'drafts')",
             )
             .run(conn)?,

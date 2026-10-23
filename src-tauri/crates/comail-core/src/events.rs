@@ -38,6 +38,7 @@ pub enum CoreEvent {
     },
     ActionState {
         action_id: i64,
+        kind: String,
         state: String,
         error: Option<String>,
     },

@@ -1,4 +1,15 @@
 {
+  "permanentDelete": {
+    "title": "Xóa vĩnh viễn",
+    "confirm_one": "Xóa vĩnh viễn các thư trong Thùng rác thuộc {{count}} cuộc hội thoại đã chọn? Thư ở thư mục khác vẫn được giữ lại. Không thể hoàn tác thao tác này.",
+    "confirm_other": "Xóa vĩnh viễn các thư trong Thùng rác thuộc {{count}} cuộc hội thoại đã chọn? Thư ở thư mục khác vẫn được giữ lại. Không thể hoàn tác thao tác này.",
+    "pending": "Đang xóa vĩnh viễn…",
+    "done": "Đã xóa vĩnh viễn.",
+    "offline": "Bạn đang ngoại tuyến. Thao tác xóa vĩnh viễn sẽ tiếp tục khi có kết nối trở lại.",
+    "paused": "Xóa vĩnh viễn đang tạm dừng. Vui lòng đăng nhập lại tài khoản để tiếp tục.",
+    "failed": "Chưa thể hoàn tất xóa vĩnh viễn: {{detail}}",
+    "retrying": "Đang thử lại xóa vĩnh viễn: {{detail}}. Thư vẫn bị ẩn cho đến khi máy chủ xác nhận."
+  },
   "dateGroup": {
     "today": "Hôm nay",
     "yesterday": "Hôm qua",

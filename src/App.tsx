@@ -11,6 +11,7 @@ import { ConversationScreen } from "./components/thread/ConversationScreen";
 import { FpsMeter } from "./components/common/FpsMeter";
 import { InboxScreen } from "./components/inbox/InboxScreen";
 import { MovePopover } from "./components/common/MovePopover";
+import { PermanentDeleteDialog } from "./components/common/PermanentDeleteDialog";
 import { LabelPopover } from "./components/common/LabelPopover";
 import { ThreadContextMenu } from "./components/inbox/ThreadContextMenu";
 import { AddAccountCard } from "./components/onboarding/Onboarding";
@@ -162,6 +163,7 @@ export default function App() {
       <CommandPalette />
       <SnoozePopover />
       <MovePopover />
+      <PermanentDeleteDialog />
       <LabelPopover />
       <ThreadContextMenu />
       <SplitPopover />

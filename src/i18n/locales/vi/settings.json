@@ -776,6 +776,8 @@
     "allowDraftsHint": "Tạo, sửa và xóa thư nháp để bạn xem lại. Không bao giờ gửi.",
     "allowActions": "Sắp xếp thư",
     "allowActionsHint": "Lưu trữ, xóa, gắn nhãn, di chuyển, tạm ẩn, gắn sao và đánh dấu đã đọc.",
+    "allowPermanentDelete": "Xóa vĩnh viễn",
+    "allowPermanentDeleteHint": "Xóa không thể hoàn tác các thư đã ở Thùng rác. Cần bật “Sắp xếp thư”. Chỉ bật nếu bạn tin tưởng ứng dụng.",
     "allowSend": "Gửi thư",
     "allowSendHint": "Gửi thư nháp. Thời gian hoàn tác gửi vẫn áp dụng. Chỉ bật nếu bạn tin ứng dụng.",
     "clientsIntro": "Một chạm cho ứng dụng đã cài; ứng dụng khác nhận cấu hình để dán.",
