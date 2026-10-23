@@ -254,6 +254,7 @@ pub enum ActionKind {
     Archive,
     Unarchive,
     Trash,
+    DeletePermanently,
     Spam,
     NotSpam,
     Move,
@@ -274,6 +275,7 @@ impl ActionKind {
             ActionKind::Archive => "archive",
             ActionKind::Unarchive => "unarchive",
             ActionKind::Trash => "trash",
+            ActionKind::DeletePermanently => "delete_permanently",
             ActionKind::Spam => "spam",
             ActionKind::NotSpam => "not_spam",
             ActionKind::Move => "move",
@@ -293,6 +295,7 @@ impl ActionKind {
             "archive" => ActionKind::Archive,
             "unarchive" => ActionKind::Unarchive,
             "trash" => ActionKind::Trash,
+            "delete_permanently" => ActionKind::DeletePermanently,
             "spam" => ActionKind::Spam,
             "not_spam" => ActionKind::NotSpam,
             "move" => ActionKind::Move,
@@ -1150,6 +1153,10 @@ pub struct Settings {
     /// MCP clients may archive, trash, label, move and flag threads.
     #[serde(default)]
     pub mcp_allow_actions: bool,
+    /// MCP clients may irreversibly delete messages already in Trash. Requires
+    /// `mcp_allow_actions` as well.
+    #[serde(default)]
+    pub mcp_allow_permanent_delete: bool,
     /// The user's own rules, appended to what MCP clients are told about comail.
     #[serde(default)]
     pub mcp_instructions: String,
@@ -1415,6 +1422,7 @@ impl Default for Settings {
             mcp_allow_drafts: true,
             mcp_allow_send: false,
             mcp_allow_actions: false,
+            mcp_allow_permanent_delete: false,
             mcp_instructions: String::new(),
             ai_tier_categorize: default_tier_instant(),
             group_by_date: true,

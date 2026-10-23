@@ -776,6 +776,8 @@
     "allowDraftsHint": "创建、编辑和删除草稿供你审阅，绝不发送。",
     "allowActions": "整理邮件",
     "allowActionsHint": "归档、删除、加标签、移动、稍后提醒、加星标和标为已读。",
+    "allowPermanentDelete": "永久删除",
+    "allowPermanentDeleteHint": "不可撤销地删除已在废纸篓中的邮件。需要先开启“整理邮件”。仅在信任该应用时启用。",
     "allowSend": "发送邮件",
     "allowSendHint": "发送草稿，撤销发送延迟仍然有效。仅在信任该应用时开启。",
     "clientsIntro": "已安装的应用一键添加；其他应用提供可粘贴的配置。",

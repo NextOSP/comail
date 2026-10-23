@@ -168,6 +168,7 @@ export type ActionKind =
   | "archive"
   | "unarchive"
   | "trash"
+  | "delete_permanently"
   | "spam"
   | "not_spam"
   | "move"
@@ -552,6 +553,8 @@ export interface Settings {
   mcpAllowSend: boolean;
   /** MCP clients may archive, trash, label, move and flag threads. */
   mcpAllowActions: boolean;
+  /** MCP clients may irreversibly delete messages already in Trash (also needs mcpAllowActions). */
+  mcpAllowPermanentDelete: boolean;
   /** The user's own rules, appended to what MCP clients are told about comail. */
   mcpInstructions: string;
   /** Model tier the AI classifier uses. */
@@ -916,6 +919,7 @@ export interface MailUpdatedEvent {
 
 export interface ActionStateEvent {
   actionId: number;
+  kind?: string;
   state: "pending" | "inflight" | "done" | "failed" | "cancelled" | "paused";
   error: string | null;
 }

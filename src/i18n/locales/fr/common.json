@@ -1,4 +1,15 @@
 {
+  "permanentDelete": {
+    "title": "Supprimer définitivement",
+    "confirm_one": "Supprimer définitivement les messages de la Corbeille de {{count}} conversation sélectionnée ? Les messages hors de la Corbeille seront conservés. Cette action est irréversible.",
+    "confirm_other": "Supprimer définitivement les messages de la Corbeille de {{count}} conversations sélectionnées ? Les messages hors de la Corbeille seront conservés. Cette action est irréversible.",
+    "pending": "Suppression définitive en cours…",
+    "done": "Suppression définitive effectuée.",
+    "offline": "Vous êtes hors ligne. La suppression définitive reprendra lorsque la connexion sera rétablie.",
+    "paused": "La suppression définitive est en pause. Reconnectez-vous à votre compte pour continuer.",
+    "failed": "La suppression définitive n'a pas pu aboutir : {{detail}}",
+    "retrying": "Nouvelle tentative de suppression définitive : {{detail}}. Les messages restent masqués jusqu'à confirmation du serveur."
+  },
   "dateGroup": {
     "today": "Aujourd'hui",
     "yesterday": "Hier",

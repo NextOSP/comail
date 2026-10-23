@@ -73,12 +73,13 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
         }
         CoreEvent::ActionState {
             action_id,
+            kind,
             state,
             error,
         } => {
             let _ = app.emit(
                 "action:state",
-                json!({ "actionId": action_id, "state": state, "error": error }),
+                json!({ "actionId": action_id, "kind": kind, "state": state, "error": error }),
             );
         }
         CoreEvent::ThreadWoke { thread_id } => {

@@ -11,6 +11,7 @@ import type {
 } from "../ipc/types";
 import { useUi } from "../stores/ui";
 import { queryClient } from "./client";
+import { notifyPermanentDeleteQueued, refreshPermanentDeleteQueries } from "./permanentDelete";
 
 /** Action kinds that remove the thread from most views. */
 const REMOVAL_KINDS: ActionKind[] = ["archive", "unarchive", "trash", "spam", "not_spam", "snooze", "unsnooze", "move"];
@@ -118,6 +119,10 @@ export function performThreadAction(
   threadIds: number[],
   params?: { wakeAt?: number; targetFolderId?: number; labelId?: number },
 ): Promise<void> {
+  if (kind === "delete_permanently") {
+    useUi.getState().set({ permanentDeleteTarget: [...threadIds] });
+    return Promise.resolve();
+  }
   applyOptimistic(kind, threadIds, params);
   return call("perform_action", { args: { kind, threadIds, params } })
     .then(() => {
@@ -137,6 +142,41 @@ export function performThreadAction(
       });
       refetchLists();
     });
+}
+
+const submittingPermanentDeletes = new Map<string, Promise<boolean>>();
+
+/** Await only durable enqueue, never remote IMAP completion. No undo is offered. */
+export function performPermanentDelete(threadIds: number[]): Promise<boolean> {
+  const targets = [...new Set(threadIds)].sort((a, b) => a - b);
+  if (!targets.length) return Promise.resolve(false);
+  const key = targets.join(",");
+  const existing = submittingPermanentDeletes.get(key);
+  if (existing) return existing;
+  const submission = (async () => {
+    try {
+      const { actionIds } = await call("perform_action", {
+        args: { kind: "delete_permanently", threadIds: targets },
+      });
+      const ui = useUi.getState();
+      // Do not clear a new selection or close a different thread if navigation
+      // changed while the local enqueue request was in flight.
+      ui.set({ selection: ui.selection.filter((id) => !targets.includes(id)), selectAnchorId: null });
+      if (ui.view === "trash" && ui.openThreadId != null && targets.includes(ui.openThreadId)) {
+        ui.openThread(null);
+      }
+      notifyPermanentDeleteQueued(actionIds);
+      return true;
+    } catch (err) {
+      useUi.getState().pushToast({ kind: "error", message: i18n.t("common:permanentDelete.failed", { detail: errorMessage(err) }) });
+      return false;
+    } finally {
+      void refreshPermanentDeleteQueries();
+    }
+  })();
+  submittingPermanentDeletes.set(key, submission);
+  void submission.finally(() => submittingPermanentDeletes.delete(key));
+  return submission;
 }
 
 /** Undo the most recent backend action and refetch. */

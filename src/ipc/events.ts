@@ -1,13 +1,14 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { EventMap } from "./types";
 import { MOCK_MODE } from "./mock";
+import { subscribeMockEvent } from "./mockEvents";
 
 /** Subscribe after the native listener is installed, for snapshot handshakes. */
 export async function subscribeEvent<K extends keyof EventMap>(
   name: K,
   handler: (payload: EventMap[K]) => void,
 ): Promise<() => void> {
-  if (MOCK_MODE) return () => {};
+  if (MOCK_MODE) return subscribeMockEvent(name, handler);
   return listen<EventMap[K]>(name, (event) => handler(event.payload));
 }
 
@@ -16,7 +17,7 @@ export function onEvent<K extends keyof EventMap>(
   name: K,
   handler: (payload: EventMap[K]) => void,
 ): () => void {
-  if (MOCK_MODE) return () => {};
+  if (MOCK_MODE) return subscribeMockEvent(name, handler);
   let unlisten: UnlistenFn | null = null;
   let cancelled = false;
   subscribeEvent(name, handler).then((fn) => {

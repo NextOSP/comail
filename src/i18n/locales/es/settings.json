@@ -776,6 +776,8 @@
     "allowDraftsHint": "Crear, editar y eliminar borradores para que los revises. Nunca envía.",
     "allowActions": "Organizar correo",
     "allowActionsHint": "Archivar, eliminar, etiquetar, mover, posponer, destacar y marcar como leído.",
+    "allowPermanentDelete": "Eliminar permanentemente",
+    "allowPermanentDeleteHint": "Elimina de forma irreversible los mensajes que ya están en la Papelera. Requiere «Organizar correo». Actívalo solo si confías en la app.",
     "allowSend": "Enviar correo",
     "allowSendHint": "Enviar borradores. Se mantiene el retraso para deshacer. Actívalo solo si confías en la app.",
     "clientsIntro": "Un clic para las apps instaladas; para las demás, una configuración para pegar.",
