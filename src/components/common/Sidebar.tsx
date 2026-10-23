@@ -235,6 +235,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
                 onClick={() => {
                   openThread(null);
                   set({
+                    calendarScreen: false,
                     view: "inbox",
                     splitId: null,
                     labelFilter: item.id,
