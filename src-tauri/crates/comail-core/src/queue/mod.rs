@@ -12,6 +12,15 @@ use crate::smtp;
 use crate::sync::engine::SyncCtx;
 use tokio::time::{Duration, Instant};
 
+#[cfg(test)]
+mod deferred_tests;
+#[cfg(test)]
+mod delete_tests;
+#[cfg(test)]
+mod identity_tests;
+#[cfg(test)]
+mod move_tests;
+
 const MAX_ATTEMPTS: i64 = 8;
 const MAX_ACTIONS_PER_SLICE: i64 = 20;
 const MAX_SLICE_DURATION: Duration = Duration::from_secs(2);
@@ -39,25 +48,153 @@ pub async fn execute_due(
         .await?;
     let mut processed = 0;
 
-    for action in due {
+    let mut due = due.into_iter().peekable();
+    while let Some(first) = due.next() {
         // This is a cooperative budget: never abandon an action midway through
         // an IMAP/SMTP command, but do not start another after the slice expires.
         if started.elapsed() >= MAX_SLICE_DURATION {
             break;
         }
 
-        let action_id = action.id;
-        // Atomic claim: if undo/cancel got here first, skip.
-        let claimed = ctx
+        let key = crate::trash::batch_key(&first);
+        let mut group = vec![first];
+        if key.is_some() {
+            while due
+                .peek()
+                .is_some_and(|next| crate::trash::batch_key(next) == key)
+            {
+                group.push(due.next().unwrap());
+            }
+        }
+        // Claim in a single transaction before sending any remote command.
+        let group = ctx
             .db
-            .write(move |conn| repo::actions::try_claim(conn, action_id))
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                let mut claimed = Vec::new();
+                for action in group {
+                    if repo::actions::try_claim(&tx, action.id)? {
+                        if action.kind == crate::trash::KIND {
+                            resume_delete_budget(&tx, action.id, now_ms())?;
+                        }
+                        claimed.push(action);
+                    }
+                }
+                tx.commit()?;
+                Ok(claimed)
+            })
             .await?;
-        if !claimed {
+        if group.is_empty() {
             continue;
         }
-        processed += 1;
+        processed += group.len();
+        for action in &group {
+            ctx.bus.emit(CoreEvent::ActionState {
+                action_id: action.id,
+                kind: action.kind.clone(),
+                state: "inflight".into(),
+                error: None,
+            });
+        }
+        let outcome = if group[0].kind == crate::trash::KIND {
+            crate::trash::execute_batch(ctx, session, &group).await
+        } else {
+            execute_one(ctx, config, session, &group[0]).await
+        };
+        record_outcomes(ctx, &group, &outcome).await?;
+        // Persist every claimed action's outcome before abandoning the stream.
+        if let Err(error) = outcome
+            && (matches!(error, CoreError::NeedsReauth | CoreError::Auth(_))
+                || needs_fresh_session(&error))
+        {
+            return Err(error);
+        }
+    }
 
-        let outcome = execute_one(ctx, config, session, &action).await;
+    let due_remaining = ctx
+        .db
+        .read(move |conn| repo::actions::has_due(conn, account_id, now_ms()))
+        .await?;
+    Ok(ActionSliceResult {
+        processed,
+        due_remaining,
+    })
+}
+
+async fn record_outcomes(
+    ctx: &SyncCtx,
+    group: &[repo::actions::PendingAction],
+    outcome: &Result<()>,
+) -> Result<()> {
+    let account_id = group
+        .first()
+        .map(|action| action.account_id)
+        .unwrap_or_default();
+    for action in group {
+        let action_id = action.id;
+        // A batch may confirm already-absent UIDs before a later target
+        // fails. Never turn that durable remote confirmation into a retry
+        // or restore the successfully deleted message.
+        if action.kind == crate::trash::KIND {
+            let settled = ctx
+                .db
+                .read(move |conn| Ok(repo::actions::get(conn, action_id)?.map(|a| a.state)))
+                .await?;
+            if settled.as_deref() == Some("failed") {
+                continue; // The delete executor already emitted the per-message failure.
+            }
+            if settled.as_deref() == Some("done") {
+                ctx.bus.emit(CoreEvent::ActionState {
+                    action_id,
+                    kind: action.kind.clone(),
+                    state: "done".into(),
+                    error: None,
+                });
+                continue;
+            }
+        }
+        if action.kind == crate::trash::KIND
+            && let Err(error) = outcome
+        {
+            let message = error.to_string();
+            let auth_paused = matches!(error, CoreError::NeedsReauth | CoreError::Auth(_));
+            let rejected = matches!(
+                error,
+                CoreError::DeleteRejected(_) | CoreError::ActionRejected(_)
+            );
+            let result = ctx
+                .db
+                .write(move |conn| {
+                    if auth_paused {
+                        record_delete_auth_pause(conn, action_id, now_ms(), &message)
+                    } else {
+                        record_delete_failure(conn, action_id, now_ms(), &message, rejected)
+                    }
+                })
+                .await?;
+            if let Some((state, message, thread_id)) = result {
+                tracing::warn!(
+                    account_id = action.account_id,
+                    folder_id = ?action.payload["folderId"].as_i64(),
+                    action_id,
+                    state,
+                    error = %message,
+                    "permanent delete did not complete",
+                );
+                ctx.bus.emit(CoreEvent::ActionState {
+                    action_id,
+                    kind: action.kind.clone(),
+                    state: state.into(),
+                    error: Some(message),
+                });
+                if state == "failed" {
+                    ctx.bus.emit(CoreEvent::MailUpdated {
+                        thread_ids: thread_id.into_iter().collect(),
+                    });
+                }
+            }
+            continue;
+        }
         match outcome {
             Ok(()) => {
                 ctx.db
@@ -65,6 +202,7 @@ pub async fn execute_due(
                     .await?;
                 ctx.bus.emit(CoreEvent::ActionState {
                     action_id,
+                    kind: action.kind.clone(),
                     state: "done".into(),
                     error: None,
                 });
@@ -78,26 +216,43 @@ pub async fn execute_due(
                     account_id, action_id, kind = %action.kind, error = %e,
                     "action needs auth; pausing (check mail-host auth / SMTP AUTH enabled)",
                 );
-                // A queued send that can't authenticate would otherwise sit in the
-                // outbox indefinitely with the composer already closed: the message
-                // just vanishes with no warning (only a needs-reauth dot buried in
-                // Settings). Tell the UI so it can surface that the mail wasn't sent
-                // and point the user at re-authentication. Other action kinds stay
-                // quiet; the account's needs_reauth state already covers them.
-                if action.kind == "send" {
-                    ctx.bus.emit(CoreEvent::ActionState {
-                        action_id,
-                        state: "paused".into(),
-                        error: Some(e.to_string()),
-                    });
-                }
                 let msg = "authentication required".to_string();
                 ctx.db
                     .write(move |conn| {
                         repo::actions::bump_attempt(conn, action_id, now_ms() + 60_000, &msg)
                     })
                     .await?;
-                return Err(CoreError::NeedsReauth);
+                ctx.bus.emit(CoreEvent::ActionState {
+                    action_id,
+                    kind: action.kind.clone(),
+                    state: if action.kind == "send" || action.kind == crate::trash::KIND {
+                        "paused"
+                    } else {
+                        "pending"
+                    }
+                    .into(),
+                    error: Some(e.to_string()),
+                });
+            }
+            Err(e @ CoreError::ActionDeferred(_)) => {
+                let msg = e.to_string();
+                let deferred = ctx
+                    .db
+                    .write(move |conn| record_deferral(conn, action_id, now_ms(), &msg))
+                    .await?;
+                if let Some((state, error)) = deferred {
+                    ctx.bus.emit(CoreEvent::ActionState {
+                        action_id,
+                        kind: action.kind.clone(),
+                        state: state.into(),
+                        error: Some(error),
+                    });
+                    if state == "failed" && is_move_kind(&action.kind) {
+                        ctx.bus.emit(CoreEvent::MailUpdated {
+                            thread_ids: deletion_thread_id(action).into_iter().collect(),
+                        });
+                    }
+                }
             }
             Err(e) => {
                 let msg = e.to_string();
@@ -106,18 +261,34 @@ pub async fn execute_due(
                     account_id, action_id, kind = %action.kind, attempts, error = %msg,
                     "action attempt failed",
                 );
-                if attempts >= MAX_ATTEMPTS || is_permanent(&msg) {
+                if terminal_failure(&action.kind, attempts, e) {
                     let m = msg.clone();
+                    let failed_thread = (action.kind == crate::trash::KIND)
+                        .then(|| deletion_thread_id(action))
+                        .flatten();
                     ctx.db
                         .write(move |conn| {
-                            repo::actions::set_state(conn, action_id, "failed", Some(&m))
+                            let tx = conn.transaction()?;
+                            repo::actions::set_state(&tx, action_id, "failed", Some(&m))?;
+                            rollback_failed_move(&tx, action_id)?;
+                            if let Some(thread_id) = failed_thread {
+                                repo::threads::recompute(&tx, thread_id)?;
+                            }
+                            tx.commit()?;
+                            Ok(())
                         })
                         .await?;
                     ctx.bus.emit(CoreEvent::ActionState {
                         action_id,
+                        kind: action.kind.clone(),
                         state: "failed".into(),
                         error: Some(msg),
                     });
+                    if action.kind == crate::trash::KIND || is_move_kind(&action.kind) {
+                        ctx.bus.emit(CoreEvent::MailUpdated {
+                            thread_ids: deletion_thread_id(action).into_iter().collect(),
+                        });
+                    }
                 } else {
                     // Exponential backoff with jitter.
                     let delay = (1 << attempts.min(8)) * 1000 + (action_id % 997);
@@ -127,23 +298,264 @@ pub async fn execute_due(
                             repo::actions::bump_attempt(conn, action_id, now_ms() + delay, &m)
                         })
                         .await?;
-                    // Connection-level errors: bail out, actor reconnects.
-                    if is_connection_failure(&msg) {
-                        return Err(e);
-                    }
+                    ctx.bus.emit(CoreEvent::ActionState {
+                        action_id,
+                        kind: action.kind.clone(),
+                        state: "pending".into(),
+                        error: Some(msg),
+                    });
                 }
             }
         }
     }
+    Ok(())
+}
 
-    let due_remaining = ctx
-        .db
-        .read(move |conn| repo::actions::has_due(conn, account_id, now_ms()))
-        .await?;
-    Ok(ActionSliceResult {
-        processed,
-        due_remaining,
-    })
+const MAX_DELETE_AGE_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Close a persisted auth pause at resumption, preserving all executor payload.
+fn resume_delete_budget(conn: &rusqlite::Connection, action_id: i64, now: i64) -> Result<i64> {
+    let Some(action) = repo::actions::get(conn, action_id)? else {
+        return Ok(0);
+    };
+    let paused_ms = action.payload["deleteAuthPausedMs"]
+        .as_i64()
+        .unwrap_or(0)
+        .max(0);
+    let Some(start) = action.payload["deleteAuthPausedAt"].as_i64() else {
+        return Ok(paused_ms);
+    };
+    let paused_ms = paused_ms.saturating_add(now.saturating_sub(start).max(0));
+    conn.execute(
+        "UPDATE pending_actions SET payload=json_remove(json_set(payload,
+         '$.deleteAuthPausedMs', ?2), '$.deleteAuthPausedAt') WHERE id=?1",
+        rusqlite::params![action_id, paused_ms],
+    )?;
+    Ok(paused_ms)
+}
+
+fn record_delete_auth_pause(
+    conn: &mut rusqlite::Connection,
+    action_id: i64,
+    now: i64,
+    error: &str,
+) -> Result<Option<(&'static str, String, Option<i64>)>> {
+    let tx = conn.transaction()?;
+    let Some(action) =
+        repo::actions::get(&tx, action_id)?.filter(|action| action.state == "inflight")
+    else {
+        return Ok(None);
+    };
+    let pause_start = action.payload["deleteAuthPausedAt"].as_i64().unwrap_or(now);
+    tx.execute(
+        "UPDATE pending_actions SET state='pending', not_before=?2, last_error=?3,
+         payload=json_set(payload, '$.deleteAuthPausedAt', ?4)
+         WHERE id=?1 AND state='inflight'",
+        rusqlite::params![action_id, now.saturating_add(60_000), error, pause_start],
+    )?;
+    tx.commit()?;
+    Ok(Some((
+        "paused",
+        error.to_string(),
+        deletion_thread_id(&action),
+    )))
+}
+
+/// Non-auth failures consume a durable budget excluding authentication pauses.
+/// Exhaustion releases visibility without claiming remote deletion succeeded.
+fn record_delete_failure(
+    conn: &mut rusqlite::Connection,
+    action_id: i64,
+    now: i64,
+    error: &str,
+    rejected: bool,
+) -> Result<Option<(&'static str, String, Option<i64>)>> {
+    let tx = conn.transaction()?;
+    let Some(action) =
+        repo::actions::get(&tx, action_id)?.filter(|action| action.state == "inflight")
+    else {
+        return Ok(None);
+    };
+    let paused_ms = resume_delete_budget(&tx, action_id, now)?;
+    let attempts = action.attempts.saturating_add(1);
+    let budget_start = action.created_at.saturating_add(paused_ms);
+    let expired = attempts >= MAX_ATTEMPTS || now.saturating_sub(budget_start) >= MAX_DELETE_AGE_MS;
+    let terminal = expired || rejected;
+    let message = if expired {
+        format!(
+            "Permanent delete retry budget exhausted; synchronize before retrying. Last error: {error}"
+        )
+    } else {
+        error.to_string()
+    };
+    let deadline = budget_start.saturating_add(MAX_DELETE_AGE_MS);
+    let delay = (1_i64 << attempts.min(8)) * 1000 + action_id % 997;
+    let move_retry_at = action
+        .message_id
+        .map(|id| crate::trash::reconcile::completed_move_retry_at(&tx, id, now))
+        .transpose()?
+        .flatten()
+        .unwrap_or(now);
+    // Do not exhaust eight quick retries while a five-minute move grace is active.
+    let retry_at = now.saturating_add(delay).max(move_retry_at).min(deadline);
+    repo::actions::bump_attempt(&tx, action_id, retry_at, &message)?;
+    let thread_id = deletion_thread_id(&action);
+    if terminal {
+        repo::actions::set_state(&tx, action_id, "failed", Some(&message))?;
+        if let Some(thread_id) = thread_id {
+            repo::threads::recompute(&tx, thread_id)?;
+        }
+    }
+    tx.commit()?;
+    Ok(Some((
+        if terminal { "failed" } else { "pending" },
+        message,
+        thread_id,
+    )))
+}
+
+const MAX_DEFERRALS: u64 = 32;
+const MAX_DEFERRAL_AGE_MS: i64 = 24 * 60 * 60 * 1000;
+const MAX_DEFERRAL_DELAY_MS: i64 = 15 * 60 * 1000;
+const DEFERRAL_EXHAUSTED: &str = "Could not verify remote move; synchronize and retry";
+
+/// Identity waits have their own durable budget: they must not consume remote
+/// attempts, but must eventually release later actions on the same message.
+fn record_deferral(
+    conn: &mut rusqlite::Connection,
+    action_id: i64,
+    now: i64,
+    error: &str,
+) -> Result<Option<(&'static str, String)>> {
+    let tx = conn.transaction()?;
+    let Some(action) =
+        repo::actions::get(&tx, action_id)?.filter(|action| action.state == "inflight")
+    else {
+        return Ok(None);
+    };
+    // Read the persisted payload, not the executor's possibly stale snapshot.
+    let deferrals = action.payload["deferrals"]
+        .as_u64()
+        .unwrap_or(0)
+        .saturating_add(1);
+    let first_deferred_at = action.payload["firstDeferredAt"].as_i64().unwrap_or(now);
+    let expired =
+        deferrals >= MAX_DEFERRALS || now.saturating_sub(first_deferred_at) >= MAX_DEFERRAL_AGE_MS;
+    let (state, message) = if expired {
+        (
+            "failed",
+            format!("{DEFERRAL_EXHAUSTED}. Last deferral: {error}"),
+        )
+    } else {
+        ("pending", error.to_string())
+    };
+    let delay =
+        (5_000_i64 * (1_i64 << deferrals.saturating_sub(1).min(8))).min(MAX_DEFERRAL_DELAY_MS);
+    let retry_at = (!expired).then(|| {
+        now.saturating_add(delay)
+            .min(first_deferred_at.saturating_add(MAX_DEFERRAL_AGE_MS))
+    });
+    tx.execute(
+        "UPDATE pending_actions
+         SET state = ?2, not_before = ?3, last_error = ?4,
+             payload = json_set(payload, '$.deferrals', ?5, '$.firstDeferredAt', ?6),
+             finished_at = CASE WHEN ?2 = 'failed' THEN ?7 ELSE finished_at END
+         WHERE id = ?1 AND state = 'inflight'",
+        rusqlite::params![
+            action_id,
+            state,
+            retry_at,
+            message,
+            deferrals.min(i64::MAX as u64) as i64,
+            first_deferred_at,
+            now
+        ],
+    )?;
+    if expired {
+        rollback_failed_move(&tx, action_id)?;
+    }
+    tx.commit()?;
+    Ok(Some((state, message)))
+}
+
+fn is_move_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "move" | "trash" | "archive" | "unarchive" | "spam" | "not_spam"
+    )
+}
+
+fn rollback_failed_move(conn: &rusqlite::Connection, action_id: i64) -> Result<()> {
+    let Some(action) = repo::actions::get(conn, action_id)? else {
+        return Ok(());
+    };
+    if !is_move_kind(&action.kind) {
+        return Ok(());
+    }
+    let Some(message_id) = action.message_id else {
+        return Ok(());
+    };
+    let Some(source_id) = action.payload["srcFolderId"].as_i64() else {
+        return Ok(());
+    };
+    let Some(source) = repo::folders::get(conn, source_id)? else {
+        return Ok(());
+    };
+    if source.account_id != action.account_id {
+        return Ok(());
+    }
+    let Some(row) = repo::messages::get_row(conn, message_id)? else {
+        return Ok(());
+    };
+    // A later optimistic move owns a different destination; do not undo it.
+    if row.folder_id != action.payload["targetFolderId"].as_i64() {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE messages SET folder_id=?1, uid=?2 WHERE id=?3 AND account_id=?4",
+        rusqlite::params![
+            source_id,
+            action.payload["srcUid"].as_i64(),
+            message_id,
+            action.account_id
+        ],
+    )?;
+    if let Some(thread_id) = row.thread_id {
+        repo::threads::recompute(conn, thread_id)?;
+    }
+    Ok(())
+}
+
+fn deletion_thread_id(action: &repo::actions::PendingAction) -> Option<i64> {
+    action
+        .thread_id
+        .or_else(|| action.payload["threadId"].as_i64())
+}
+
+fn terminal_failure(kind: &str, attempts: i64, error: &CoreError) -> bool {
+    if matches!(error, CoreError::ActionDeferred(_)) {
+        return false;
+    }
+    if matches!(error, CoreError::ActionRejected(_)) {
+        return true;
+    }
+    if kind == crate::trash::KIND {
+        return attempts >= MAX_ATTEMPTS || matches!(error, CoreError::DeleteRejected(_));
+    }
+    attempts >= MAX_ATTEMPTS || is_permanent(&error.to_string())
+}
+
+fn needs_fresh_session(error: &CoreError) -> bool {
+    if matches!(
+        error,
+        CoreError::ActionDeferred(_) | CoreError::ActionRejected(_)
+    ) {
+        return false;
+    }
+    matches!(
+        error,
+        CoreError::Imap(_) | CoreError::Io(_) | CoreError::Network(_) | CoreError::Tls(_)
+    ) || is_connection_failure(&error.to_string())
 }
 
 fn is_permanent(msg: &str) -> bool {
@@ -160,18 +572,6 @@ fn is_connection_failure(msg: &str) -> bool {
         || msg.contains("unexpected eof")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn timed_out_action_forces_a_fresh_session() {
-        assert!(is_connection_failure("UID MOVE timed out after 30s"));
-        assert!(is_connection_failure("connection closed"));
-        assert!(!is_connection_failure("temporary mailbox quota"));
-    }
-}
-
 async fn execute_one(
     ctx: &SyncCtx,
     config: &AccountConfig,
@@ -179,15 +579,21 @@ async fn execute_one(
     action: &repo::actions::PendingAction,
 ) -> Result<()> {
     match action.kind.as_str() {
-        "mark_read" => flag_action(ctx, session, action, "\\Seen", true).await,
-        "mark_unread" => flag_action(ctx, session, action, "\\Seen", false).await,
-        "star" => flag_action(ctx, session, action, "\\Flagged", true).await,
-        "unstar" => flag_action(ctx, session, action, "\\Flagged", false).await,
+        "mark_read" => flag_action(ctx, config, session, action, "\\Seen", true).await,
+        "mark_unread" => flag_action(ctx, config, session, action, "\\Seen", false).await,
+        "star" => flag_action(ctx, config, session, action, "\\Flagged", true).await,
+        "unstar" => flag_action(ctx, config, session, action, "\\Flagged", false).await,
         "archive" | "unarchive" | "trash" | "spam" | "not_spam" | "move" => {
-            move_action(ctx, config, session, action).await
+            let caps = session.server_caps().await?;
+            let behavior = crate::provider::behavior_for(config.provider, &caps);
+            let mut remote = SessionRemote {
+                session,
+                behavior: behavior.as_ref(),
+            };
+            move_action(ctx, &mut remote, action).await
         }
-        "add_label" => keyword_action(ctx, session, action, true).await,
-        "remove_label" => keyword_action(ctx, session, action, false).await,
+        "add_label" => keyword_action(ctx, config, session, action, true).await,
+        "remove_label" => keyword_action(ctx, config, session, action, false).await,
         "send" => send_action(ctx, config, session, action).await,
         // Local-only kinds recorded for undo history.
         "snooze" | "unsnooze" => Ok(()),
@@ -198,69 +604,375 @@ async fn execute_one(
     }
 }
 
-/// Resolve the message's current remote (folder_name, uid); selects the folder.
+#[cfg(test)]
+fn local_remote_location(
+    message_id: i64,
+    folder_id: Option<i64>,
+    uid: Option<i64>,
+) -> Result<(i64, u32)> {
+    match (folder_id, uid.and_then(|uid| u32::try_from(uid).ok())) {
+        (Some(folder_id), Some(uid)) => Ok((folder_id, uid)),
+        _ => Err(CoreError::ActionDeferred(format!(
+            "message {message_id} has no resolved remote UID yet"
+        ))),
+    }
+}
+
+/// Captured locations are ordered so legacy read-before-move actions can use
+/// the later move's source without waiting for that move to run.
+fn remote_candidates(
+    conn: &rusqlite::Connection,
+    action: &repo::actions::PendingAction,
+) -> Result<Vec<(repo::folders::Folder, u32, Option<i64>)>> {
+    let mut out = Vec::new();
+    let Some(id) = action.message_id else {
+        return Ok(out);
+    };
+    let Some(row) = repo::messages::get_row(conn, id)? else {
+        return Ok(out);
+    };
+    let mut push = |folder_id: Option<i64>,
+                    uid: Option<u32>,
+                    validity: Option<i64>,
+                    current: bool|
+     -> Result<()> {
+        if let (Some(folder_id), Some(uid)) = (folder_id, uid)
+            && let Some(folder) = repo::folders::get(conn, folder_id)?
+            && folder.account_id == action.account_id
+        {
+            let epoch = if current {
+                folder.uidvalidity
+            } else {
+                validity
+            };
+            out.push((folder, uid, epoch));
+        }
+        Ok(())
+    };
+    push(
+        row.folder_id,
+        row.uid
+            .and_then(|u| u32::try_from(u).ok())
+            .filter(|u| *u > 0),
+        None,
+        true,
+    )?;
+    push(
+        action.payload["folderId"].as_i64(),
+        payload_uid(&action.payload, "uid")?,
+        action.payload["uidValidity"].as_i64(),
+        false,
+    )?;
+    let mut stmt = conn.prepare("SELECT payload FROM pending_actions WHERE message_id=?1 AND account_id=?2 AND id>?3 AND state IN ('pending','inflight') AND kind IN ('move','trash','archive','unarchive','spam','not_spam') ORDER BY id")?;
+    let payloads = stmt.query_map(rusqlite::params![id, action.account_id, action.id], |r| {
+        r.get::<_, String>(0)
+    })?;
+    for payload in payloads {
+        let payload: serde_json::Value = serde_json::from_str(&payload?)?;
+        push(
+            payload["srcFolderId"].as_i64(),
+            payload_uid(&payload, "srcUid")?,
+            payload["srcUidValidity"].as_i64(),
+            false,
+        )?;
+    }
+    Ok(out)
+}
+
 async fn resolve_remote(
     ctx: &SyncCtx,
-    session: &mut Session,
-    message_id: i64,
+    remote: &mut impl MoveRemote,
+    action: &repo::actions::PendingAction,
 ) -> Result<Option<(repo::folders::Folder, u32)>> {
+    let Some(message_id) = action.message_id else {
+        return Ok(None);
+    };
     let row = ctx
         .db
         .read(move |conn| repo::messages::get_row(conn, message_id))
         .await?;
     let Some(row) = row else { return Ok(None) };
-
-    // The payload's remote location: where the message lived when the action
-    // was enqueued (optimistic mutation may have already moved it locally).
-    let (Some(_), Some(uid)) = (row.folder_id, row.uid) else {
-        return Ok(None);
-    };
-    let folder_id = row.folder_id.unwrap();
-    let folder = ctx
+    let snapshot = action.clone();
+    let candidates = ctx
         .db
-        .read(move |conn| repo::folders::get(conn, folder_id))
+        .read(move |conn| remote_candidates(conn, &snapshot))
         .await?;
-    let Some(folder) = folder else {
-        return Ok(None);
-    };
-    imap::select(session, &folder.imap_name).await?;
-    Ok(Some((folder, uid as u32)))
+    for (folder, uid, validity) in candidates {
+        let selected_validity = remote.select_source(&folder.imap_name).await?;
+        if validity.is_some() && validity == selected_validity {
+            return Ok(Some((folder, uid)));
+        }
+    }
+    if let Some(folder_id) = row.folder_id {
+        let folder = ctx
+            .db
+            .read(move |conn| repo::folders::get(conn, folder_id))
+            .await?;
+        if let Some(folder) = folder {
+            remote.select_source(&folder.imap_name).await?;
+            if let Some(key) = crate::provider::remote_key(&row) {
+                let hits = remote.search_key(&key).await?;
+                if let [uid] = hits.as_slice() {
+                    return Ok(Some((folder, *uid)));
+                }
+            }
+        }
+    }
+    Err(CoreError::ActionDeferred(format!(
+        "message {message_id} has no verified remote identity yet"
+    )))
 }
 
-/// For moves the local row already points at the *target* folder; the remote
-/// source location is stored in the payload.
+trait MoveRemote {
+    fn select_source(
+        &mut self,
+        folder: &str,
+    ) -> impl std::future::Future<Output = Result<Option<i64>>> + Send;
+    fn uid_exists(&mut self, uid: u32) -> impl std::future::Future<Output = Result<bool>> + Send;
+    fn search_key(
+        &mut self,
+        key: &crate::provider::RemoteKey,
+    ) -> impl std::future::Future<Output = Result<Vec<u32>>> + Send;
+    fn verify_key(
+        &mut self,
+        uid: u32,
+        key: &crate::provider::RemoteKey,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
+    fn move_uid(
+        &mut self,
+        uid: u32,
+        target: &str,
+    ) -> impl std::future::Future<Output = Result<Option<u32>>> + Send;
+}
+
+struct SessionRemote<'a> {
+    session: &'a mut Session,
+    behavior: &'a dyn crate::provider::MailboxBehavior,
+}
+
+impl MoveRemote for SessionRemote<'_> {
+    async fn select_source(&mut self, folder: &str) -> Result<Option<i64>> {
+        Ok(imap::select(self.session, folder).await?.uid_validity)
+    }
+
+    async fn uid_exists(&mut self, uid: u32) -> Result<bool> {
+        Ok(imap::uid_search_set(self.session, &[uid])
+            .await?
+            .contains(&uid))
+    }
+
+    async fn search_key(&mut self, key: &crate::provider::RemoteKey) -> Result<Vec<u32>> {
+        imap::uid_search_remote_key(self.session, key, self.behavior).await
+    }
+
+    async fn verify_key(&mut self, uid: u32, key: &crate::provider::RemoteKey) -> Result<bool> {
+        imap::verify_remote_key(self.session, uid, key, self.behavior).await
+    }
+
+    async fn move_uid(&mut self, uid: u32, target: &str) -> Result<Option<u32>> {
+        imap::uid_move(self.session, uid, target).await
+    }
+}
+
+struct MoveIdentity {
+    source: repo::folders::Folder,
+    target: repo::folders::Folder,
+    uid: Option<u32>,
+    uid_validity: Option<u32>,
+    message_id: Option<String>,
+    key: Option<crate::provider::RemoteKey>,
+}
+
+fn payload_uid(payload: &serde_json::Value, key: &str) -> Result<Option<u32>> {
+    if payload[key].is_null() {
+        return Ok(None);
+    }
+    payload[key]
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value != 0)
+        .map(Some)
+        .ok_or_else(|| {
+            CoreError::ActionRejected(format!("invalid {key}: expected a positive 32-bit value"))
+        })
+}
+
+fn load_move_identity(
+    conn: &rusqlite::Connection,
+    action: &repo::actions::PendingAction,
+) -> Result<MoveIdentity> {
+    let folder = |key: &str| -> Result<repo::folders::Folder> {
+        let id = action.payload[key]
+            .as_i64()
+            .filter(|id| *id > 0)
+            .ok_or_else(|| CoreError::ActionRejected(format!("move missing {key}")))?;
+        let folder = repo::folders::get(conn, id)?.ok_or_else(|| {
+            CoreError::ActionDeferred(format!("move {key} folder is unavailable"))
+        })?;
+        if folder.account_id != action.account_id {
+            return Err(CoreError::ActionRejected(format!(
+                "move {key} belongs to another account"
+            )));
+        }
+        Ok(folder)
+    };
+    let source = folder("srcFolderId")?;
+    let target = folder("targetFolderId")?;
+    if source.id == target.id {
+        return Err(CoreError::ActionRejected(
+            "move source and target are identical".into(),
+        ));
+    }
+    let uid = payload_uid(&action.payload, "srcUid")?;
+    let uid_validity = payload_uid(&action.payload, "srcUidValidity")?;
+    let row = action
+        .message_id
+        .map(|id| repo::messages::get_row(conn, id))
+        .transpose()?
+        .flatten();
+    if row
+        .as_ref()
+        .is_some_and(|row| row.account_id != action.account_id)
+    {
+        return Err(CoreError::ActionRejected(
+            "move message belongs to another account".into(),
+        ));
+    }
+    let mut key = row.as_ref().and_then(crate::provider::remote_key);
+    let message_id = match &action.payload["srcMessageId"] {
+        serde_json::Value::Null => row.and_then(|row| row.message_id),
+        serde_json::Value::String(value) => Some(value.clone()),
+        _ => return Err(CoreError::ActionRejected("invalid srcMessageId".into())),
+    };
+    if message_id.as_ref().is_some_and(|value| {
+        let trimmed = value.trim();
+        let normalized = trimmed
+            .strip_prefix('<')
+            .and_then(|id| id.strip_suffix('>'))
+            .unwrap_or(trimmed);
+        normalized.is_empty()
+            || normalized.len() > 998
+            || !value.is_ascii()
+            || value.chars().any(char::is_control)
+    }) {
+        return Err(CoreError::ActionRejected(
+            "invalid source Message-ID".into(),
+        ));
+    }
+    if let Some(message_id) = &message_id
+        && key.is_none()
+    {
+        key = crate::provider::key_from_parts(None, Some(message_id), None, None);
+    }
+    Ok(MoveIdentity {
+        key,
+        source,
+        target,
+        uid,
+        uid_validity,
+        message_id,
+    })
+}
+
+fn unique_source_uid(mut matches: Vec<u32>) -> Result<u32> {
+    matches.sort_unstable();
+    matches.dedup();
+    match matches.as_slice() {
+        [uid] if *uid > 0 => Ok(*uid),
+        [] => Err(CoreError::ActionDeferred(
+            "move source Message-ID not found; awaiting source sync or remote reconciliation"
+                .into(),
+        )),
+        _ => Err(CoreError::ActionDeferred(
+            "move source Message-ID is ambiguous; refusing to choose a UID".into(),
+        )),
+    }
+}
+
+async fn persist_move_identity(
+    ctx: &SyncCtx,
+    action: &repo::actions::PendingAction,
+    identity: &MoveIdentity,
+    uid: u32,
+    uid_validity: u32,
+) -> Result<()> {
+    let action_id = action.id;
+    let account_id = action.account_id;
+    let message_id = identity.message_id.clone();
+    ctx.db.write(move |conn| {
+        let changed = conn.execute(
+            "UPDATE pending_actions
+             SET payload = json_set(payload, '$.srcUid', ?3, '$.srcUidValidity', ?4, '$.srcMessageId', ?5)
+             WHERE id = ?1 AND account_id = ?2 AND state = 'inflight'",
+            rusqlite::params![action_id, account_id, uid, uid_validity, message_id],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::ActionDeferred("move action is no longer claimed".into()));
+        }
+        Ok(())
+    }).await
+}
+
+/// A chained move's optimistic row can already point at a later destination.
+/// Only the captured source epoch/UID or an exact remote Message-ID match may
+/// identify the source. In particular, never borrow the local row's new UID.
 async fn resolve_source(
     ctx: &SyncCtx,
-    session: &mut Session,
+    remote: &mut impl MoveRemote,
     action: &repo::actions::PendingAction,
-) -> Result<Option<(repo::folders::Folder, u32)>> {
-    let src_folder_id = action.payload["srcFolderId"].as_i64();
-    let src_uid = action.payload["srcUid"].as_i64();
-    let (Some(fid), Some(uid)) = (src_folder_id, src_uid) else {
-        return Ok(None);
+    identity: &MoveIdentity,
+) -> Result<u32> {
+    let validity = remote
+        .select_source(&identity.source.imap_name)
+        .await?
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value != 0)
+        .ok_or_else(|| {
+            CoreError::ActionDeferred("source SELECT did not provide valid UIDVALIDITY".into())
+        })?;
+    let uid = if let Some(uid) = identity
+        .uid
+        .filter(|_| identity.uid_validity == Some(validity))
+    {
+        if remote.uid_exists(uid).await? {
+            Some(uid)
+        } else {
+            None
+        }
+    } else {
+        None
     };
-    let folder = ctx
-        .db
-        .read(move |conn| repo::folders::get(conn, fid))
-        .await?;
-    let Some(folder) = folder else {
-        return Ok(None);
+    let uid = match uid {
+        Some(uid) => uid,
+        None => {
+            let key = identity.key.as_ref().ok_or_else(|| CoreError::ActionDeferred(
+                "move lacks verified source UID/UIDVALIDITY and remote key; awaiting identity reconciliation".into(),
+            ))?;
+            unique_source_uid(remote.search_key(key).await?)?
+        }
     };
-    imap::select(session, &folder.imap_name).await?;
-    Ok(Some((folder, uid as u32)))
+    persist_move_identity(ctx, action, identity, uid, validity).await?;
+    Ok(uid)
 }
 
 async fn flag_action(
     ctx: &SyncCtx,
+    config: &AccountConfig,
     session: &mut Session,
     action: &repo::actions::PendingAction,
     flag: &str,
     add: bool,
 ) -> Result<()> {
-    let Some(message_id) = action.message_id else {
+    if action.message_id.is_none() {
         return Ok(());
+    }
+    let caps = session.server_caps().await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    let mut remote = SessionRemote {
+        session,
+        behavior: behavior.as_ref(),
     };
-    match resolve_remote(ctx, session, message_id).await? {
+    match resolve_remote(ctx, &mut remote, action).await? {
         Some((_folder, uid)) => imap::store_flag(session, uid, flag, add).await,
         None => Ok(()), // deleted remotely; flag intent is moot
     }
@@ -269,17 +981,24 @@ async fn flag_action(
 /// Push a label as a custom IMAP keyword on the message's current remote copy.
 async fn keyword_action(
     ctx: &SyncCtx,
+    config: &AccountConfig,
     session: &mut Session,
     action: &repo::actions::PendingAction,
     add: bool,
 ) -> Result<()> {
-    let Some(message_id) = action.message_id else {
+    if action.message_id.is_none() {
         return Ok(());
-    };
+    }
     let Some(keyword) = action.payload["keyword"].as_str() else {
         return Ok(());
     };
-    match resolve_remote(ctx, session, message_id).await? {
+    let caps = session.server_caps().await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    let mut remote = SessionRemote {
+        session,
+        behavior: behavior.as_ref(),
+    };
+    match resolve_remote(ctx, &mut remote, action).await? {
         Some((_folder, uid)) => imap::store_flag(session, uid, keyword, add).await,
         None => Ok(()), // deleted remotely; label intent is moot
     }
@@ -287,35 +1006,75 @@ async fn keyword_action(
 
 async fn move_action(
     ctx: &SyncCtx,
-    config: &AccountConfig,
-    session: &mut Session,
+    remote: &mut impl MoveRemote,
     action: &repo::actions::PendingAction,
 ) -> Result<()> {
-    let Some(message_id) = action.message_id else {
-        return Ok(());
-    };
-    let Some((_src, uid)) = resolve_source(ctx, session, action).await? else {
-        return Ok(());
-    };
-    let target_folder_id = action.payload["targetFolderId"].as_i64();
-    let Some(tfid) = target_folder_id else {
-        return Ok(());
-    };
-    let target = ctx
+    let snapshot = action.clone();
+    let identity = ctx
         .db
-        .read(move |conn| repo::folders::get(conn, tfid))
-        .await?
-        .ok_or_else(|| CoreError::NotFound("target folder".into()))?;
-
-    imap::uid_move(session, uid, &target.imap_name).await?;
-
-    // The message's new UID in the target is unknown (COPYUID not parsed in
-    // v1); clear it so the next target-folder sync re-links by Message-ID.
-    let _ = config;
-    ctx.db
-        .write(move |conn| repo::messages::set_uid_and_folder(conn, message_id, tfid, None))
+        .read(move |conn| load_move_identity(conn, &snapshot))
         .await?;
-    Ok(())
+    let uid = resolve_source(ctx, remote, action, &identity).await?;
+    // Sync may have relinked a later destination meanwhile; never clear or
+    // overwrite its UID after the remote move.
+    let copied_uid = remote.move_uid(uid, &identity.target.imap_name).await?;
+    // COPYUID carries a target epoch that Option<u32> cannot preserve. Select
+    // and verify identity in the current namespace before adopting its UID.
+    let lookup: Result<(Option<u32>, Option<i64>)> = async {
+        let validity = remote.select_source(&identity.target.imap_name).await?;
+        let Some(key) = identity.key.as_ref() else {
+            return Ok((None, validity));
+        };
+        if let Some(uid) = copied_uid
+            && remote.verify_key(uid, key).await?
+        {
+            return Ok((Some(uid), validity));
+        }
+        let hits = remote.search_key(key).await?;
+        Ok((
+            if let [uid] = hits.as_slice() {
+                Some(*uid)
+            } else {
+                None
+            },
+            validity,
+        ))
+    }
+    .await;
+    let (destination, validity) = match lookup {
+        Ok(result) => result,
+        Err(error) => {
+            // Never replay a confirmed move after identity bookkeeping fails.
+            tracing::warn!(action_id = action.id, %error, "move completed; destination lookup deferred to sync");
+            return Ok(());
+        }
+    };
+    let Some(validity) = validity.filter(|v| *v > 0 && u32::try_from(*v).is_ok()) else {
+        return Ok(());
+    };
+    let message_id = action.message_id;
+    let target = identity.target;
+    ctx.db
+        .write(move |conn| {
+            let tx = conn.transaction()?;
+            let Some(current) = repo::folders::get(&tx, target.id)? else {
+                return Ok(());
+            };
+            if current.uidvalidity != Some(validity) {
+                if current.uidvalidity != target.uidvalidity {
+                    return Ok(());
+                }
+                repo::folders::reset_uid_mappings(&tx, target.id)?;
+                repo::folders::set_uid_state(&tx, target.id, Some(validity), None, None)?;
+            }
+            tx.execute(
+                "UPDATE messages SET uid=?1 WHERE id=?2 AND folder_id=?3 AND uid IS NULL",
+                rusqlite::params![destination, message_id, target.id],
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
 }
 
 async fn send_action(
@@ -350,11 +1109,11 @@ async fn send_action(
                 refs = stmt
                     .query_map(rusqlite::params![parent_id], |r| r.get::<_, String>(0))?
                     .collect::<rusqlite::Result<Vec<_>>>()?;
-                if let Some(parent) = repo::messages::get_row(conn, parent_id)? {
-                    if let Some(pmid) = parent.message_id {
-                        refs.push(pmid.clone());
-                        in_reply_to = Some(pmid);
-                    }
+                if let Some(parent) = repo::messages::get_row(conn, parent_id)?
+                    && let Some(pmid) = parent.message_id
+                {
+                    refs.push(pmid.clone());
+                    in_reply_to = Some(pmid);
                 }
             }
             Ok((detail, (refs, in_reply_to)))
@@ -607,4 +1366,188 @@ fn mime_guess_from_name(name: &str) -> String {
         _ => "application/octet-stream",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn partial_delete_batch_preserves_done_members_on_error() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = crate::config::Paths::for_tests(root.path());
+        let db = crate::db::Db::open(&paths.db_file()).unwrap();
+        let group = db
+            .write(|conn| {
+                crate::db::testutil::seed_account(conn);
+                let mut group = Vec::new();
+                for _ in 0..3 {
+                    let id = repo::actions::enqueue(
+                        conn,
+                        1,
+                        crate::trash::KIND,
+                        None,
+                        None,
+                        &serde_json::json!({}),
+                        None,
+                    )?;
+                    assert!(repo::actions::try_claim(conn, id)?);
+                    group.push(repo::actions::get(conn, id)?.unwrap());
+                }
+                // The remote batch confirmed only its first target absent.
+                repo::actions::set_state(conn, group[0].id, "done", None)?;
+                repo::actions::set_state(conn, group[2].id, "failed", Some("independent failure"))?;
+                Ok(group)
+            })
+            .await
+            .unwrap();
+        let ctx = SyncCtx {
+            db,
+            bus: crate::events::EventBus::new(),
+            paths: std::sync::Arc::new(paths),
+            tokens: crate::oauth::tokens::TokenProvider::new(),
+        };
+        let mut events = ctx.bus.subscribe();
+        for error in [
+            CoreError::Imap("lost EXPUNGE acknowledgement".into()),
+            CoreError::DeleteRejected("remaining target rejected before write".into()),
+        ] {
+            let expected = if matches!(error, CoreError::DeleteRejected(_)) {
+                "failed"
+            } else {
+                "pending"
+            };
+            let id = group[1].id;
+            ctx.db
+                .write(move |conn| {
+                    conn.execute(
+                        "UPDATE pending_actions SET state='inflight' WHERE id=?1",
+                        [id],
+                    )?;
+                    Ok(())
+                })
+                .await
+                .unwrap();
+            record_outcomes(&ctx, &group, &Err(error)).await.unwrap();
+            let ids = (group[0].id, group[1].id, group[2].id);
+            let states = ctx
+                .db
+                .read(move |conn| {
+                    Ok((
+                        repo::actions::get(conn, ids.0)?.unwrap(),
+                        repo::actions::get(conn, ids.1)?.unwrap(),
+                        repo::actions::get(conn, ids.2)?.unwrap(),
+                    ))
+                })
+                .await
+                .unwrap();
+            assert_eq!(states.0.state, "done");
+            assert_eq!(states.0.attempts, 0);
+            assert_eq!(states.1.state, expected);
+            assert_eq!(states.2.state, "failed");
+            assert_eq!(states.2.attempts, 0);
+            assert!(
+                matches!(events.try_recv().unwrap(), CoreEvent::ActionState { state, .. } if state == "done")
+            );
+            assert!(
+                matches!(events.try_recv().unwrap(), CoreEvent::ActionState { state, .. } if state == expected)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn auth_failure_preserves_send_pause_and_bounded_delete_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = crate::config::Paths::for_tests(root.path());
+        let db = crate::db::Db::open(&paths.db_file()).unwrap();
+        let group = db
+            .write(|conn| {
+                crate::db::testutil::seed_account(conn);
+                ["send", crate::trash::KIND, "star"]
+                    .into_iter()
+                    .map(|kind| {
+                        let id = repo::actions::enqueue(
+                            conn,
+                            1,
+                            kind,
+                            None,
+                            None,
+                            &serde_json::json!({}),
+                            None,
+                        )?;
+                        assert!(repo::actions::try_claim(conn, id)?);
+                        Ok(repo::actions::get(conn, id)?.unwrap())
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .await
+            .unwrap();
+        let ctx = SyncCtx {
+            db,
+            bus: crate::events::EventBus::new(),
+            paths: std::sync::Arc::new(paths),
+            tokens: crate::oauth::tokens::TokenProvider::new(),
+        };
+        let mut events = ctx.bus.subscribe();
+        record_outcomes(&ctx, &group, &Err(CoreError::NeedsReauth))
+            .await
+            .unwrap();
+        for (action, expected) in group.into_iter().zip(["paused", "paused", "pending"]) {
+            assert!(
+                matches!(events.try_recv().unwrap(), CoreEvent::ActionState {
+                action_id, kind, state, error: Some(_),
+            } if action_id == action.id && kind == action.kind && state == expected)
+            );
+            let stored = ctx
+                .db
+                .read(move |conn| Ok(repo::actions::get(conn, action.id)?.unwrap()))
+                .await
+                .unwrap();
+            assert_eq!(stored.state, "pending");
+            assert_eq!(
+                stored.attempts,
+                if action.kind == crate::trash::KIND {
+                    0
+                } else {
+                    1
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn uncertain_deletion_exhausts_retry_budget() {
+        for error in [
+            CoreError::Imap("NO after STORE".into()),
+            CoreError::Imap("unexpected tagged response".into()),
+            CoreError::Network("closed".into()),
+            CoreError::Other("550 bad transport".into()),
+        ] {
+            assert!(terminal_failure(
+                crate::trash::KIND,
+                MAX_ATTEMPTS + 100,
+                &error
+            ));
+        }
+        assert!(terminal_failure(
+            crate::trash::KIND,
+            1,
+            &CoreError::DeleteRejected("UIDVALIDITY changed".into())
+        ));
+        assert!(terminal_failure(
+            "star",
+            MAX_ATTEMPTS,
+            &CoreError::Other("temporary quota".into())
+        ));
+        assert!(needs_fresh_session(&CoreError::Imap(
+            "unexpected tagged response".into()
+        )));
+    }
+
+    #[test]
+    fn timed_out_action_forces_a_fresh_session() {
+        assert!(is_connection_failure("UID MOVE timed out after 30s"));
+        assert!(is_connection_failure("connection closed"));
+        assert!(!is_connection_failure("temporary mailbox quota"));
+    }
 }

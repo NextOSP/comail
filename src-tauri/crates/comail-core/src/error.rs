@@ -26,6 +26,12 @@ pub enum CoreError {
     CalDav(String),
     #[error("not found: {0}")]
     NotFound(String),
+    #[error("permanent deletion rejected: {0}")]
+    DeleteRejected(String),
+    #[error("action deferred: {0}")]
+    ActionDeferred(String),
+    #[error("action rejected: {0}")]
+    ActionRejected(String),
     #[error("offline")]
     Offline,
     #[error("AI is not configured")]
@@ -53,6 +59,9 @@ impl CoreError {
             CoreError::CalDav(_) => "caldav",
             CoreError::NotFound(_) => "not_found",
             CoreError::Offline => "offline",
+            CoreError::DeleteRejected(_) => "delete_rejected",
+            CoreError::ActionDeferred(_) => "action_deferred",
+            CoreError::ActionRejected(_) => "action_rejected",
             CoreError::AiNotConfigured => "ai_not_configured",
             CoreError::Other(_) => "other",
         }

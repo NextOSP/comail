@@ -15,7 +15,7 @@ pub fn stats(conn: &Connection) -> Result<EmailStats> {
            COALESCE(SUM(CASE WHEN is_outgoing = 0 AND date(date / 1000, 'unixepoch', 'localtime') >= date('now', 'localtime', '-6 days') THEN 1 ELSE 0 END), 0),
            COALESCE(SUM(CASE WHEN is_outgoing = 1 AND date(date / 1000, 'unixepoch', 'localtime') >= date('now', 'localtime', '-29 days') THEN 1 ELSE 0 END), 0),
            COALESCE(SUM(CASE WHEN is_outgoing = 0 AND date(date / 1000, 'unixepoch', 'localtime') >= date('now', 'localtime', '-29 days') THEN 1 ELSE 0 END), 0)
-         FROM messages
+         FROM visible_messages
          WHERE is_draft = 0",
         [],
         |row| {
@@ -36,7 +36,7 @@ pub fn stats(conn: &Connection) -> Result<EmailStats> {
         "SELECT date(date / 1000, 'unixepoch', 'localtime') AS day,
                 SUM(CASE WHEN is_outgoing = 1 THEN 1 ELSE 0 END),
                 SUM(CASE WHEN is_outgoing = 0 THEN 1 ELSE 0 END)
-         FROM messages
+         FROM visible_messages
          WHERE is_draft = 0
            AND date(date / 1000, 'unixepoch', 'localtime') >= date('now', 'localtime', '-364 days')
          GROUP BY day ORDER BY day",

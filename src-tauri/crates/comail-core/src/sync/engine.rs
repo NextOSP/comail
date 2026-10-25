@@ -1,7 +1,6 @@
 //! Per-account sync actors. The main actor's IMAP connection runs a cycle
-//! loop of only the cheap, latency-sensitive work: drain commands -> execute
-//! due pending actions -> per-folder new-mail checks and flag/expunge
-//! reconciliation. Everything heavy runs on its own connections in parallel:
+//! loop of only the cheap, latency-sensitive work: drain commands, then run
+//! per-folder new-mail checks and flag/expunge reconciliation. Everything heavy runs on its own connections in parallel:
 //! first-time header backfills and historical extension on the dedicated
 //! history connection (`run_history_backfill`), and bulk body downloads on a
 //! pool of up to BODY_POOL_CONNS connections (`run_backfill_pool`). Cycles
@@ -11,8 +10,8 @@
 //! On servers that support it the actor waits in IMAP IDLE between cycles, so
 //! new inbox mail wakes it within seconds; the full 60s cycle still runs as a
 //! correctness backstop. Servers without IDLE fall back to a short poll. Either
-//! way commands (body fetches, action nudges) interrupt the wait immediately
-//! because it selects on the command channel.
+//! way Sync Now interrupts the wait immediately. Body reads and all queued
+//! mutations route directly to independent workers with their own connections.
 
 use crate::accounts::credentials::{self, Slot};
 use crate::config::Paths;
@@ -43,7 +42,7 @@ const BODY_FETCH_CHUNK: usize = 200;
 const MAX_SELECTIVE_BATCH_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_MICROSOFT_BATCH_BYTES: u64 = 4 * 1024 * 1024;
 /// Concurrent IMAP connections dedicated to bulk body backfill. Together with
-/// the sync actor and the on-demand reader that's BODY_POOL_CONNS + 2
+/// the sync actor, reader, history and mutation workers that's BODY_POOL_CONNS + 4
 /// connections per account, well under common server caps (Gmail allows 15).
 const BODY_POOL_CONNS: usize = 2;
 const HISTORY_CHUNK: u32 = 500;
@@ -82,6 +81,8 @@ pub struct AccountHandle {
     /// Separate channel + connection for on-demand body reads so opening a
     /// message never waits behind a long bulk-sync cycle on the main actor.
     body_tx: mpsc::UnboundedSender<PriorityFetchCmd>,
+    action_tx: mpsc::UnboundedSender<()>,
+    action_stop: tokio::sync::watch::Sender<bool>,
 }
 
 #[derive(Debug)]
@@ -95,13 +96,24 @@ enum PriorityFetchCmd {
 
 impl AccountHandle {
     pub fn send(&self, cmd: SyncCmd) {
-        // Route priority body fetches to the dedicated reader connection;
-        // everything else drives the bulk sync actor.
+        // Mutation nudges never wait for the sync actor or its Inbox pass.
         match cmd {
             SyncCmd::FetchBody { message_id } => {
                 let _ = self.body_tx.send(PriorityFetchCmd::Body(message_id));
             }
+            SyncCmd::RunActions => {
+                let _ = self.action_tx.send(());
+            }
+            SyncCmd::Shutdown => {
+                self.action_stop.send_replace(true);
+                let _ = self.tx.send(SyncCmd::Shutdown);
+            }
             other => {
+                // Reauth/credential changes wake the actor with SyncNow; the
+                // mutation worker paused on auth needs the same signal.
+                if matches!(other, SyncCmd::SyncNow { .. }) {
+                    let _ = self.action_tx.send(());
+                }
                 let _ = self.tx.send(other);
             }
         }
@@ -145,10 +157,22 @@ pub fn spawn_account(ctx: SyncCtx, config: AccountConfig) -> AccountHandle {
     let (body_tx, body_rx) = mpsc::unbounded_channel();
     let (pool_tx, pool_rx) = mpsc::unbounded_channel();
     let (hist_tx, hist_rx) = mpsc::unbounded_channel();
+    let (action_tx, action_rx) = mpsc::unbounded_channel();
+    let (action_stop, action_stopped) = tokio::sync::watch::channel(false);
+    let action_lease = mutation_lease(&ctx.paths, config.id, action_stop.clone());
+    tokio::spawn(run_mutation_worker(
+        ctx.clone(),
+        config.clone(),
+        action_rx,
+        action_stopped,
+        action_lease,
+    ));
     let handle = AccountHandle {
         account_id: config.id,
         tx,
         body_tx,
+        action_tx,
+        action_stop,
     };
     tokio::spawn(run_actor(
         ctx.clone(),
@@ -161,6 +185,539 @@ pub fn spawn_account(ctx: SyncCtx, config: AccountConfig) -> AccountHandle {
     tokio::spawn(run_backfill_pool(ctx.clone(), config.clone(), pool_rx));
     tokio::spawn(run_history_backfill(ctx, config, hist_rx, pool_tx));
     handle
+}
+
+#[cfg(test)]
+mod mutation_worker_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn recovery_poll_retries_failed_writes_before_scanning_inflight_only_queue() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::for_tests(root.path());
+        let db = Db::open(&paths.db_file()).unwrap();
+        let id = db
+            .write(|conn| {
+                crate::db::testutil::seed_account(conn);
+                let id = repo::actions::enqueue(
+                    conn,
+                    1,
+                    crate::trash::KIND,
+                    None,
+                    None,
+                    &serde_json::json!({"remoteAttempted": true}),
+                    None,
+                )?;
+                assert!(repo::actions::try_claim(conn, id)?);
+                conn.execute_batch(
+                    "CREATE TRIGGER fail_recovery BEFORE UPDATE OF state ON pending_actions
+                 WHEN OLD.state = 'inflight' AND NEW.state = 'pending'
+                 BEGIN SELECT RAISE(ABORT, 'injected transient persistence failure'); END;",
+                )?;
+                Ok(id)
+            })
+            .await
+            .unwrap();
+        let mut poll = MutationQueuePoll::new();
+        assert!(
+            !db.read(|conn| repo::actions::has_due(conn, 1, now_ms()))
+                .await
+                .unwrap()
+        );
+        // Initial/replacement acquisition must recover before its empty due scan.
+        assert!(poll.has_due(&db, 1).await.is_err());
+        assert!(poll.recovery_needed);
+        assert!(poll.has_due(&db, 1).await.is_err());
+        db.write(|conn| {
+            conn.execute_batch("DROP TRIGGER fail_recovery;")?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(poll.has_due(&db, 1).await.unwrap());
+        assert!(!poll.recovery_needed);
+        db.write(move |conn| {
+            assert!(repo::actions::try_claim(conn, id)?);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        // Ordinary idle polling must not repeatedly issue recovery writes.
+        assert!(!poll.has_due(&db, 1).await.unwrap());
+        // A settled remote command whose outcome failed to persist rearms
+        // recovery; no external nudge or already-pending row is required.
+        poll.slice_finished();
+        assert!(poll.has_due(&db, 1).await.unwrap());
+        assert!(!poll.recovery_needed);
+        let row = db
+            .read(move |conn| Ok(repo::actions::get(conn, id)?.unwrap()))
+            .await
+            .unwrap();
+        assert_eq!(row.state, "pending");
+        assert_eq!(row.payload["remoteAttempted"], true);
+    }
+
+    #[tokio::test]
+    async fn mutation_nudges_and_shutdown_do_not_wait_for_sync() {
+        let (tx, mut sync_rx) = mpsc::unbounded_channel();
+        let (body_tx, _body_rx) = mpsc::unbounded_channel();
+        let (action_tx, mut action_rx) = mpsc::unbounded_channel();
+        let (action_stop, stopped) = tokio::sync::watch::channel(false);
+        let handle = AccountHandle {
+            account_id: 1,
+            tx,
+            body_tx,
+            action_tx,
+            action_stop,
+        };
+        handle.send(SyncCmd::RunActions);
+        assert!(sync_rx.try_recv().is_err());
+        assert_eq!(action_rx.try_recv(), Ok(()));
+        handle.send(SyncCmd::Shutdown);
+        assert!(*stopped.borrow());
+        assert!(matches!(sync_rx.try_recv(), Ok(SyncCmd::Shutdown)));
+    }
+
+    #[tokio::test]
+    async fn sync_now_wakes_paused_mutation_worker() {
+        let (tx, _sync_rx) = mpsc::unbounded_channel();
+        let (body_tx, _body_rx) = mpsc::unbounded_channel();
+        let (action_tx, mut action_rx) = mpsc::unbounded_channel();
+        let (action_stop, _stopped) = tokio::sync::watch::channel(false);
+        let handle = AccountHandle {
+            account_id: 1,
+            tx,
+            body_tx,
+            action_tx,
+            action_stop,
+        };
+        // Reauth sends SyncNow; a worker paused on auth waits only for a nudge.
+        handle.send(SyncCmd::SyncNow { complete: None });
+        assert_eq!(action_rx.try_recv(), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn relink_requires_same_folder_unique_idle_row() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::for_tests(root.path());
+        let db = Db::open(&paths.db_file()).unwrap();
+        db.write(|conn| {
+            crate::db::testutil::seed_account(conn);
+            let (thread_id, id) = crate::db::testutil::seed_message(conn, "a@test.dev", "s", false);
+            conn.execute("UPDATE messages SET uid = NULL WHERE id = ?1", [id])?;
+            let row =
+                |conn: &rusqlite::Connection| repo::messages::get_row(conn, id).map(|r| r.unwrap());
+            let mid = "mid-".to_string() + &thread_id.to_string();
+            let existing = row(conn)?;
+            let folder = existing.folder_id.unwrap();
+            assert!(relink_allowed(conn, 1, &mid, &existing, folder)?);
+            // Different folder than the row's own: never relink.
+            assert!(!relink_allowed(conn, 1, &mid, &existing, folder + 1)?);
+            // Active mutation blocks relink.
+            let action = repo::actions::enqueue(
+                conn,
+                1,
+                "star",
+                Some(id),
+                Some(thread_id),
+                &serde_json::json!({}),
+                None,
+            )?;
+            assert!(!relink_allowed(conn, 1, &mid, &existing, folder)?);
+            conn.execute(
+                "UPDATE pending_actions SET state = 'done' WHERE id = ?1",
+                [action],
+            )?;
+            assert!(relink_allowed(conn, 1, &mid, &existing, folder)?);
+            // Ambiguous Message-ID blocks relink.
+            conn.execute(
+                "INSERT INTO messages (thread_id, account_id, folder_id, uid, message_id, subject,
+                 from_addr, date, is_read, is_automated, is_draft, is_outgoing)
+                 VALUES (?1, 1, ?2, 999, ?3, 's', 'a@test.dev', 1, 0, 0, 0, 0)",
+                rusqlite::params![thread_id, folder, mid],
+            )?;
+            assert!(!relink_allowed(conn, 1, &mid, &existing, folder)?);
+            // A row that already has a UID is never relinked.
+            let mut with_uid = existing;
+            with_uid.uid = Some(5);
+            conn.execute("DELETE FROM messages WHERE uid = 999", [])?;
+            assert!(!relink_allowed(conn, 1, &mid, &with_uid, folder)?);
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn store_headers_adopts_uidless_trash_rows() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::for_tests(root.path());
+        let db = Db::open(&paths.db_file()).unwrap();
+        let ctx = SyncCtx {
+            db: db.clone(),
+            bus: EventBus::new(),
+            paths: Arc::new(paths),
+            tokens: TokenProvider::new(),
+        };
+        let (canonical_msg, other_msg) = db
+            .write(|conn| {
+                crate::db::testutil::seed_account(conn);
+                conn.execute(
+                    "INSERT INTO folders (id, account_id, imap_name, role) VALUES (2,1,'Trash','trash')",
+                    [],
+                )?;
+                conn.execute(
+                    "INSERT INTO folders (id, account_id, imap_name, role) VALUES (3,1,'Zz Trash','trash')",
+                    [],
+                )?;
+                let mut ids = Vec::new();
+                for (folder, mid) in [(2, "canon@test.dev"), (3, "other@test.dev")] {
+                    let (_, id) = crate::db::testutil::seed_message(conn, "a@test.dev", mid, false);
+                    conn.execute(
+                        "UPDATE messages SET folder_id = ?2, uid = NULL, message_id = ?3 WHERE id = ?1",
+                        rusqlite::params![id, folder, mid],
+                    )?;
+                    ids.push(id);
+                }
+                conn.execute("UPDATE messages SET gm_msgid='123' WHERE id=?1", [ids[0]])?;
+                Ok((ids[0], ids[1]))
+            })
+            .await
+            .unwrap();
+        let config = db
+            .read(|conn| Ok(repo::accounts::get_config(conn, 1)?.unwrap()))
+            .await
+            .unwrap();
+        for (folder_id, mid) in [(2, "canon@test.dev"), (3, "other@test.dev")] {
+            let folder = db
+                .read(move |conn| Ok(repo::folders::get(conn, folder_id)?.unwrap()))
+                .await
+                .unwrap();
+            let header = FetchedHeader {
+                uid: 7,
+                flags: Default::default(),
+                internal_date_ms: Some(1_000),
+                gm_msgid: Some("123".into()),
+                size: None,
+                header_bytes: format!(
+                    "Message-ID: <{mid}>\r\nFrom: a@test.dev\r\nSubject: s\r\nDate: Mon, 1 Jan 2024 00:00:00 +0000\r\n\r\n"
+                )
+                .into_bytes(),
+                has_attachments: false,
+                mime_plan: None,
+            };
+            store_headers(&ctx, &config, &folder, vec![header], None)
+                .await
+                .unwrap();
+        }
+        let uids = db
+            .read(move |conn| {
+                Ok((
+                    repo::messages::get_row(conn, canonical_msg)?.unwrap().uid,
+                    repo::messages::get_row(conn, other_msg)?.unwrap().uid,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(uids.0, Some(7), "canonical Trash adopts fetched identities");
+        db.read(move |conn| {
+            let row = repo::messages::get_row(conn, canonical_msg)?.unwrap();
+            assert_eq!(row.gm_msgid.as_deref(), Some("123"));
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            uids.1,
+            Some(7),
+            "non-canonical folders keep conservative relink"
+        );
+    }
+
+    #[tokio::test]
+    async fn store_headers_does_not_guess_header_identity_across_trash_chunks() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::for_tests(root.path());
+        let db = Db::open(&paths.db_file()).unwrap();
+        let ctx = SyncCtx {
+            db: db.clone(),
+            bus: EventBus::new(),
+            paths: Arc::new(paths),
+            tokens: TokenProvider::new(),
+        };
+        let id = db.write(|conn| {
+            crate::db::testutil::seed_account(conn);
+            conn.execute("INSERT INTO folders(id,account_id,imap_name,role) VALUES(2,1,'Trash','trash')", [])?;
+            let (_, id) = crate::db::testutil::seed_message(conn, "a@test.dev", "ambiguous", false);
+            conn.execute("UPDATE messages SET folder_id=2,uid=NULL,message_id='duplicate@test.dev' WHERE id=?1", [id])?;
+            Ok(id)
+        }).await.unwrap();
+        let (config, folder) = db
+            .read(|conn| {
+                Ok((
+                    repo::accounts::get_config(conn, 1)?.unwrap(),
+                    repo::folders::get(conn, 2)?.unwrap(),
+                ))
+            })
+            .await
+            .unwrap();
+        // Separate calls model duplicates arriving in different fetch chunks.
+        for uid in [7, 8] {
+            let header = FetchedHeader {
+                uid,
+                flags: Default::default(),
+                internal_date_ms: Some(1_000),
+                gm_msgid: None,
+                size: Some(42),
+                header_bytes: b"Message-ID: <duplicate@test.dev>\r\nFrom: a@test.dev\r\nSubject: ambiguous\r\n\r\n".to_vec(),
+                has_attachments: false,
+                mime_plan: None,
+            };
+            store_headers(&ctx, &config, &folder, vec![header], None)
+                .await
+                .unwrap();
+            let row = db
+                .read(move |conn| Ok(repo::messages::get_row(conn, id)?.unwrap()))
+                .await
+                .unwrap();
+            assert_eq!(
+                row.uid, None,
+                "Header-only Trash adoption needs a complete listing"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn replacement_stops_old_worker_but_waits_for_inflight_lease() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::for_tests(root.path());
+        let (old_stop, old_stopped) = tokio::sync::watch::channel(false);
+        let old = mutation_lease(&paths, 1, old_stop);
+        let inflight = old.inner.lock().await;
+        let (new_stop, _) = tokio::sync::watch::channel(false);
+        let new = mutation_lease(&paths, 1, new_stop);
+        assert!(*old_stopped.borrow());
+        assert!(Arc::ptr_eq(&old.inner, &new.inner));
+        assert!(new.inner.try_lock().is_err());
+        drop(inflight);
+        assert!(new.inner.try_lock().is_ok());
+        let (other_stop, _) = tokio::sync::watch::channel(false);
+        let other = mutation_lease(&paths, 2, other_stop);
+        assert!(!Arc::ptr_eq(&new.inner, &other.inner));
+        drop(old);
+        assert!(
+            mutation_workers()
+                .lock()
+                .unwrap()
+                .contains_key(&(paths.db_file(), 1))
+        );
+        drop(new);
+        assert!(
+            !mutation_workers()
+                .lock()
+                .unwrap()
+                .contains_key(&(paths.db_file(), 1))
+        );
+        drop(other);
+        assert!(
+            !mutation_workers()
+                .lock()
+                .unwrap()
+                .contains_key(&(paths.db_file(), 2))
+        );
+    }
+}
+
+// A replacement actor must wait for its predecessor's remote command to settle.
+// The registry is keyed by database path too, so independent Core instances do
+// not serialize unrelated accounts with the same numeric ID.
+struct MutationLease {
+    inner: Arc<tokio::sync::Mutex<()>>,
+    key: (std::path::PathBuf, i64),
+}
+
+type MutationWorkers = std::collections::HashMap<
+    (std::path::PathBuf, i64),
+    (
+        std::sync::Weak<tokio::sync::Mutex<()>>,
+        tokio::sync::watch::Sender<bool>,
+    ),
+>;
+
+fn mutation_workers() -> &'static std::sync::Mutex<MutationWorkers> {
+    static WORKERS: std::sync::OnceLock<std::sync::Mutex<MutationWorkers>> =
+        std::sync::OnceLock::new();
+    WORKERS.get_or_init(Default::default)
+}
+
+impl Drop for MutationLease {
+    fn drop(&mut self) {
+        let mut workers = mutation_workers().lock().unwrap();
+        if Arc::strong_count(&self.inner) == 1
+            && workers
+                .get(&self.key)
+                .is_some_and(|(weak, _)| weak.ptr_eq(&Arc::downgrade(&self.inner)))
+        {
+            workers.remove(&self.key);
+        }
+    }
+}
+
+fn mutation_lease(
+    paths: &Paths,
+    account_id: i64,
+    stop: tokio::sync::watch::Sender<bool>,
+) -> MutationLease {
+    let mut workers = mutation_workers().lock().unwrap();
+    workers.retain(|_, (lease, _)| lease.strong_count() > 0);
+    let key = (paths.db_file(), account_id);
+    let lease = if let Some((previous, previous_stop)) = workers.get(&key) {
+        previous_stop.send_replace(true);
+        previous.upgrade().unwrap_or_default()
+    } else {
+        Arc::default()
+    };
+    workers.insert(key.clone(), (Arc::downgrade(&lease), stop));
+    MutationLease { inner: lease, key }
+}
+
+struct MutationQueuePoll {
+    recovery_needed: bool,
+}
+
+impl MutationQueuePoll {
+    fn new() -> Self {
+        Self {
+            recovery_needed: true,
+        }
+    }
+
+    fn slice_finished(&mut self) {
+        self.recovery_needed = true;
+    }
+
+    // Only call while holding the worker lease, with no remote command active.
+    async fn has_due(&mut self, db: &Db, account_id: i64) -> Result<bool> {
+        if self.recovery_needed {
+            db.write(move |conn| repo::actions::recover_account_inflight(conn, account_id))
+                .await?;
+            // A failed write leaves this armed for the next durable poll.
+            self.recovery_needed = false;
+        }
+        db.read(move |conn| repo::actions::has_due(conn, account_id, now_ms()))
+            .await
+    }
+}
+
+/// Owns all IMAP/SMTP mutations, independently of Inbox discovery and reads.
+/// Polling the durable queue handles future undo windows/retries even if a
+/// nudge is lost. Never select/cancel execute_due: its remote command and local
+/// outcome must settle before shutdown or a replacement takes the lease.
+async fn run_mutation_worker(
+    ctx: SyncCtx,
+    config: AccountConfig,
+    mut rx: mpsc::UnboundedReceiver<()>,
+    mut stopped: tokio::sync::watch::Receiver<bool>,
+    lease: MutationLease,
+) {
+    let _guard = tokio::select! {
+        guard = lease.inner.lock() => guard,
+        _ = stopped.changed() => return,
+    };
+    let account_id = config.id;
+    let mut session = None;
+    let mut retry_at = tokio::time::Instant::now();
+    let mut backoff = 1;
+    let mut immediate = true;
+    // After an auth rejection, retrying cannot succeed until credentials change;
+    // like the sync actor, wait for an external nudge instead of polling.
+    let mut auth_blocked = false;
+    let mut queue_poll = MutationQueuePoll::new();
+    loop {
+        if *stopped.borrow() || rx.is_closed() {
+            break;
+        }
+        if auth_blocked {
+            tokio::select! {
+                _ = stopped.changed() => break,
+                nudge = rx.recv() => if nudge.is_none() { break; },
+            }
+            auth_blocked = false;
+            retry_at = tokio::time::Instant::now();
+            backoff = 1;
+        } else if !immediate {
+            tokio::select! {
+                _ = stopped.changed() => break,
+                nudge = rx.recv() => if nudge.is_none() { break; },
+                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+            }
+        }
+        // Collapse repeated nudges; stopping is independent of queue length.
+        while rx.try_recv().is_ok() {}
+        if *stopped.borrow() || rx.is_closed() {
+            break;
+        }
+        immediate = false;
+        if tokio::time::Instant::now() < retry_at {
+            continue;
+        }
+        match queue_poll.has_due(&ctx.db, account_id).await {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                tracing::warn!(account_id, %error, "mutation queue poll failed");
+                continue;
+            }
+        }
+        if session.is_none() {
+            match connect(&ctx, &config).await {
+                Ok(value) => {
+                    session = Some(value);
+                    backoff = 1;
+                }
+                Err(error) => {
+                    tracing::warn!(account_id, %error, "mutation worker connect failed");
+                    if matches!(error, CoreError::NeedsReauth | CoreError::Auth(_)) {
+                        // Only the first rejection publishes state; repeats
+                        // would flap against the sync actor's own status.
+                        if !auth_blocked {
+                            set_state(&ctx, account_id, "needs_reauth").await;
+                        }
+                        auth_blocked = true;
+                        continue;
+                    }
+                    retry_at =
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(backoff);
+                    backoff = (backoff * 2).min(60);
+                    continue;
+                }
+            }
+        }
+        if *stopped.borrow() || rx.is_closed() {
+            break;
+        }
+        let outcome = queue::execute_due(&ctx, &config, session.as_mut().unwrap()).await;
+        // Persistence may fail after the remote command settled. Recover before
+        // the next due scan, even when only invisible inflight rows remain.
+        queue_poll.slice_finished();
+        match outcome {
+            Ok(result) => immediate = result.due_remaining,
+            Err(error) => {
+                tracing::warn!(account_id, %error, "mutation slice failed; reconnecting");
+                // Do not send LOGOUT on an uncertain protocol stream.
+                session.take();
+                retry_at = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+                if matches!(error, CoreError::NeedsReauth | CoreError::Auth(_)) {
+                    set_state(&ctx, account_id, "needs_reauth").await;
+                    auth_blocked = true;
+                }
+            }
+        }
+        tokio::task::yield_now().await;
+    }
+    if let Some(session) = session {
+        imap::logout(session).await;
+    }
 }
 
 /// Dedicated reader connection. Owns its own IMAP session and services only
@@ -524,7 +1081,6 @@ async fn run_actor(
     let mut supports_idle: Option<bool> = None;
     let mut backoff_secs: u64 = 1;
     let mut cycle: u64 = 0;
-    let mut replaying_actions = false;
     let mut inbox_baseline: Option<InboxBaseline> = None;
     let mut sync_waiters: Vec<oneshot::Sender<std::result::Result<(), String>>> = Vec::new();
     // When the next cycle is due; only read by the waits below (any wake-up
@@ -620,7 +1176,7 @@ async fn run_actor(
 
         // 2. Run one cycle; on IMAP errors drop the session and reconnect.
         // Bulk body downloads run on the backfill pool's own connections, so a
-        // cycle is only folder/header/flag/action work and stays short.
+        // cycle is only folder/header/flag work and stays short.
         tracing::debug!(account_id, cycle, "sync cycle start");
         set_state(&ctx, account_id, "syncing").await;
         let foreground_only = !sync_waiters.is_empty();
@@ -632,7 +1188,6 @@ async fn run_actor(
             &hist_tx,
             &mut inbox_baseline,
             foreground_only,
-            replaying_actions,
         )
         .await;
         tracing::debug!(
@@ -646,10 +1201,9 @@ async fn run_actor(
         cycle_due = tokio::time::Instant::now() + std::time::Duration::from_secs(CYCLE_SECS);
         let mut rerun_immediately = false;
         match cycle_result {
-            Ok(actions_remaining) => {
+            Ok(sync_remaining) => {
                 session = Some(s);
                 cycle += 1;
-                replaying_actions = actions_remaining;
                 // Historical content is explicitly background work. It may
                 // continue for hours without keeping the foreground account
                 // state (and the top-bar spinner) stuck on syncing.
@@ -669,9 +1223,8 @@ async fn run_actor(
                     done,
                     total,
                 }));
-                if actions_remaining {
-                    // Replay another bounded slice immediately, with another
-                    // INBOX check in front of it.
+                if sync_remaining {
+                    // Finish Inbox catch-up or the remaining foreground pass.
                     rerun_immediately = true;
                 }
                 for waiter in sync_waiters.drain(..) {
@@ -843,8 +1396,8 @@ async fn run_actor(
                         break;
                     }
                     Ok(Some(SyncCmd::RunActions)) => {
-                        // Commands need a full cycle (folder sync / action replay).
-                        break;
+                        // Public handles route mutations to their own worker.
+                        continue;
                     }
                     Ok(Some(SyncCmd::FetchBody { message_id })) => {
                         if let Some(ref mut s) = session {
@@ -968,7 +1521,7 @@ async fn connect(ctx: &SyncCtx, config: &AccountConfig) -> Result<Session> {
     imap::connect(&config.imap_host, config.imap_port, creds).await
 }
 
-/// One sync cycle: replay queued actions, then sync every folder's headers,
+/// One sync cycle: sync every folder's headers,
 /// flags, and expunges. Bulk bodies are NOT fetched here - the backfill pool
 /// downloads them concurrently on its own connections; this only nudges it.
 async fn run_cycle(
@@ -979,12 +1532,11 @@ async fn run_cycle(
     hist_tx: &mpsc::UnboundedSender<()>,
     inbox_baseline: &mut Option<InboxBaseline>,
     foreground_only: bool,
-    action_replay: bool,
 ) -> Result<bool> {
     let account_id = config.id;
 
     // Folder discovery: first cycle and then every ~30 cycles.
-    if !action_replay && cycle % 30 == 0 {
+    if cycle % 30 == 0 {
         discover_folders(ctx, config, session).await?;
     }
 
@@ -1005,8 +1557,7 @@ async fn run_cycle(
         _ => 4,
     });
 
-    // The latency-sensitive INBOX pass always runs before any queued mutation.
-    // A mass archive/trash replay therefore cannot hide newly arrived mail.
+    // The latency-sensitive INBOX pass is independent of queued mutations.
     let mut inbox_forward_remaining = false;
     if let Some(inbox) = ordered
         .iter()
@@ -1018,7 +1569,7 @@ async fn run_cycle(
             config,
             session,
             inbox,
-            !action_replay && cycle > 0 && cycle % 5 == 0,
+            cycle > 0 && cycle % 5 == 0,
             hist_tx,
             inbox_baseline,
         )
@@ -1031,15 +1582,8 @@ async fn run_cycle(
     set_state(ctx, account_id, "idle").await;
 
     // A manual Sync Now resolves at the foreground Inbox boundary. Schedule a
-    // normal pass immediately afterward for actions and other folders.
+    // normal pass immediately afterward for other folders.
     if foreground_only || inbox_forward_remaining {
-        return Ok(true);
-    }
-
-    // Execute one bounded action slice. If more remains, return immediately;
-    // the actor schedules another pass now and checks INBOX again first.
-    let action_slice = queue::execute_due(ctx, config, session).await?;
-    if action_slice.due_remaining {
         return Ok(true);
     }
 
@@ -1052,7 +1596,7 @@ async fn run_cycle(
         }
         // Non-inbox folders get new-mail checks every cycle but heavy
         // reconciliation (flags/expunge) only every 5th cycle.
-        let heavy = !action_replay && cycle > 0 && cycle % 5 == 0;
+        let heavy = cycle > 0 && cycle % 5 == 0;
         if let Err(e) =
             sync_folder(ctx, config, session, folder, heavy, hist_tx, inbox_baseline).await
         {
@@ -1084,15 +1628,26 @@ async fn discover_folders(
         total: 0,
     }));
     let remote = imap::list_folders(session).await?;
+    let caps = crate::provider::ServerCaps::from_session(session).await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    let trash_hints = behavior.trash_name_hints();
     ctx.db
         .write(move |conn| {
             for rf in &remote {
-                let role = crate::sync::folder_map::detect_role(rf);
-                if !crate::sync::folder_map::should_sync(rf, role) {
+                let role = crate::sync::folder_map::detect_role_with_hints(rf, trash_hints);
+                if !crate::sync::folder_map::should_sync(rf, role.map(|detected| detected.role)) {
                     continue;
                 }
-                repo::folders::upsert(conn, account_id, &rf.name, rf.delimiter.as_deref(), role)?;
+                repo::folders::upsert_detected(
+                    conn,
+                    account_id,
+                    &rf.name,
+                    rf.delimiter.as_deref(),
+                    role,
+                )?;
             }
+            repo::folders::normalize_roles(conn, Some(account_id))?;
+            crate::trash::repair_legacy_trash_intent(conn)?;
             Ok(())
         })
         .await
@@ -1150,6 +1705,24 @@ async fn sync_folder(
             .ok_or_else(|| CoreError::NotFound("folder".into()))?
     };
 
+    // Identity bookkeeping is best effort and must never abort a sync cycle.
+    if fresh_folder.role.as_deref() == Some(roles::TRASH) {
+        crate::trash::reconcile::reconcile_missing_trash_uids(
+            ctx,
+            config,
+            session,
+            &fresh_folder,
+            &selected,
+        )
+        .await;
+    }
+
+    if heavy {
+        if let Err(error) = backfill_stable_identities(ctx, config, session, &fresh_folder).await {
+            tracing::warn!(folder_id = folder.id, %error, "Stable identity backfill skipped");
+        }
+    }
+
     let mut forward_remaining = false;
     if fresh_folder.backfill_cursor.is_none() {
         // Snapshot the server high-water immediately. The dedicated history
@@ -1175,7 +1748,9 @@ async fn sync_folder(
                 ((last_seen as u64) + HEADER_CHUNK as u64).min((uid_next - 1).max(0) as u64) as u32;
             forward_remaining = (range_end as i64) < uid_next.saturating_sub(1);
             let set = format!("{}:{range_end}", last_seen + 1);
-            let headers = imap::fetch_headers(session, &set).await?;
+            let caps = session.server_caps().await?;
+            let behavior = crate::provider::behavior_for(config.provider, &caps);
+            let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
             let new: Vec<FetchedHeader> = headers
                 .into_iter()
                 .filter(|h| h.uid > last_seen && h.uid <= range_end)
@@ -1231,6 +1806,250 @@ async fn sync_folder(
         }
     }
     Ok(forward_remaining)
+}
+
+/// A bounded metadata-only pass upgrades old rows without downloading headers.
+async fn backfill_stable_identities(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    folder: &Folder,
+) -> Result<()> {
+    let caps = session.server_caps().await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    if behavior.identity_fetch_items().is_empty() {
+        return Ok(());
+    }
+    let fid = folder.id;
+    let validity = folder.uidvalidity;
+    let uids = ctx
+        .db
+        .read(move |conn| stable_uid_batch(conn, fid, validity))
+        .await?;
+    if uids.is_empty() {
+        return Ok(());
+    }
+    let identities =
+        imap::fetch_stable_identities(session, &imap::uid_set(&uids), behavior.as_ref()).await?;
+    ctx.db
+        .write(move |conn| persist_known_uid_identities(conn, fid, validity, &identities, &uids))
+        .await
+}
+
+fn stable_uid_batch(
+    conn: &rusqlite::Connection,
+    folder_id: i64,
+    validity: Option<i64>,
+) -> Result<Vec<u32>> {
+    let cursor: Option<i64> = conn.query_row(
+        "SELECT CASE WHEN stable_identity_uidvalidity IS ?2 THEN stable_identity_cursor ELSE NULL END
+         FROM folders WHERE id=?1",
+        rusqlite::params![folder_id, validity], |row| row.get(0),
+    )?;
+    let query = |cursor: Option<i64>| -> Result<Vec<u32>> {
+        let mut stmt = conn.prepare(
+            "SELECT uid FROM messages WHERE folder_id=?1 AND uid IS NOT NULL
+            AND gm_msgid IS NULL AND (?2 IS NULL OR uid<?2)
+            AND NOT EXISTS (SELECT 1 FROM stable_identity_attempts attempted
+                WHERE attempted.message_id=messages.id AND attempted.folder_id=messages.folder_id
+                  AND attempted.uid=messages.uid AND attempted.uidvalidity IS ?3)
+            ORDER BY uid DESC LIMIT 256",
+        )?;
+        Ok(stmt
+            .query_map(rusqlite::params![folder_id, cursor, validity], |row| {
+                row.get::<_, u32>(0)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    };
+    let batch = query(cursor)?;
+    // Wrap only after scanning all lower UIDs, including rows no longer on the server.
+    if batch.is_empty() && cursor.is_some() {
+        query(None)
+    } else {
+        Ok(batch)
+    }
+}
+
+fn persist_known_uid_identities(
+    conn: &mut rusqlite::Connection,
+    folder_id: i64,
+    validity: Option<i64>,
+    identities: &[crate::provider::FetchedIdentity],
+    attempted: &[u32],
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    if repo::folders::get(&tx, folder_id)?.is_none_or(|folder| folder.uidvalidity != validity) {
+        return Ok(());
+    }
+    for identity in identities {
+        if let Some(row) = repo::messages::by_folder_uid(&tx, folder_id, identity.uid as i64)? {
+            crate::provider::persist_identity(&tx, row.id, identity)?;
+        }
+    }
+    // A completed FETCH is an attempt even if an expunged UID or server omitted identity.
+    // Bind the stamp to the current namespace so moves and UID changes remain retryable.
+    for uid in attempted {
+        tx.execute(
+            "INSERT INTO stable_identity_attempts(message_id,folder_id,uid,uidvalidity)
+             SELECT id,folder_id,uid,?3 FROM messages WHERE folder_id=?1 AND uid=?2
+             ON CONFLICT(message_id) DO UPDATE SET folder_id=excluded.folder_id,
+                 uid=excluded.uid,uidvalidity=excluded.uidvalidity",
+            rusqlite::params![folder_id, uid, validity],
+        )?;
+    }
+    if let Some(cursor) = attempted.iter().min() {
+        tx.execute("UPDATE folders SET stable_identity_cursor=?2,stable_identity_uidvalidity=?3 WHERE id=?1",
+            rusqlite::params![folder_id, cursor, validity])?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod stable_identity_backfill_tests {
+    use super::*;
+
+    #[test]
+    fn expunged_uid_batches_advance_persist_wrap_and_reset_on_new_validity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stable-backfill.sqlite");
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        crate::db::migrations::run(&mut conn).unwrap();
+        crate::db::testutil::seed_account(&conn);
+        conn.execute("UPDATE folders SET uidvalidity=9 WHERE id=1", [])
+            .unwrap();
+        for uid in 1..=300 {
+            conn.execute(
+                "INSERT INTO messages(account_id,folder_id,uid,message_id,date)
+                VALUES(1,1,?1,'mid-'||?1,1000)",
+                [uid],
+            )
+            .unwrap();
+        }
+        let first = stable_uid_batch(&conn, 1, Some(9)).unwrap();
+        assert_eq!(first.len(), 256);
+        assert_eq!((first[0], *first.last().unwrap()), (300, 45));
+        // The entire attempted batch is expunged: no identities returned.
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[], &first).unwrap();
+        drop(conn);
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        let second = stable_uid_batch(&conn, 1, Some(9)).unwrap();
+        assert_eq!(second.len(), 44);
+        assert_eq!((second[0], *second.last().unwrap()), (44, 1));
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[], &second).unwrap();
+        for _ in 0..3 {
+            assert!(stable_uid_batch(&conn, 1, Some(9)).unwrap().is_empty());
+        }
+        drop(conn);
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        assert!(stable_uid_batch(&conn, 1, Some(9)).unwrap().is_empty());
+        // A server generation change invalidates the cursor; stale responses
+        // must neither persist identities nor advance the new generation.
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[], &first).unwrap();
+        conn.execute("UPDATE folders SET uidvalidity=10 WHERE id=1", [])
+            .unwrap();
+        assert_eq!(stable_uid_batch(&conn, 1, Some(10)).unwrap(), first);
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[], &second).unwrap();
+        let stamp: (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT stable_identity_cursor,stable_identity_uidvalidity FROM folders WHERE id=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stamp, (Some(45), Some(9)));
+        persist_known_uid_identities(&mut conn, 1, Some(10), &[], &first).unwrap();
+        assert_eq!(stable_uid_batch(&conn, 1, Some(10)).unwrap(), second);
+    }
+
+    #[test]
+    fn nonyielding_identity_attempt_retries_only_after_uid_or_namespace_changes() {
+        let mut conn = crate::db::testutil::conn();
+        crate::db::testutil::seed_account(&conn);
+        let (_, id) = crate::db::testutil::seed_message(&conn, "missing@test", "subject", false);
+        conn.execute("UPDATE folders SET uidvalidity=9 WHERE id=1", [])
+            .unwrap();
+        conn.execute("UPDATE messages SET uid=7 WHERE id=?1", [id])
+            .unwrap();
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[], &[7]).unwrap();
+        for _ in 0..3 {
+            assert!(stable_uid_batch(&conn, 1, Some(9)).unwrap().is_empty());
+        }
+        conn.execute("UPDATE messages SET uid=8 WHERE id=?1", [id])
+            .unwrap();
+        assert_eq!(stable_uid_batch(&conn, 1, Some(9)).unwrap(), vec![8]);
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[], &[8]).unwrap();
+        assert!(stable_uid_batch(&conn, 1, Some(9)).unwrap().is_empty());
+        conn.execute("UPDATE folders SET uidvalidity=10 WHERE id=1", [])
+            .unwrap();
+        assert_eq!(stable_uid_batch(&conn, 1, Some(10)).unwrap(), vec![8]);
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[], &[8]).unwrap();
+        assert_eq!(stable_uid_batch(&conn, 1, Some(10)).unwrap(), vec![8]);
+        persist_known_uid_identities(&mut conn, 1, Some(10), &[], &[8]).unwrap();
+        assert!(stable_uid_batch(&conn, 1, Some(10)).unwrap().is_empty());
+        let other = repo::folders::upsert(&conn, 1, "Other", None, None).unwrap();
+        conn.execute("UPDATE folders SET uidvalidity=10 WHERE id=?1", [other])
+            .unwrap();
+        conn.execute(
+            "UPDATE messages SET folder_id=?1 WHERE id=?2",
+            rusqlite::params![other, id],
+        )
+        .unwrap();
+        assert_eq!(stable_uid_batch(&conn, other, Some(10)).unwrap(), vec![8]);
+        persist_known_uid_identities(&mut conn, other, Some(10), &[], &[8]).unwrap();
+        assert!(stable_uid_batch(&conn, other, Some(10)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn known_uid_backfill_preserves_identity_and_checks_uidvalidity() {
+        let mut conn = crate::db::testutil::conn();
+        crate::db::testutil::seed_account(&conn);
+        let (_, id) = crate::db::testutil::seed_message(&conn, "a@test", "subject", false);
+        conn.execute("UPDATE folders SET uidvalidity=9 WHERE id=1", [])
+            .unwrap();
+        conn.execute("UPDATE messages SET uid=7 WHERE id=?1", [id])
+            .unwrap();
+        let identity = crate::provider::FetchedIdentity {
+            uid: 7,
+            gm_msgid: Some("123".into()),
+            header_fetched: false,
+            message_id: None,
+            internal_date: None,
+            size: None,
+        };
+        persist_known_uid_identities(&mut conn, 1, Some(10), std::slice::from_ref(&identity), &[])
+            .unwrap();
+        assert!(
+            repo::messages::get_row(&conn, id)
+                .unwrap()
+                .unwrap()
+                .gm_msgid
+                .is_none()
+        );
+        persist_known_uid_identities(&mut conn, 1, Some(9), std::slice::from_ref(&identity), &[])
+            .unwrap();
+        assert_eq!(
+            repo::messages::get_row(&conn, id)
+                .unwrap()
+                .unwrap()
+                .gm_msgid
+                .as_deref(),
+            Some("123")
+        );
+        let changed = crate::provider::FetchedIdentity {
+            gm_msgid: Some("456".into()),
+            ..identity
+        };
+        persist_known_uid_identities(&mut conn, 1, Some(9), &[changed], &[]).unwrap();
+        assert_eq!(
+            repo::messages::get_row(&conn, id)
+                .unwrap()
+                .unwrap()
+                .gm_msgid
+                .as_deref(),
+            Some("123")
+        );
+    }
 }
 
 /// Dedicated header-backfill connection. Performs first-time folder backfills
@@ -1392,7 +2211,9 @@ async fn retry_one_header_failure(
     }
     let s = session.as_mut().unwrap();
     imap::select(s, &folder.imap_name).await?;
-    let headers = imap::fetch_headers(s, &uid.to_string()).await?;
+    let caps = s.server_caps().await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    let headers = imap::fetch_headers(s, &uid.to_string(), behavior.as_ref()).await?;
     if headers.is_empty() {
         let error = "server no longer returns this UID";
         let retry_at = now_ms() + 5 * 60_000;
@@ -1448,7 +2269,9 @@ async fn initial_backfill(
         if set.is_empty() {
             continue;
         }
-        let headers = imap::fetch_headers(session, &set).await?;
+        let caps = session.server_caps().await?;
+        let behavior = crate::provider::behavior_for(config.provider, &caps);
+        let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
         done += headers.len() as u64;
         let (thread_ids, _) = store_headers(ctx, config, folder, headers, None).await?;
         if !thread_ids.is_empty() {
@@ -1509,7 +2332,9 @@ async fn extend_history(
     let hi = (cursor - 1).max(1) as u32;
     let lo = hi.saturating_sub(HISTORY_CHUNK - 1).max(1);
     let set = format!("{lo}:{hi}");
-    let headers = imap::fetch_headers(session, &set).await?;
+    let caps = session.server_caps().await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
     let (thread_ids, _) = store_headers(ctx, config, folder, headers, None).await?;
     if !thread_ids.is_empty() {
         ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
@@ -1595,9 +2420,60 @@ mod notification_policy_tests {
     }
 }
 
-/// Insert fetched headers. Returns `(all, fresh)` thread ids for the newly
-/// inserted messages: `all` for list refreshes, `fresh` only for threads that
-/// gained an unread, incoming, recent message (chime/notification-worthy).
+/// Canonical Trash relinks here only with a stable provider key. Header-only
+/// identities require the complete listing in `trash::reconcile` to establish
+/// remote uniqueness, including duplicates spread across fetch chunks.
+///
+/// A UID-less local row may adopt a fetched UID only when it is the sole row
+/// with that Message-ID in the account, already belongs to this very folder
+/// (e.g. our own APPENDed sent copy), and has no active move out of it.
+/// Anything else (cross-folder copy, duplicates, queued mutation) keeps the
+/// row untouched so a hidden/moved message is never resurrected by a stray copy.
+fn relink_allowed(
+    conn: &rusqlite::Connection,
+    account_id: i64,
+    message_id: &str,
+    existing: &repo::messages::MessageRow,
+    folder_id: i64,
+) -> Result<bool> {
+    if existing.uid.is_some() || existing.folder_id != Some(folder_id) {
+        return Ok(false);
+    }
+    if repo::folders::is_permanent_delete_trash(conn, folder_id)?
+        && !crate::provider::remote_key(existing).is_some_and(|key| key.is_stable())
+    {
+        return Ok(false);
+    }
+    let matches: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages WHERE account_id = ?1 AND message_id = ?2",
+        rusqlite::params![account_id, message_id],
+        |row| row.get(0),
+    )?;
+    if matches != 1 {
+        return Ok(false);
+    }
+    let active: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pending_actions
+         WHERE message_id = ?1 AND state IN ('pending','inflight')",
+        rusqlite::params![existing.id],
+        |row| row.get(0),
+    )?;
+    Ok(active == 0 && !repo::actions::has_active_move_from(conn, existing.id, folder_id)?)
+}
+
+fn persist_remote_identity(
+    conn: &rusqlite::Connection,
+    id: i64,
+    header: &FetchedHeader,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE messages SET gm_msgid=COALESCE(gm_msgid,?2) WHERE id=?1",
+        rusqlite::params![id, header.gm_msgid],
+    )?;
+    Ok(())
+}
+
+/// Returns all updated and fresh notification-eligible thread IDs.
 async fn store_headers(
     ctx: &SyncCtx,
     config: &AccountConfig,
@@ -1634,6 +2510,7 @@ async fn store_headers(
                 if let Some(existing) =
                     repo::messages::by_folder_uid(&tx, folder_id, fh.uid as i64)?
                 {
+                    persist_remote_identity(&tx, existing.id, fh)?;
                     if let Some(plan) = fh.mime_plan.as_ref() {
                         repo::messages::set_mime_plan(&tx, existing.id, Some(plan))?;
                         repo::messages::upsert_planned_attachments(
@@ -1670,29 +2547,42 @@ async fn store_headers(
 
                 // Dedupe: same Message-ID already stored (e.g. our own sent
                 // message APPENDed earlier, or Gmail label duplication).
-                if let Some(mid) = &parsed.message_id {
-                    if let Some(existing) = repo::messages::by_message_id(&tx, account_id, mid)? {
-                        if existing.uid.is_none()
-                            && !repo::actions::has_active_move_from(&tx, existing.id, folder_id)?
-                        {
-                            repo::messages::set_uid_and_folder(
-                                &tx,
-                                existing.id,
-                                folder_id,
-                                Some(fh.uid as i64),
-                            )?;
-                        }
-                        if let Some(plan) = fh.mime_plan.as_ref() {
-                            repo::messages::set_mime_plan(&tx, existing.id, Some(plan))?;
-                            repo::messages::upsert_planned_attachments(
-                                &tx,
-                                existing.id,
-                                &plan.attachments,
-                            )?;
-                        }
-                        let _ = repo::sync_failures::clear_header(&tx, folder_id, fh.uid as i64);
-                        continue;
+                if let Some(mid) = &parsed.message_id
+                    && let Some(existing) = repo::messages::by_message_id(&tx, account_id, mid)?
+                {
+                    let identity_matches =
+                        crate::provider::remote_key(&existing).is_some_and(|key| {
+                            imap::FetchedIdentity {
+                                uid: fh.uid,
+                                gm_msgid: fh.gm_msgid.clone(),
+                                header_fetched: true,
+                                message_id: parsed.message_id.clone(),
+                                internal_date: fh.internal_date_ms.map(|ms| ms.div_euclid(1000)),
+                                size: fh.size.map(i64::from),
+                            }
+                            .matches(&key)
+                        });
+                    if identity_matches
+                        && relink_allowed(&tx, account_id, mid, &existing, folder_id)?
+                    {
+                        repo::messages::set_uid_and_folder(
+                            &tx,
+                            existing.id,
+                            folder_id,
+                            Some(fh.uid as i64),
+                        )?;
+                        persist_remote_identity(&tx, existing.id, fh)?;
                     }
+                    if let Some(plan) = fh.mime_plan.as_ref() {
+                        repo::messages::set_mime_plan(&tx, existing.id, Some(plan))?;
+                        repo::messages::upsert_planned_attachments(
+                            &tx,
+                            existing.id,
+                            &plan.attachments,
+                        )?;
+                    }
+                    let _ = repo::sync_failures::clear_header(&tx, folder_id, fh.uid as i64);
+                    continue;
                 }
 
                 let date_ms = sane_date_ms(parsed.date_ms, fh.internal_date_ms, now_ms());
@@ -1713,7 +2603,7 @@ async fn store_headers(
                     folder_id,
                     uid: Some(fh.uid as i64),
                     message_id: parsed.message_id.clone(),
-                    gm_msgid: None,
+                    gm_msgid: fh.gm_msgid.clone(),
                     gm_thrid: None,
                     subject: parsed.subject.clone(),
                     from: parsed.from.clone(),
@@ -1947,7 +2837,7 @@ fn current_body_row(
 ) -> Result<Option<CurrentBodyRow>> {
     Ok(conn
         .query_row(
-            "SELECT folder_id, uid, body_state FROM messages WHERE id = ?1",
+            "SELECT folder_id, uid, body_state FROM visible_messages WHERE id = ?1",
             rusqlite::params![message_id],
             |row| {
                 Ok(CurrentBodyRow {
@@ -2058,6 +2948,246 @@ fn selective_fetch_batches(
 mod content_batch_tests {
     use super::*;
 
+    async fn context() -> (tempfile::TempDir, SyncCtx) {
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::for_tests(root.path());
+        let db = Db::open(&paths.db_file()).unwrap();
+        db.write(|conn| {
+            crate::db::testutil::seed_account(conn);
+            conn.execute("UPDATE folders SET uidvalidity = 10 WHERE id = 1", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        (
+            root,
+            SyncCtx {
+                db,
+                bus: EventBus::new(),
+                paths: Arc::new(paths),
+                tokens: TokenProvider::new(),
+            },
+        )
+    }
+
+    fn attachment_only_item(message_id: i64, uid: u32) -> PlannedBodyFetch {
+        PlannedBodyFetch {
+            message_id,
+            uid,
+            plan: crate::mime::MimePlan {
+                version: crate::mime::MIME_PLAN_VERSION,
+                text_sections: Vec::new(),
+                attachments: vec![crate::mime::PlannedAttachment {
+                    section: "1".into(),
+                    filename: Some("synthetic.png".into()),
+                    mime_type: "image/png".into(),
+                    size: 100,
+                    content_id: None,
+                    is_inline: false,
+                    transfer_encoding: "base64".into(),
+                }],
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn attachment_only_body_completes_without_downloading_attachment_bytes() {
+        let (_root, ctx) = context().await;
+        let id = ctx
+            .db
+            .write(|conn| {
+                Ok(crate::db::testutil::seed_message(
+                    conn,
+                    "synthetic@test.dev",
+                    "synthetic",
+                    false,
+                )
+                .1)
+            })
+            .await
+            .unwrap();
+        let row = ctx
+            .db
+            .read(move |conn| Ok(repo::messages::get_row(conn, id)?.unwrap()))
+            .await
+            .unwrap();
+        let content =
+            attachment_only_content(attachment_only_item(id, row.uid.unwrap() as u32)).unwrap();
+        assert!(content.text_body.is_none());
+        assert_eq!(
+            persist_selective_batch(
+                &ctx,
+                1,
+                SelectivePersistGuard::Background { folder_id: 1 },
+                vec![content]
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        ctx.db.read(move |conn| {
+            assert_eq!(repo::messages::get_row(conn, id)?.unwrap().body_state, "cached");
+            let cached_attachment_bytes: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM attachments WHERE message_id = ?1 AND file_path IS NOT NULL", [id], |row| row.get(0),
+            )?;
+            assert_eq!(cached_attachment_bytes, 0);
+            assert!(background_body_candidates(conn, 1)?.is_empty());
+            Ok(())
+        }).await.unwrap();
+        let mut unknown = attachment_only_item(id, 1);
+        unknown.plan.attachments.clear();
+        assert!(attachment_only_content(unknown).is_err());
+        // Explicit-open decoding still uses the existing raw-MIME fallback.
+        assert!(decode_selective_content(attachment_only_item(id, 1), Vec::new()).is_err());
+    }
+
+    #[tokio::test]
+    async fn malformed_content_keeps_durable_capped_retry_without_no_progress_error() {
+        let (_root, ctx) = context().await;
+        let id = ctx
+            .db
+            .write(|conn| {
+                Ok(crate::db::testutil::seed_message(
+                    conn,
+                    "synthetic@test.dev",
+                    "synthetic",
+                    false,
+                )
+                .1)
+            })
+            .await
+            .unwrap();
+        let first_attempt_at = now_ms();
+        record_content_failure_details(
+            &ctx,
+            vec![(id, "invalid Base64 selective MIME section".into())],
+        )
+        .await
+        .unwrap();
+        ctx.db.read(move |conn| {
+            let (attempts, retry_at): (i64, i64) = conn.query_row(
+                "SELECT attempts, next_retry_at FROM sync_failures WHERE stage = 'content' AND message_id = ?1", [id], |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            assert_eq!(attempts, 1);
+            assert!(retry_at >= first_attempt_at + 60_000);
+            assert!(background_body_candidates(conn, 1)?.is_empty());
+            assert_eq!(repo::messages::get_row(conn, id)?.unwrap().body_state, "none");
+            Ok(())
+        }).await.unwrap();
+        ctx.db.write(move |conn| {
+            conn.execute("UPDATE sync_failures SET attempts = 472, next_retry_at = 0 WHERE message_id = ?1", [id])?;
+            Ok(())
+        }).await.unwrap();
+        let repeated_at = now_ms();
+        record_content_failure_details(
+            &ctx,
+            vec![(id, "invalid Base64 selective MIME section".into())],
+        )
+        .await
+        .unwrap();
+        ctx.db.read(move |conn| {
+            let (attempts, retry_at): (i64, i64) = conn.query_row(
+                "SELECT attempts, next_retry_at FROM sync_failures WHERE stage = 'content' AND message_id = ?1", [id], |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            assert_eq!(attempts, 473);
+            assert!(retry_at >= repeated_at + 3_600_000);
+            assert!(retry_at <= now_ms() + 3_600_000);
+            Ok(())
+        }).await.unwrap();
+        let config = ctx
+            .db
+            .read(|conn| Ok(repo::accounts::get_config(conn, 1)?.unwrap()))
+            .await
+            .unwrap();
+        // All work is durably deferred: drain completes without connecting or
+        // fabricating a generic no-progress protocol failure.
+        drain_missing_bodies(&ctx, &config).await.unwrap();
+        assert_eq!(content_retry_delay_ms(0), 60_000);
+        assert_eq!(content_retry_delay_ms(1), 120_000);
+        assert_eq!(content_retry_delay_ms(i64::MAX), 3_600_000);
+    }
+
+    #[tokio::test]
+    async fn moved_and_tombstoned_rows_are_not_fetched_cached_or_failed() {
+        let (_root, ctx) = context().await;
+        let (moved, deleted) = ctx
+            .db
+            .write(|conn| {
+                let moved =
+                    crate::db::testutil::seed_message(conn, "synthetic@test.dev", "moved", false).1;
+                let (thread_id, deleted) =
+                    crate::db::testutil::seed_message(conn, "synthetic@test.dev", "deleted", false);
+                let uid = repo::messages::get_row(conn, deleted)?
+                    .unwrap()
+                    .uid
+                    .unwrap();
+                conn.execute("UPDATE messages SET uid = NULL WHERE id = ?1", [moved])?;
+                repo::actions::enqueue(
+                    conn,
+                    1,
+                    crate::trash::KIND,
+                    Some(deleted),
+                    Some(thread_id),
+                    &serde_json::json!({"accountId":1,"folderId":1,"uid":uid,"uidValidity":10}),
+                    None,
+                )?;
+                Ok((moved, deleted))
+            })
+            .await
+            .unwrap();
+        ctx.db
+            .read(move |conn| {
+                assert!(background_body_candidates(conn, 1)?.is_empty());
+                assert!(current_body_row(conn, deleted)?.is_none());
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let chunk = BodyChunk {
+            folder_id: 1,
+            folder_name: "INBOX".into(),
+            uid_validity: Some(10),
+            items: vec![(moved, 1), (deleted, 2)],
+        };
+        record_background_content_failures(
+            &ctx,
+            &chunk,
+            vec![
+                (moved, "stale missing UID".into()),
+                (deleted, "deleted while fetching".into()),
+            ],
+        )
+        .await
+        .unwrap();
+        let contents = vec![
+            attachment_only_content(attachment_only_item(moved, 1)).unwrap(),
+            attachment_only_content(attachment_only_item(deleted, 2)).unwrap(),
+        ];
+        assert_eq!(
+            persist_selective_batch(
+                &ctx,
+                1,
+                SelectivePersistGuard::Background { folder_id: 1 },
+                contents
+            )
+            .await
+            .unwrap(),
+            0
+        );
+        ctx.db
+            .read(|conn| {
+                let failures: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM sync_failures WHERE stage = 'content'",
+                    [],
+                    |row| row.get(0),
+                )?;
+                assert_eq!(failures, 0);
+                Ok(())
+            })
+            .await
+            .unwrap();
+    }
+
     fn item(id: i64, size: u32) -> PlannedBodyFetch {
         PlannedBodyFetch {
             message_id: id,
@@ -2075,6 +3205,28 @@ mod content_batch_tests {
                 attachments: Vec::new(),
             },
         }
+    }
+
+    #[test]
+    fn settled_zero_cache_chunk_visits_stale_and_deferred_rows_once() {
+        let visited = std::sync::Mutex::new(std::collections::HashSet::new());
+        let chunk = BodyChunk {
+            folder_id: 1,
+            folder_name: "INBOX".into(),
+            uid_validity: Some(10),
+            items: vec![(1, 41), (2, 42), (3, 43)],
+        };
+        // No cached bodies are required to settle a chunk: a vanished UID,
+        // deferred decode error, and priority-owned row all leave this drain.
+        mark_body_chunk_visited(&visited, &chunk);
+        let next_scan = [(1, 41), (2, 42), (3, 43), (4, 44)];
+        let next: Vec<_> = next_scan
+            .into_iter()
+            .filter(|(id, _)| !visited.lock().unwrap().contains(id))
+            .collect();
+        assert_eq!(next, [(4, 44)]);
+        mark_body_chunk_visited(&visited, &chunk);
+        assert_eq!(visited.lock().unwrap().len(), 3);
     }
 
     #[test]
@@ -2183,20 +3335,33 @@ async fn run_backfill_pool(
     }
 }
 
+fn background_body_candidates(
+    conn: &rusqlite::Connection,
+    folder_id: i64,
+) -> Result<Vec<(i64, i64)>> {
+    let mut candidates = Vec::new();
+    for (message_id, uid) in repo::messages::missing_bodies(conn, folder_id, i64::MAX)? {
+        if current_body_row(conn, message_id)?
+            .is_some_and(|row| is_current_background_row(&row, folder_id, uid))
+        {
+            candidates.push((message_id, uid));
+        }
+    }
+    Ok(candidates)
+}
+
 /// Fetch ALL missing bodies for the account, inbox first, by handing
 /// folder-grouped chunks to a shared queue serviced by up to BODY_POOL_CONNS
-/// parallel connections. Loops until a scan finds nothing left; bails out when
-/// a full round makes no forward progress (server unreachable, or every
-/// remaining UID vanished) so it can't spin - the next nudge or backstop tick
-/// retries.
+/// parallel connections. Every settled chunk is visited once per drain, even
+/// when concurrent moves/readers make it stale. Real transport failures abort;
+/// content failures keep durable retry deadlines instead of spinning.
 async fn drain_missing_bodies(ctx: &SyncCtx, config: &AccountConfig) -> Result<()> {
     use std::collections::{HashSet, VecDeque};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     let account_id = config.id;
-    // Message ids attempted this drain whose bodies the server didn't return
-    // (expunged mid-sync): skipped for the rest of the drain so it terminates;
-    // expunge reconciliation removes the rows.
+    // Every settled chunk is visited once: successful, deferred, and stale rows
+    // all count as handled work even when no bodies were cached.
     let skip: Arc<std::sync::Mutex<HashSet<i64>>> = Arc::default();
     let mut did_work = false;
 
@@ -2220,7 +3385,7 @@ async fn drain_missing_bodies(ctx: &SyncCtx, config: &AccountConfig) -> Result<(
             let fid = folder.id;
             let missing = ctx
                 .db
-                .read(move |conn| repo::messages::missing_bodies(conn, fid, i64::MAX))
+                .read(move |conn| background_body_candidates(conn, fid))
                 .await?;
             let missing: Vec<(i64, i64)> = {
                 let skip = skip.lock().unwrap();
@@ -2296,13 +3461,26 @@ async fn drain_missing_bodies(ctx: &SyncCtx, config: &AccountConfig) -> Result<(
         if let Some(error) = worker_error {
             return Err(error);
         }
-        if persisted.load(Ordering::Relaxed) == 0 {
-            return Err(CoreError::Imap(
-                "body backfill made no progress; will retry".into(),
-            ));
-        }
-        // Re-scan: headers that landed while this round ran get picked up too.
+        tracing::debug!(
+            account_id,
+            cached = persisted.load(Ordering::Relaxed),
+            visited = skip.lock().unwrap().len(),
+            "body backfill: round settled; rescanning eligible work"
+        );
+        // Deferred content failures retain their durable retry deadlines. Stale
+        // locations and priority-owned rows are visited too, not false network
+        // failures. Re-scan picks up new headers without retrying this round.
     }
+}
+
+fn mark_body_chunk_visited(
+    visited: &std::sync::Mutex<std::collections::HashSet<i64>>,
+    chunk: &BodyChunk,
+) {
+    visited
+        .lock()
+        .unwrap()
+        .extend(chunk.items.iter().map(|(id, _)| *id));
 }
 
 /// One backfill-pool connection: pops chunks off the shared queue until it is
@@ -2330,6 +3508,7 @@ async fn body_worker(
         let chunk_started = std::time::Instant::now();
         match fetch_body_chunk(&ctx, &config, &mut session, &mut selected, &chunk, &skip).await {
             Ok(n) => {
+                mark_body_chunk_visited(&skip, &chunk);
                 persisted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
                 if n > 0 {
                     let elapsed = chunk_started.elapsed();
@@ -2474,12 +3653,14 @@ async fn fetch_body_chunk(
         .map_err(classify_body_chunk_error)?;
     let mut groups: std::collections::BTreeMap<Vec<String>, Vec<PlannedBodyFetch>> =
         std::collections::BTreeMap::new();
+    let mut metadata_only = Vec::new();
     for item in planned {
         if item.plan.text_sections.is_empty() {
-            failures.push((
-                item.message_id,
-                "BODYSTRUCTURE contains no readable text sections".into(),
-            ));
+            let message_id = item.message_id;
+            match attachment_only_content(item) {
+                Ok(content) => metadata_only.push(content),
+                Err(error) => failures.push((message_id, error.to_string())),
+            }
             continue;
         }
         groups
@@ -2491,11 +3672,22 @@ async fn fetch_body_chunk(
     for (message_id, _) in &failures {
         skip.lock().unwrap().insert(*message_id);
     }
-    record_content_failure_details(ctx, failures)
+    record_background_content_failures(ctx, chunk, failures)
         .await
         .map_err(BodyChunkError::Fatal)?;
 
-    let mut cached = 0u64;
+    // Attachment-only messages have no readable section to download; persist
+    // their already-discovered metadata without fetching attachment bytes.
+    let mut cached = persist_selective_batch(
+        ctx,
+        config.id,
+        SelectivePersistGuard::Background {
+            folder_id: chunk.folder_id,
+        },
+        metadata_only,
+    )
+    .await
+    .map_err(BodyChunkError::Fatal)?;
     for (sections, items) in groups {
         let max_bytes = match config.provider {
             Provider::Microsoft => MAX_MICROSOFT_BATCH_BYTES,
@@ -2549,7 +3741,7 @@ async fn fetch_body_chunk(
             for (message_id, _) in &batch_failures {
                 skip.lock().unwrap().insert(*message_id);
             }
-            record_content_failure_details(ctx, batch_failures)
+            record_background_content_failures(ctx, chunk, batch_failures)
                 .await
                 .map_err(BodyChunkError::Fatal)?;
             cached += persist_selective_batch(
@@ -2769,24 +3961,82 @@ async fn record_content_failure(ctx: &SyncCtx, message_id: i64, error: &CoreErro
     let _ = record_content_failure_details(ctx, vec![(message_id, error.to_string())]).await;
 }
 
+fn content_retry_delay_ms(previous_attempts: i64) -> i64 {
+    (60_000_i64 * (1_i64 << previous_attempts.clamp(0, 6))).min(3_600_000)
+}
+
+async fn record_background_content_failures(
+    ctx: &SyncCtx,
+    chunk: &BodyChunk,
+    failures: Vec<(i64, String)>,
+) -> Result<()> {
+    record_content_failures_for_location(
+        ctx,
+        failures,
+        Some((chunk.folder_id, chunk.items.iter().copied().collect())),
+    )
+    .await
+}
+
 async fn record_content_failure_details(ctx: &SyncCtx, failures: Vec<(i64, String)>) -> Result<()> {
+    record_content_failures_for_location(ctx, failures, None).await
+}
+
+async fn record_content_failures_for_location(
+    ctx: &SyncCtx,
+    failures: Vec<(i64, String)>,
+    expected: Option<(i64, std::collections::HashMap<i64, i64>)>,
+) -> Result<()> {
     if failures.is_empty() {
         return Ok(());
     }
-    let retry_at = now_ms() + 60_000;
     ctx.db
         .write(move |conn| {
             let tx = conn.transaction()?;
             for (message_id, detail) in failures {
-                if current_body_row(&tx, message_id)?.is_none() {
+                let Some(current) = current_body_row(&tx, message_id)? else {
+                    continue;
+                };
+                if let Some((folder_id, identities)) = &expected {
+                    if !identities.get(&message_id).is_some_and(|uid| is_current_background_row(&current, *folder_id, *uid)) {
+                        continue;
+                    }
+                }
+                if current.body_state == "cached" || current.folder_id.is_none() || current.uid.is_none() {
                     continue;
                 }
-                repo::sync_failures::record_content(&tx, message_id, Some(retry_at), &detail)?;
+                let attempts: i64 = tx.query_row(
+                    "SELECT COALESCE((SELECT attempts FROM sync_failures WHERE stage = 'content' AND message_id = ?1), 0)",
+                    [message_id], |row| row.get(0),
+                )?;
+                let delay = content_retry_delay_ms(attempts);
+                repo::sync_failures::record_content(&tx, message_id, Some(now_ms() + delay), &detail)?;
+                tracing::warn!(message_id, attempts = attempts + 1, retry_after_ms = delay, error = %detail, "body content deferred");
             }
             tx.commit()?;
             Ok(())
         })
         .await
+}
+
+fn attachment_only_content(item: PlannedBodyFetch) -> Result<DecodedSelectiveContent> {
+    if item.plan.version != crate::mime::MIME_PLAN_VERSION
+        || !item.plan.text_sections.is_empty()
+        || item.plan.attachments.is_empty()
+    {
+        return Err(CoreError::Mime(
+            "BODYSTRUCTURE contains no readable text sections".into(),
+        ));
+    }
+    Ok(DecodedSelectiveContent {
+        message_id: item.message_id,
+        uid: item.uid,
+        plan: item.plan,
+        text_body: None,
+        html_body: None,
+        calendar_parts: Vec::new(),
+        snippet: String::new(),
+    })
 }
 
 fn decode_selective_content(

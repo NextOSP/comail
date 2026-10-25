@@ -45,6 +45,9 @@ pub struct MessageRow {
     pub folder_id: Option<i64>,
     pub uid: Option<i64>,
     pub message_id: Option<String>,
+    pub gm_msgid: Option<String>,
+    pub internal_date: Option<i64>,
+    pub size: Option<i64>,
     pub subject: String,
     pub is_read: bool,
     pub is_starred: bool,
@@ -60,6 +63,9 @@ fn row_basic(row: &Row) -> rusqlite::Result<MessageRow> {
         folder_id: row.get("folder_id")?,
         uid: row.get("uid")?,
         message_id: row.get("message_id")?,
+        gm_msgid: row.get("gm_msgid")?,
+        internal_date: row.get("internal_date")?,
+        size: row.get("size")?,
         subject: row.get("subject")?,
         is_read: row.get::<_, i64>("is_read")? != 0,
         is_starred: row.get::<_, i64>("is_starred")? != 0,
@@ -889,7 +895,7 @@ fn attachment_meta_from_row(
 pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
     let sql = format!(
         "SELECT m.*, b.text_body, b.html_body, {SEND_STATE_COLS}
-         FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
+         FROM visible_messages m LEFT JOIN message_bodies b ON b.message_id = m.id
          WHERE m.id = ?1"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -911,7 +917,7 @@ pub fn detail(conn: &Connection, id: i64) -> Result<MessageDetail> {
 pub fn list_for_thread(conn: &Connection, thread_id: i64) -> Result<Vec<MessageDetail>> {
     let sql = format!(
         "SELECT m.*, b.text_body, b.html_body, {SEND_STATE_COLS}
-         FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
+         FROM visible_messages m LEFT JOIN message_bodies b ON b.message_id = m.id
          WHERE m.thread_id = ?1
          ORDER BY m.date ASC"
     );
@@ -925,7 +931,7 @@ pub fn list_for_thread(conn: &Connection, thread_id: i64) -> Result<Vec<MessageD
 
     let mut astmt = conn.prepare(
         "SELECT a.message_id, a.id, a.filename, a.mime_type, a.size, a.is_inline
-         FROM attachments a JOIN messages m ON m.id = a.message_id
+         FROM attachments a JOIN visible_messages m ON m.id = a.message_id
          WHERE m.thread_id = ?1",
     )?;
     let mut by_message: std::collections::HashMap<i64, Vec<AttachmentMeta>> =
@@ -976,7 +982,7 @@ pub fn list_sent_bodies(
     };
     let sql = format!(
         "SELECT m.id, m.subject, b.text_body
-         FROM messages m
+         FROM visible_messages m
          JOIN folders f ON f.id = m.folder_id AND f.role = 'sent'
          JOIN message_bodies b ON b.message_id = m.id
          WHERE m.is_draft = 0 AND b.text_body IS NOT NULL AND b.text_body <> '' {acc_sql}
@@ -1001,7 +1007,7 @@ pub fn list_sent_bodies(
 pub fn recent_received(conn: &Connection, since: i64, limit: i64) -> Result<Vec<MessageDetail>> {
     let sql = format!(
         "SELECT m.*, b.text_body, b.html_body, {SEND_STATE_COLS}
-         FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
+         FROM visible_messages m LEFT JOIN message_bodies b ON b.message_id = m.id
          WHERE m.date >= ?1 AND m.is_outgoing = 0 AND m.is_draft = 0
          ORDER BY m.date DESC LIMIT ?2"
     );
@@ -1022,7 +1028,7 @@ pub fn filter_sent(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>> {
         .collect::<Vec<_>>()
         .join(",");
     let sql = format!(
-        "SELECT m.id FROM messages m
+        "SELECT m.id FROM visible_messages m
          JOIN folders f ON f.id = m.folder_id AND f.role = 'sent'
          WHERE m.is_draft = 0 AND m.id IN ({id_list})"
     );

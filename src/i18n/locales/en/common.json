@@ -1,4 +1,15 @@
 {
+  "permanentDelete": {
+    "title": "Delete permanently",
+    "confirm_one": "Permanently delete the messages in Trash from {{count}} selected conversation? Messages outside Trash will be kept. This cannot be undone.",
+    "confirm_other": "Permanently delete the messages in Trash from {{count}} selected conversations? Messages outside Trash will be kept. This cannot be undone.",
+    "pending": "Permanently deleting…",
+    "done": "Permanently deleted.",
+    "offline": "You’re offline. Permanent deletion will resume when you reconnect.",
+    "paused": "Permanent deletion is paused. Sign in to your account again to continue.",
+    "failed": "Permanent deletion could not complete: {{detail}}",
+    "retrying": "Permanent deletion is being retried: {{detail}}. The messages stay hidden until the server confirms."
+  },
   "dateGroup": {
     "today": "Today",
     "yesterday": "Yesterday",

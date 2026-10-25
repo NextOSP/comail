@@ -776,6 +776,8 @@
     "allowDraftsHint": "Créer, modifier et supprimer des brouillons à relire. N'envoie jamais.",
     "allowActions": "Organiser le courrier",
     "allowActionsHint": "Archiver, supprimer, libeller, déplacer, reporter, suivre et marquer comme lu.",
+    "allowPermanentDelete": "Supprimer définitivement",
+    "allowPermanentDeleteHint": "Supprime de façon irréversible les messages déjà dans la Corbeille. Nécessite « Organiser le courrier ». À n'activer que si vous faites confiance à l'application.",
     "allowSend": "Envoyer du courrier",
     "allowSendHint": "Envoyer des brouillons. Le délai d'annulation s'applique toujours. N'activez que si vous faites confiance à l'app.",
     "clientsIntro": "Un clic pour les apps installées ; pour les autres, une configuration à coller.",

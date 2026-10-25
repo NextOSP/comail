@@ -171,6 +171,7 @@ interface UiState {
   snoozeTarget: number[] | null;
   /** thread ids the move-to-folder popover targets; null = closed */
   moveTarget: number[] | null;
+  permanentDeleteTarget: number[] | null;
   /** thread ids the label popover targets; null = closed */
   labelTarget: number[] | null;
   /** right-click context menu on a thread row; null = closed */
@@ -305,6 +306,7 @@ export const useUi = create<UiState>((set, get) => ({
   editingDraftId: null,
   snoozeTarget: null,
   moveTarget: null,
+  permanentDeleteTarget: null,
   labelTarget: null,
   contextMenu: null,
   calendarDrawer: null,

@@ -426,6 +426,7 @@ export const ALL_COMMANDS: Command[] = [
   {
     id: "trash",
     titleKey: "commands:title.moveToTrash",
+    title: () => useUi.getState().view === "trash" ? i18n.t("common:permanentDelete.title") : i18n.t("commands:title.moveToTrash"),
     aliases: ["delete", "remove"],
     keys: ["#"],
     section: "Triage",

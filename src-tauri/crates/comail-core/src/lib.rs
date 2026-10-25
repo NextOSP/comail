@@ -22,12 +22,14 @@ pub mod models;
 pub mod oauth;
 pub mod otp;
 pub mod preview;
+pub mod provider;
 pub mod queue;
 pub mod route;
 pub mod scheduler;
 pub mod search;
 pub mod smtp;
 pub mod sync;
+pub mod trash;
 pub mod unsubscribe;
 
 use crate::accounts::credentials::{self, Slot};
@@ -243,6 +245,14 @@ impl Core {
     pub async fn start(paths: Paths) -> Result<Core> {
         paths.ensure()?;
         let db = Db::open(&paths.db_file())?;
+        // Consume migration/discovery repair evidence before actors can GC action history.
+        let repaired = db.write(trash::repair_legacy_trash_intent).await?;
+        if repaired > 0 {
+            tracing::info!(
+                messages = repaired,
+                "restored legacy Trash intent into canonical Trash"
+            );
+        }
         let bus = EventBus::new();
         let core = Core {
             db,
@@ -1312,6 +1322,9 @@ impl Core {
     // ---------- actions ----------
 
     pub async fn perform_action(&self, args: PerformActionArgs) -> Result<ActionResult> {
+        if args.kind == ActionKind::DeletePermanently {
+            return self.delete_trash_threads(args.thread_ids).await;
+        }
         let mut action_ids: Vec<i64> = Vec::new();
         let mut touched_accounts: Vec<i64> = Vec::new();
 
@@ -1673,11 +1686,7 @@ impl Core {
                     // resurrect the local row in Drafts.
                     let trash = repo::folders::by_role(conn, row.0, roles::TRASH)?
                         .ok_or_else(|| CoreError::NotFound("no trash folder".into()))?;
-                    let payload = serde_json::json!({
-                        "srcFolderId": row.2,
-                        "srcUid": row.3,
-                        "targetFolderId": trash.id,
-                    });
+                    let payload = move_identity_payload(conn, draft_id, row.2, row.3, trash.id)?;
                     repo::messages::set_uid_and_folder(conn, draft_id, trash.id, None)?;
                     repo::actions::enqueue(
                         conn,
@@ -5454,6 +5463,47 @@ mod trash_regression_tests {
     }
 
     #[test]
+    fn move_and_undo_capture_remote_identity_before_optimistic_changes() {
+        let mut c = testutil::conn();
+        testutil::seed_account(&c);
+        c.execute_batch(
+            "UPDATE folders SET uidvalidity=41 WHERE id=1;
+            INSERT INTO folders(id,account_id,imap_name,role,uidvalidity)
+            VALUES (2,1,'Trash','trash',42);",
+        )
+        .unwrap();
+        let (tid, mid) = testutil::seed_message(&c, "sender@test.dev", "identity", false);
+        c.execute(
+            "UPDATE messages SET uid=11,message_id='move@test.invalid' WHERE id=?1",
+            [mid],
+        )
+        .unwrap();
+        let ids = apply_thread_action(&mut c, tid, ActionKind::Trash, None).unwrap();
+        let action = repo::actions::get(&c, ids[0].0).unwrap().unwrap();
+        assert_eq!(action.payload["srcUid"], 11);
+        assert_eq!(action.payload["srcUidValidity"], 41);
+        assert_eq!(action.payload["srcMessageId"], "move@test.invalid");
+        assert_eq!(repo::messages::get_row(&c, mid).unwrap().unwrap().uid, None);
+        c.execute(
+            "UPDATE pending_actions SET state='done' WHERE id=?1",
+            [action.id],
+        )
+        .unwrap();
+        revert_action(&mut c, &action).unwrap();
+        let inverse_id = c
+            .query_row("SELECT MAX(id) FROM pending_actions", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap();
+        let inverse = repo::actions::get(&c, inverse_id).unwrap().unwrap();
+        assert_eq!(inverse.payload["srcFolderId"], 2);
+        assert!(inverse.payload["srcUid"].is_null());
+        assert_eq!(inverse.payload["srcUidValidity"], 42);
+        assert_eq!(inverse.payload["srcMessageId"], "move@test.invalid");
+        assert_eq!(inverse.payload["targetFolderId"], 1);
+    }
+
+    #[test]
     fn spam_moves_custom_folder_mail_too() {
         let mut c = testutil::conn();
         testutil::seed_account(&c);
@@ -5480,6 +5530,69 @@ mod trash_regression_tests {
     }
 }
 
+fn action_identity_payload(
+    conn: &rusqlite::Connection,
+    message_id: i64,
+) -> Result<serde_json::Value> {
+    let row = repo::messages::get_row(conn, message_id)?
+        .ok_or_else(|| CoreError::NotFound("message for action".into()))?;
+    let validity = row
+        .folder_id
+        .map(|id| repo::folders::get(conn, id))
+        .transpose()?
+        .flatten()
+        .and_then(|folder| folder.uidvalidity);
+    Ok(serde_json::json!({ "folderId": row.folder_id, "uid": row.uid, "uidValidity": validity }))
+}
+
+fn move_identity_payload(
+    conn: &rusqlite::Connection,
+    message_id: i64,
+    source_folder: Option<i64>,
+    source_uid: Option<i64>,
+    target_folder: i64,
+) -> Result<serde_json::Value> {
+    let message = repo::messages::get_row(conn, message_id)?
+        .ok_or_else(|| CoreError::NotFound("message for move".into()))?;
+    let validity = source_folder
+        .map(|id| repo::folders::get(conn, id))
+        .transpose()?
+        .flatten()
+        .and_then(|folder| folder.uidvalidity);
+    Ok(serde_json::json!({
+        "srcFolderId": source_folder,
+        "srcUid": source_uid,
+        "srcUidValidity": validity,
+        "srcMessageId": message.message_id,
+        "targetFolderId": target_folder,
+    }))
+}
+
+/// Shared optimistic move path for user actions and legacy Trash-intent repair.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn enqueue_move(
+    tx: &rusqlite::Transaction,
+    account_id: i64,
+    thread_id: i64,
+    msg_id: i64,
+    src_folder: Option<i64>,
+    src_uid: Option<i64>,
+    target: i64,
+    kind_str: &str,
+) -> Result<i64> {
+    let payload = move_identity_payload(tx, msg_id, src_folder, src_uid, target)?;
+    repo::messages::set_uid_and_folder(tx, msg_id, target, None)?;
+    repo::actions::enqueue(
+        tx,
+        account_id,
+        kind_str,
+        Some(msg_id),
+        Some(thread_id),
+        &payload,
+        None,
+    )
+}
+
 /// Optimistic local mutation + enqueue, in one transaction.
 /// Returns (action_id, account_id) pairs.
 fn apply_thread_action(
@@ -5488,6 +5601,7 @@ fn apply_thread_action(
     kind: ActionKind,
     params: Option<&ActionParams>,
 ) -> Result<Vec<(i64, i64)>> {
+    trash::ensure_not_deleting(conn, thread_id)?;
     let tx = conn.transaction()?;
     let mut out: Vec<(i64, i64)> = Vec::new();
 
@@ -5525,42 +5639,18 @@ fn apply_thread_action(
         Ok(repo::folders::by_role(tx, account_id, role)?.map(|f| f.id))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn enqueue_move(
-        tx: &rusqlite::Transaction,
-        account_id: i64,
-        thread_id: i64,
-        msg_id: i64,
-        src_folder: Option<i64>,
-        src_uid: Option<i64>,
-        target: i64,
-        kind_str: &str,
-    ) -> Result<i64> {
-        let payload = serde_json::json!({
-            "srcFolderId": src_folder,
-            "srcUid": src_uid,
-            "targetFolderId": target,
-        });
-        repo::messages::set_uid_and_folder(tx, msg_id, target, None)?;
-        let aid = repo::actions::enqueue(
-            tx,
-            account_id,
-            kind_str,
-            Some(msg_id),
-            Some(thread_id),
-            &payload,
-            None,
-        )?;
-        Ok(aid)
-    }
-
     match kind {
+        ActionKind::DeletePermanently => {
+            return Err(CoreError::DeleteRejected(
+                "Use the atomic deletion batch".into(),
+            ));
+        }
         ActionKind::MarkRead | ActionKind::MarkUnread => {
             let target_read = kind == ActionKind::MarkRead;
             for (id, _f, _u, is_read, _s, _role) in &msgs {
                 if *is_read != target_read {
                     repo::messages::set_read(&tx, *id, target_read)?;
-                    let payload = serde_json::json!({});
+                    let payload = action_identity_payload(&tx, *id)?;
                     let aid = repo::actions::enqueue(
                         &tx,
                         account_id,
@@ -5589,7 +5679,7 @@ fn apply_thread_action(
                     "star",
                     Some(*id),
                     Some(thread_id),
-                    &serde_json::json!({}),
+                    &action_identity_payload(&tx, *id)?,
                     None,
                 )?;
                 out.push((aid, account_id));
@@ -5605,7 +5695,7 @@ fn apply_thread_action(
                         "unstar",
                         Some(*id),
                         Some(thread_id),
-                        &serde_json::json!({}),
+                        &action_identity_payload(&tx, *id)?,
                         None,
                     )?;
                     out.push((aid, account_id));
@@ -5717,8 +5807,10 @@ fn apply_thread_action(
             let label = repo::labels::get(&tx, label_id)?
                 .ok_or_else(|| CoreError::NotFound(format!("label {label_id}")))?;
             let add = kind == ActionKind::AddLabel;
-            let payload = serde_json::json!({ "labelId": label_id, "keyword": label.keyword });
             for (id, ..) in &msgs {
+                let mut payload = action_identity_payload(&tx, *id)?;
+                payload["labelId"] = serde_json::json!(label_id);
+                payload["keyword"] = serde_json::json!(label.keyword);
                 if add {
                     repo::labels::add_to_message(&tx, *id, label_id)?;
                 } else {
@@ -5758,6 +5850,9 @@ fn revert_action(
     conn: &mut rusqlite::Connection,
     action: &repo::actions::PendingAction,
 ) -> Result<Option<i64>> {
+    if let Some(tid) = action.thread_id {
+        trash::ensure_not_deleting(conn, tid)?;
+    }
     let was_pending = repo::actions::try_cancel(conn, action.id)?;
     let tx = conn.transaction()?;
     let thread_id = action.thread_id;
@@ -5778,7 +5873,7 @@ fn revert_action(
                         inverse,
                         Some(mid),
                         thread_id,
-                        &serde_json::json!({}),
+                        &action_identity_payload(&tx, mid)?,
                         None,
                     )?;
                 }
@@ -5799,7 +5894,7 @@ fn revert_action(
                         inverse,
                         Some(mid),
                         thread_id,
-                        &serde_json::json!({}),
+                        &action_identity_payload(&tx, mid)?,
                         None,
                     )?;
                 }
@@ -5817,11 +5912,7 @@ fn revert_action(
                     } else {
                         // Remote moved; move it back.
                         repo::messages::set_uid_and_folder(&tx, mid, src, None)?;
-                        let payload = serde_json::json!({
-                            "srcFolderId": cur_folder,
-                            "srcUid": serde_json::Value::Null,
-                            "targetFolderId": src,
-                        });
+                        let payload = move_identity_payload(&tx, mid, cur_folder, None, src)?;
                         repo::actions::enqueue(
                             &tx,
                             action.account_id,
@@ -5849,13 +5940,16 @@ fn revert_action(
                 if !was_pending {
                     // Remote already got the keyword; enqueue the inverse push.
                     let inverse = if was_add { "remove_label" } else { "add_label" };
+                    let mut payload = action_identity_payload(&tx, mid)?;
+                    payload["labelId"] = action.payload["labelId"].clone();
+                    payload["keyword"] = action.payload["keyword"].clone();
                     repo::actions::enqueue(
                         &tx,
                         action.account_id,
                         inverse,
                         Some(mid),
                         thread_id,
-                        &action.payload,
+                        &payload,
                         None,
                     )?;
                 }

@@ -35,12 +35,12 @@ fn parse_id_list(csv: &str) -> Vec<i64> {
 const SUMMARY_SELECT: &str = "
     SELECT t.id, t.account_id, a.email AS account_email,
            (SELECT COALESCE(m.local_subject_prefix, '') || m.subject
-              FROM messages m WHERE m.thread_id = t.id ORDER BY m.date DESC LIMIT 1) AS subject,
+              FROM visible_messages m WHERE m.thread_id = t.id ORDER BY m.date DESC LIMIT 1) AS subject,
            t.snippet, t.participants_json, t.last_message_at, t.message_count,
            t.unread_count, t.starred_count, t.attachment_count,
            s.wake_at AS snoozed_until,
            (SELECT group_concat(DISTINCT ml.label_id) FROM message_labels ml
-              JOIN messages ml_m ON ml_m.id = ml.message_id
+              JOIN visible_messages ml_m ON ml_m.id = ml.message_id
               WHERE ml_m.thread_id = t.id) AS label_ids
     FROM threads t
     JOIN accounts a ON a.id = t.account_id
@@ -123,8 +123,10 @@ pub fn by_subject(
         .optional()?)
 }
 
-/// Recompute a thread's denormalized aggregates from its messages.
+/// Recompute a thread's denormalized aggregates from its visible messages.
 pub fn recompute(conn: &Connection, thread_id: i64) -> Result<()> {
+    // Pending deletes retain physical rows for retries and failure recovery.
+    // Only physically empty threads may be removed (including their snoozes).
     let exists: Option<i64> = conn
         .query_row(
             "SELECT COUNT(*) FROM messages WHERE thread_id = ?1",
@@ -138,18 +140,18 @@ pub fn recompute(conn: &Connection, thread_id: i64) -> Result<()> {
     }
     conn.execute(
         "UPDATE threads SET
-            last_message_at = (SELECT COALESCE(MAX(date),0) FROM messages WHERE thread_id = ?1),
-            message_count   = (SELECT COUNT(*) FROM messages WHERE thread_id = ?1),
-            unread_count    = (SELECT COUNT(*) FROM messages WHERE thread_id = ?1 AND is_read = 0 AND is_draft = 0),
-            starred_count   = (SELECT COUNT(*) FROM messages WHERE thread_id = ?1 AND is_starred = 1),
-            attachment_count= (SELECT COUNT(*) FROM messages WHERE thread_id = ?1 AND has_attachments = 1),
-            snippet         = COALESCE((SELECT snippet FROM messages WHERE thread_id = ?1 ORDER BY date DESC LIMIT 1), '')
+            last_message_at = (SELECT COALESCE(MAX(date),0) FROM visible_messages WHERE thread_id = ?1),
+            message_count   = (SELECT COUNT(*) FROM visible_messages WHERE thread_id = ?1),
+            unread_count    = (SELECT COUNT(*) FROM visible_messages WHERE thread_id = ?1 AND is_read = 0 AND is_draft = 0),
+            starred_count   = (SELECT COUNT(*) FROM visible_messages WHERE thread_id = ?1 AND is_starred = 1),
+            attachment_count= (SELECT COUNT(*) FROM visible_messages WHERE thread_id = ?1 AND has_attachments = 1),
+            snippet         = COALESCE((SELECT snippet FROM visible_messages WHERE thread_id = ?1 ORDER BY date DESC LIMIT 1), '')
          WHERE id = ?1",
         params![thread_id],
     )?;
     // Participants: distinct senders, most recent first, capped at 5.
     let mut stmt = conn.prepare(
-        "SELECT from_name, from_addr, MAX(date) FROM messages
+        "SELECT from_name, from_addr, MAX(date) FROM visible_messages
          WHERE thread_id = ?1 AND from_addr IS NOT NULL
          GROUP BY LOWER(from_addr) ORDER BY MAX(date) DESC LIMIT 5",
     )?;
@@ -169,7 +171,9 @@ pub fn recompute(conn: &Connection, thread_id: i64) -> Result<()> {
 }
 
 pub fn get_summary(conn: &Connection, thread_id: i64) -> Result<Option<ThreadSummary>> {
-    let sql = format!("{SUMMARY_SELECT} WHERE t.id = ?1");
+    let sql = format!(
+        "{SUMMARY_SELECT} WHERE t.id = ?1 AND EXISTS (SELECT 1 FROM visible_messages m WHERE m.thread_id = t.id)"
+    );
     let mut stmt = conn.prepare_cached(&sql)?;
     Ok(stmt
         .query_row(params![thread_id], summary_from_row)
@@ -185,7 +189,9 @@ pub fn get_summaries(conn: &Connection, thread_ids: &[i64]) -> Result<Vec<Thread
         return Ok(Vec::new());
     }
     let placeholders = thread_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!("{SUMMARY_SELECT} WHERE t.id IN ({placeholders})");
+    let sql = format!(
+        "{SUMMARY_SELECT} WHERE t.id IN ({placeholders}) AND EXISTS (SELECT 1 FROM visible_messages m WHERE m.thread_id = t.id)"
+    );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
         .query_map(
@@ -226,11 +232,11 @@ pub struct ListArgs {
 /// Important/Other follows the newest incoming message. Requiring every
 /// historical message to have the same type made mixed threads match neither
 /// tab (for example, an automated notification followed by a human reply).
-const HUMAN_BUCKET: &str = "(SELECT m.is_automated FROM messages m
+const HUMAN_BUCKET: &str = "(SELECT m.is_automated FROM visible_messages m
         WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
         ORDER BY m.date DESC, m.id DESC LIMIT 1) = 0";
 
-const AUTO_BUCKET: &str = "(SELECT m.is_automated FROM messages m
+const AUTO_BUCKET: &str = "(SELECT m.is_automated FROM visible_messages m
         WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
         ORDER BY m.date DESC, m.id DESC LIMIT 1) = 1";
 
@@ -238,23 +244,24 @@ const AUTO_BUCKET: &str = "(SELECT m.is_automated FROM messages m
 /// not a thread-wide exclusion: mixed conversations can still contain live mail.
 /// LEFT JOIN preserves local-only drafts and user folders without special roles.
 pub(super) const HAS_VISIBLE_MAIL: &str = "EXISTS (
-    SELECT 1 FROM messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
+    SELECT 1 FROM visible_messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
     WHERE vm.thread_id = t.id AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))";
 
 /// A star on discarded mail must not qualify a live, unstarred reply.
 pub(super) const HAS_VISIBLE_STAR: &str = "EXISTS (
-    SELECT 1 FROM messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
+    SELECT 1 FROM visible_messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
     WHERE vm.thread_id = t.id AND vm.is_starred = 1
       AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))";
 
 pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
-    let mut where_clauses: Vec<String> = Vec::new();
+    let mut where_clauses: Vec<String> =
+        vec!["EXISTS (SELECT 1 FROM visible_messages m WHERE m.thread_id = t.id)".into()];
     let mut bind: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
     let role_exists = |role: &str, bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>| {
         bind.push(Box::new(role.to_string()));
         format!(
-            "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+            "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id = m.folder_id
                      WHERE m.thread_id = t.id AND f.role = ?{})",
             bind.len()
         )
@@ -275,7 +282,7 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         View::Drafts => {
             bind.push(Box::new(roles::DRAFTS.to_string()));
             where_clauses.push(format!(
-                "EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+                "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id = m.folder_id
                          WHERE m.thread_id = t.id AND m.is_draft = 1 AND f.role = ?{})",
                 bind.len()
             ));
@@ -328,7 +335,7 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         Some(TabFilter::ManualLabel(id)) => {
             bind.push(Box::new(*id));
             where_clauses.push(format!(
-                "EXISTS (SELECT 1 FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+                "EXISTS (SELECT 1 FROM message_labels ml JOIN visible_messages m ON m.id = ml.message_id
                          WHERE m.thread_id = t.id AND ml.label_id = ?{})",
                 bind.len()
             ));
@@ -338,7 +345,7 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
     if let Some(folder_id) = args.folder_id {
         bind.push(Box::new(folder_id));
         where_clauses.push(format!(
-            "EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.folder_id = ?{})",
+            "EXISTS (SELECT 1 FROM visible_messages m WHERE m.thread_id = t.id AND m.folder_id = ?{})",
             bind.len()
         ));
     }
@@ -396,6 +403,10 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         next_cursor,
     })
 }
+
+#[cfg(test)]
+#[path = "threads_visibility_tests.rs"]
+mod visibility_tests;
 
 #[cfg(test)]
 mod tests {
