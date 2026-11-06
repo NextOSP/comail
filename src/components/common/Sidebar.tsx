@@ -5,7 +5,6 @@ import { buildFolderTree, type FolderNode } from "../../lib/folders";
 import { inboxTabOrder } from "../../lib/splitOrder";
 import {
   splitCount,
-  useAccounts,
   useFolders,
   useLabels,
   useSettings,
@@ -14,6 +13,7 @@ import {
 } from "../../queries/hooks";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi, type PanelKind } from "../../stores/ui";
 import { Icon } from "../ui/Icon";
+import { AccountSwitcher, ACCOUNT_MENU_ATTR } from "./AccountSwitcher";
 
 const VIEWS: View[] = ["starred", "snoozed", "drafts", "sent", "done", "spam", "trash", "all"];
 
@@ -39,7 +39,6 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
   const selectFolder = useUi((s) => s.selectFolder);
   const openThread = useUi((s) => s.openThread);
   const set = useUi((s) => s.set);
-  const { data: accounts } = useAccounts();
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
   const { data: settings } = useSettings();
@@ -76,6 +75,8 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
       (list.find((b) => b.dataset.active === "true") ?? list[1] ?? list[0])?.focus();
     });
     const onKey = (e: KeyboardEvent) => {
+      // The account menu owns the keyboard (including Esc) until it closes.
+      if (document.querySelector(`[${ACCOUNT_MENU_ATTR}]`)) return;
       const activeElement = document.activeElement as HTMLElement | null;
       if (docked && !asideRef.current?.contains(activeElement)) return;
       // The header remains interactive while the drawer is open.
@@ -160,7 +161,6 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
     close();
   };
 
-  const active = accounts?.find((a) => a.id === accountFilter);
   const inboxActive = view === "inbox";
 
   return (
@@ -176,17 +176,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
         }}
       >
         <div data-sidebar-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-3">
-        <button
-          data-nav
-          className={`mx-2 mb-2 flex w-[calc(100%-16px)] items-center gap-2.5 rounded-control px-2 py-1.5 text-left hover:bg-bg2 ${NAV_FOCUS}`}
-          title={t("common:sidebar.accountSettings")}
-          onClick={() => set({ panel: "settings", settingsTab: "accounts", sidebarOpen: false })}
-        >
-          <span className="min-w-0 flex-1 truncate text-base font-medium text-ink">
-            {active ? active.email : t("common:topbar.allAccounts")}
-          </span>
-          <Icon name="chevronRight" size={12} className="shrink-0 text-ink-faint" />
-        </button>
+        <AccountSwitcher onSelected={() => { if (!docked) close(); }} />
 
         {/* Inbox + splits */}
         <SideRow

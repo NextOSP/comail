@@ -71,8 +71,10 @@ export const IconButton = forwardRef<
     size?: "xs" | "sm" | "md";
     active?: boolean;
     filled?: boolean;
+    /** Swaps the glyph for the shared spinner and disables the button. */
+    busy?: boolean;
   }
->(function IconButton({ icon, label, size = "sm", active = false, filled = false, className = "", type = "button", ...rest }, ref) {
+>(function IconButton({ icon, label, size = "sm", active = false, filled = false, busy = false, className = "", type = "button", disabled, ...rest }, ref) {
   const box = size === "xs" ? "size-5" : size === "sm" ? "size-7" : "size-8";
   const glyph = size === "xs" ? 13 : 15;
   return (
@@ -80,13 +82,15 @@ export const IconButton = forwardRef<
       ref={ref}
       type={type}
       aria-label={label}
+      aria-busy={busy || undefined}
+      disabled={disabled || busy}
       title={rest.title ?? label}
       className={`inline-flex ${box} shrink-0 items-center justify-center rounded-control transition-colors duration-100 hover:bg-bg2 hover:text-ink disabled:pointer-events-none disabled:opacity-50 ${
         active ? "text-ink" : "text-ink-muted"
       } ${className}`}
       {...rest}
     >
-      <Icon name={icon} size={glyph} filled={filled} />
+      {busy ? <Spinner /> : <Icon name={icon} size={glyph} filled={filled} />}
     </button>
   );
 });

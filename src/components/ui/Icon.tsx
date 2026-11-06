@@ -8,6 +8,7 @@ const PATHS = {
   chevronLeft: <path d="M15 18l-6-6 6-6" />,
   chevronRight: <path d="M9 18l6-6-6-6" />,
   chevronDown: <path d="M6 9l6 6 6-6" />,
+  refresh: <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" />,
   chevronUp: <path d="M18 15l-6-6-6 6" />,
   plus: <path d="M12 5v14M5 12h14" />,
   close: <path d="M18 6L6 18M6 6l12 12" />,

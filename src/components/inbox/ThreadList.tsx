@@ -76,7 +76,7 @@ export function ThreadList({
   const selectedThreadId = useUi((s) => s.selectedThreadId);
   const selectedIndex = useUi((s) => s.selectedIndex);
   const selection = useUi((s) => s.selection);
-  const ui = useUi((s) => s.set);
+  const clearSelection = useUi((s) => s.clearSelection);
   const selectThread = useUi((s) => s.selectThread);
   const openThread = useUi((s) => s.openThread);
   const toggleSelect = useUi((s) => s.toggleSelect);
@@ -461,7 +461,7 @@ export function ThreadList({
       )}
 
       {selection.length > 0 && (
-        <BulkBar count={selection.length} withPane={!avatarUi} onClear={() => ui({ selection: [] })} />
+        <BulkBar count={selection.length} withPane={!avatarUi} onClear={clearSelection} />
       )}
     </div>
   );
@@ -523,7 +523,7 @@ function BulkBar({
         <BulkButton label={t(inTrash ? "common:permanentDelete.title" : "common:action.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
         <BulkButton label={t("common:action.spam")} kbd="!" onClick={run((c) => c.act("spam"))} />
         <Button variant="ghost" size="sm" className="ml-1 px-2" onClick={onClear}>
-          {t("common:action.clear")}
+          {t("common:action.deselect")}
         </Button>
       </div>
     </div>

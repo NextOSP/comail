@@ -61,6 +61,27 @@ function expectMailState(selectAnchorId: number | null = null) {
   });
 }
 
+describe("account switch commands", () => {
+  it("reset the stale folder and selection when the scope changes", async () => {
+    queryClient.setQueryData(["accounts"], [{ id: 3 }, { id: 8 }]);
+    await runCommand("account-filter-1");
+    expect(useUi.getState()).toMatchObject({
+      accountFilter: 3,
+      folderFilter: null,
+      selection: [],
+      selectAnchorId: null,
+      selectedThreadId: null,
+      selectedIndex: 0,
+    });
+  });
+
+  it("leave the folder alone when re-picking the current account", async () => {
+    queryClient.setQueryData(["accounts"], [{ id: 3 }, { id: 7 }]);
+    await runCommand("account-filter-2");
+    expect(useUi.getState()).toMatchObject({ accountFilter: 7, folderFilter: 91, selection: [103, 104] });
+  });
+});
+
 describe("calendar to mail command navigation", () => {
   it.each([false, true])("cached label command (isAuto=%s) returns to mail", async (isAuto) => {
     // Slot zero must follow label position, not query-cache insertion order.

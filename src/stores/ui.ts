@@ -267,6 +267,12 @@ interface UiState {
   /** Shift+Arrow: move the cursor by delta and select the range from the anchor. */
   extendSelection: (delta: 1 | -1) => void;
   clearSelection: () => void;
+  /**
+   * Switch the account scope. A real change drops state that belonged to the
+   * old scope (a folder id is per-account; the row cursor/selection index into
+   * a different list); re-picking the current scope is a no-op.
+   */
+  setAccountFilter: (accountId: number | null) => void;
   openComposer: (c: ComposerState) => void;
   closeComposer: () => void;
   pushToast: (t: Omit<ToastItem, "id" | "expiresAt"> & { durationMs?: number }) => number;
@@ -459,6 +465,20 @@ export const useUi = create<UiState>((set, get) => ({
   },
 
   clearSelection: () => set({ selection: [], selectAnchorId: null }),
+
+  setAccountFilter: (accountId) =>
+    set((state) =>
+      state.accountFilter === accountId
+        ? state
+        : {
+            accountFilter: accountId,
+            folderFilter: null,
+            selection: [],
+            selectAnchorId: null,
+            selectedIndex: 0,
+            selectedThreadId: null,
+          },
+    ),
 
   openComposer: (c) =>
     set({
