@@ -1,7 +1,7 @@
 {
   "name": "comail",
   "private": true,
-  "version": "0.2.40",
+  "version": "0.2.41",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.11.0",
   "type": "module",
@@ -39,7 +39,7 @@
     "@vitejs/plugin-react": "^6.0.4",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.8.3",
-    "vite": "^8.1.5",
+    "vite": "^8.1.6",
     "vitest": "^4.1.12"
   }
 }

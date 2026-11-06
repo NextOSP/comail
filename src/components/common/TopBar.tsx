@@ -1,3 +1,4 @@
+import { toggleSidebar } from "../../lib/sidebar";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { folderLeafName } from "../../lib/folders";
@@ -47,7 +48,7 @@ export function TopBar() {
         label={t("common:topbar.menu")}
         title={`${t("common:topbar.menu")} (${displayShortcut("mod+\\")})`}
         className="-ml-1"
-        onClick={() => set({ sidebarOpen: true })}
+        onClick={toggleSidebar}
       />
       {!avatarUi && (
         <span className="co-wordmark text-sm font-semibold tracking-[0.14em] text-ink-faint uppercase">

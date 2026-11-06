@@ -153,6 +153,7 @@ interface UiState {
   helpOpen: boolean;
   /** left mailbox drawer (hamburger) */
   sidebarOpen: boolean;
+  sidebarPinned: boolean;
   /** which management panel is open (settings / snippets / splits) */
   panel: PanelKind | null;
   /** which Settings tab to open with (consumed once by SettingsPanel) */
@@ -170,6 +171,7 @@ interface UiState {
   snoozeTarget: number[] | null;
   /** thread ids the move-to-folder popover targets; null = closed */
   moveTarget: number[] | null;
+  permanentDeleteTarget: number[] | null;
   /** thread ids the label popover targets; null = closed */
   labelTarget: number[] | null;
   /** right-click context menu on a thread row; null = closed */
@@ -293,6 +295,7 @@ export const useUi = create<UiState>((set, get) => ({
   paletteOpen: false,
   helpOpen: false,
   sidebarOpen: false,
+  sidebarPinned: loadCalendarPref<unknown>("comail.sidebarPinned", false) === true,
   panel: null,
   settingsTab: null,
   splitTarget: null,
@@ -303,6 +306,7 @@ export const useUi = create<UiState>((set, get) => ({
   editingDraftId: null,
   snoozeTarget: null,
   moveTarget: null,
+  permanentDeleteTarget: null,
   labelTarget: null,
   contextMenu: null,
   calendarDrawer: null,
@@ -335,6 +339,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   setView: (view, splitId) =>
     set({
+      calendarScreen: false,
       view,
       splitId: splitId !== undefined ? splitId : view === "inbox" ? SPLIT_IMPORTANT : null,
       labelFilter: null,
@@ -350,6 +355,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   selectLabel: (labelId) =>
     set({
+      calendarScreen: false,
       labelFilter: labelId,
       folderFilter: null,
       // Label filter spans folders, so show it against the "all" view.
@@ -366,6 +372,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   selectFolder: (folderId) =>
     set({
+      calendarScreen: false,
       folderFilter: folderId,
       labelFilter: null,
       // A folder is a concrete mailbox; show it against the unfiltered "all" list.
@@ -490,6 +497,8 @@ export const useUi = create<UiState>((set, get) => ({
 
 // Persist the calendar view prefs whenever they change.
 useUi.subscribe((s, prev) => {
+  if (s.sidebarPinned !== prev.sidebarPinned)
+    saveCalendarPref("comail.sidebarPinned", s.sidebarPinned);
   if (s.calendarSidebar !== prev.calendarSidebar)
     saveCalendarPref("comail.calendarSidebar", s.calendarSidebar);
   if (s.calendarHidden !== prev.calendarHidden)

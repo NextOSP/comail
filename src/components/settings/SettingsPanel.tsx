@@ -137,6 +137,7 @@ const DEFAULT_SETTINGS: Settings = {
   mcpAllowDrafts: true,
   mcpAllowSend: false,
   mcpAllowActions: false,
+  mcpAllowPermanentDelete: false,
   mcpInstructions: "",
   aiTierCategorize: "instant",
   groupByDate: true,

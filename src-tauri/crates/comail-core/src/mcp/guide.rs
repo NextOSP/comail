@@ -61,10 +61,11 @@ pub(super) async fn instructions(core: &Core, settings: &Settings) -> String {
         }
     };
     out.push_str(&format!(
-        "- Permissions: search and read: allowed; drafts: {}; organize (archive, label, trash...): {}; send: {}. \
+        "- Permissions: search and read: allowed; drafts: {}; organize (archive, label, trash...): {}; permanent delete: {}; send: {}. \
          If a tool you need is off, tell the user they can enable it in comail Settings > AI clients (MCP); don't look for workarounds.\n\n",
         allowed(settings.mcp_allow_drafts),
         allowed(settings.mcp_allow_actions),
+        allowed(settings.mcp_allow_actions && settings.mcp_allow_permanent_delete),
         allowed(settings.mcp_allow_send),
     ));
     out.push_str(RULES);

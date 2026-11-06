@@ -16,7 +16,40 @@ use tokio_rustls::TlsConnector;
 
 // async-imap with runtime-tokio speaks tokio's AsyncRead/AsyncWrite natively.
 pub type ImapStream = tokio_rustls::client::TlsStream<TcpStream>;
-pub type Session = async_imap::Session<ImapStream>;
+pub type ReconcileStamp = ((Option<i64>, Option<i64>, u32), std::time::Instant);
+
+pub struct Session {
+    inner: async_imap::Session<ImapStream>,
+    caps: Option<crate::provider::ServerCaps>,
+    pub reconcile_stamps: std::collections::HashMap<String, ReconcileStamp>,
+}
+impl std::ops::Deref for Session {
+    type Target = async_imap::Session<ImapStream>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl std::ops::DerefMut for Session {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+impl Session {
+    pub async fn server_caps(&mut self) -> Result<crate::provider::ServerCaps> {
+        if let Some(caps) = &self.caps {
+            return Ok(caps.clone());
+        }
+        let caps = crate::provider::ServerCaps::from_session(&mut self.inner).await?;
+        self.caps = Some(caps.clone());
+        Ok(caps)
+    }
+}
+
+mod identity;
+pub use identity::{
+    FetchedIdentity, fetch_identities, fetch_stable_identities, search_remote_identities,
+    uid_search_remote_key, verify_remote_key,
+};
 
 /// Metadata and mutation commands must never be able to wedge a sync actor.
 pub const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
@@ -236,7 +269,11 @@ async fn connect_inner(host: &str, port: u16, creds: ImapCredentials) -> Result<
         }
     };
     tracing::debug!(%host, "imap connect: authenticated");
-    Ok(session)
+    Ok(Session {
+        inner: session,
+        caps: None,
+        reconcile_stamps: Default::default(),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -312,6 +349,7 @@ pub struct FetchedFlags {
 pub struct FetchedHeader {
     pub uid: u32,
     pub flags: FetchedFlags,
+    pub gm_msgid: Option<String>,
     pub internal_date_ms: Option<i64>,
     pub size: Option<u32>,
     pub header_bytes: Vec<u8>,
@@ -342,17 +380,33 @@ fn flags_of(fetch: &async_imap::types::Fetch) -> FetchedFlags {
 const HEADER_FIELDS: &str = "BODY.PEEK[HEADER.FIELDS (MESSAGE-ID IN-REPLY-TO REFERENCES SUBJECT FROM TO CC BCC DATE LIST-ID LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST PRECEDENCE AUTO-SUBMITTED)]";
 
 /// Fetch envelope headers + flags for a UID set (e.g. "100:200" or "5,7,9").
-pub async fn fetch_headers(session: &mut Session, uid_set: &str) -> Result<Vec<FetchedHeader>> {
+pub async fn fetch_headers(
+    session: &mut Session,
+    uid_set: &str,
+    behavior: &dyn crate::provider::MailboxBehavior,
+) -> Result<Vec<FetchedHeader>> {
     with_deadline(
         "UID FETCH headers",
         METADATA_TIMEOUT,
-        fetch_headers_inner(session, uid_set),
+        fetch_headers_inner(session, uid_set, behavior),
     )
     .await
 }
 
-async fn fetch_headers_inner(session: &mut Session, uid_set: &str) -> Result<Vec<FetchedHeader>> {
-    let query = format!("(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {HEADER_FIELDS})");
+async fn fetch_headers_inner(
+    session: &mut Session,
+    uid_set: &str,
+    behavior: &dyn crate::provider::MailboxBehavior,
+) -> Result<Vec<FetchedHeader>> {
+    let items = behavior.identity_fetch_items();
+    let extra = items
+        .iter()
+        .copied()
+        .filter(|item| *item != "EMAILID")
+        .collect::<Vec<_>>()
+        .join(" ");
+    let query =
+        format!("(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {extra} {HEADER_FIELDS})");
     let mut out = Vec::new();
     {
         let mut stream = session
@@ -366,6 +420,7 @@ async fn fetch_headers_inner(session: &mut Session, uid_set: &str) -> Result<Vec
             out.push(FetchedHeader {
                 uid,
                 flags: flags_of(&fetch),
+                gm_msgid: crate::provider::gmail_id(&fetch).map(|id| id.to_string()),
                 internal_date_ms: fetch.internal_date().map(|d| d.timestamp_millis()),
                 size: fetch.size,
                 header_bytes: fetch.header().map(|h| h.to_vec()).unwrap_or_default(),
@@ -487,7 +542,7 @@ fn section_fetch_query(paths: &[(String, Vec<u32>)]) -> String {
 }
 
 fn normalized_uid_set(uids: &[u32]) -> Result<String> {
-    if uids.iter().any(|uid| *uid == 0) {
+    if uids.contains(&0) {
         return Err(CoreError::Imap("IMAP UID must be greater than zero".into()));
     }
     let mut sorted = uids.to_vec();
@@ -754,8 +809,15 @@ async fn store_flag_inner(session: &mut Session, uid: u32, flag: &str, add: bool
     Ok(())
 }
 
-/// MOVE if the server supports it, else COPY + \Deleted + EXPUNGE.
-pub async fn uid_move(session: &mut Session, uid: u32, target: &str) -> Result<()> {
+/// Move one message. Uses atomic UID MOVE (RFC 6851) when advertised. Only if
+/// MOVE is *not* advertised, falls back to UID COPY + UID STORE \Deleted +
+/// UID EXPUNGE (requires UIDPLUS; a plain EXPUNGE is never issued because it
+/// would purge unrelated \Deleted messages). Capabilities are checked before
+/// any mutation, and a MOVE failure is propagated, never retried as COPY.
+///
+/// The fallback is not crash-atomic: if it fails after COPY, the message may
+/// exist in both folders, and a retry can create a duplicate in the target.
+pub async fn uid_move(session: &mut Session, uid: u32, target: &str) -> Result<Option<u32>> {
     with_deadline(
         "UID MOVE",
         METADATA_TIMEOUT,
@@ -764,27 +826,95 @@ pub async fn uid_move(session: &mut Session, uid: u32, target: &str) -> Result<(
     .await
 }
 
-async fn uid_move_inner(session: &mut Session, uid: u32, target: &str) -> Result<()> {
-    match session.uid_mv(uid.to_string(), target).await {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            session
-                .uid_copy(uid.to_string(), target)
-                .await
-                .map_err(|e| CoreError::Imap(e.to_string()))?;
-            store_flag(session, uid, "\\Deleted", true).await?;
-            let stream = session
-                .expunge()
-                .await
-                .map_err(|e| CoreError::Imap(e.to_string()))?;
-            futures::pin_mut!(stream);
-            while let Some(item) = stream.next().await {
-                item.map_err(|e| CoreError::Imap(e.to_string()))?;
-            }
-            Ok(())
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MovePlan {
+    Move,
+    CopyDeleteExpunge,
+}
+
+fn plan_move(has_move: bool, has_uidplus: bool) -> Result<MovePlan> {
+    if has_move {
+        Ok(MovePlan::Move)
+    } else if has_uidplus {
+        Ok(MovePlan::CopyDeleteExpunge)
+    } else {
+        Err(CoreError::ActionRejected(
+            "server supports neither MOVE nor UIDPLUS; refusing unsafe move fallback".into(),
+        ))
+    }
+}
+
+trait MoveOps {
+    async fn capabilities(&mut self) -> Result<(bool, bool)>;
+    async fn mv(&mut self, uid_set: &str, target: &str) -> Result<Option<u32>>;
+    async fn copy(&mut self, uid_set: &str, target: &str) -> Result<Option<u32>>;
+    async fn mark_deleted(&mut self, uid_set: &str) -> Result<()>;
+    async fn uid_expunge(&mut self, uid_set: &str) -> Result<()>;
+}
+
+impl MoveOps for Session {
+    async fn capabilities(&mut self) -> Result<(bool, bool)> {
+        let caps = self.server_caps().await?;
+        Ok((caps.move_, caps.uidplus))
+    }
+
+    async fn mv(&mut self, uid_set: &str, target: &str) -> Result<Option<u32>> {
+        identity::copy_or_move(self, "MOVE", uid_set, target).await
+    }
+
+    async fn copy(&mut self, uid_set: &str, target: &str) -> Result<Option<u32>> {
+        identity::copy_or_move(self, "COPY", uid_set, target).await
+    }
+
+    async fn mark_deleted(&mut self, uid_set: &str) -> Result<()> {
+        let stream = self
+            .uid_store(uid_set, "+FLAGS.SILENT (\\Deleted)")
+            .await
+            .map_err(|e| CoreError::Imap(e.to_string()))?;
+        futures::pin_mut!(stream);
+        while let Some(item) = stream.next().await {
+            item.map_err(|e| CoreError::Imap(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    async fn uid_expunge(&mut self, uid_set: &str) -> Result<()> {
+        let stream = self
+            .inner
+            .uid_expunge(uid_set)
+            .await
+            .map_err(|e| CoreError::Imap(e.to_string()))?;
+        futures::pin_mut!(stream);
+        while let Some(item) = stream.next().await {
+            item.map_err(|e| CoreError::Imap(e.to_string()))?;
+        }
+        Ok(())
+    }
+}
+
+async fn uid_move_inner(session: &mut Session, uid: u32, target: &str) -> Result<Option<u32>> {
+    uid_move_with(session, uid, target).await
+}
+
+async fn uid_move_with<O: MoveOps>(ops: &mut O, uid: u32, target: &str) -> Result<Option<u32>> {
+    if uid == 0 {
+        return Err(CoreError::ActionRejected("UID must be nonzero".into()));
+    }
+    let uid_set = uid.to_string();
+    let (has_move, has_uidplus) = ops.capabilities().await?;
+    match plan_move(has_move, has_uidplus)? {
+        MovePlan::Move => ops.mv(&uid_set, target).await,
+        MovePlan::CopyDeleteExpunge => {
+            let destination = ops.copy(&uid_set, target).await?;
+            ops.mark_deleted(&uid_set).await?;
+            ops.uid_expunge(&uid_set).await?;
+            Ok(destination)
         }
     }
 }
+
+#[cfg(test)]
+mod move_tests;
 
 pub async fn append(session: &mut Session, folder: &str, raw: &[u8], seen: bool) -> Result<()> {
     with_deadline(
@@ -820,14 +950,272 @@ async fn create_folder_inner(session: &mut Session, name: &str) -> Result<()> {
         .map_err(|e| CoreError::Imap(e.to_string()))
 }
 
-/// Expunge all \Deleted messages in the selected folder.
-pub async fn expunge_all(session: &mut Session) -> Result<()> {
-    with_deadline("EXPUNGE", METADATA_TIMEOUT, expunge_all_inner(session)).await
+/// A capability-checked deletion in the currently selected mailbox. The caller
+/// must validate UIDVALIDITY and persist its intent before executing it.
+pub struct PreparedUidDelete {
+    uid_set: String,
 }
 
-async fn expunge_all_inner(session: &mut Session) -> Result<()> {
+pub async fn prepare_uid_delete(session: &mut Session, uids: &[u32]) -> Result<PreparedUidDelete> {
+    let uid_set = normalized_uid_set(uids)?;
+    if uid_set.is_empty() {
+        return Err(CoreError::DeleteRejected(
+            "No UIDs selected for deletion".into(),
+        ));
+    }
+    with_deadline("CAPABILITY for deletion", METADATA_TIMEOUT, async {
+        let caps = session.server_caps().await?;
+        if !caps.uidplus {
+            return Err(CoreError::DeleteRejected(
+                "permanent delete requires UIDPLUS; no unsafe EXPUNGE fallback".into(),
+            ));
+        }
+        Ok(PreparedUidDelete { uid_set })
+    })
+    .await
+}
+
+/// Search the exact UID set, including messages already marked Deleted. This
+/// reconciles ambiguous outcomes without touching any other message.
+pub(crate) fn message_id_search_query(message_id: &str) -> Result<(String, String)> {
+    let value = message_id.trim();
+    let value = value
+        .strip_prefix('<')
+        .and_then(|v| v.strip_suffix('>'))
+        .unwrap_or(value);
+    if value.is_empty()
+        || value.len() > 998
+        || !value.is_ascii()
+        || value.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err(CoreError::ActionRejected(
+            "Invalid Message-ID for remote reconciliation".into(),
+        ));
+    }
+    let quoted = value.replace('\\', "\\\\").replace('"', "\\\"");
+    Ok((value.to_string(), format!("HEADER Message-ID \"{quoted}\"")))
+}
+
+/// A completed tagged NO/BAD leaves the session usable, so it must not tear
+/// down sync; IO, BYE/connection loss and parse errors still require reconnect.
+fn map_search_error(error: async_imap::error::Error) -> CoreError {
+    match error {
+        async_imap::error::Error::No(detail) => {
+            CoreError::ActionDeferred(format!("IMAP server refused command (NO): {detail}"))
+        }
+        async_imap::error::Error::Bad(detail) => {
+            CoreError::ActionRejected(format!("IMAP server rejected command (BAD): {detail}"))
+        }
+        other => CoreError::Imap(other.to_string()),
+    }
+}
+
+/// HEADER SEARCH is a substring match. Verify exact parsed identities before
+/// allowing a caller to use any UID for a mutation; never pick the first hit.
+pub async fn uid_search_message_id(session: &mut Session, message_id: &str) -> Result<Vec<u32>> {
+    uid_search_message_identity(session, message_id, None, None).await
+}
+
+/// Like `uid_search_message_id`, but when a cached INTERNALDATE (unix seconds)
+/// and/or RFC822.SIZE is supplied, a candidate must also match it, verified in
+/// the same FETCH as the Message-ID header.
+pub async fn uid_search_message_identity(
+    session: &mut Session,
+    message_id: &str,
+    expected_internal_date: Option<i64>,
+    expected_size: Option<i64>,
+) -> Result<Vec<u32>> {
+    let (expected, query) = message_id_search_query(message_id)?;
+    with_deadline("UID SEARCH exact Message-ID", METADATA_TIMEOUT, async {
+        let candidates = session.uid_search(query).await.map_err(map_search_error)?;
+        if candidates.is_empty() {
+            return Ok(Vec::new());
+        }
+        if candidates.len() > 100 {
+            return Err(CoreError::ActionDeferred(
+                "Too many Message-ID candidates for safe reconciliation".into(),
+            ));
+        }
+        let uid_set = normalized_uid_set(&candidates.iter().copied().collect::<Vec<_>>())?;
+        let mut stream = session
+            .uid_fetch(
+                &uid_set,
+                "(UID INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])",
+            )
+            .await
+            .map_err(map_search_error)?;
+        let mut matched = Vec::new();
+        while let Some(item) = stream.next().await {
+            let fetched = item.map_err(map_search_error)?;
+            let Some(uid) = fetched.uid.filter(|uid| candidates.contains(uid)) else {
+                continue;
+            };
+            if expected_size.is_some_and(|size| fetched.size.map(i64::from) != Some(size)) {
+                continue;
+            }
+            if expected_internal_date
+                .is_some_and(|date| fetched.internal_date().map(|d| d.timestamp()) != Some(date))
+            {
+                continue;
+            }
+            let parsed = fetched.header().map(mime::parse_header_block).transpose()?;
+            if parsed.is_some_and(|header| header.message_id.as_deref() == Some(expected.as_str()))
+            {
+                matched.push(uid);
+            }
+        }
+        matched.sort_unstable();
+        matched.dedup();
+        Ok(matched)
+    })
+    .await
+}
+
+#[cfg(test)]
+mod message_id_search_tests {
+    use super::*;
+
+    #[test]
+    fn tagged_no_bad_keep_session_but_transport_errors_reconnect() {
+        use async_imap::error::Error as E;
+        assert!(matches!(
+            map_search_error(E::No("x".into())),
+            CoreError::ActionDeferred(_)
+        ));
+        assert!(matches!(
+            map_search_error(E::Bad("x".into())),
+            CoreError::ActionRejected(_)
+        ));
+        assert!(matches!(
+            map_search_error(E::ConnectionLost),
+            CoreError::Imap(_)
+        ));
+        assert!(matches!(
+            map_search_error(E::Io(std::io::Error::other("x"))),
+            CoreError::Imap(_)
+        ));
+    }
+
+    #[test]
+    fn search_query_quotes_and_normalizes_identity_without_injection() {
+        assert_eq!(
+            message_id_search_query(" <abc@example.invalid> ").unwrap(),
+            (
+                "abc@example.invalid".into(),
+                "HEADER Message-ID \"abc@example.invalid\"".into()
+            )
+        );
+        assert_eq!(
+            message_id_search_query("a\\b\"c@example.invalid")
+                .unwrap()
+                .1,
+            "HEADER Message-ID \"a\\\\b\\\"c@example.invalid\""
+        );
+        for invalid in ["", "<>", "a\r\nUID EXPUNGE 1", "a\0b"] {
+            assert!(message_id_search_query(invalid).is_err());
+        }
+        assert!(message_id_search_query(&"a".repeat(999)).is_err());
+        assert_eq!(
+            mime::parse_header_block(b"Message-ID: <abc@example.invalid>\r\n\r\n")
+                .unwrap()
+                .message_id
+                .as_deref(),
+            Some("abc@example.invalid")
+        );
+    }
+}
+
+pub async fn uid_search_set(session: &mut Session, uids: &[u32]) -> Result<Vec<u32>> {
+    let uid_set = normalized_uid_set(uids)?;
+    if uid_set.is_empty() {
+        return Ok(Vec::new());
+    }
+    with_deadline("UID SEARCH deletion targets", METADATA_TIMEOUT, async {
+        let found = session
+            .uid_search(format!("UID {uid_set}"))
+            .await
+            .map_err(|e| CoreError::Imap(e.to_string()))?;
+        Ok(found.into_iter().collect())
+    })
+    .await
+}
+
+impl PreparedUidDelete {
+    /// A timeout requires discarding this session; success includes verifying
+    /// that all selected UIDs are absent, not merely accepting a tagged OK.
+    pub async fn execute(self, session: &mut Session) -> Result<()> {
+        with_deadline("UID DELETE", METADATA_TIMEOUT, async {
+            {
+                let stream = session
+                    .uid_store(&self.uid_set, "+FLAGS.SILENT (\\Deleted)")
+                    .await
+                    .map_err(|e| CoreError::Imap(e.to_string()))?;
+                futures::pin_mut!(stream);
+                while let Some(item) = stream.next().await {
+                    item.map_err(|e| CoreError::Imap(e.to_string()))?;
+                }
+            }
+            {
+                let stream = session
+                    .inner
+                    .uid_expunge(&self.uid_set)
+                    .await
+                    .map_err(|e| CoreError::Imap(e.to_string()))?;
+                futures::pin_mut!(stream);
+                while let Some(item) = stream.next().await {
+                    item.map_err(|e| CoreError::Imap(e.to_string()))?;
+                }
+            }
+            let remaining = session
+                .uid_search(format!("UID {}", self.uid_set))
+                .await
+                .map_err(|e| CoreError::Imap(e.to_string()))?;
+            if !remaining.is_empty() {
+                return Err(CoreError::Imap(
+                    "Deletion not confirmed: targeted UIDs still exist".into(),
+                ));
+            }
+            Ok(())
+        })
+        .await
+    }
+}
+
+/// Legacy test cleanup: expunge only the snapshot of already-Deleted UIDs.
+/// Production permanent deletion must validate Trash and message identities first.
+/// Requires UIDPLUS; never falls back to mailbox-wide EXPUNGE.
+pub async fn expunge_all(session: &mut Session) -> Result<()> {
+    with_deadline(
+        "UID EXPUNGE cleanup",
+        METADATA_TIMEOUT,
+        expunge_all_inner(session),
+    )
+    .await
+}
+
+async fn expunge_all_inner<T>(session: &mut async_imap::Session<T>) -> Result<()>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + std::fmt::Debug + Send,
+{
+    let caps = session
+        .capabilities()
+        .await
+        .map_err(|e| CoreError::Imap(e.to_string()))?;
+    if !caps.has_str("UIDPLUS") {
+        return Err(CoreError::DeleteRejected(
+            "cleanup requires UIDPLUS; no unsafe EXPUNGE fallback".into(),
+        ));
+    }
+    let deleted = session
+        .uid_search("DELETED")
+        .await
+        .map_err(|e| CoreError::Imap(e.to_string()))?;
+    let uid_set = normalized_uid_set(&deleted.into_iter().collect::<Vec<_>>())?;
+    if uid_set.is_empty() {
+        return Ok(());
+    }
     let stream = session
-        .expunge()
+        .uid_expunge(&uid_set)
         .await
         .map_err(|e| CoreError::Imap(e.to_string()))?;
     futures::pin_mut!(stream);
@@ -861,11 +1249,7 @@ pub async fn supports_idle(session: &mut Session) -> Result<bool> {
 }
 
 async fn supports_idle_inner(session: &mut Session) -> Result<bool> {
-    let caps = session
-        .capabilities()
-        .await
-        .map_err(|e| CoreError::Imap(e.to_string()))?;
-    Ok(caps.has_str("IDLE"))
+    Ok(session.server_caps().await?.idle)
 }
 
 /// Why an `idle_wait` returned. Generic over the actor's command type `C` so
@@ -893,7 +1277,12 @@ pub async fn idle_wait<C>(
 ) -> Result<(Session, IdleOutcome<C>)> {
     use async_imap::extensions::idle::IdleResponse;
 
-    let mut idle = session.idle();
+    let Session {
+        inner,
+        caps,
+        reconcile_stamps,
+    } = session;
+    let mut idle = inner.idle();
     idle.init()
         .await
         .map_err(|e| CoreError::Imap(e.to_string()))?;
@@ -928,7 +1317,14 @@ pub async fn idle_wait<C>(
         Ok(r) => r.map_err(|e| CoreError::Imap(e.to_string()))?,
         Err(_) => return Err(CoreError::Imap("IDLE DONE timed out".into())),
     };
-    Ok((session, outcome))
+    Ok((
+        Session {
+            inner: session,
+            caps,
+            reconcile_stamps,
+        },
+        outcome,
+    ))
 }
 
 /// Compress a sorted UID list into an IMAP set string ("1:5,8,10:12").

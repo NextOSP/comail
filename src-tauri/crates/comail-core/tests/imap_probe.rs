@@ -60,7 +60,9 @@ async fn probe_imap_primitives() {
         .expect("search since");
     assert_eq!(uids.len(), 2);
 
-    let headers = imap::fetch_headers(&mut s, &imap::uid_set(&uids))
+    let caps = s.server_caps().await.expect("capabilities");
+    let behavior = comail_core::provider::behavior_for(comail_core::models::Provider::Imap, &caps);
+    let headers = imap::fetch_headers(&mut s, &imap::uid_set(&uids), behavior.as_ref())
         .await
         .expect("fetch headers");
     assert_eq!(headers.len(), 2);

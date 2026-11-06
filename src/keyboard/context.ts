@@ -164,6 +164,10 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
 
   const act: CommandCtx["act"] = (kind, params, labelOverride) => {
     if (targets.length === 0) return;
+    if (kind === "delete_permanently" || (kind === "trash" && ui.view === "trash")) {
+      useUi.getState().set({ permanentDeleteTarget: [...targets] });
+      return;
+    }
     const advancing = ADVANCING.includes(kind);
     if (advancing) {
       const autoAdvance =
@@ -441,6 +445,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     if (state.calendarDayList) return state.set({ calendarDayList: null });
     if (state.snoozeTarget) return state.set({ snoozeTarget: null });
     if (state.moveTarget) return state.set({ moveTarget: null });
+    if (state.permanentDeleteTarget) return state.set({ permanentDeleteTarget: null });
     if (state.labelTarget) return state.set({ labelTarget: null });
     if (state.helpOpen) return state.set({ helpOpen: false });
     if (state.eventCreate) return state.set({ eventCreate: null });
@@ -524,6 +529,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         mcpAllowDrafts: true,
         mcpAllowSend: false,
         mcpAllowActions: false,
+        mcpAllowPermanentDelete: false,
         mcpInstructions: "",
         aiTierCategorize: "instant",
         groupByDate: true,
@@ -555,7 +561,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
     composerOpen: ui.composer != null,
     paletteOpen: ui.paletteOpen,
     panelOpen:
-      ui.panel != null || ui.addAccountOpen || ui.attachmentPreview != null,
+      ui.panel != null || ui.addAccountOpen || ui.attachmentPreview != null || ui.permanentDeleteTarget != null,
     hasTargets: targets.length > 0,
     targets,
     act,

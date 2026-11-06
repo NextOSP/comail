@@ -16,6 +16,7 @@ import { extendStartupQuiet, markSoundsReady, playSound } from "../lib/sound";
 import { normalizeSyncStatus } from "../lib/syncStatus";
 import { useUi } from "../stores/ui";
 import { queryClient } from "./client";
+import { handlePermanentDeleteState } from "./permanentDelete";
 
 let notifyPermission: boolean | null = null;
 
@@ -184,8 +185,12 @@ export function useBackendEvents() {
         void queryClient.invalidateQueries({ queryKey: ["bundles"] });
         void queryClient.invalidateQueries({ queryKey: ["thread", threadId] });
       }),
-      onEvent("action:state", ({ actionId, state, error }) => {
+      onEvent("action:state", ({ actionId, kind, state, error }) => {
         const ui = useUi.getState();
+        if (kind === "delete_permanently") {
+          handlePermanentDeleteState({ actionId, kind, state, error });
+          return;
+        }
         // Clear the send's undo state once it reaches a terminal (or paused)
         // state, so the "Sending…" badge doesn't linger after the send finished,
         // failed, or stalled waiting on re-authentication.
@@ -208,7 +213,9 @@ export function useBackendEvents() {
         if (state === "failed") {
           ui.pushToast({
             kind: "error",
-            message: error ? `Couldn't send: ${error}` : "Sending failed",
+            message: kind === "send"
+              ? (error ? `Couldn't send: ${error}` : "Sending failed")
+              : i18n.t("commands:actionFailed", { detail: error ?? i18n.t("errors:unknown") }),
           });
           void queryClient.invalidateQueries({ queryKey: ["threads"] });
           void queryClient.invalidateQueries({ queryKey: ["bundles"] });

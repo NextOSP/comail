@@ -1,4 +1,15 @@
 {
+  "permanentDelete": {
+    "title": "Eliminar permanentemente",
+    "confirm_one": "¿Eliminar permanentemente los mensajes de la Papelera de {{count}} conversación seleccionada? Los mensajes fuera de la Papelera se conservarán. No se puede deshacer.",
+    "confirm_other": "¿Eliminar permanentemente los mensajes de la Papelera de {{count}} conversaciones seleccionadas? Los mensajes fuera de la Papelera se conservarán. No se puede deshacer.",
+    "pending": "Eliminando permanentemente…",
+    "done": "Eliminado permanentemente.",
+    "offline": "Sin conexión. La eliminación permanente se reanudará cuando vuelvas a conectarte.",
+    "paused": "La eliminación permanente está en pausa. Vuelve a iniciar sesión en tu cuenta para continuar.",
+    "failed": "No se pudo completar la eliminación permanente: {{detail}}",
+    "retrying": "Se está reintentando la eliminación permanente: {{detail}}. Los mensajes siguen ocultos hasta que el servidor lo confirme."
+  },
   "dateGroup": {
     "today": "Hoy",
     "yesterday": "Ayer",

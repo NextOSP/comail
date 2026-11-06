@@ -162,7 +162,7 @@ fn append_operator_clauses(
     }
     if q.is_replied {
         where_clauses.push(
-            "EXISTS (SELECT 1 FROM messages rm WHERE rm.thread_id = m.thread_id AND rm.is_outgoing = 1)"
+            "EXISTS (SELECT 1 FROM visible_messages rm WHERE rm.thread_id = m.thread_id AND rm.is_outgoing = 1)"
                 .into(),
         );
     }
@@ -213,6 +213,7 @@ fn structured_thread_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Result
             "WITH f AS MATERIALIZED (
                 SELECT rowid AS mid, bm25(messages_fts, 4.0, 2.0, 2.0, 1.0) AS fts_rank
                 FROM messages_fts WHERE messages_fts MATCH ?1
+                  AND EXISTS (SELECT 1 FROM visible_messages vm WHERE vm.id = messages_fts.rowid)
                 ORDER BY fts_rank LIMIT 2000)",
             "JOIN f ON f.mid = m.id",
         )
@@ -238,7 +239,7 @@ fn structured_thread_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Result
     let sql = format!(
         "{cte}
          SELECT m.thread_id, MIN({rank_expr}) AS rank, MAX(m.date) AS d
-         FROM messages m {fts_join}
+         FROM visible_messages m {fts_join}
          WHERE m.thread_id IS NOT NULL {where_sql}
          GROUP BY m.thread_id
          ORDER BY rank ASC, d DESC
@@ -271,6 +272,7 @@ fn structured_message_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Resul
             "WITH f AS MATERIALIZED (
                 SELECT rowid AS mid, bm25(messages_fts, 4.0, 2.0, 2.0, 1.0) AS fts_rank
                 FROM messages_fts WHERE messages_fts MATCH ?1
+                  AND EXISTS (SELECT 1 FROM visible_messages vm WHERE vm.id = messages_fts.rowid)
                 ORDER BY fts_rank LIMIT 2000)",
             "JOIN f ON f.mid = m.id",
         )
@@ -296,7 +298,7 @@ fn structured_message_ids(conn: &Connection, q: &ParsedQuery, cap: i64) -> Resul
     let sql = format!(
         "{cte}
          SELECT m.id
-         FROM messages m {fts_join}
+         FROM visible_messages m {fts_join}
          WHERE m.thread_id IS NOT NULL {where_sql}
          ORDER BY {rank_expr} ASC, m.date DESC
          LIMIT {cap}"
@@ -423,7 +425,7 @@ fn allowed_message_threads(
         format!("AND {}", where_clauses.join(" AND "))
     };
     let sql = format!(
-        "SELECT m.id, m.thread_id FROM messages m
+        "SELECT m.id, m.thread_id FROM visible_messages m
          WHERE m.thread_id IS NOT NULL AND m.id IN ({id_list}) {where_sql}"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -453,17 +455,18 @@ fn vector_thread_ids(
     vec_hits: &[(i64, f32)],
     cap: usize,
 ) -> Result<Vec<i64>> {
-    let Some(&(_, top)) = vec_hits.first() else {
+    let ids: Vec<i64> = vec_hits.iter().map(|(id, _)| *id).collect();
+    let allowed = allowed_message_threads(conn, q, &ids)?;
+    // Hidden hits must not set the score floor and suppress live results.
+    let Some(&(_, top)) = vec_hits.iter().find(|(id, _)| allowed.contains_key(id)) else {
         return Ok(Vec::new());
     };
     let floor = SEMANTIC_MIN_SCORE.max(top - SEMANTIC_MAX_GAP);
     let kept: Vec<(i64, f32)> = vec_hits
         .iter()
         .copied()
-        .filter(|(_, s)| *s >= floor)
+        .filter(|(id, s)| allowed.contains_key(id) && *s >= floor)
         .collect();
-    let ids: Vec<i64> = kept.iter().map(|(id, _)| *id).collect();
-    let allowed = allowed_message_threads(conn, q, &ids)?;
 
     let mut seen = HashSet::new();
     let mut threads = Vec::new();
@@ -720,7 +723,7 @@ fn thread_facts(
                              WHERE al.message_id = m.id AND l.is_auto = 1),
                 EXISTS (SELECT 1 FROM message_labels ul JOIN labels l ON l.id = ul.label_id
                         WHERE ul.message_id = m.id AND l.is_auto = 0)
-         FROM messages m
+         FROM visible_messages m
          LEFT JOIN contacts c ON c.email = LOWER(COALESCE(m.from_addr, ''))
          WHERE m.thread_id IN ({id_list})"
     );

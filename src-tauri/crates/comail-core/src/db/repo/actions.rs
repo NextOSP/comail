@@ -64,6 +64,14 @@ pub fn due(conn: &Connection, account_id: i64, now: i64, limit: i64) -> Result<V
         "SELECT * FROM pending_actions
          WHERE account_id = ?1 AND state = 'pending' AND (not_before IS NULL OR not_before <= ?2)
            AND kind NOT LIKE 'cal!_%' ESCAPE '!'
+           AND NOT EXISTS (
+               SELECT 1 FROM pending_actions predecessor
+               WHERE predecessor.account_id = pending_actions.account_id
+                 AND predecessor.message_id = pending_actions.message_id
+                 AND predecessor.id < pending_actions.id
+                 AND predecessor.state IN ('pending', 'inflight')
+                 AND predecessor.kind NOT LIKE 'cal!_%' ESCAPE '!'
+           )
          ORDER BY created_at ASC, id ASC LIMIT ?3",
     )?;
     let rows = stmt
@@ -75,16 +83,7 @@ pub fn due(conn: &Connection, account_id: i64, now: i64, limit: i64) -> Result<V
 /// Whether one account has more IMAP/SMTP actions ready to execute now.
 /// CalDAV actions are owned by the calendar task and intentionally excluded.
 pub fn has_due(conn: &Connection, account_id: i64, now: i64) -> Result<bool> {
-    Ok(conn.query_row(
-        "SELECT EXISTS(
-             SELECT 1 FROM pending_actions
-             WHERE account_id = ?1 AND state = 'pending'
-               AND (not_before IS NULL OR not_before <= ?2)
-               AND kind NOT LIKE 'cal!_%' ESCAPE '!'
-         )",
-        params![account_id, now],
-        |row| row.get(0),
-    )?)
+    Ok(!due(conn, account_id, now, 1)?.is_empty())
 }
 
 /// Earliest future not_before across pending actions (for the scheduler).
@@ -139,16 +138,25 @@ pub fn set_state(conn: &Connection, id: i64, state: &str, error: Option<&str>) -
 /// skip it in that case.
 pub fn try_claim(conn: &Connection, id: i64) -> Result<bool> {
     let n = conn.execute(
-        "UPDATE pending_actions SET state = 'inflight' WHERE id = ?1 AND state = 'pending'",
+        "UPDATE pending_actions SET state = 'inflight'
+         WHERE id = ?1 AND state = 'pending'
+           AND NOT EXISTS (
+               SELECT 1 FROM pending_actions predecessor
+               WHERE predecessor.account_id = pending_actions.account_id
+                 AND predecessor.message_id = pending_actions.message_id
+                 AND predecessor.id < pending_actions.id
+                 AND predecessor.state IN ('pending', 'inflight')
+                 AND predecessor.kind NOT LIKE 'cal!_%' ESCAPE '!'
+           )",
         params![id],
     )?;
     Ok(n > 0)
 }
 
 /// Reset actions abandoned mid-flight (the app was killed/crashed while one was
-/// executing) back to pending so they get retried. An `inflight` row can only be
-/// orphaned at startup because no actor is running yet; left as-is it would be
-/// invisible to `due()` and stick forever (e.g. a send stuck on "Sending…").
+/// executing) back to pending so they get retried. This global recovery is
+/// startup-only, before any actor is running. A live mutation worker must use
+/// the account-scoped recovery under its exclusive lease instead.
 /// Returns how many were recovered.
 pub fn recover_inflight(conn: &Connection) -> Result<usize> {
     let n = conn.execute(
@@ -157,6 +165,19 @@ pub fn recover_inflight(conn: &Connection) -> Result<usize> {
         params![now_ms()],
     )?;
     Ok(n)
+}
+
+/// Recover this account's abandoned mail mutations after a completed slice or
+/// worker replacement. Caller must hold the exclusive mutation-worker lease
+/// and have no remote command running. Calendar work belongs to another actor.
+/// Preserve retry timing and payload identity, including remoteAttempted.
+pub fn recover_account_inflight(conn: &Connection, account_id: i64) -> Result<usize> {
+    Ok(conn.execute(
+        "UPDATE pending_actions SET state = 'pending'
+         WHERE account_id = ?1 AND state = 'inflight'
+           AND kind NOT LIKE 'cal!_%' ESCAPE '!'",
+        params![account_id],
+    )?)
 }
 
 /// Make a still-pending action due immediately ("send now" / skip the undo
@@ -254,6 +275,116 @@ pub fn gc(conn: &Connection, older_than_ms: i64) -> Result<()> {
 mod tests {
     use super::*;
     use crate::db::testutil;
+
+    #[test]
+    fn live_recovery_is_scoped_and_preserves_retry_and_remote_identity() {
+        let conn = testutil::conn();
+        testutil::seed_account(&conn);
+        conn.execute(
+            "INSERT INTO accounts (id,email,provider,auth_kind,username,imap_host,imap_port,smtp_host,smtp_port,created_at)
+             SELECT 2,'other@test.dev',provider,auth_kind,username,imap_host,imap_port,smtp_host,smtp_port,created_at FROM accounts WHERE id=1",
+            [],
+        ).unwrap();
+        let payload = serde_json::json!({"remoteAttempted": true, "uid": 42});
+        let stuck = enqueue(
+            &conn,
+            1,
+            "delete_permanently",
+            None,
+            None,
+            &payload,
+            Some(123),
+        )
+        .unwrap();
+        let other = enqueue(&conn, 2, "delete_permanently", None, None, &payload, None).unwrap();
+        let calendar = enqueue(&conn, 1, "cal_create", None, None, &payload, None).unwrap();
+        let pending = enqueue(&conn, 1, "delete_permanently", None, None, &payload, None).unwrap();
+        let done = enqueue(&conn, 1, "delete_permanently", None, None, &payload, None).unwrap();
+        for id in [stuck, other, calendar] {
+            assert!(try_claim(&conn, id).unwrap());
+        }
+        bump_attempt(&conn, pending, 90_000, "retry later").unwrap();
+        set_state(&conn, done, "done", None).unwrap();
+        assert_eq!(recover_account_inflight(&conn, 1).unwrap(), 1);
+        let recovered = get(&conn, stuck).unwrap().unwrap();
+        assert_eq!(recovered.state, "pending");
+        assert_eq!(recovered.not_before, Some(123));
+        assert_eq!(recovered.payload, payload);
+        assert_eq!(recovered.attempts, 0);
+        assert_eq!(get(&conn, other).unwrap().unwrap().state, "inflight");
+        assert_eq!(get(&conn, calendar).unwrap().unwrap().state, "inflight");
+        assert_eq!(get(&conn, done).unwrap().unwrap().state, "done");
+        let retry = get(&conn, pending).unwrap().unwrap();
+        assert_eq!(retry.state, "pending");
+        assert_eq!(retry.not_before, Some(90_000));
+        assert_eq!(retry.attempts, 1);
+        assert_eq!(retry.payload, payload);
+        assert_eq!(recover_account_inflight(&conn, 1).unwrap(), 0);
+    }
+
+    #[test]
+    fn retrying_move_blocks_later_mutations_only_for_its_message() {
+        let conn = testutil::conn();
+        testutil::seed_account(&conn);
+        let (thread, message) = testutil::seed_message(&conn, "sender@test.dev", "move", false);
+        let (_, other) = testutil::seed_message(&conn, "sender@test.dev", "other", false);
+        let payload = serde_json::json!({});
+        let first = enqueue(
+            &conn,
+            1,
+            "move",
+            Some(message),
+            Some(thread),
+            &payload,
+            Some(20_000),
+        )
+        .unwrap();
+        let second = enqueue(
+            &conn,
+            1,
+            "delete_permanently",
+            Some(message),
+            Some(thread),
+            &payload,
+            None,
+        )
+        .unwrap();
+        let independent = enqueue(&conn, 1, "star", Some(other), None, &payload, None).unwrap();
+        assert_eq!(
+            due(&conn, 1, 10_000, 20)
+                .unwrap()
+                .iter()
+                .map(|a| a.id)
+                .collect::<Vec<_>>(),
+            vec![independent]
+        );
+        assert!(!try_claim(&conn, second).unwrap());
+        assert!(try_claim(&conn, independent).unwrap());
+        assert!(!try_claim(&conn, independent).unwrap());
+        set_state(&conn, independent, "done", None).unwrap();
+        assert!(!has_due(&conn, 1, 10_000).unwrap());
+        assert!(try_claim(&conn, first).unwrap());
+        assert!(!try_claim(&conn, second).unwrap());
+        bump_attempt(&conn, first, 30_000, "uncertain move").unwrap();
+        assert!(!try_claim(&conn, second).unwrap());
+        set_state(&conn, first, "done", None).unwrap();
+        assert!(try_claim(&conn, second).unwrap());
+    }
+
+    #[test]
+    fn cancellation_and_startup_recovery_preserve_single_claim() {
+        let conn = testutil::conn();
+        testutil::seed_account(&conn);
+        let id = enqueue(&conn, 1, "star", None, None, &serde_json::json!({}), None).unwrap();
+        assert!(try_cancel(&conn, id).unwrap());
+        assert!(!try_claim(&conn, id).unwrap());
+        let id = enqueue(&conn, 1, "star", None, None, &serde_json::json!({}), None).unwrap();
+        assert!(try_claim(&conn, id).unwrap());
+        assert!(!try_cancel(&conn, id).unwrap());
+        assert_eq!(recover_inflight(&conn).unwrap(), 1);
+        assert!(try_claim(&conn, id).unwrap());
+        assert!(!try_claim(&conn, id).unwrap());
+    }
 
     #[test]
     fn due_is_stable_and_has_due_ignores_future_and_calendar_actions() {

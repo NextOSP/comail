@@ -2,7 +2,7 @@
   "provider": {
     "fastmail": "Fastmail",
     "icloud": "iCloud",
-    "gmail": "Gmail (manual)",
+    "gmail": "Gmail",
     "custom": "Personalizado"
   },
   "note": {
@@ -24,7 +24,7 @@
   "field": {
     "provider": "Proveedor",
     "email": "Correo",
-    "displayName": "Nombre visible",
+    "displayName": "Nombre del remitente",
     "password": "Contraseña",
     "imapHost": "Servidor IMAP",
     "smtpHost": "Servidor SMTP",
@@ -363,5 +363,6 @@
         ]
       ]
     }
-  }
+  },
+  "editServers": "Editar"
 }

@@ -153,11 +153,11 @@ pub fn create_auto(conn: &Connection, name: &str, color: &str) -> Result<Label> 
     Ok(get(conn, id)?.expect("just inserted"))
 }
 
-/// Label ids applied to any message in a thread.
+/// Label ids applied to any visible message in a thread.
 pub fn for_thread(conn: &Connection, thread_id: i64) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT ml.label_id FROM message_labels ml
-         JOIN messages m ON m.id = ml.message_id
+         JOIN visible_messages m ON m.id = ml.message_id
          WHERE m.thread_id = ?1 ORDER BY ml.label_id",
     )?;
     let rows = stmt

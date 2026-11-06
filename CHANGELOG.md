@@ -9,6 +9,32 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.41] - 2026-10-22
+
+### Added
+
+- **Pinned sidebar.** A Pin button keeps the navigation sidebar docked
+  next to your mail on windows 960px or wider; narrower windows fall back
+  to the drawer without losing the setting (#80, thanks @hungcuong9125).
+
+### Changed
+
+- **Simpler IMAP sign-in.** The form asks only for your address, password
+  and an optional sender name. Pick Fastmail, iCloud, Gmail or Custom from
+  a row of buttons; preset servers fold into one line you can edit, and
+  Custom guesses the server names from your address.
+
+### Fixed
+
+- Settings opened during onboarding can be scrolled again; grabbing its
+  scrollbar used to drag the window instead.
+- When Google or Microsoft sign-in isn't set up yet, the sign-in buttons
+  now open Settings on Accounts, where the setup fields are, instead of
+  the first Settings page.
+- Conversations moved to Trash or Spam no longer linger in All, Starred or
+  Snoozed, and their unread mail no longer counts toward other badges
+  (#79, thanks @hungcuong9125).
+
 ## [0.2.40] - 2026-10-19
 
 ### Added
@@ -536,7 +562,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.40...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.41...HEAD
+[0.2.41]: https://github.com/NextOSP/comail/releases/tag/v0.2.41
 [0.2.40]: https://github.com/NextOSP/comail/releases/tag/v0.2.40
 [0.2.39]: https://github.com/NextOSP/comail/releases/tag/v0.2.39
 [0.2.38]: https://github.com/NextOSP/comail/releases/tag/v0.2.38

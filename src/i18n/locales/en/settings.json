@@ -778,6 +778,8 @@
     "allowDraftsHint": "Create, edit and delete drafts for you to review. Never sends.",
     "allowActions": "Organize mail",
     "allowActionsHint": "Archive, trash, label, move, snooze, star and mark read.",
+    "allowPermanentDelete": "Permanently delete",
+    "allowPermanentDeleteHint": "Irreversibly delete messages already in Trash. Needs “Organize mail”. Only enable if you trust the app.",
     "allowSend": "Send mail",
     "allowSendHint": "Send drafts. Your undo-send delay still applies. Only enable if you trust the app.",
     "clientsIntro": "One click for apps installed on this computer; others get a config to paste.",

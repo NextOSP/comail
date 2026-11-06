@@ -159,7 +159,7 @@ function Viewer({ state }: { state: AttachmentViewerState }) {
         aria-modal="true"
         aria-label={name}
         data-testid="attachment-preview"
-        className="co-viewer co-viewer-in fixed inset-0 z-40 flex flex-col outline-none"
+        className="co-viewer co-viewer-in co-no-drag fixed inset-0 z-40 flex flex-col outline-none"
       >
         <header className="co-hairline-b flex h-14 shrink-0 items-center gap-3 pr-3 pl-4">
           <FileBadge kind={kind} size={32} />

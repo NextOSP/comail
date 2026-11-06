@@ -506,6 +506,7 @@ function BulkBar({
   onClear: () => void;
 }) {
   const { t } = useTranslation();
+  const inTrash = useUi((s) => s.view === "trash");
   const run = (fn: (ctx: ReturnType<typeof buildCommandContext>) => void) => () => {
     fn(buildCommandContext());
   };
@@ -519,7 +520,7 @@ function BulkBar({
         <BulkButton label={t("common:action.snooze")} kbd="H" onClick={run((c) => c.openSnooze())} />
         <BulkButton label={t("common:action.star")} kbd="S" onClick={run((c) => c.toggleStar())} />
         <BulkButton label={t("common:action.read")} kbd="U" onClick={run((c) => c.toggleRead())} />
-        <BulkButton label={t("common:action.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
+        <BulkButton label={t(inTrash ? "common:permanentDelete.title" : "common:action.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
         <BulkButton label={t("common:action.spam")} kbd="!" onClick={run((c) => c.act("spam"))} />
         <Button variant="ghost" size="sm" className="ml-1 px-2" onClick={onClear}>
           {t("common:action.clear")}

@@ -1,6 +1,7 @@
 // In-memory mock backend so the whole app demos in a plain browser
 // (`pnpm dev` without Tauri). Implements every command in the contract.
 
+import { emitMockEvent } from "./mockEvents";
 import type {
   Calendar,
   Account,
@@ -1519,6 +1520,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   mcpAllowDrafts: true,
   mcpAllowSend: false,
   mcpAllowActions: false,
+  mcpAllowPermanentDelete: false,
   mcpInstructions: "",
   aiTierCategorize: "instant",
   groupByDate: true,
@@ -2007,7 +2009,34 @@ function snapshotThreads(ids: number[]): () => void {
   };
 }
 
+const queuedDeletions = new Map<number, number[]>();
+
 function performAction(args: PerformActionArgs): ActionResult {
+  if (args.kind === "delete_permanently") {
+    const selected = [...new Set(args.threadIds)];
+    if (!selected.length || selected.some((tid) => !queuedDeletions.has(tid) && !threads.some((t) => t.id === tid && t.folder === "trash"))) {
+      throw new Error("Only conversations in Trash can be permanently deleted");
+    }
+    const actionIds = selected.flatMap((tid) => {
+      const existing = queuedDeletions.get(tid);
+      if (existing) return existing;
+      const index = threads.findIndex((t) => t.id === tid);
+      // Mock fixtures have one folder per thread. Hide its Trash messages at
+      // enqueue, but emit server completion separately, just like the queue.
+      const ids = threads[index].messages.map(() => id());
+      queuedDeletions.set(tid, ids);
+      threads.splice(index, 1);
+      for (const actionId of ids) {
+        const emit = (state: "pending" | "inflight" | "done") =>
+          emitMockEvent("action:state", { actionId, kind: "delete_permanently", state, error: null });
+        emit("pending");
+        setTimeout(() => emit("inflight"), 100);
+        setTimeout(() => emit("done"), 250);
+      }
+      return ids;
+    });
+    return { actionIds };
+  }
   const restore = snapshotThreads(args.threadIds);
   const actionIds = args.threadIds.map(() => id());
   for (const tid of args.threadIds) {

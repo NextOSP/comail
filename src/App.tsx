@@ -11,11 +11,13 @@ import { ConversationScreen } from "./components/thread/ConversationScreen";
 import { FpsMeter } from "./components/common/FpsMeter";
 import { InboxScreen } from "./components/inbox/InboxScreen";
 import { MovePopover } from "./components/common/MovePopover";
+import { PermanentDeleteDialog } from "./components/common/PermanentDeleteDialog";
 import { LabelPopover } from "./components/common/LabelPopover";
 import { ThreadContextMenu } from "./components/inbox/ThreadContextMenu";
 import { AddAccountCard } from "./components/onboarding/Onboarding";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
 import { SearchScreen } from "./components/search/SearchScreen";
+import { useSidebarDocked } from "./lib/sidebar";
 import { Sidebar } from "./components/common/Sidebar";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { ShortcutHelp } from "./components/common/ShortcutHelp";
@@ -109,6 +111,7 @@ export default function App() {
 
   // Replies/forwards render inside the conversation (thread stays visible);
   // only a brand-new message takes over the screen as its own compose view.
+  const sidebarDocked = useSidebarDocked();
   const screen: Screen = inFlow
     ? "onboarding"
     : composer != null && composer.replyTo == null
@@ -134,7 +137,9 @@ export default function App() {
       ) : screen === "onboarding" ? (
         <OnboardingFlow onDone={() => setInFlow(false)} />
       ) : (
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <Sidebar docked={sidebarDocked} />
+          <div className="flex min-w-0 flex-1 overflow-hidden">
           <ErrorBoundary resetKey={`${screen}:${openThreadId ?? ""}`}>
             {screen === "compose" ? (
               <Composer
@@ -152,12 +157,13 @@ export default function App() {
             )}
           </ErrorBoundary>
           <CalendarDrawer />
+          </div>
         </div>
       )}
-      {screen !== "onboarding" && <Sidebar />}
       <CommandPalette />
       <SnoozePopover />
       <MovePopover />
+      <PermanentDeleteDialog />
       <LabelPopover />
       <ThreadContextMenu />
       <SplitPopover />

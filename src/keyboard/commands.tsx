@@ -3,6 +3,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import i18n from "../i18n";
+import { toggleSidebar } from "../lib/sidebar";
 import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import { subscribeEvent } from "../ipc/events";
@@ -337,6 +338,7 @@ function gotoLabel(l: CachedLabel) {
   if (l.isAuto) {
     // auto categories are inbox tabs
     ui.set({
+      calendarScreen: false,
       view: "inbox",
       splitId: null,
       labelFilter: l.id,
@@ -424,6 +426,7 @@ export const ALL_COMMANDS: Command[] = [
   {
     id: "trash",
     titleKey: "commands:title.moveToTrash",
+    title: () => useUi.getState().view === "trash" ? i18n.t("common:permanentDelete.title") : i18n.t("commands:title.moveToTrash"),
     aliases: ["delete", "remove"],
     keys: ["#"],
     section: "Triage",
@@ -1226,7 +1229,7 @@ export const ALL_COMMANDS: Command[] = [
     keys: ["mod+\\"],
     section: "Meta",
     when: (ctx) => !ctx.composerOpen && !ctx.panelOpen,
-    run: () => useUi.getState().set({ sidebarOpen: !useUi.getState().sidebarOpen }),
+    run: toggleSidebar,
   },
   {
     id: "manage-snippets",

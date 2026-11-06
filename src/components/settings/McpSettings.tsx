@@ -189,6 +189,17 @@ export function McpSection({ settings }: { settings: Settings }) {
                 onChange={(mcpAllowActions) => void save({ mcpAllowActions })}
               />
             </SettingRow>
+            <SettingRow
+              label={t("settings:mcp.allowPermanentDelete")}
+              hint={t("settings:mcp.allowPermanentDeleteHint")}
+            >
+              <Toggle
+                label={t("settings:mcp.allowPermanentDelete")}
+                checked={settings.mcpAllowPermanentDelete}
+                disabled={!settings.mcpAllowActions}
+                onChange={(mcpAllowPermanentDelete) => void save({ mcpAllowPermanentDelete })}
+              />
+            </SettingRow>
             <SettingRow label={t("settings:mcp.allowSend")} hint={t("settings:mcp.allowSendHint")}>
               <Toggle
                 label={t("settings:mcp.allowSend")}

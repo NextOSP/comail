@@ -43,6 +43,11 @@ fn allowed(group: Group, s: &Settings) -> bool {
     }
 }
 
+/// Irreversible deletion needs its own opt-in on top of the general actions gate.
+fn permanent_delete_allowed(s: &Settings) -> bool {
+    s.mcp_allow_actions && s.mcp_allow_permanent_delete
+}
+
 fn defs() -> Vec<ToolDef> {
     let account_id = json!({ "type": "integer", "description": "Limit to one account (see list_accounts). Omit for all accounts." });
     vec![
@@ -269,18 +274,28 @@ fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "deletion_status",
+            title: "Check permanent deletion",
+            description: "Check queued permanent-deletion action IDs. done means remote deletion and local cleanup completed; pending/inflight are not success. failed includes the reason.",
+            group: Group::Read,
+            destructive: false,
+            schema: json!({ "type": "object", "properties": {
+                "action_ids": { "type": "array", "items": { "type": "integer" }, "maxItems": 1000 }
+            }, "required": ["action_ids"] }),
+        },
+        ToolDef {
             name: "modify_threads",
             title: "Organize threads",
             description: "Apply an action to threads: archive, unarchive, mark_read, mark_unread, \
                 star, unstar, trash, spam, not_spam, move (folder_id), snooze (snooze_until), \
-                unsnooze, add_label / remove_label (label_id).",
+                unsnooze, add_label / remove_label (label_id). delete_permanently irreversibly deletes only messages currently in Trash, preserving other messages in the thread. Needs a separate permanent-deletion permission in comail Settings; only use when the user explicitly requests permanent deletion. Returns queued action_ids; poll deletion_status for remote completion.",
             group: Group::Actions,
             destructive: true,
             schema: json!({
                 "type": "object",
                 "properties": {
                     "thread_ids": { "type": "array", "items": { "type": "integer" } },
-                    "action": { "type": "string", "enum": ["archive", "unarchive", "mark_read", "mark_unread", "star", "unstar", "trash", "spam", "not_spam", "move", "snooze", "unsnooze", "add_label", "remove_label"] },
+                    "action": { "type": "string", "enum": ["archive", "unarchive", "mark_read", "mark_unread", "star", "unstar", "trash", "delete_permanently", "spam", "not_spam", "move", "snooze", "unsnooze", "add_label", "remove_label"] },
                     "label_id": { "type": "integer" },
                     "folder_id": { "type": "integer" },
                     "snooze_until": { "type": "string", "description": "ISO 8601 time to wake the thread." }
@@ -325,6 +340,15 @@ pub(super) async fn call(core: &Core, name: &str, args: Value) -> ToolResult {
         return Err(format!(
             "{name} is turned off. The user can allow it in comail Settings > AI clients (MCP)."
         ));
+    }
+    if name == "modify_threads"
+        && args["action"].as_str() == Some("delete_permanently")
+        && !permanent_delete_allowed(&settings)
+    {
+        return Err(
+            "delete_permanently is turned off. The user can allow it separately in comail Settings > AI clients (MCP)."
+                .into(),
+        );
     }
     let out = match name {
         "list_accounts" => json!(core.list_accounts().await?),
@@ -519,6 +543,11 @@ pub(super) async fn call(core: &Core, name: &str, args: Value) -> ToolResult {
                 "note": "The user can still cancel it in comail until it is sent.",
             })
         }
+        "deletion_status" => {
+            let ids = serde_json::from_value(args["action_ids"].clone())
+                .map_err(|_| "action_ids must be an array of integers".to_string())?;
+            json!(core.deletion_status(ids).await?)
+        }
         "modify_threads" => {
             let action = args["action"].as_str().unwrap_or("");
             let kind = ActionKind::from_str(action)
@@ -545,17 +574,18 @@ pub(super) async fn call(core: &Core, name: &str, args: Value) -> ToolResult {
                 return Err("move needs folder_id".into());
             }
             let count = thread_ids.len();
-            core.perform_action(PerformActionArgs {
-                kind,
-                thread_ids,
-                params: Some(ActionParams {
-                    wake_at,
-                    target_folder_id: opt_i64(&args, "folder_id"),
-                    label_id: opt_i64(&args, "label_id"),
-                }),
-            })
-            .await?;
-            json!({ "status": "done", "action": action, "threads": count })
+            let result = core
+                .perform_action(PerformActionArgs {
+                    kind,
+                    thread_ids,
+                    params: Some(ActionParams {
+                        wake_at,
+                        target_folder_id: opt_i64(&args, "folder_id"),
+                        label_id: opt_i64(&args, "label_id"),
+                    }),
+                })
+                .await?;
+            json!({ "status": if kind == ActionKind::DeletePermanently { "queued" } else { "done" }, "action": action, "threads": count, "action_ids": result.action_ids })
         }
         _ => return Err(format!("{UNKNOWN_TOOL}: {name}")),
     };
@@ -835,6 +865,27 @@ mod tests {
         assert!(!all.contains(&"create_draft".to_string()));
         assert!(all.contains(&"send_draft".to_string()));
         assert!(all.contains(&"modify_threads".to_string()));
+    }
+
+    #[test]
+    fn permanent_delete_is_an_independent_opt_in() {
+        let mut s = Settings::default();
+        assert!(!s.mcp_allow_permanent_delete);
+        assert!(!permanent_delete_allowed(&s));
+        s.mcp_allow_permanent_delete = true;
+        assert!(!permanent_delete_allowed(&s), "needs mcp_allow_actions too");
+        s.mcp_allow_actions = true;
+        assert!(permanent_delete_allowed(&s));
+        s.mcp_allow_permanent_delete = false;
+        assert!(!permanent_delete_allowed(&s), "actions alone is not enough");
+    }
+
+    #[test]
+    fn action_kind_roundtrips_delete_permanently() {
+        assert_eq!(
+            ActionKind::from_str(ActionKind::DeletePermanently.as_str()),
+            Some(ActionKind::DeletePermanently)
+        );
     }
 
     #[test]

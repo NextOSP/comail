@@ -12,6 +12,7 @@ import { MenuDivider as Divider, MenuItem as Item, Popover } from "../ui/Menu";
 export function ThreadContextMenu() {
   const { t } = useTranslation();
   const menu = useUi((s) => s.contextMenu);
+  const inTrash = useUi((s) => s.view === "trash");
   const set = useUi((s) => s.set);
   const close = () => set({ contextMenu: null });
 
@@ -57,7 +58,7 @@ export function ThreadContextMenu() {
       <Item label={t("common:contextMenu.move")} kbd="V" onClick={run((c) => c.openMove())} />
       <Item label={t("common:contextMenu.label")} kbd="L" onClick={run((c) => c.openLabel())} />
       <Divider />
-      <Item danger label={t("common:contextMenu.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
+      <Item danger label={t(inTrash ? "common:permanentDelete.title" : "common:contextMenu.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
       <Item label={t("common:contextMenu.spam")} kbd="!" onClick={run((c) => c.act("spam"))} />
     </Popover>
   );
