@@ -9,6 +9,7 @@ import { displayShortcut } from "../../keyboard/registry";
 import { useAccounts, useFolders, useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { IconButton } from "../ui/Button";
+import { SyncControl } from "./SyncControl";
 
 export function TopBar() {
   const { t } = useTranslation();
@@ -28,6 +29,7 @@ export function TopBar() {
   const sync = aggregateSyncStatuses(syncStatuses, accountFilter);
   const { data: accounts } = useAccounts();
   const manualSyncBusy = useManualSyncBusy(accountFilter);
+  const syncing = manualSyncBusy || sync.foregroundSyncing;
   const syncAccount = accounts?.find((a) => a.id === accountFilter);
   const syncLabel = syncAccount
     ? t("common:topbar.syncMailAccount", { account: accountLabel(syncAccount) })
@@ -75,23 +77,17 @@ export function TopBar() {
 
       <div className="grow" />
 
-      {sync.foregroundSyncing && (
-        <span className="flex items-center gap-1.5 text-xs text-ink-muted" title={t("common:topbar.checkingMail")}>
-          <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-          <span>{t("common:topbar.checkingMail")}</span>
-        </span>
-      )}
       {offline && (
         <span className="co-chip !border-transparent !bg-bg2 !text-ink-muted text-xs">
           <span className="size-1.5 rounded-full bg-danger" /> {t("common:topbar.offline")}
         </span>
       )}
 
-      <IconButton
-        icon="refresh"
-        label={syncLabel}
-        busy={manualSyncBusy || sync.foregroundSyncing}
-        onClick={syncMail}
+      <SyncControl
+        syncing={syncing}
+        statusLabel={t("common:topbar.checkingMail")}
+        buttonLabel={syncLabel}
+        onSync={syncMail}
       />
 
       {avatarUi && (

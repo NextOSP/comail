@@ -41,7 +41,7 @@ export function AccountSwitcher({ onSelected }: { onSelected?: () => void }) {
   useEffect(() => {
     if (!open) return;
     const items = () =>
-      Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button[role='menuitemradio']") ?? []);
+      Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button[role='menuitemradio'], button[role='menuitem']") ?? []);
     const raf = requestAnimationFrame(() => {
       const list = items();
       (list.find((b) => b.getAttribute("aria-checked") === "true") ?? list[0])?.focus();
@@ -134,6 +134,20 @@ export function AccountSwitcher({ onSelected }: { onSelected?: () => void }) {
                   onClick={() => choose(a.id)}
                 />
               ))}
+              <div role="separator" className="my-1 border-t border-hairline" />
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-base text-ink hover:bg-bg2 ${NAV_FOCUS}`}
+                onClick={() => {
+                  close(false);
+                  useUi.getState().set({ panel: "settings", settingsTab: "accounts", sidebarOpen: false });
+                }}
+              >
+                <span aria-hidden="true">+</span>
+                {t("onboarding:titleAddAccount")}
+              </button>
             </div>
           </Popover>,
           document.body,

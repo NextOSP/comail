@@ -844,14 +844,7 @@ impl Core {
                 None => handles.values().map(AccountHandle::sync_now).collect(),
             }
         };
-        for receiver in receivers {
-            let result = tokio::time::timeout(std::time::Duration::from_secs(45), receiver)
-                .await
-                .map_err(|_| CoreError::Other("Inbox sync timed out".into()))?
-                .map_err(|_| CoreError::Other("sync actor stopped".into()))?;
-            result.map_err(CoreError::Other)?;
-        }
-        Ok(())
+        await_sync_passes(receivers, SYNC_NOW_TIMEOUT).await
     }
 
     pub async fn get_sync_status(&self) -> Result<Vec<SyncStatus>> {
@@ -5398,6 +5391,138 @@ fn valid_automation_route(conn: &rusqlite::Connection, target: &str) -> Result<b
     };
     let sql = format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = ?1)");
     Ok(conn.query_row(&sql, rusqlite::params![id], |row| row.get::<_, i64>(0))? != 0)
+}
+
+/// Upper bound for one manual Inbox pass, shared by every account in the request.
+const SYNC_NOW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+
+/// Wait for every account's foreground Inbox pass at once. The passes already
+/// run concurrently (one actor per account); this waits on them concurrently
+/// too, under a single shared deadline, and only reports once every account
+/// has settled. A failing or hung account therefore neither hides the others'
+/// results nor lets the caller refresh before they finish. Distinct failure
+/// messages are joined, so a single-account request keeps its exact error.
+async fn await_sync_passes(
+    receivers: Vec<tokio::sync::oneshot::Receiver<std::result::Result<(), String>>>,
+    limit: std::time::Duration,
+) -> Result<()> {
+    let outcomes = futures::future::join_all(
+        receivers
+            .into_iter()
+            .map(|receiver| tokio::time::timeout(limit, receiver)),
+    )
+    .await;
+    let mut failures: Vec<String> = Vec::new();
+    for outcome in outcomes {
+        let message = match outcome {
+            Err(_) => Some("Inbox sync timed out".to_string()),
+            Ok(Err(_)) => Some("sync actor stopped".to_string()),
+            Ok(Ok(Err(message))) => Some(message),
+            Ok(Ok(Ok(()))) => None,
+        };
+        if let Some(message) = message {
+            if !failures.contains(&message) {
+                failures.push(message);
+            }
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(CoreError::Other(failures.join("; ")))
+    }
+}
+
+#[cfg(test)]
+mod sync_now_wait_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    use tokio::sync::oneshot;
+
+    type Pass = oneshot::Sender<std::result::Result<(), String>>;
+
+    fn channel() -> (Pass, oneshot::Receiver<std::result::Result<(), String>>) {
+        oneshot::channel()
+    }
+
+    #[tokio::test]
+    async fn waits_for_every_account_before_reporting_the_first_failure() {
+        let (fail_tx, fail_rx) = channel();
+        let (slow_tx, slow_rx) = channel();
+        fail_tx.send(Err("authentication required".into())).unwrap();
+        let slow = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            slow_tx.send(Ok(())).unwrap();
+        });
+        let started = Instant::now();
+        let err = await_sync_passes(vec![fail_rx, slow_rx], Duration::from_secs(5))
+            .await
+            .unwrap_err();
+        assert!(
+            started.elapsed() >= Duration::from_millis(70),
+            "returned before the slow account settled"
+        );
+        assert_eq!(
+            err.to_string(),
+            CoreError::Other("authentication required".into()).to_string()
+        );
+        slow.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shares_one_deadline_instead_of_stacking_per_account_timeouts() {
+        let (a_tx, a_rx) = channel();
+        let (b_tx, b_rx) = channel();
+        let first = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            a_tx.send(Ok(())).unwrap();
+        });
+        let started = Instant::now();
+        let err = await_sync_passes(vec![a_rx, b_rx], Duration::from_millis(300))
+            .await
+            .unwrap_err();
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(420),
+            "timeouts stacked: {elapsed:?}"
+        );
+        assert!(err.to_string().contains("Inbox sync timed out"));
+        first.await.unwrap();
+        drop(b_tx);
+    }
+
+    #[tokio::test]
+    async fn succeeds_only_when_all_accounts_succeed_and_dedupes_messages() {
+        let (a_tx, a_rx) = channel();
+        let (b_tx, b_rx) = channel();
+        a_tx.send(Ok(())).unwrap();
+        b_tx.send(Ok(())).unwrap();
+        await_sync_passes(vec![a_rx, b_rx], Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        let (c_tx, c_rx) = channel();
+        let (d_tx, d_rx) = channel();
+        c_tx.send(Err("offline".into())).unwrap();
+        d_tx.send(Err("offline".into())).unwrap();
+        let err = await_sync_passes(vec![c_rx, d_rx], Duration::from_secs(1))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            CoreError::Other("offline".into()).to_string()
+        );
+    }
+
+    #[tokio::test]
+    async fn reports_a_stopped_actor() {
+        let (tx, rx) = channel();
+        drop(tx);
+        let err = await_sync_passes(vec![rx], Duration::from_secs(1))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("sync actor stopped"));
+    }
 }
 
 #[cfg(test)]

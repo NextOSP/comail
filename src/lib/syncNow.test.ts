@@ -64,7 +64,7 @@ describe("syncNowAndRefresh", () => {
       "invalidate:threads",
       "invalidate:unreadCounts",
     ]);
-    expect(order[order.length - 1]).toBe("get_sync_status");
+    expect(order).toContain("get_sync_status");
     expect(useUi.getState().syncStatuses[5]).toMatchObject({ accountId: 5, foregroundPhase: "idle" });
   });
 
@@ -98,11 +98,51 @@ describe("syncNowAndRefresh", () => {
     expect(call.mock.calls.filter(([cmd]) => cmd === "sync_now")).toHaveLength(3);
   });
 
-  it("rejects with the backend error, skips the refresh and clears the busy state", async () => {
+  it("rejects with the backend error, skips the refresh for one account and clears the busy state", async () => {
     call.mockRejectedValue(new Error("imap down"));
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     await expect(syncNowAndRefresh(3)).rejects.toThrow("imap down");
     expect(invalidate).not.toHaveBeenCalled();
     expect(isManualSyncBusy(3)).toBe(false);
+  });
+
+  it("still refreshes after a failed all-accounts pass and keeps the original error", async () => {
+    call.mockImplementation(async (cmd: string) => {
+      if (cmd === "sync_now") throw new Error("account 2 offline");
+      return [{ accountId: 1, state: "idle", foregroundPhase: "idle", background: null }];
+    });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    await expect(syncNowAndRefresh(null)).rejects.toThrow("account 2 offline");
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(useUi.getState().syncStatuses[1]).toMatchObject({ accountId: 1 });
+    expect(isManualSyncBusy(null)).toBe(false);
+  });
+
+  it("keeps the backend error when the post-failure refresh itself fails", async () => {
+    call.mockImplementation(async (cmd: string) => {
+      if (cmd === "sync_now") throw new Error("account 2 offline");
+      throw new Error("status unavailable");
+    });
+    vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    await expect(syncNowAndRefresh(null)).rejects.toThrow("account 2 offline");
+  });
+
+  it("loads the status snapshot while cache refetches are still running", async () => {
+    const refetch = deferred();
+    call.mockImplementation(async (cmd: string) => (cmd === "get_sync_status"
+      ? [{ accountId: 5, state: "idle", foregroundPhase: "idle", background: null }]
+      : undefined));
+    vi.spyOn(queryClient, "invalidateQueries").mockImplementation(() => refetch.promise);
+    const run = syncNowAndRefresh(null);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(call).toHaveBeenCalledWith("get_sync_status", {});
+    expect(isManualSyncBusy(null)).toBe(true);
+    const snapshot = useUi.getState().syncStatuses[5];
+    expect(snapshot.foregroundPhase).toBe("idle");
+    useUi.getState().upsertSyncStatus({ ...snapshot, state: "syncing" });
+    refetch.resolve();
+    await run;
+    expect(isManualSyncBusy(null)).toBe(false);
+    expect(useUi.getState().syncStatuses[5].state).toBe("syncing");
   });
 });

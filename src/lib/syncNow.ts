@@ -45,24 +45,43 @@ export function useManualSyncBusy(accountId: number | null): boolean {
 /**
  * Run one foreground sync pass and refresh dependent caches. A request whose
  * scope is covered by a pass already running joins that pass. An all-accounts
- * request cannot join a single-account pass. Rejects with the backend error so each caller can word its own
- * failure feedback.
+ * request cannot join a single-account pass. Rejects with the backend error so
+ * each caller can word its own failure feedback; a failed all-accounts pass still
+ * refreshes caches because other accounts may have succeeded.
  */
 export function syncNowAndRefresh(accountId: number | null): Promise<void> {
   const overlapping = [...inflight.entries()].find(([key]) => key === null || key === accountId);
   if (overlapping) return overlapping[1];
 
-  const run = (async () => {
-    await call("sync_now", { accountId });
+  // Caches and the status snapshot are independent reads: load them together
+  // so the busy state does not stack their latencies.
+  const refresh = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["threads"] }),
-      queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
-      queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["threads"] }),
+        queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+      ]),
+      call("get_sync_status", {}).then((statuses) => {
+        useUi.getState().replaceSyncStatuses(
+          statuses
+            .map(normalizeSyncStatus)
+            .filter((status): status is NonNullable<typeof status> => status != null),
+        );
+      }),
     ]);
-    const statuses = (await call("get_sync_status", {}))
-      .map(normalizeSyncStatus)
-      .filter((status): status is NonNullable<typeof status> => status != null);
-    useUi.getState().replaceSyncStatuses(statuses);
+  };
+
+  const run = (async () => {
+    try {
+      await call("sync_now", { accountId });
+    } catch (error) {
+      // The backend waits for every account before failing, so an
+      // all-accounts pass may still have delivered mail for the healthy ones.
+      if (accountId == null) await refresh().catch(() => {});
+      throw error;
+    }
+    await refresh();
   })().finally(() => {
     inflight.delete(accountId);
     publish();
