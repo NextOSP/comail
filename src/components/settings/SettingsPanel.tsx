@@ -18,6 +18,7 @@ import type {
   SyncState,
   SyncStatus,
 } from "../../ipc/types";
+import { syncNowAndRefresh, useManualSyncBusy } from "../../lib/syncNow";
 import { normalizeSyncStatus } from "../../lib/syncStatus";
 import { inboxTabOrder } from "../../lib/splitOrder";
 import { queryClient } from "../../queries/client";
@@ -2794,6 +2795,8 @@ function SyncSection() {
   const replaceSyncStatuses = useUi((state) => state.replaceSyncStatuses);
   const pushToast = useUi((state) => state.pushToast);
   const [busyAccountId, setBusyAccountId] = useState<number | null>(null);
+  // A pass started from the top bar or the palette also blocks these buttons.
+  const manualSyncRunning = useManualSyncBusy(null);
   const [reauthAccountId, setReauthAccountId] = useState<number | null>(null);
 
   const phaseLabel = (phase: SyncBackgroundPhase) => {
@@ -2812,19 +2815,9 @@ function SyncSection() {
   const syncNow = async (accountId: number, email: string) => {
     setBusyAccountId(accountId);
     try {
-      // This command resolves after the account's foreground Inbox pass, not
-      // merely after enqueueing it. Refresh views and the authoritative status
-      // snapshot only after that boundary.
-      await call("sync_now", { accountId });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["threads"] }),
-        queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
-        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
-      ]);
-      const statuses = (await call("get_sync_status", {}))
-        .map(normalizeSyncStatus)
-        .filter((status): status is SyncStatus => status != null);
-      replaceSyncStatuses(statuses);
+      // Resolves after the account's foreground Inbox pass and the cache and
+      // status refresh (shared with the top bar and the command palette).
+      await syncNowAndRefresh(accountId);
       pushToast({
         kind: "info",
         message: t("settings:sync.syncComplete", { email }),
@@ -2944,7 +2937,7 @@ function SyncSection() {
                 <Button
                   size="sm"
                   busy={busy || status.foregroundPhase === "inbox"}
-                  disabled={busyAccountId != null}
+                  disabled={busyAccountId != null || manualSyncRunning}
                   aria-label={t("settings:sync.syncNowAccount", {
                     email: account.email,
                   })}

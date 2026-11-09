@@ -1,15 +1,15 @@
 import { toggleSidebar } from "../../lib/sidebar";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { folderLeafName } from "../../lib/folders";
-import { accountLabel, IS_MAC, MOD_LABEL } from "../../lib/format";
+import { errorMessage } from "../../ipc/errors";
+import { accountLabel, MOD_LABEL } from "../../lib/format";
+import { syncNowAndRefresh, useManualSyncBusy } from "../../lib/syncNow";
 import { aggregateSyncStatuses } from "../../lib/syncStatus";
 import { displayShortcut } from "../../keyboard/registry";
 import { useAccounts, useFolders, useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { IconButton } from "../ui/Button";
-import { Icon } from "../ui/Icon";
-import { Popover } from "../ui/Menu";
+import { SyncControl } from "./SyncControl";
 
 export function TopBar() {
   const { t } = useTranslation();
@@ -22,15 +22,27 @@ export function TopBar() {
   const keySequence = useUi((s) => s.keySequence);
   const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
-  const { data: accounts } = useAccounts();
   const { data: folders } = useFolders(accountFilter);
   const { data: settings } = useSettings();
   // Avatar inbox UI: a quieter bar (search icon, no wordmark).
   const avatarUi = settings?.inboxUi === "avatar";
-  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const sync = aggregateSyncStatuses(syncStatuses, accountFilter);
+  const { data: accounts } = useAccounts();
+  const manualSyncBusy = useManualSyncBusy(accountFilter);
+  const syncing = manualSyncBusy || sync.foregroundSyncing;
+  const syncAccount = accounts?.find((a) => a.id === accountFilter);
+  const syncLabel = syncAccount
+    ? t("common:topbar.syncMailAccount", { account: accountLabel(syncAccount) })
+    : t("common:topbar.syncMail");
+  const syncMail = () => {
+    syncNowAndRefresh(accountFilter).catch((error) => {
+      useUi.getState().pushToast({
+        kind: "error",
+        message: t("common:topbar.syncFailed", { detail: errorMessage(error) }),
+      });
+    });
+  };
 
-  const active = accounts?.find((a) => a.id === accountFilter);
   const activeFolder = folders?.find((f) => f.id === folderFilter);
   const title = searchOpen
     ? t("common:topbar.search")
@@ -65,17 +77,18 @@ export function TopBar() {
 
       <div className="grow" />
 
-      {sync.foregroundSyncing && (
-        <span className="flex items-center gap-1.5 text-xs text-ink-muted" title={t("common:topbar.checkingMail")}>
-          <span className="co-spinner size-3 rounded-full border-[1.5px] border-hairline-strong border-t-accent" />
-          <span>{t("common:topbar.checkingMail")}</span>
-        </span>
-      )}
       {offline && (
         <span className="co-chip !border-transparent !bg-bg2 !text-ink-muted text-xs">
           <span className="size-1.5 rounded-full bg-danger" /> {t("common:topbar.offline")}
         </span>
       )}
+
+      <SyncControl
+        syncing={syncing}
+        statusLabel={t("common:topbar.checkingMail")}
+        buttonLabel={syncLabel}
+        onSync={syncMail}
+      />
 
       {avatarUi && (
         <IconButton
@@ -113,83 +126,6 @@ export function TopBar() {
         onClick={() => set({ panel: "settings" })}
       />
 
-      <button
-        className="flex items-center gap-1.5 rounded-full border border-hairline bg-bg1 py-1 pr-2 pl-2.5 text-sm font-medium text-ink hover:bg-bg2"
-        title={active ? active.email : t("common:topbar.allAccounts")}
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          // Right-aligned under the pill; the popover clamps itself on-screen.
-          setMenuAt(menuAt ? null : { x: r.right - MENU_WIDTH, y: r.bottom + 6 });
-        }}
-      >
-        <span className="max-w-[150px] truncate">
-          {active ? accountLabel(active) : t("common:topbar.allAccounts")}
-        </span>
-        <Icon name="chevronDown" size={11} className="text-ink-faint" />
-      </button>
-      {menuAt && (
-        <Popover x={menuAt.x} y={menuAt.y} minWidth={MENU_WIDTH} onClose={() => setMenuAt(null)}>
-          <AccountItem
-            label={t("common:topbar.allAccounts")}
-            hint={displayShortcut(IS_MAC ? "ctrl+0" : "alt+0")}
-            selected={accountFilter == null}
-            onClick={() => {
-              set({ accountFilter: null });
-              setMenuAt(null);
-            }}
-          />
-          {(accounts ?? []).map((a, i) => (
-            <AccountItem
-              key={a.id}
-              label={accountLabel(a)}
-              detail={a.displayName?.trim() ? a.email : undefined}
-              hint={i < 9 ? displayShortcut(IS_MAC ? `ctrl+${i + 1}` : `alt+${i + 1}`) : undefined}
-              sub={a.syncState !== "idle" ? t(`common:syncState.${a.syncState}`) : undefined}
-              selected={accountFilter === a.id}
-              onClick={() => {
-                set({ accountFilter: a.id });
-                setMenuAt(null);
-              }}
-            />
-          ))}
-        </Popover>
-      )}
     </header>
-  );
-}
-
-const MENU_WIDTH = 256;
-
-function AccountItem({
-  label,
-  detail,
-  sub,
-  hint,
-  selected,
-  onClick,
-}: {
-  label: string;
-  /** secondary line (e.g. the email when the label is a display name) */
-  detail?: string;
-  /** right-aligned status text (e.g. "Syncing") */
-  sub?: string;
-  /** keyboard hint chip, e.g. "⌃1" */
-  hint?: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      role="menuitem"
-      className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-base ${selected ? "bg-bg2" : "hover:bg-bg2"}`}
-      onClick={onClick}
-    >
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className={`truncate ${selected ? "font-medium text-ink" : "text-ink"}`}>{label}</span>
-        {detail && <span className="truncate text-xs text-ink-faint">{detail}</span>}
-      </span>
-      {sub && <span className="shrink-0 text-xs text-ink-faint">{sub}</span>}
-      {hint && <kbd className="co-kbd shrink-0 tabular-nums">{hint}</kbd>}
-    </button>
   );
 }

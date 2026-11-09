@@ -68,6 +68,43 @@ afterEach(() => {
   useUi.setState(useUi.getInitialState(), true);
 });
 
+describe("setAccountFilter", () => {
+  beforeEach(() => {
+    useUi.setState({
+      accountFilter: 1,
+      folderFilter: 55,
+      view: "all",
+      selection: [3, 4],
+      selectAnchorId: 3,
+      selectedThreadId: 4,
+      selectedIndex: 6,
+    });
+  });
+
+  it("drops the per-account folder and the old list's selection on a real change", () => {
+    useUi.getState().setAccountFilter(2);
+    expect(useUi.getState()).toMatchObject({
+      accountFilter: 2,
+      folderFilter: null,
+      selection: [],
+      selectAnchorId: null,
+      selectedThreadId: null,
+      selectedIndex: 0,
+      view: "all",
+    });
+  });
+
+  it("is a no-op when the scope does not change", () => {
+    useUi.getState().setAccountFilter(1);
+    expect(useUi.getState()).toMatchObject({ accountFilter: 1, folderFilter: 55, selection: [3, 4], selectedIndex: 6 });
+  });
+
+  it("can return to all accounts", () => {
+    useUi.getState().setAccountFilter(null);
+    expect(useUi.getState()).toMatchObject({ accountFilter: null, folderFilter: null, selection: [] });
+  });
+});
+
 describe("mail navigation from fullscreen calendar", () => {
   it.each(Object.keys(views) as View[])("setView(%s) returns to mail", (view) => {
     useUi.getState().setView(view);

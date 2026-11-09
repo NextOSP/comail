@@ -11,7 +11,7 @@ import { MOCK_MODE } from "../ipc/mock";
 import type { Account, Address, Settings, ThreadDetail } from "../ipc/types";
 import { addDays, addMonths, startOfMonth } from "../lib/calendarGrid";
 import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
-import { normalizeSyncStatus } from "../lib/syncStatus";
+import { syncNowAndRefresh } from "../lib/syncNow";
 import { parsePartialAiSummary } from "../lib/summaryStream";
 import { latestUnsubscribeMessage, unsubscribeThread } from "../lib/unsubscribe";
 import { findCachedSummary } from "../queries/actions";
@@ -266,12 +266,7 @@ function switchAccountCommand(n: number): Command {
       const accounts = queryClient.getQueryData<Account[]>(["accounts"]) ?? [];
       const target = isAll ? null : accounts[n - 1]?.id;
       if (!isAll && target == null) return;
-      useUi.getState().set({
-        accountFilter: target ?? null,
-        selectedIndex: 0,
-        selectedThreadId: null,
-        selection: [],
-      });
+      useUi.getState().setAccountFilter(target ?? null);
     },
   };
 }
@@ -1174,24 +1169,9 @@ export const ALL_COMMANDS: Command[] = [
     section: "Meta",
     run: () => {
       const accountId = useUi.getState().accountFilter;
-      void (async () => {
-        try {
-          // The backend resolves only after the requested foreground Inbox pass
-          // settles, so these invalidations cannot race ahead of new headers.
-          await call("sync_now", { accountId });
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ["threads"] }),
-            queryClient.invalidateQueries({ queryKey: ["unreadCounts"] }),
-            queryClient.invalidateQueries({ queryKey: ["accounts"] }),
-          ]);
-          const statuses = (await call("get_sync_status", {}))
-            .map(normalizeSyncStatus)
-            .filter((status): status is NonNullable<typeof status> => status != null);
-          useUi.getState().replaceSyncStatuses(statuses);
-        } catch (error) {
-          useUi.getState().pushToast({ kind: "error", message: errorMessage(error) });
-        }
-      })();
+      syncNowAndRefresh(accountId).catch((error) => {
+        useUi.getState().pushToast({ kind: "error", message: errorMessage(error) });
+      });
       useUi.getState().pushToast({ kind: "info", message: i18n.t("commands:toast.syncing"), durationMs: 1800 });
     },
   },
