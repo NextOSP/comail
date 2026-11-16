@@ -2962,6 +2962,7 @@ impl Core {
             },
             api_key,
             language: ai::ui_language_name(&settings.language).map(str::to_string),
+            zero_retention: settings.ai_zero_retention,
             usage_sink: self.usage_sink(scenario),
         })
     }
@@ -3072,6 +3073,7 @@ impl Core {
             api_key,
             dialect,
             min_confidence: settings.decision_min_confidence.clamp(0.0, 1.0),
+            zero_retention: settings.ai_zero_retention,
             usage_sink: self.usage_sink(Scenario::Categorize),
         })
     }

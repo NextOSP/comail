@@ -50,6 +50,9 @@ pub struct DecisionConfig {
     pub dialect: Dialect,
     /// Answers less certain than this count as "no" / "no choice".
     pub min_confidence: f64,
+    /// Restrict OpenRouter routing to zero-data-retention providers (ignored
+    /// for other endpoints).
+    pub zero_retention: bool,
     pub usage_sink: Option<std::sync::Arc<dyn Fn(super::AiUsage) + Send + Sync>>,
 }
 
@@ -234,7 +237,8 @@ pub async fn decide(
     if questions.is_empty() {
         return Ok(HashMap::new());
     }
-    let body = request_body(cfg.dialect, &cfg.model, state, questions);
+    let mut body = request_body(cfg.dialect, &cfg.model, state, questions);
+    super::apply_openrouter_privacy(&cfg.url, cfg.zero_retention, &mut body);
     let raw = super::http_request(
         &cfg.url,
         "POST",
@@ -290,6 +294,18 @@ mod tests {
                 },
             ),
         ]
+    }
+
+    #[test]
+    fn openrouter_decisions_carry_zero_retention_routing() {
+        let mut b = request_body(Dialect::OpenRouter, "typesafe/jev-1.14", "hi", &qs());
+        super::super::apply_openrouter_privacy(OPENROUTER_URL, true, &mut b);
+        assert_eq!(b["provider"]["data_collection"], "deny");
+        assert_eq!(b["provider"]["zdr"], true);
+
+        let mut oa = request_body(Dialect::OpenAi, "gpt-6-luna", "hi", &qs());
+        super::super::apply_openrouter_privacy(OPENAI_URL, true, &mut oa);
+        assert!(oa.get("provider").is_none());
     }
 
     #[test]

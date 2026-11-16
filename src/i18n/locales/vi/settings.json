@@ -125,6 +125,8 @@
     "modelHintEmpty": "Nhập id mô hình, hoặc chọn một khi danh sách điểm cuối tải xong.",
     "modelsFailed": "Không tải được danh sách mô hình: {{error}}. Hãy nhập id mô hình.",
     "modelPlaceholder": "anthropic/claude-sonnet",
+    "zeroRetentionLabel": "Không lưu giữ dữ liệu",
+    "zeroRetentionHint": "Chỉ gửi yêu cầu chat và quyết định qua OpenRouter tới các nhà cung cấp không lưu trữ hay huấn luyện trên thư của bạn. Mô hình không có nhà cung cấp như vậy sẽ ngừng hoạt động cho đến khi bạn tắt tùy chọn này.",
     "providerLabel": "Nhà cung cấp",
     "providerHint": "Cài đặt sẵn điền URL cơ sở; chọn Điểm cuối tùy chỉnh để dùng bất kỳ URL tương thích OpenAI nào. Máy chủ cục bộ không cần khóa API.",
     "customProvider": "Điểm cuối tùy chỉnh",
