@@ -130,33 +130,43 @@ fn configure_linux_renderer() {
 
 /// Log to stderr (dev) and to `<data_dir>/logs/comail.log` (packaged builds,
 /// where stderr goes nowhere). The file is rotated once to `.1` when it
-/// crosses 5 MB so it can't grow unbounded. `RUST_LOG` overrides the filter.
+/// crosses 5 MB so it can't grow unbounded, and is readable by the user only.
+/// `RUST_LOG` overrides the filter (e.g. `RUST_LOG=info,comail_core=debug`).
 fn init_logging() {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::Layer;
 
-    // `html5ever`/`markup5ever` (pulled in via `ammonia` to sanitize HTML email
-    // bodies) log a WARN for every message that contains malformed HTML
-    // ("foster parenting not implemented" and friends). That's routine for real
-    // email and nothing we can act on, so quiet those targets by default.
+    // `info` by default: debug output names correspondents and subjects, so it
+    // is opt-in. `html5ever`/`markup5ever` (pulled in via `ammonia` to sanitize
+    // HTML email bodies) log a WARN for every message that contains malformed
+    // HTML ("foster parenting not implemented" and friends). That's routine for
+    // real email and nothing we can act on, so quiet those targets by default.
     let filter = || {
         tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "info,comail_core=debug,html5ever=off,markup5ever=off".into())
+            .unwrap_or_else(|_| "info,html5ever=off,markup5ever=off".into())
     };
 
     let file = (|| {
         let dir = Paths::default_dirs().data_dir.join("logs");
         std::fs::create_dir_all(&dir).ok()?;
         let path = dir.join("comail.log");
+        let rotated = dir.join("comail.log.1");
         if std::fs::metadata(&path).is_ok_and(|m| m.len() > 5 * 1024 * 1024) {
-            let _ = std::fs::rename(&path, dir.join("comail.log.1"));
+            let _ = std::fs::rename(&path, &rotated);
         }
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .ok()
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            options.mode(0o600);
+            // `mode` only applies on create; tighten logs written before.
+            for p in [&path, &rotated] {
+                let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+        options.open(path).ok()
     })();
 
     let registry =
