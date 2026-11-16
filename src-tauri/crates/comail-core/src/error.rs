@@ -10,6 +10,11 @@ pub enum CoreError {
     Network(String),
     #[error("imap error: {0}")]
     Imap(String),
+    /// The server sent a response the IMAP parser rejects. Its bytes stay at
+    /// the head of the connection's read buffer, so the session must be
+    /// replaced; a narrower request may still succeed.
+    #[error("imap error: {0}")]
+    ImapParse(String),
     #[error("smtp error: {0}")]
     Smtp(String),
     #[error("tls error: {0}")]
@@ -49,7 +54,7 @@ impl CoreError {
             CoreError::Db(_) => "db",
             CoreError::Io(_) => "io",
             CoreError::Network(_) => "network",
-            CoreError::Imap(_) => "imap",
+            CoreError::Imap(_) | CoreError::ImapParse(_) => "imap",
             CoreError::Smtp(_) => "smtp",
             CoreError::Tls(_) => "tls",
             CoreError::Auth(_) => "auth",

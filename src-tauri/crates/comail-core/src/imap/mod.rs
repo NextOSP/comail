@@ -124,9 +124,17 @@ fn log_safe_imap_error(error: &async_imap::error::Error) -> String {
 }
 
 /// The only way an async-imap error becomes a `CoreError`; see
-/// [`log_safe_imap_error`].
+/// [`log_safe_imap_error`]. A response the parser rejected becomes
+/// [`CoreError::ImapParse`] so callers can replace the session and narrow
+/// the request instead of failing the whole command.
 pub(crate) fn imap_error(error: async_imap::error::Error) -> CoreError {
-    CoreError::Imap(log_safe_imap_error(&error))
+    let detail = log_safe_imap_error(&error);
+    match &error {
+        async_imap::error::Error::Io(io) if io.to_string().contains(RAW_RESPONSE_MARKER) => {
+            CoreError::ImapParse(detail)
+        }
+        _ => CoreError::Imap(detail),
+    }
 }
 
 /// Dev/self-hosted escape hatch: COMAIL_TLS_INSECURE=1 disables certificate
@@ -447,25 +455,49 @@ pub async fn fetch_headers(
     with_deadline(
         "UID FETCH headers",
         METADATA_TIMEOUT,
-        fetch_headers_inner(session, uid_set, behavior),
+        fetch_headers_inner(session, uid_set, behavior, true),
     )
     .await
+}
+
+/// [`fetch_headers`] without BODYSTRUCTURE, for a message whose
+/// BODYSTRUCTURE the parser rejects (e.g. an empty multipart). The message
+/// still syncs; `mime_plan` is `None` and `has_attachments` is false.
+pub async fn fetch_headers_without_bodystructure(
+    session: &mut Session,
+    uid_set: &str,
+    behavior: &dyn crate::provider::MailboxBehavior,
+) -> Result<Vec<FetchedHeader>> {
+    with_deadline(
+        "UID FETCH headers without BODYSTRUCTURE",
+        METADATA_TIMEOUT,
+        fetch_headers_inner(session, uid_set, behavior, false),
+    )
+    .await
+}
+
+fn header_fetch_query(
+    behavior: &dyn crate::provider::MailboxBehavior,
+    bodystructure: bool,
+) -> String {
+    let extra = behavior
+        .identity_fetch_items()
+        .iter()
+        .copied()
+        .filter(|item| *item != "EMAILID")
+        .collect::<Vec<_>>()
+        .join(" ");
+    let bodystructure = if bodystructure { " BODYSTRUCTURE" } else { "" };
+    format!("(UID FLAGS INTERNALDATE RFC822.SIZE{bodystructure} {extra} {HEADER_FIELDS})")
 }
 
 async fn fetch_headers_inner(
     session: &mut Session,
     uid_set: &str,
     behavior: &dyn crate::provider::MailboxBehavior,
+    bodystructure: bool,
 ) -> Result<Vec<FetchedHeader>> {
-    let items = behavior.identity_fetch_items();
-    let extra = items
-        .iter()
-        .copied()
-        .filter(|item| *item != "EMAILID")
-        .collect::<Vec<_>>()
-        .join(" ");
-    let query =
-        format!("(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {extra} {HEADER_FIELDS})");
+    let query = header_fetch_query(behavior, bodystructure);
     let mut out = Vec::new();
     {
         let mut stream = session
@@ -1438,6 +1470,33 @@ mod tests {
         ] {
             assert!(!safe.contains(secret), "{safe} leaks {secret}");
         }
+    }
+
+    #[tokio::test]
+    async fn unparseable_response_is_distinguishable_from_transport_errors() {
+        let error = decode_error(&unparseable_fetch_response()).await;
+        assert!(matches!(super::imap_error(error), CoreError::ImapParse(_)));
+        let transport = async_imap::error::Error::Io(std::io::Error::other("connection reset"));
+        assert!(matches!(super::imap_error(transport), CoreError::Imap(_)));
+        assert!(matches!(
+            super::imap_error(async_imap::error::Error::ConnectionLost),
+            CoreError::Imap(_)
+        ));
+    }
+
+    #[test]
+    fn degraded_header_fetch_only_drops_bodystructure() {
+        let caps = crate::provider::ServerCaps {
+            gmail_ext: true,
+            ..Default::default()
+        };
+        let behavior = crate::provider::behavior_for(crate::models::Provider::Gmail, &caps);
+        let full = super::header_fetch_query(behavior.as_ref(), true);
+        let degraded = super::header_fetch_query(behavior.as_ref(), false);
+        assert!(full.contains(" BODYSTRUCTURE "));
+        assert!(!degraded.contains("BODYSTRUCTURE"));
+        assert_eq!(full.replace(" BODYSTRUCTURE", ""), degraded);
+        assert!(degraded.contains("X-GM-MSGID") && degraded.contains("HEADER.FIELDS"));
     }
 
     #[test]

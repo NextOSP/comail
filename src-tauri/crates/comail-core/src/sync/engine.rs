@@ -23,6 +23,7 @@ use crate::imap::{self, FetchedHeader, ImapCredentials, Session};
 use crate::models::*;
 use crate::oauth::tokens::TokenProvider;
 use crate::queue;
+use crate::sync::isolate;
 use rusqlite::OptionalExtension;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -1747,10 +1748,10 @@ async fn sync_folder(
             let range_end =
                 ((last_seen as u64) + HEADER_CHUNK as u64).min((uid_next - 1).max(0) as u64) as u32;
             forward_remaining = (range_end as i64) < uid_next.saturating_sub(1);
-            let set = format!("{}:{range_end}", last_seen + 1);
-            let caps = session.server_caps().await?;
-            let behavior = crate::provider::behavior_for(config.provider, &caps);
-            let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
+            let uids: Vec<u32> = (last_seen + 1..=range_end).collect();
+            let headers = fetch_headers_isolating(ctx, config, session, &fresh_folder, &uids)
+                .await?
+                .items;
             let new: Vec<FetchedHeader> = headers
                 .into_iter()
                 .filter(|h| h.uid > last_seen && h.uid <= range_end)
@@ -2077,7 +2078,10 @@ async fn run_history_backfill(
         // Work passes: each pass advances every folder that still needs
         // headers by one step - a full (resumable) initial backfill, or one
         // HISTORY_CHUNK extension - until nothing is left or the connection
-        // breaks. One step per pass keeps folders progressing evenly.
+        // breaks. One step per pass keeps folders progressing evenly. A folder
+        // whose step failed sits out the remaining passes of this wake, so it
+        // can neither starve its siblings nor be retried in a tight loop.
+        let mut failed_folders = std::collections::HashSet::new();
         'work: loop {
             let mut progressed = match retry_one_header_failure(&ctx, &config, &mut session).await {
                 Ok(progressed) => progressed,
@@ -2111,7 +2115,9 @@ async fn run_history_backfill(
                 {
                     continue;
                 }
-                if folder.backfill_cursor.is_some() && folder.backfill_done {
+                if (folder.backfill_cursor.is_some() && folder.backfill_done)
+                    || failed_folders.contains(&folder.id)
+                {
                     continue;
                 }
                 if session.is_none() {
@@ -2157,7 +2163,11 @@ async fn run_history_backfill(
                         if let Some(s) = session.take() {
                             imap::logout(s).await;
                         }
-                        break 'work; // retry on the next nudge/tick
+                        // One folder's failure must not starve the folders
+                        // ordered after it. A dead connection surfaces as a
+                        // connect failure on the next folder and ends the pass.
+                        failed_folders.insert(folder.id);
+                        continue;
                     }
                 }
             }
@@ -2173,9 +2183,9 @@ async fn run_history_backfill(
     }
 }
 
-/// Retry one header that was fetched successfully but could not be parsed or
-/// persisted. The forward scan watermark is allowed to advance because this
-/// durable ledger keeps the UID independently retryable.
+/// Retry one header that could not be fetched, parsed or persisted. The
+/// forward scan watermark and history cursor are allowed to move past it
+/// because this durable ledger keeps the UID independently retryable.
 async fn retry_one_header_failure(
     ctx: &SyncCtx,
     config: &AccountConfig,
@@ -2210,10 +2220,34 @@ async fn retry_one_header_failure(
         *session = Some(connect(ctx, config).await?);
     }
     let s = session.as_mut().unwrap();
-    imap::select(s, &folder.imap_name).await?;
-    let caps = s.server_caps().await?;
-    let behavior = crate::provider::behavior_for(config.provider, &caps);
-    let headers = imap::fetch_headers(s, &uid.to_string(), behavior.as_ref()).await?;
+    let attempt = async {
+        let uid = u32::try_from(uid).map_err(|_| CoreError::Other(format!("invalid UID {uid}")))?;
+        imap::select(s, &folder.imap_name).await?;
+        fetch_headers_isolating(ctx, config, s, &folder, &[uid]).await
+    }
+    .await;
+    let fetched = match attempt {
+        Ok(fetched) => fetched,
+        Err(error) => {
+            // Reschedule the row whatever went wrong: left due, it would be
+            // retried first on every pass and fail that pass before any
+            // folder could step.
+            tracing::warn!(account_id, folder_id, uid, %error, "header retry failed; rescheduled");
+            if let Some(s) = session.take() {
+                imap::logout(s).await;
+            }
+            let detail = error.to_string();
+            ctx.db
+                .write(move |conn| record_header_failure(conn, folder_id, uid, &detail))
+                .await?;
+            return Ok(false);
+        }
+    };
+    if !fetched.unparseable.is_empty() {
+        // Unparseable even without BODYSTRUCTURE; already rescheduled.
+        return Ok(false);
+    }
+    let headers = fetched.items;
     if headers.is_empty() {
         let error = "server no longer returns this UID";
         let retry_at = now_ms() + 5 * 60_000;
@@ -2265,13 +2299,9 @@ async fn initial_backfill(
     // Newest chunks first: the top of the inbox fills in immediately instead
     // of after the whole window has downloaded.
     for chunk in missing.chunks(HEADER_CHUNK).rev() {
-        let set = imap::uid_set(chunk);
-        if set.is_empty() {
-            continue;
-        }
-        let caps = session.server_caps().await?;
-        let behavior = crate::provider::behavior_for(config.provider, &caps);
-        let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
+        let headers = fetch_headers_isolating(ctx, config, session, folder, chunk)
+            .await?
+            .items;
         done += headers.len() as u64;
         let (thread_ids, _) = store_headers(ctx, config, folder, headers, None).await?;
         if !thread_ids.is_empty() {
@@ -2331,10 +2361,10 @@ async fn extend_history(
     }
     let hi = (cursor - 1).max(1) as u32;
     let lo = hi.saturating_sub(HISTORY_CHUNK - 1).max(1);
-    let set = format!("{lo}:{hi}");
-    let caps = session.server_caps().await?;
-    let behavior = crate::provider::behavior_for(config.provider, &caps);
-    let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
+    let uids: Vec<u32> = (lo..=hi).collect();
+    let headers = fetch_headers_isolating(ctx, config, session, folder, &uids)
+        .await?
+        .items;
     let (thread_ids, _) = store_headers(ctx, config, folder, headers, None).await?;
     if !thread_ids.is_empty() {
         ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
@@ -2355,6 +2385,164 @@ async fn extend_history(
     }));
     emit_sync_status(ctx, config.id).await;
     Ok(())
+}
+
+/// UID FETCH headers for `uids` in the selected `folder`, isolating messages
+/// whose response the IMAP parser rejects (e.g. Gmail's BODYSTRUCTURE for an
+/// empty multipart/appledouble) so they cannot fail the whole window. Such a
+/// message is refetched without BODYSTRUCTURE so it still syncs with no MIME
+/// plan; if even that fails, its UID goes to the `sync_failures` ledger with
+/// backoff and is left out, letting the caller advance past it. On success
+/// `session` is usable and `folder` is selected.
+async fn fetch_headers_isolating(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    folder: &Folder,
+    uids: &[u32],
+) -> Result<isolate::Isolated<FetchedHeader>> {
+    let account_id = config.id;
+    let folder_id = folder.id;
+    let caps = session.server_caps().await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    let behavior = behavior.as_ref();
+    let mut isolation = isolate::Isolation::new(uids, isolate::MAX_FAILED_ATTEMPTS);
+    let mut stale = false;
+    while let Some(set) = isolation.next_set() {
+        if stale {
+            replace_session(ctx, config, session, folder).await?;
+        }
+        let uid_set = imap::uid_set(set);
+        let mut fetched = imap::fetch_headers(session, &uid_set, behavior).await;
+        if let ([uid], Err(CoreError::ImapParse(_))) = (set, &fetched) {
+            replace_session(ctx, config, session, folder).await?;
+            fetched = imap::fetch_headers_without_bodystructure(session, &uid_set, behavior).await;
+            if fetched.is_ok() {
+                tracing::warn!(
+                    account_id,
+                    folder_id,
+                    uid,
+                    "unparseable BODYSTRUCTURE; synced the message without it",
+                );
+            }
+        }
+        stale = matches!(fetched, Err(CoreError::ImapParse(_)));
+        isolation.record(set, fetched)?;
+    }
+    if stale {
+        replace_session(ctx, config, session, folder).await?;
+    }
+    let isolated = isolation.finish();
+    if !isolated.unparseable.is_empty() {
+        let failures: Vec<(i64, String)> = isolated
+            .unparseable
+            .iter()
+            .map(|(uid, error)| (i64::from(*uid), error.to_string()))
+            .collect();
+        for (uid, error) in &failures {
+            tracing::warn!(
+                account_id,
+                folder_id,
+                uid,
+                %error,
+                "unparseable message skipped; queued for retry",
+            );
+        }
+        ctx.db
+            .write(move |conn| {
+                for (uid, error) in &failures {
+                    record_header_failure(conn, folder_id, *uid, error)?;
+                }
+                Ok(())
+            })
+            .await?;
+    }
+    Ok(isolated)
+}
+
+/// Replace a session whose read buffer still holds an unparseable response
+/// (async-imap cannot skip it, so every later command would fail on the same
+/// bytes) and reselect `folder`.
+async fn replace_session(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    folder: &Folder,
+) -> Result<()> {
+    let mut fresh = connect(ctx, config).await?;
+    fresh.reconcile_stamps = std::mem::take(&mut session.reconcile_stamps);
+    // Dropped rather than logged out: LOGOUT would only re-read the bad bytes.
+    drop(std::mem::replace(session, fresh));
+    let selected = imap::select(session, &folder.imap_name).await?;
+    if let (Some(expected), Some(actual)) = (folder.uidvalidity, selected.uid_validity)
+        && expected != actual
+    {
+        return Err(CoreError::Imap(format!(
+            "UIDVALIDITY changed while reconnecting: expected {expected}, selected {actual}"
+        )));
+    }
+    Ok(())
+}
+
+/// [`replace_session`] for a folder known only by id.
+async fn replace_session_in(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    folder_id: i64,
+) -> Result<()> {
+    let folder = ctx
+        .db
+        .read(move |conn| repo::folders::get(conn, folder_id))
+        .await?
+        .ok_or_else(|| CoreError::NotFound(format!("folder {folder_id}")))?;
+    replace_session(ctx, config, session, &folder).await
+}
+
+/// Reschedule a header-stage failure with exponential backoff, so a UID that
+/// keeps failing costs one attempt per backoff window rather than one per
+/// sync pass.
+fn record_header_failure(
+    conn: &rusqlite::Connection,
+    folder_id: i64,
+    uid: i64,
+    error: &str,
+) -> Result<()> {
+    let attempts: i64 = conn.query_row(
+        "SELECT COALESCE((SELECT attempts FROM sync_failures
+                          WHERE stage = 'header' AND folder_id = ?1 AND uid = ?2), 0)",
+        rusqlite::params![folder_id, uid],
+        |row| row.get(0),
+    )?;
+    let retry_at = now_ms() + retry_delay_ms(attempts);
+    repo::sync_failures::record_header(conn, folder_id, uid, Some(retry_at), error)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod header_failure_tests {
+    use super::*;
+    use crate::db::testutil;
+
+    #[test]
+    fn repeated_header_failures_back_off_instead_of_staying_due() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let before = now_ms();
+        let error = "io: unparseable server response (2048 bytes withheld)";
+        record_header_failure(&c, 1, 887, error).unwrap();
+        record_header_failure(&c, 1, 887, error).unwrap();
+
+        let rows = repo::sync_failures::due_headers(&c, 1, i64::MAX, 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].attempts, 2);
+        assert!(rows[0].next_retry_at.unwrap() >= before + retry_delay_ms(1));
+        assert!(
+            repo::sync_failures::due_headers(&c, 1, before + retry_delay_ms(0), 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
 }
 
 /// A message older than this never triggers the new-mail chime/notification,
@@ -2526,14 +2714,7 @@ async fn store_headers(
                 let parsed = match crate::mime::parse_header_block(&fh.header_bytes) {
                     Ok(p) => p,
                     Err(e) => {
-                        let retry_at = now_ms() + 60_000;
-                        repo::sync_failures::record_header(
-                            &tx,
-                            folder_id,
-                            fh.uid as i64,
-                            Some(retry_at),
-                            &e.to_string(),
-                        )?;
+                        record_header_failure(&tx, folder_id, fh.uid as i64, &e.to_string())?;
                         tracing::warn!(
                             account_id,
                             folder_id,
@@ -2865,9 +3046,10 @@ enum BodyChunkError {
 
 fn classify_body_chunk_error(error: CoreError) -> BodyChunkError {
     match error {
-        error @ (CoreError::Imap(_) | CoreError::Network(_) | CoreError::Offline) => {
-            BodyChunkError::Reconnect(error)
-        }
+        error @ (CoreError::Imap(_)
+        | CoreError::ImapParse(_)
+        | CoreError::Network(_)
+        | CoreError::Offline) => BodyChunkError::Reconnect(error),
         error => BodyChunkError::Fatal(error),
     }
 }
@@ -3102,9 +3284,9 @@ mod content_batch_tests {
         // All work is durably deferred: drain completes without connecting or
         // fabricating a generic no-progress protocol failure.
         drain_missing_bodies(&ctx, &config).await.unwrap();
-        assert_eq!(content_retry_delay_ms(0), 60_000);
-        assert_eq!(content_retry_delay_ms(1), 120_000);
-        assert_eq!(content_retry_delay_ms(i64::MAX), 3_600_000);
+        assert_eq!(retry_delay_ms(0), 60_000);
+        assert_eq!(retry_delay_ms(1), 120_000);
+        assert_eq!(retry_delay_ms(i64::MAX), 3_600_000);
     }
 
     #[tokio::test]
@@ -3288,6 +3470,10 @@ mod content_batch_tests {
     fn only_protocol_transport_errors_request_reconnect() {
         assert!(matches!(
             classify_body_chunk_error(CoreError::Imap("protocol".into())),
+            BodyChunkError::Reconnect(_)
+        ));
+        assert!(matches!(
+            classify_body_chunk_error(CoreError::ImapParse("unparseable".into())),
             BodyChunkError::Reconnect(_)
         ));
         assert!(matches!(
@@ -3569,6 +3755,21 @@ async fn body_worker(
                             "body worker: reconnect after batch split failed"
                         ),
                     }
+                } else if matches!(error, CoreError::ImapParse(_)) {
+                    // This message's own response cannot be parsed, so a fresh
+                    // session would fail the same way. Defer it with backoff
+                    // rather than let it end every drain, and carry on.
+                    let failures = retry
+                        .items
+                        .iter()
+                        .map(|(message_id, _)| (*message_id, error.to_string()))
+                        .collect();
+                    record_background_content_failures(&ctx, &retry, failures).await?;
+                    mark_body_chunk_visited(&skip, &retry);
+                    drop(session);
+                    session = connect(&ctx, &config).await?;
+                    selected = None;
+                    continue;
                 } else {
                     queue.lock().await.push_front(retry);
                 }
@@ -3961,7 +4162,8 @@ async fn record_content_failure(ctx: &SyncCtx, message_id: i64, error: &CoreErro
     let _ = record_content_failure_details(ctx, vec![(message_id, error.to_string())]).await;
 }
 
-fn content_retry_delay_ms(previous_attempts: i64) -> i64 {
+/// Backoff for a `sync_failures` row: 1 min doubling to a 1 h cap.
+fn retry_delay_ms(previous_attempts: i64) -> i64 {
     (60_000_i64 * (1_i64 << previous_attempts.clamp(0, 6))).min(3_600_000)
 }
 
@@ -4009,7 +4211,7 @@ async fn record_content_failures_for_location(
                     "SELECT COALESCE((SELECT attempts FROM sync_failures WHERE stage = 'content' AND message_id = ?1), 0)",
                     [message_id], |row| row.get(0),
                 )?;
-                let delay = content_retry_delay_ms(attempts);
+                let delay = retry_delay_ms(attempts);
                 repo::sync_failures::record_content(&tx, message_id, Some(now_ms() + delay), &detail)?;
                 tracing::warn!(message_id, attempts = attempts + 1, retry_after_ms = delay, error = %detail, "body content deferred");
             }
@@ -4117,7 +4319,19 @@ async fn fetch_selective_content(
                 "message remote location changed before MIME-plan fetch".into(),
             ));
         }
-        let plans = imap::fetch_mime_plans_batch(session, &[uid]).await?;
+        let plans = match imap::fetch_mime_plans_batch(session, &[uid]).await {
+            Err(error @ CoreError::ImapParse(_)) if allow_open_fallback => {
+                tracing::warn!(
+                    message_id,
+                    error = %error,
+                    "unparseable BODYSTRUCTURE; using explicit-open full MIME fallback"
+                );
+                replace_session_in(ctx, config, session, folder_id).await?;
+                return fetch_full_open_fallback(ctx, config, session, message_id, folder_id, uid)
+                    .await;
+            }
+            plans => plans?,
+        };
         plan = plans
             .into_iter()
             .find(|fetched| fetched.uid == uid)
@@ -4182,6 +4396,9 @@ async fn fetch_selective_content(
                 error = %error,
                 "selective content unavailable; using explicit-open full MIME fallback"
             );
+            if matches!(error, CoreError::ImapParse(_)) {
+                replace_session_in(ctx, config, session, folder_id).await?;
+            }
             return fetch_full_open_fallback(ctx, config, session, message_id, folder_id, uid)
                 .await;
         }

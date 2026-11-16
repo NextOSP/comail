@@ -554,7 +554,11 @@ fn needs_fresh_session(error: &CoreError) -> bool {
     }
     matches!(
         error,
-        CoreError::Imap(_) | CoreError::Io(_) | CoreError::Network(_) | CoreError::Tls(_)
+        CoreError::Imap(_)
+            | CoreError::ImapParse(_)
+            | CoreError::Io(_)
+            | CoreError::Network(_)
+            | CoreError::Tls(_)
     ) || is_connection_failure(&error.to_string())
 }
 
