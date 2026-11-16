@@ -7,13 +7,17 @@
 //! Expansion iterates wall-clock time (chrono Local), so a weekly 09:00
 //! meeting stays at 09:00 across DST transitions.
 
-use chrono::{Datelike, Duration, NaiveDateTime, TimeZone, Weekday};
+use chrono::{Datelike, Days, NaiveDateTime, TimeZone, Weekday};
 
 use crate::calendar::{parse_dt, parse_ics};
 
 /// Cap horizon relative to the series start.
 const MAX_HORIZON_MS: i64 = 548 * 86_400_000; // ~18 months
 const MAX_OCCURRENCES: usize = 250;
+/// INTERVAL comes from untrusted invites. Any step past the horizon yields
+/// only the first occurrence, so clamping here changes no visible result
+/// while keeping every date step far inside chrono's range.
+const MAX_INTERVAL: i64 = 1_000;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Occurrence {
@@ -82,13 +86,26 @@ fn parse_rule(rrule: &str) -> Option<Rule> {
                     }
                 };
             }
-            "INTERVAL" => rule.interval = v.parse().unwrap_or(1).max(1),
+            "INTERVAL" => {
+                rule.interval = match v.trim().parse::<u64>() {
+                    Ok(n) => n.clamp(1, MAX_INTERVAL as u64) as i64,
+                    Err(e) if *e.kind() == std::num::IntErrorKind::PosOverflow => MAX_INTERVAL,
+                    Err(_) => 1,
+                }
+            }
             "COUNT" => rule.count = v.parse().ok(),
             "UNTIL" => rule.until_ms = parse_dt(v).map(|(ms, _)| ms),
             "BYDAY" => {
                 for tok in v.split(',') {
                     let tok = tok.trim().to_ascii_uppercase();
-                    let (ord_str, day_str) = tok.split_at(tok.len().saturating_sub(2));
+                    let Some((ord_str, day_str)) = tok
+                        .len()
+                        .checked_sub(2)
+                        .and_then(|split| tok.split_at_checked(split))
+                    else {
+                        rule.unsupported = true;
+                        continue;
+                    };
                     let Some(day) = weekday_of(day_str) else {
                         rule.unsupported = true;
                         continue;
@@ -98,6 +115,12 @@ fn parse_rule(rrule: &str) -> Option<Rule> {
                     } else {
                         ord_str.parse().unwrap_or(0)
                     };
+                    // RFC 5545 ordinals stay within ±53; anything larger is
+                    // malformed and would overflow the day arithmetic.
+                    if ord.unsigned_abs() > 53 {
+                        rule.unsupported = true;
+                        continue;
+                    }
                     rule.bydays.push((ord, day));
                 }
             }
@@ -156,15 +179,21 @@ fn nth_weekday(year: i32, month: u32, ord: i32, day: Weekday) -> Option<chrono::
 }
 
 /// All candidate starts (wall clock) for the series, capped by horizon/count.
+/// Date steps use checked arithmetic: a step past chrono's range ends the
+/// series instead of panicking.
 fn candidates(rule: &Rule, dtstart: NaiveDateTime, horizon: NaiveDateTime) -> Vec<NaiveDateTime> {
     let mut out = Vec::new();
     let time = dtstart.time();
     match rule.freq {
         Freq::Daily => {
-            let mut d = dtstart;
-            while d <= horizon && out.len() < MAX_OCCURRENCES {
-                out.push(d);
-                d += Duration::days(rule.interval);
+            let step = Days::new(rule.interval.unsigned_abs());
+            let mut d = Some(dtstart);
+            while let Some(cur) = d {
+                if cur > horizon || out.len() >= MAX_OCCURRENCES {
+                    break;
+                }
+                out.push(cur);
+                d = cur.checked_add_days(step);
             }
         }
         Freq::Weekly => {
@@ -173,13 +202,18 @@ fn candidates(rule: &Rule, dtstart: NaiveDateTime, horizon: NaiveDateTime) -> Ve
             } else {
                 rule.bydays.iter().map(|(_, d)| *d).collect()
             };
+            let step = Days::new(7 * rule.interval.unsigned_abs());
             // Monday-based week containing dtstart.
-            let week0 =
-                dtstart.date() - Duration::days(dtstart.weekday().num_days_from_monday() as i64);
-            let mut week = week0;
+            let Some(mut week) = dtstart.date().checked_sub_days(Days::new(u64::from(
+                dtstart.weekday().num_days_from_monday(),
+            ))) else {
+                return out;
+            };
             'outer: loop {
                 for offset in 0..7 {
-                    let date = week + Duration::days(offset);
+                    let Some(date) = week.checked_add_days(Days::new(offset)) else {
+                        break 'outer;
+                    };
                     if !days.contains(&date.weekday()) {
                         continue;
                     }
@@ -192,9 +226,9 @@ fn candidates(rule: &Rule, dtstart: NaiveDateTime, horizon: NaiveDateTime) -> Ve
                     }
                     out.push(cand);
                 }
-                week += Duration::days(7 * rule.interval);
-                if week.and_time(time) > horizon {
-                    break;
+                match week.checked_add_days(step) {
+                    Some(next) if next.and_time(time) <= horizon => week = next,
+                    _ => break,
                 }
             }
         }
@@ -246,9 +280,9 @@ fn candidates(rule: &Rule, dtstart: NaiveDateTime, horizon: NaiveDateTime) -> Ve
                         out.push(cand);
                     }
                 }
-                year += rule.interval as i32;
-                if year > dtstart.year() + 60 {
-                    break;
+                match year.checked_add(rule.interval as i32) {
+                    Some(next) if next <= dtstart.year() + 60 => year = next,
+                    _ => break,
                 }
             }
         }
@@ -279,7 +313,9 @@ pub fn expand(
     }
 
     let dtstart = to_local_naive(dtstart_ms)?;
-    let horizon_ms = (dtstart_ms + MAX_HORIZON_MS).min(window_end.max(dtstart_ms));
+    let horizon_ms = dtstart_ms
+        .saturating_add(MAX_HORIZON_MS)
+        .min(window_end.max(dtstart_ms));
     let horizon = to_local_naive(horizon_ms)?;
 
     // EXDATE + overrides from the raw calendar.
@@ -300,7 +336,9 @@ pub fn expand(
         }
         for ev in parse_ics(raw) {
             if let Some(orig) = ev.recurrence_id_ms {
-                let end = ev.ends_at_ms.unwrap_or(ev.starts_at_ms + duration_ms);
+                let end = ev
+                    .ends_at_ms
+                    .unwrap_or(ev.starts_at_ms.saturating_add(duration_ms));
                 if ev.status.as_deref() == Some("CANCELLED") {
                     exdates.push(orig);
                 } else {
@@ -332,7 +370,7 @@ pub fn expand(
             .find(|(orig, _, _)| same_occurrence(*orig, start))
         {
             Some((_, s, e)) => (*s, *e),
-            None => (start, start + duration_ms),
+            None => (start, start.saturating_add(duration_ms)),
         };
         if start < window_end && end > window_start {
             occurrences.push(Occurrence { start, end });
@@ -345,7 +383,7 @@ pub fn expand(
 /// treat anything within the same civil day + exact-time matches as the same
 /// occurrence when exact, else compare with minute tolerance.
 fn same_occurrence(a: i64, b: i64) -> bool {
-    (a - b).abs() < 60_000
+    a.abs_diff(b) < 60_000
 }
 
 fn unfolded_lines(text: &str) -> Vec<String> {
@@ -605,5 +643,84 @@ mod tests {
         )
         .unwrap();
         assert_eq!(occ.len(), 2); // Jul 10 + Jul 11
+    }
+
+    #[test]
+    fn huge_interval_yields_only_the_first_occurrence() {
+        let start = local_ms(2026, 7, 1, 9, 0);
+        for freq in ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] {
+            for interval in ["4294967295", "1000000000", "99999999999999999999999"] {
+                let rule = format!("FREQ={freq};INTERVAL={interval}");
+                let occ = expand(&rule, start, HOUR, None, i64::MIN, i64::MAX).unwrap();
+                assert_eq!(occ.len(), 1, "{rule}");
+                assert_eq!(occ[0].start, start, "{rule}");
+            }
+        }
+        assert_eq!(parse_rule("FREQ=DAILY;INTERVAL=0").unwrap().interval, 1);
+        assert_eq!(parse_rule("FREQ=DAILY;INTERVAL=-5").unwrap().interval, 1);
+        assert_eq!(
+            parse_rule("FREQ=DAILY;INTERVAL=4294967295")
+                .unwrap()
+                .interval,
+            MAX_INTERVAL
+        );
+    }
+
+    #[test]
+    fn far_future_and_malformed_rules_expand_without_panic() {
+        // Series starting at the edges of chrono's range, where any date
+        // step overflows; malformed BYDAY tokens must not panic either.
+        let max_ms = chrono::NaiveDate::MAX
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let min_ms = chrono::NaiveDate::MIN
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let starts = [
+            max_ms - 400 * DAY,
+            max_ms - 2 * DAY,
+            max_ms,
+            min_ms + 2 * DAY,
+            i64::MAX,
+            i64::MIN,
+        ];
+        let rules = [
+            "FREQ=DAILY",
+            "FREQ=DAILY;INTERVAL=4294967295",
+            "FREQ=WEEKLY;INTERVAL=4294967295",
+            "FREQ=WEEKLY;BYDAY=MO,SU",
+            "FREQ=MONTHLY;INTERVAL=4294967295",
+            "FREQ=MONTHLY;BYDAY=-1FR",
+            "FREQ=YEARLY;INTERVAL=4294967295",
+            "FREQ=YEARLY;COUNT=18446744073709551615",
+            "FREQ=DAILY;UNTIL=99991231T000000Z",
+        ];
+        for start in starts {
+            for rule in rules {
+                for duration in [HOUR, i64::MAX] {
+                    // An in-range window end keeps the horizon representable,
+                    // so the date steps themselves hit chrono's limit.
+                    for window_end in [i64::MAX, max_ms - DAY] {
+                        let _ = expand(rule, start, duration, None, i64::MIN, window_end);
+                    }
+                }
+            }
+        }
+        let start = local_ms(2026, 7, 1, 9, 0);
+        for rule in [
+            "FREQ=WEEKLY;BYDAY=éa",
+            "FREQ=WEEKLY;BYDAY=é",
+            "FREQ=MONTHLY;BYDAY=2147483647MO",
+            "FREQ=MONTHLY;BYDAY=-2147483648MO",
+        ] {
+            assert!(
+                expand(rule, start, HOUR, None, 0, i64::MAX).is_none(),
+                "{rule}"
+            );
+        }
     }
 }
