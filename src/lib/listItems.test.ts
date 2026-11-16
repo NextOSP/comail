@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadSummary } from "../ipc/types";
-import { buildListItems, type Bundle } from "./listItems";
+import { buildListItems, inlineThreadOrder, type Bundle, type ListItem } from "./listItems";
 
 const NOW = new Date(2026, 9, 18, 15, 0).getTime();
 const HOUR = 3_600_000;
@@ -21,12 +21,21 @@ const thread = (id: number, lastMessageAt: number): ThreadSummary => ({
   labels: [],
 });
 
-const bundle = (key: string): Bundle => ({ key, name: key, unread: false, threads: [thread(99, NOW)] });
+const bundle = (key: string, threads = [thread(99, NOW)], hasMore = false): Bundle => ({
+  key,
+  name: key,
+  unread: false,
+  threads,
+  hasMore,
+});
 
-const shape = (items: ReturnType<typeof buildListItems>) =>
-  items.map((it) =>
-    it.kind === "header" ? `h:${it.key}` : it.kind === "bundle" ? `b:${it.bundle.key}` : `t:${it.thread.id}`,
-  );
+const shape = (items: ListItem[]) =>
+  items.map((it) => {
+    if (it.kind === "header") return `h:${it.key}`;
+    if (it.kind === "bundle") return `b:${it.bundle.key}${it.expanded ? "+" : ""}`;
+    if (it.kind === "bundleMore") return `more:${it.bundle.key}`;
+    return `${it.nested ? "n" : "t"}:${it.thread.id}`;
+  });
 
 describe("buildListItems", () => {
   const today = [thread(1, NOW - HOUR), thread(2, NOW - 2 * HOUR)];
@@ -76,5 +85,53 @@ describe("buildListItems sections", () => {
     const items = buildListItems([a, b], false, [], 0, new Map([[2, { label: "Related" }]]));
     expect(items.map((i) => i.kind)).toEqual(["thread", "header", "thread"]);
     expect(items[1]).toMatchObject({ kind: "header", label: "Related" });
+  });
+});
+
+describe("inline bundles", () => {
+  const important = [thread(1, NOW - HOUR), thread(2, NOW - 3 * HOUR), thread(3, NOW - 25 * HOUR)];
+  // Newest mail 2h ago: sits between thread 1 and thread 2.
+  const news = bundle("news", [thread(10, NOW - 2 * HOUR), thread(11, NOW - 30 * HOUR)], true);
+  // Newest mail 2 days ago: sits after every Important thread.
+  const old = bundle("old", [thread(20, NOW - 48 * HOUR)]);
+  const collapsed = { expanded: new Set<string>() };
+
+  it("places each bundle by its newest mail, under that mail's date header", () => {
+    expect(shape(buildListItems(important, true, [old, news], NOW, undefined, collapsed))).toEqual([
+      "h:today",
+      "t:1",
+      "b:news",
+      "t:2",
+      "h:yesterday",
+      "t:3",
+      expect.stringMatching(/^h:/),
+      "b:old",
+    ]);
+  });
+
+  it("opens an expanded bundle in place, closing with a show-all row when the tab holds more", () => {
+    const expanded = new Set(["news", "old"]);
+    const rows = inlineThreadOrder(important, [old, news], expanded);
+    expect(shape(buildListItems(rows, false, [old, news], NOW, undefined, { expanded }))).toEqual([
+      "t:1",
+      "b:news+",
+      "n:10",
+      "n:11",
+      "more:news",
+      "t:2",
+      "t:3",
+      "b:old+",
+      "n:20",
+    ]);
+  });
+
+  it("walks threads (J/K order) in exactly the order the list shows them", () => {
+    const expanded = new Set(["news"]);
+    const rows = inlineThreadOrder(important, [old, news], expanded);
+    const shown = buildListItems(rows, true, [old, news], NOW, undefined, { expanded }).flatMap((it) =>
+      it.kind === "thread" ? [it.thread.id] : [],
+    );
+    expect(rows.map((t) => t.id)).toEqual([1, 10, 11, 2, 3]);
+    expect(shown).toEqual([1, 10, 11, 2, 3]);
   });
 });

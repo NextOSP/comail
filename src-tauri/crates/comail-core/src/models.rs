@@ -1014,6 +1014,10 @@ pub struct Settings {
     /// Important.
     #[serde(default = "default_true")]
     pub show_bundles: bool,
+    /// Avatar inbox UI: place bundles among Important mail by their newest
+    /// message and open them in place, instead of pinning them on top.
+    #[serde(default)]
+    pub inline_bundles: bool,
     pub undo_send_seconds: i64,
     pub load_remote_images: bool,
     #[serde(default = "default_ai_base_url")]
@@ -1376,6 +1380,7 @@ impl Default for Settings {
             inbox_ui: default_inbox_ui(),
             show_sender_photos: true,
             show_bundles: true,
+            inline_bundles: false,
             undo_send_seconds: 10,
             load_remote_images: true,
             ai_base_url: default_ai_base_url(),
