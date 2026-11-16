@@ -32,6 +32,9 @@ Works with **Gmail**, **Microsoft 365 / Outlook**, and any **IMAP** provider
 (Fastmail, iCloud, self-hosted, your company server). Regular IMAP accounts
 just need an app password - no setup at all.
 
+For Proton Mail, follow [Connect Proton Mail Bridge](docs/proton-bridge.md)
+to use Bridge's local STARTTLS servers and account certificate.
+
 ## Fly through your inbox
 
 - **Everything is a keystroke.** `J`/`K` to move, `E` to mark done, `H` to

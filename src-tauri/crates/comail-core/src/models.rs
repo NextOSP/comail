@@ -62,6 +62,23 @@ pub struct Account {
     pub sync_state: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImapSecurity {
+    #[default]
+    Tls,
+    Starttls,
+}
+
+impl ImapSecurity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Tls => "tls",
+            Self::Starttls => "starttls",
+        }
+    }
+}
+
 /// Full account row including server config - internal, never sent to frontend.
 #[derive(Debug, Clone)]
 pub struct AccountConfig {
@@ -75,6 +92,8 @@ pub struct AccountConfig {
     pub imap_port: u16,
     pub smtp_host: String,
     pub smtp_port: u16,
+    pub imap_security: ImapSecurity,
+    pub trusted_certificate: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -235,6 +254,10 @@ pub struct AddPasswordAccountArgs {
     pub imap_port: u16,
     pub smtp_host: String,
     pub smtp_port: u16,
+    #[serde(default)]
+    pub imap_security: ImapSecurity,
+    #[serde(default)]
+    pub trusted_certificate: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1672,6 +1695,20 @@ pub fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_account_requests_keep_tls_and_reject_unencrypted_security_modes() {
+        let mut args = serde_json::json!({
+            "email": "test@example.test", "username": "test", "password": "test-password",
+            "imapHost": "imap.example.test", "imapPort": 993,
+            "smtpHost": "smtp.example.test", "smtpPort": 587,
+        });
+        let old: AddPasswordAccountArgs = serde_json::from_value(args.clone()).unwrap();
+        assert_eq!(old.imap_security, ImapSecurity::Tls);
+        assert!(old.trusted_certificate.is_none());
+        args["imapSecurity"] = "none".into();
+        assert!(serde_json::from_value::<AddPasswordAccountArgs>(args).is_err());
+    }
 
     #[test]
     fn action_kind_string_roundtrip() {

@@ -95,6 +95,8 @@ async fn reply_send_reaches_smtp_and_sent_folder() {
         imap_port: 10993,
         smtp_host: "127.0.0.1".into(),
         smtp_port: 10588, // the sink
+        imap_security: Default::default(),
+        trusted_certificate: None,
     })
     .await
     .expect("add account");

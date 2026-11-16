@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
-import type { AddPasswordAccountArgs } from "../../ipc/types";
+import type { AddPasswordAccountArgs, ImapSecurity } from "../../ipc/types";
 import { queryClient } from "../../queries/client";
 import { useUi } from "../../stores/ui";
 import { Button } from "../ui/Button";
-import { FormField as Field, inputCls, Segmented } from "../ui/Field";
+import { FormField as Field, inputCls, Segmented, Select } from "../ui/Field";
 
 /**
  * Account connection, shared by the first-run flow (OnboardingFlow) and the
@@ -164,6 +164,9 @@ export function ImapForm({
   const [imapPort, setImapPort] = useState(PRESETS.fastmail.imapPort);
   const [smtpHost, setSmtpHost] = useState(PRESETS.fastmail.smtpHost);
   const [smtpPort, setSmtpPort] = useState(PRESETS.fastmail.smtpPort);
+  const [imapSecurity, setImapSecurity] = useState<ImapSecurity>("tls");
+  const [trustedCertificate, setTrustedCertificate] = useState("");
+  const certificateHintId = useId();
   const [editServers, setEditServers] = useState(false);
   const [busy, setBusy] = useState<"test" | "add" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +188,8 @@ export function ImapForm({
     setImapPort(p.imapPort);
     setSmtpHost(p.smtpHost);
     setSmtpPort(p.smtpPort);
+    setImapSecurity("tls");
+    setTrustedCertificate("");
   };
 
   const buildArgs = (): AddPasswordAccountArgs => ({
@@ -196,6 +201,8 @@ export function ImapForm({
     imapPort,
     smtpHost: smtpEffective,
     smtpPort,
+    imapSecurity,
+    trustedCertificate: trustedCertificate.trim() || null,
   });
 
   const submit = async () => {
@@ -298,6 +305,29 @@ export function ImapForm({
             port={smtpPort}
             onPort={setSmtpPort}
           />
+          <Field label={t("onboarding:field.imapSecurity")}>
+            <Select
+              aria-label={t("onboarding:field.imapSecurity")}
+              value={imapSecurity}
+              onChange={(e) => setImapSecurity(e.target.value as ImapSecurity)}
+            >
+              <option value="tls">{t("onboarding:security.tls")}</option>
+              <option value="starttls">{t("onboarding:security.starttls")}</option>
+            </Select>
+          </Field>
+          <Field label={t("onboarding:field.trustedCertificate")}>
+            <textarea
+              aria-label={t("onboarding:field.trustedCertificate")}
+              aria-describedby={certificateHintId}
+              value={trustedCertificate}
+              onChange={(e) => setTrustedCertificate(e.target.value)}
+              className={`${inputCls} min-h-20 font-mono text-xs`}
+              placeholder={t("onboarding:placeholder.trustedCertificate")}
+              maxLength={65536}
+              spellCheck={false}
+            />
+            <span id={certificateHintId} className="text-xs text-ink-faint">{t("onboarding:trustedCertificateHint")}</span>
+          </Field>
         </div>
       ) : (
         <div className="flex items-center gap-3 rounded-control border border-hairline bg-bg0/60 px-3 py-2">

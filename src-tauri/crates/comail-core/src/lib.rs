@@ -16,6 +16,7 @@ pub mod events;
 pub mod graph;
 pub mod graphcal;
 pub mod imap;
+mod mail_tls;
 pub mod mcp;
 pub mod mime;
 pub mod models;
@@ -562,7 +563,15 @@ impl Core {
             user: args.username.clone(),
             password: args.password.clone(),
         };
-        match imap::connect(&args.imap_host, args.imap_port, creds).await {
+        match imap::connect_with_security(
+            &args.imap_host,
+            args.imap_port,
+            creds,
+            args.imap_security,
+            args.trusted_certificate.as_deref(),
+        )
+        .await
+        {
             Ok(session) => {
                 imap::logout(session).await;
                 ConnectionTestResult {
@@ -602,6 +611,8 @@ impl Core {
                         imap_port: a.imap_port,
                         smtp_host: &a.smtp_host,
                         smtp_port: a.smtp_port,
+                        imap_security: a.imap_security,
+                        trusted_certificate: a.trusted_certificate.as_deref(),
                     },
                 )
             })
@@ -683,6 +694,8 @@ impl Core {
                         imap_port: servers.imap_port,
                         smtp_host: servers.smtp_host,
                         smtp_port: servers.smtp_port,
+                        imap_security: ImapSecurity::Tls,
+                        trusted_certificate: None,
                     },
                 )
             })

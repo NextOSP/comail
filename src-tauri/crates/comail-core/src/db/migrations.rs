@@ -38,6 +38,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/034_stable_identity_attempts.sql"),
     include_str!("migrations/035_restore_non_trash_roles.sql"),
     include_str!("migrations/036_rescan_skipped_headers.sql"),
+    include_str!("migrations/037_account_tls.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -62,6 +63,20 @@ pub fn run(conn: &mut Connection) -> Result<()> {
 mod tests {
     use super::*;
     use rusqlite::params;
+
+    #[test]
+    fn migration_037_preserves_existing_account_security() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_through(&mut conn, 36);
+        crate::db::testutil::seed_account(&conn);
+        run(&mut conn).unwrap();
+        run(&mut conn).unwrap();
+        let existing = crate::db::repo::accounts::get_config(&conn, 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(existing.imap_security, crate::models::ImapSecurity::Tls);
+        assert!(existing.trusted_certificate.is_none());
+    }
 
     fn run_through(conn: &mut Connection, version: usize) {
         for (i, sql) in MIGRATIONS.iter().take(version).enumerate() {

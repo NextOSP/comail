@@ -28,14 +28,17 @@
     "password": "Mot de passe",
     "imapHost": "Serveur IMAP",
     "smtpHost": "Serveur SMTP",
-    "port": "Port"
+    "port": "Port",
+    "imapSecurity": "Sécurité IMAP",
+    "trustedCertificate": "Certificat de confiance (PEM)"
   },
   "placeholder": {
     "email": "you@example.com",
     "displayName": "Facultatif",
     "password": "Mot de passe d’application",
     "imapHost": "imap.example.com",
-    "smtpHost": "smtp.example.com"
+    "smtpHost": "smtp.example.com",
+    "trustedCertificate": "-----BEGIN CERTIFICATE-----"
   },
   "testingConnection": "Test de la connexion…",
   "adding": "Ajout…",
@@ -364,5 +367,10 @@
       ]
     }
   },
-  "editServers": "Modifier"
+  "editServers": "Modifier",
+  "security": {
+    "tls": "TLS (chiffrement dès la connexion)",
+    "starttls": "STARTTLS"
+  },
+  "trustedCertificateHint": "Facultatif. Collez le certificat exporté par Proton Mail Bridge ou votre serveur de messagerie. Il est approuvé uniquement pour ce compte."
 }

@@ -76,6 +76,25 @@ jobs:
         working-directory: src-tauri
         run: cargo test -p comail-core
 
+  tls-compat:
+    name: TLS compatibility (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      COMAIL_NO_APPLE_INTELLIGENCE: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Test TLS upgrades and account certificate validation
+        working-directory: src-tauri
+        run: cargo test -p comail-core --test starttls --locked
+
   build-check:
     name: Tauri build check (Linux)
     runs-on: ubuntu-22.04

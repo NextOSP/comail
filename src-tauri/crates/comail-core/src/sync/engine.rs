@@ -1518,7 +1518,14 @@ async fn emit_sync_status(ctx: &SyncCtx, account_id: i64) {
 
 async fn connect(ctx: &SyncCtx, config: &AccountConfig) -> Result<Session> {
     let creds = imap_credentials(ctx, config).await?;
-    imap::connect(&config.imap_host, config.imap_port, creds).await
+    imap::connect_with_security(
+        &config.imap_host,
+        config.imap_port,
+        creds,
+        config.imap_security,
+        config.trusted_certificate.as_deref(),
+    )
+    .await
 }
 
 /// One sync cycle: sync every folder's headers,

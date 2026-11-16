@@ -57,6 +57,8 @@ async fn seed(db: &Db, port: u16) -> (i64, i64) {
                 imap_port: port,
                 smtp_host: "127.0.0.1",
                 smtp_port: port,
+                imap_security: Default::default(),
+                trusted_certificate: None,
             },
         )?;
         let inbox = repo::folders::upsert(conn, account_id, "INBOX", None, Some(roles::INBOX))?;
