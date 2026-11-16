@@ -127,6 +127,8 @@
     "modelPlaceholder": "anthropic/claude-sonnet",
     "zeroRetentionLabel": "Aucune conservation des données",
     "zeroRetentionHint": "N’envoie les requêtes de chat et de décision OpenRouter qu’aux fournisseurs qui ne conservent pas vos e-mails et ne s’en servent pas pour l’entraînement. Les modèles sans un tel fournisseur cessent de fonctionner tant que l’option reste activée.",
+    "quickRepliesLabel": "Réponses suggérées",
+    "quickRepliesHint": "À l’ouverture d’une réponse, envoie la conversation à l’IA pour proposer jusqu’à 3 réponses en un clic. Désactivé, rien n’est envoyé et des réponses standard s’affichent.",
     "providerLabel": "Fournisseur",
     "providerHint": "Les préréglages remplissent l’URL de base ; choisissez Point de terminaison personnalisé pour utiliser toute URL compatible OpenAI. Les serveurs locaux ne nécessitent aucune clé API.",
     "customProvider": "Point de terminaison personnalisé",

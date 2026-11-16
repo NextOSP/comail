@@ -499,6 +499,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         msClientSecret: "",
         embeddingBackend: "local",
         embeddingModel: "bge-small-en-v1.5",
+        aiQuickReplies: true,
         voiceDrafting: false,
         voiceProfile: "",
         voiceLearnedAt: 0,

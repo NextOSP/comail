@@ -3279,8 +3279,12 @@ impl Core {
     /// Up to 3 short one-tap reply suggestions grounded in the thread, shown
     /// as chips in an empty reply composer. Runs on the instant tier: the
     /// chips are only useful if they appear before the user starts typing.
+    /// With `ai_quick_replies` off nothing is sent and the list is empty.
     pub async fn ai_quick_replies(&self, thread_id: i64) -> Result<Vec<String>> {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        if !settings.ai_quick_replies {
+            return Ok(Vec::new());
+        }
         let cfg = self.ai_config_from(&settings, Scenario::QuickReply).await?;
         let detail = self.get_thread(thread_id).await?;
         let budget = ai::apple::context_chars(&cfg.base_url, 12_000);
