@@ -564,6 +564,10 @@
     "label": "Hiện các tab khác ở trên cùng",
     "hint": "Gom Tiếp thị, Tin tức, Mạng xã hội và Khác thành các dòng gọn phía trên thư Quan trọng. Tắt để chỉ xem Quan trọng."
   },
+  "inlineBundles": {
+    "label": "Xếp các nhóm vào danh sách",
+    "hint": "Đặt mỗi nhóm giữa các thư Quan trọng theo thư mới nhất của nhóm và mở ngay tại chỗ, thay vì ghim các nhóm ở trên cùng. Ẩn thanh tab ở Quan trọng."
+  },
   "groupByDate": {
     "label": "Nhóm theo ngày",
     "hint": "Hiển thị tiêu đề Hôm nay / Hôm qua / … giữa các cuộc hội thoại trong danh sách."

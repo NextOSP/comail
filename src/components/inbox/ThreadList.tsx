@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
 import { buildCommandContext } from "../../keyboard/context";
 import { primaryCorrespondent } from "../../lib/format";
-import { buildListItems, type Bundle, type SectionHeader } from "../../lib/listItems";
+import { buildListItems, bundledThreadIds, type Bundle, type SectionHeader } from "../../lib/listItems";
 import { prefetchThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { Button } from "../ui/Button";
@@ -46,7 +46,13 @@ type ThreadListProps = {
   photos?: boolean;
   /** Avatar inbox: other tabs collapsed into rows inside the list. */
   bundles?: Bundle[];
+  /** Inline bundles: bundles sit among the threads by their newest mail and
+   *  open in place; holds the keys of the expanded ones. `threads` must then
+   *  already include the expanded bundles' threads, in display order. */
+  inlineBundles?: ReadonlySet<string>;
   onOpenBundle?: (bundle: Bundle) => void;
+  /** Inline bundles: the closing row of an expanded bundle opens its full tab. */
+  onShowAllBundle?: (bundle: Bundle) => void;
   /** Ungrouped lists only: a header row above each keyed thread (search
    *  results' "Partial matches" / "Related" sections). */
   sections?: ReadonlyMap<number, SectionHeader>;
@@ -69,7 +75,9 @@ export function ThreadList({
   layout = "classic",
   photos = false,
   bundles,
+  inlineBundles,
   onOpenBundle,
+  onShowAllBundle,
   sections,
 }: ThreadListProps) {
   const { t } = useTranslation();
@@ -95,8 +103,16 @@ export function ThreadList({
   // thread-only array (selection, keyboard cursor, leave animation all index by
   // thread), while `items` is what the virtualizer lays out.
   const items = useMemo(
-    () => buildListItems(rows, groupByDate, bundles, Date.now(), sections),
-    [rows, groupByDate, bundles, sections],
+    () =>
+      buildListItems(
+        rows,
+        groupByDate,
+        bundles,
+        Date.now(),
+        sections,
+        inlineBundles ? { expanded: inlineBundles } : undefined,
+      ),
+    [rows, groupByDate, bundles, sections, inlineBundles],
   );
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -289,12 +305,21 @@ export function ThreadList({
     [beginSweep],
   );
 
+  // Inline bundles: rows that open/close with a bundle are not new mail or a
+  // triage removal, so they never animate.
+  const bundledRef = useRef<ReadonlySet<number>>(new Set());
+  bundledRef.current = useMemo(
+    () => (inlineBundles && bundles ? bundledThreadIds(bundles) : new Set<number>()),
+    [inlineBundles, bundles],
+  );
+
   useEffect(() => {
     const prev = rowsRef.current;
     const prevIds = new Set(prev.map((t) => t.id));
     const nextIds = new Set(threads.map((t) => t.id));
-    const removed = prev.filter((t) => !nextIds.has(t.id));
-    const gained = threads.some((t) => !prevIds.has(t.id));
+    const bundled = bundledRef.current;
+    const removed = prev.filter((t) => !nextIds.has(t.id) && !bundled.has(t.id));
+    const gained = threads.some((t) => !prevIds.has(t.id) && !bundled.has(t.id));
     // Play the brief leave animation for a pure removal - a triage action (on
     // one row or a whole multi-selection) that drops rows and adds none. Skip
     // it when the list also gains rows: that is a wholesale swap (view/tab
@@ -314,7 +339,7 @@ export function ThreadList({
     // A handful of rows appearing near the top while the rest of the list
     // stays put is new mail arriving; anything bigger (tab/view switch, first
     // load, a page of infinite scroll) just swaps in place.
-    const gainedIdx = threads.flatMap((t, i) => (prevIds.has(t.id) ? [] : [i]));
+    const gainedIdx = threads.flatMap((t, i) => (prevIds.has(t.id) || bundled.has(t.id) ? [] : [i]));
     if (
       prev.length > 0 &&
       gainedIdx.length > 0 &&
@@ -412,14 +437,32 @@ export function ThreadList({
                     bundle={item.bundle}
                     selfEmails={selfEmails}
                     photos={photos}
+                    expanded={inlineBundles ? (item.expanded ?? false) : undefined}
                     onOpen={onOpenBundle ?? noop}
                   />
                 </div>
               );
             }
+            if (item.kind === "bundleMore") {
+              return (
+                <div key={`m-${item.bundle.key}`} className={`absolute inset-x-0${shifting ? " co-row-shift" : ""}`} style={style}>
+                  <button
+                    type="button"
+                    className="co-row flex h-full w-full cursor-default items-center ps-16 pe-5 text-sm text-ink-muted hover:text-ink"
+                    onClick={() => onShowAllBundle?.(item.bundle)}
+                  >
+                    {t("inbox:bundle.showAll", { name: item.bundle.name })}
+                  </button>
+                </div>
+              );
+            }
             const th = item.thread;
             return (
-              <div key={th.id} className={`absolute inset-x-0${shifting ? " co-row-shift" : ""}`} style={style}>
+              <div
+                key={th.id}
+                className={`absolute inset-x-0${item.nested ? " ps-8" : ""}${shifting ? " co-row-shift" : ""}`}
+                style={style}
+              >
                 <ThreadRow
                   thread={th}
                   selected={th.id === selectedThreadId}

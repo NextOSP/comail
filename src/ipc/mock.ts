@@ -1472,6 +1472,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   inboxUi: "classic",
   showSenderPhotos: true,
   showBundles: true,
+  inlineBundles: false,
   undoSendSeconds: 10,
   loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",

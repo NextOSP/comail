@@ -10,6 +10,9 @@
     "important": "Important",
     "other": "Autres"
   },
+  "bundle": {
+    "showAll": "Tout afficher dans {{name}}"
+  },
   "splitPopover": {
     "title": "Nouvel onglet",
     "fromSender": "Messages de {{email}}",

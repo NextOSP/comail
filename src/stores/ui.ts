@@ -134,6 +134,8 @@ interface UiState {
 
   /** Thread ids in current list order (synced by ThreadOrderSync). */
   visibleThreadIds: number[];
+  /** Inline bundles: keys of the bundles opened in place in the Important list. */
+  expandedBundles: ReadonlySet<string>;
 
   selectedIndex: number;
   selectedThreadId: number | null;
@@ -257,6 +259,8 @@ interface UiState {
   selectFolder: (folderId: number | null) => void;
   /** Switch the inbox tab: a split (Important/Other/custom) or an auto-label tab. */
   selectInboxTab: (tab: { splitId?: number; labelId?: number }) => void;
+  /** Inline bundles: open or close one bundle in place. */
+  toggleBundle: (key: string) => void;
   selectThread: (index: number, id: number | null) => void;
   openThread: (id: number | null) => void;
   toggleSelect: (id: number) => void;
@@ -291,6 +295,7 @@ export const useUi = create<UiState>((set, get) => ({
   labelFilter: null,
   folderFilter: null,
   visibleThreadIds: [],
+  expandedBundles: new Set(),
   selectedIndex: 0,
   selectedThreadId: null,
   openThreadId: null,
@@ -402,6 +407,12 @@ export const useUi = create<UiState>((set, get) => ({
       selectedThreadId: null,
       selection: [],
     }),
+
+  toggleBundle: (key) => {
+    const next = new Set(get().expandedBundles);
+    if (!next.delete(key)) next.add(key);
+    set({ expandedBundles: next });
+  },
 
   selectThread: (index, id) => set({ selectedIndex: index, selectedThreadId: id }),
 

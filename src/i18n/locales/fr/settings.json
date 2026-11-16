@@ -564,6 +564,10 @@
     "label": "Afficher les autres onglets en haut",
     "hint": "Regroupe Marketing, Actualités, Social et Autres en lignes compactes au-dessus de vos e-mails Importants. Désactivez pour ne voir que Important."
   },
+  "inlineBundles": {
+    "label": "Mêler les groupes à la liste",
+    "hint": "Place chaque groupe parmi vos e-mails Importants selon son message le plus récent et l'ouvre sur place, au lieu d'épingler les groupes en haut. Masque la barre d'onglets dans Important."
+  },
   "groupByDate": {
     "label": "Grouper par date",
     "hint": "Afficher des en-têtes Aujourd'hui / Hier / … entre les conversations dans la liste."

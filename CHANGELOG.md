@@ -9,6 +9,15 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+### Added
+
+- **Bundles mixed into the list.** In the avatar inbox, a new "Mix bundles
+  into the list" setting places each bundle among your Important mail by its
+  newest message instead of pinning bundles on top. Clicking a bundle opens
+  it in place, J/K walks into it, and its row previews the newest subjects
+  in the bundle's label color. The tab bar is hidden on Important while it
+  is on.
+
 ## [0.2.41] - 2026-10-22
 
 ### Added

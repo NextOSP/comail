@@ -566,6 +566,10 @@
     "label": "Show other tabs at the top",
     "hint": "Bundles Marketing, News, Social and Other into compact rows above your Important mail. Turn off to see only Important here."
   },
+  "inlineBundles": {
+    "label": "Mix bundles into the list",
+    "hint": "Place each bundle among your Important mail by its newest message and open it in place, instead of pinning bundles on top. Hides the tab bar on Important."
+  },
   "groupByDate": {
     "label": "Group by date",
     "hint": "Show Today / Yesterday / … headers between conversations in the list."

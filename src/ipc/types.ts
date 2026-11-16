@@ -476,6 +476,9 @@ export interface Settings {
   showSenderPhotos: boolean;
   /** Avatar inbox UI: other tabs as bundle rows at the top of Important. */
   showBundles: boolean;
+  /** Avatar inbox UI: bundles sit among Important mail by their newest message
+   *  and open in place; the tab bar is hidden on Important. */
+  inlineBundles: boolean;
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;
