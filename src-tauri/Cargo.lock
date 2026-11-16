@@ -1023,6 +1023,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "webpki-roots 0.26.11",
+ "xattr",
  "zip 9.0.5",
 ]
 

@@ -68,6 +68,10 @@ hickory-resolver = { version = "0.26", default-features = false, features = ["to
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "json"] }
 toml_edit = "0.25"
 
+# Gatekeeper quarantine attribute on attachment files written to disk.
+[target.'cfg(target_os = "macos")'.dependencies]
+xattr = "1"
+
 [dev-dependencies]
 tempfile = "3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

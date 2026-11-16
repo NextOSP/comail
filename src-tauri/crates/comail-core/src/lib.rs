@@ -23,6 +23,7 @@ pub mod oauth;
 pub mod otp;
 pub mod preview;
 pub mod provider;
+pub mod quarantine;
 pub mod queue;
 pub mod route;
 pub mod scheduler;
@@ -1801,6 +1802,8 @@ impl Core {
 
         if let Some(path) = file_path {
             if tokio::fs::metadata(&path).await.is_ok() {
+                // Files cached before quarantining existed get it now.
+                quarantine::mark(std::path::Path::new(&path))?;
                 return Ok(path);
             }
         }
@@ -1867,6 +1870,9 @@ impl Core {
         let path = dir.join(&safe_name);
         let partial = dir.join(".download.part");
         tokio::fs::write(&partial, &bytes).await?;
+        // Quarantined before it gets its real name, so the OS never sees the
+        // final file without the flag.
+        quarantine::mark(&partial)?;
         tokio::fs::rename(&partial, &path).await?;
 
         let path_str = path.to_string_lossy().to_string();
@@ -1889,6 +1895,7 @@ impl Core {
     pub async fn save_attachment(&self, attachment_id: i64, dest: String) -> Result<()> {
         let src = self.get_attachment(attachment_id).await?;
         tokio::fs::copy(&src, &dest).await?;
+        quarantine::mark(std::path::Path::new(&dest))?;
         Ok(())
     }
 
