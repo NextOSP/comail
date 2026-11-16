@@ -5284,9 +5284,17 @@ fn ext_for_mime(mime: &str) -> Option<&'static str> {
     )
 }
 
+/// Unicode `Bidi_Control` characters. In a filename they reorder how the name
+/// is displayed, e.g. `invoice\u{202E}fdp.app` shows as `invoiceppa.pdf`, so a
+/// sender can disguise the real extension.
+fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
+
 fn safe_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()
+        .filter(|&c| !is_bidi_control(c))
         .map(|c| {
             if c == '/' || c == '\\' || c == '\0' || c.is_control() {
                 '_'
@@ -6156,5 +6164,26 @@ mod attachment_ext_tests {
     #[test]
     fn unknown_mime_has_no_extension() {
         assert_eq!(ext_for_mime("application/x-unknown"), None);
+    }
+
+    #[test]
+    fn safe_filename_strips_bidi_controls() {
+        // Right-to-left override disguising an app as a PDF.
+        assert_eq!(safe_filename("invoice\u{202E}fdp.app"), "invoicefdp.app");
+        let every = "a\u{061C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\
+                     \u{2066}\u{2067}\u{2068}\u{2069}b.txt";
+        assert_eq!(safe_filename(every), "ab.txt");
+        // Removing them can't expose a leading dot or leave an empty name.
+        assert_eq!(safe_filename("\u{202E}.hidden"), "hidden");
+        assert_eq!(safe_filename("\u{202E}\u{2066}"), "attachment");
+    }
+
+    #[test]
+    fn safe_filename_blocks_traversal_and_controls() {
+        assert_eq!(safe_filename("../../etc/passwd"), "_.._etc_passwd");
+        assert_eq!(safe_filename("a\\b\0c\nd.pdf"), "a_b_c_d.pdf");
+        assert_eq!(safe_filename(" .. "), "attachment");
+        assert_eq!(safe_filename("résumé 2026.pdf"), "résumé 2026.pdf");
+        assert_eq!(safe_filename(&"x".repeat(300)).chars().count(), 200);
     }
 }
