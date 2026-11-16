@@ -144,6 +144,16 @@ struct TzObservance {
     time_sec: u32,
 }
 
+/// The two ASCII digits at byte offset `at` as a number. None when the input
+/// is too short or holds anything else there; working on bytes means a
+/// multi-byte character in hostile input can never split a slice mid-char.
+fn two_digits(s: &str, at: usize) -> Option<u32> {
+    match *s.as_bytes().get(at..at.checked_add(2)?)? {
+        [a @ b'0'..=b'9', b @ b'0'..=b'9'] => Some(u32::from(a - b'0') * 10 + u32::from(b - b'0')),
+        _ => None,
+    }
+}
+
 /// Parse "+0700" / "-0430" (±HHMM) to an offset in seconds.
 fn parse_offset(v: &str) -> Option<i32> {
     let v = v.trim();
@@ -151,19 +161,16 @@ fn parse_offset(v: &str) -> Option<i32> {
         Some(r) => (-1, r),
         None => (1, v.strip_prefix('+').unwrap_or(v)),
     };
-    if rest.len() < 4 {
-        return None;
-    }
-    let h: i32 = rest[0..2].parse().ok()?;
-    let m: i32 = rest[2..4].parse().ok()?;
+    let h = two_digits(rest, 0)? as i32;
+    let m = two_digits(rest, 2)? as i32;
     Some(sign * (h * 3600 + m * 60))
 }
 
-/// Parse a BYDAY token like "2SU" or "-1SU" into (nth, weekday).
+/// Parse a BYDAY token like "2SU" or "-1SU" into (nth, weekday). A month
+/// holds at most five of any weekday, so other ordinals are rejected.
 fn parse_byday(v: &str) -> Option<(i32, Weekday)> {
     let v = v.trim();
-    let split = v.len().saturating_sub(2);
-    let (num, day) = v.split_at(split);
+    let (num, day) = v.split_at_checked(v.len().checked_sub(2)?)?;
     let weekday = match day.to_ascii_uppercase().as_str() {
         "SU" => Weekday::Sun,
         "MO" => Weekday::Mon,
@@ -175,11 +182,13 @@ fn parse_byday(v: &str) -> Option<(i32, Weekday)> {
         _ => return None,
     };
     let nth = if num.is_empty() { 1 } else { num.parse().ok()? };
-    Some((nth, weekday))
+    ((-5..=5).contains(&nth) && nth != 0).then_some((nth, weekday))
 }
 
 /// Date of the nth `weekday` in `year`/`month` (nth = -1 means the last one).
 fn nth_weekday(year: i32, month: u32, weekday: Weekday, nth: i32) -> Option<NaiveDate> {
+    // Validates year/month first, so the `+ 1`s below cannot overflow.
+    let first = NaiveDate::from_ymd_opt(year, month, 1)?;
     if nth < 0 {
         // Walk back from the last day of the month.
         let first_next = if month == 12 {
@@ -193,12 +202,11 @@ fn nth_weekday(year: i32, month: u32, weekday: Weekday, nth: i32) -> Option<Naiv
         }
         return Some(d);
     }
-    let first = NaiveDate::from_ymd_opt(year, month, 1)?;
     let shift = (7 + weekday.num_days_from_sunday() as i64
         - first.weekday().num_days_from_sunday() as i64)
         % 7;
     let day = 1 + shift + (nth as i64 - 1) * 7;
-    NaiveDate::from_ymd_opt(year, month, day as u32)
+    NaiveDate::from_ymd_opt(year, month, u32::try_from(day).ok()?)
 }
 
 /// Collect VTIMEZONE definitions into TZID -> observances. Uses the offsets the
@@ -247,14 +255,11 @@ fn parse_vtimezones(lines: &[String]) -> HashMap<String, Vec<TzObservance>> {
                 }
             }
             "DTSTART" if in_sub => {
-                if let (Some(c), Some(t)) = (cur.as_mut(), value.trim().split_once('T')) {
-                    let hms = t.1;
-                    if hms.len() >= 6 {
-                        let h: u32 = hms[0..2].parse().unwrap_or(0);
-                        let m: u32 = hms[2..4].parse().unwrap_or(0);
-                        let s: u32 = hms[4..6].parse().unwrap_or(0);
-                        c.time_sec = h * 3600 + m * 60 + s;
-                    }
+                if let (Some(c), Some((_, hms))) = (cur.as_mut(), value.trim().split_once('T'))
+                    && let (Some(h), Some(m), Some(s)) =
+                        (two_digits(hms, 0), two_digits(hms, 2), two_digits(hms, 4))
+                {
+                    c.time_sec = h * 3600 + m * 60 + s;
                 }
             }
             "RRULE" if in_sub => {
@@ -262,7 +267,7 @@ fn parse_vtimezones(lines: &[String]) -> HashMap<String, Vec<TzObservance>> {
                     for kv in value.split(';') {
                         match kv.split_once('=') {
                             Some((k, v)) if k.eq_ignore_ascii_case("BYMONTH") => {
-                                c.month = v.trim().parse().ok();
+                                c.month = v.trim().parse().ok().filter(|m| (1..=12).contains(m));
                             }
                             Some((k, v)) if k.eq_ignore_ascii_case("BYDAY") => {
                                 if let Some((n, wd)) = parse_byday(v) {
@@ -297,7 +302,9 @@ fn offset_for(obs: &[TzObservance], local: NaiveDateTime) -> Option<i32> {
                 .filter_map(|o| {
                     let (month, wd) = (o.month?, o.weekday?);
                     let date = nth_weekday(year, month, wd, o.nth)?;
-                    let dt = date.and_hms_opt(0, 0, 0)? + Duration::seconds(o.time_sec as i64);
+                    let dt = date
+                        .and_hms_opt(0, 0, 0)?
+                        .checked_add_signed(Duration::seconds(o.time_sec as i64))?;
                     Some((dt, o.offset_to))
                 })
                 .collect();
@@ -765,6 +772,55 @@ mod tests {
                 .unwrap()
                 .timestamp_millis()
         );
+    }
+
+    #[test]
+    fn non_ascii_vtimezone_values_are_rejected_without_panic() {
+        // Hostile invites put multi-byte characters where the parser expects
+        // fixed-width ASCII; byte slicing at those offsets used to panic.
+        assert_eq!(parse_offset("+0é00"), None);
+        assert_eq!(parse_offset("é"), None);
+        assert_eq!(parse_offset("+07"), None);
+        assert_eq!(parse_offset("-0430"), Some(-(4 * 3600 + 30 * 60)));
+        assert_eq!(parse_byday("éa"), None);
+        assert_eq!(parse_byday("1é"), None);
+        assert_eq!(parse_byday("é"), None);
+        assert_eq!(parse_byday("2147483647SU"), None);
+        assert_eq!(parse_byday("-1SU"), Some((-1, Weekday::Sun)));
+        assert_eq!(two_digits("1é0000", 0), None);
+        assert_eq!(two_digits("12", 1), None);
+        assert_eq!(two_digits("12", usize::MAX), None);
+
+        for (tzoffset, dtstart, rrule) in [
+            (
+                "+0é00",
+                "16010101T020000",
+                "FREQ=YEARLY;BYDAY=1SU;BYMONTH=11",
+            ),
+            (
+                "-0500",
+                "19700101Té0000",
+                "FREQ=YEARLY;BYDAY=1SU;BYMONTH=11",
+            ),
+            (
+                "-0500",
+                "16010101T020000",
+                "FREQ=YEARLY;BYDAY=éa;BYMONTH=11",
+            ),
+            (
+                "-0500",
+                "16010101T020000",
+                "FREQ=YEARLY;BYDAY=-1SU;BYMONTH=4294967295",
+            ),
+        ] {
+            let ics = format!(
+                "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:X\r\nBEGIN:STANDARD\r\nDTSTART:{dtstart}\r\nTZOFFSETTO:{tzoffset}\r\nRRULE:{rrule}\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:{dtstart}\r\nTZOFFSETTO:{tzoffset}\r\nRRULE:{rrule}\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:e\r\nDTSTART;TZID=X:20260715T090000\r\nEND:VEVENT\r\nEND:VCALENDAR"
+            );
+            // The malformed value is skipped; the event itself still parses.
+            let events = parse_ics(&ics);
+            assert_eq!(events.len(), 1, "{ics}");
+            assert_ne!(events[0].starts_at_ms, 0);
+        }
     }
 
     #[test]
