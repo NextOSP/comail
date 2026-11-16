@@ -2885,7 +2885,9 @@ struct DecodedSelectiveContent {
     plan: crate::mime::MimePlan,
     text_body: Option<String>,
     html_body: Option<String>,
-    calendar_parts: Vec<String>,
+    /// Parsed while decoding, so untrusted calendar data never runs on the
+    /// DB writer thread.
+    calendar_events: Vec<crate::calendar::IcsEvent>,
     snippet: String,
 }
 
@@ -4034,7 +4036,7 @@ fn attachment_only_content(item: PlannedBodyFetch) -> Result<DecodedSelectiveCon
         plan: item.plan,
         text_body: None,
         html_body: None,
-        calendar_parts: Vec::new(),
+        calendar_events: Vec::new(),
         snippet: String::new(),
     })
 }
@@ -4054,7 +4056,7 @@ fn decode_selective_content(
         .collect();
     let mut plain = Vec::new();
     let mut html = Vec::new();
-    let mut calendar_parts = Vec::new();
+    let mut calendar_events = Vec::new();
     for planned in &item.plan.text_sections {
         let section = fetched_by_section.get(&planned.section).ok_or_else(|| {
             CoreError::Imap(format!(
@@ -4067,7 +4069,9 @@ fn decode_selective_content(
         match decoded.kind {
             crate::mime::TextSectionKind::Plain => plain.push(decoded.content),
             crate::mime::TextSectionKind::Html => html.push(decoded.content),
-            crate::mime::TextSectionKind::Calendar => calendar_parts.push(decoded.content),
+            crate::mime::TextSectionKind::Calendar => {
+                calendar_events.extend(crate::calendar::parse_ics(&decoded.content))
+            }
         }
     }
 
@@ -4080,7 +4084,7 @@ fn decode_selective_content(
         plan: item.plan,
         text_body,
         html_body,
-        calendar_parts,
+        calendar_events,
         snippet,
     })
 }
@@ -4255,10 +4259,8 @@ async fn persist_selective_batch(
                     Some(&content.snippet),
                 )?;
                 repo::search::index_message(&tx, message_id)?;
-                for ics in &content.calendar_parts {
-                    for event in crate::calendar::parse_ics(ics) {
-                        repo::calendar::upsert(&tx, account_id, message_id, &event)?;
-                    }
+                for event in &content.calendar_events {
+                    repo::calendar::upsert(&tx, account_id, message_id, event)?;
                 }
                 let _ = repo::sync_failures::clear_content(&tx, message_id);
                 if let Some(thread_id) =
@@ -4306,6 +4308,12 @@ async fn persist_body(
     let path_str = path.to_string_lossy().to_string();
 
     let parsed = crate::mime::parse_message(raw)?;
+    // Parse invites here rather than on the DB writer thread.
+    let calendar_events: Vec<crate::calendar::IcsEvent> = parsed
+        .calendar_parts
+        .iter()
+        .flat_map(|ics| crate::calendar::parse_ics(ics))
+        .collect();
     let config_id = config.id;
     let (persisted, thread_id) = ctx
         .db
@@ -4348,10 +4356,8 @@ async fn persist_body(
                 .collect();
             repo::messages::replace_attachments(&tx, message_id, &atts)?;
             repo::search::index_message(&tx, message_id)?;
-            for ics in &parsed.calendar_parts {
-                for ev in crate::calendar::parse_ics(ics) {
-                    repo::calendar::upsert(&tx, config_id, message_id, &ev)?;
-                }
+            for ev in &calendar_events {
+                repo::calendar::upsert(&tx, config_id, message_id, ev)?;
             }
             let _ = repo::sync_failures::clear_content(&tx, message_id);
             let tid: Option<i64> =

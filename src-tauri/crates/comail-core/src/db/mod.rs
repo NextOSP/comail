@@ -26,11 +26,26 @@ fn spawn_conn_thread(path: std::path::PathBuf, name: &str) -> Result<mpsc::Sende
         .name(format!("comail-db-{name}"))
         .spawn(move || {
             while let Ok(job) = rx.recv() {
-                job(&mut conn);
+                run_job(&mut conn, job);
             }
         })
         .map_err(CoreError::Io)?;
     Ok(tx)
+}
+
+/// Run one job, keeping the connection thread alive if it panics. A dead
+/// writer thread would fail every later write until relaunch. The panicking
+/// job's reply sender is dropped while unwinding, so its caller gets an error.
+fn run_job(conn: &mut Connection, job: Job) {
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(conn))).is_err() {
+        // Unwinding dropped any rusqlite Transaction (which rolls back); a raw
+        // BEGIN would still be open, so close it here.
+        if !conn.is_autocommit() {
+            let _ = conn.execute_batch("ROLLBACK");
+        }
+        // Fixed text: the panic payload may quote message content.
+        tracing::error!("database job panicked; rolled back and continuing");
+    }
 }
 
 fn open_connection(path: &Path) -> Result<Connection> {
@@ -74,6 +89,7 @@ impl Db {
             let _ = reply_tx.send(f(conn));
         }))
         .map_err(|_| CoreError::Other("db thread gone".into()))?;
+        // Fails when the job panicked (see `run_job`) before replying.
         reply_rx
             .await
             .map_err(|_| CoreError::Other("db call dropped".into()))?
@@ -95,6 +111,51 @@ impl Db {
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     {
         self.call(&self.read_tx, f).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn panicking_job_errors_and_writer_keeps_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("t.db")).unwrap();
+        db.write(|c| Ok(c.execute_batch("CREATE TABLE t (v INTEGER)")?))
+            .await
+            .unwrap();
+
+        // Panic mid-transaction, both with a rusqlite Transaction and a raw
+        // BEGIN: the caller sees an error and nothing is committed.
+        let res = db
+            .write(|c| -> Result<()> {
+                let tx = c.transaction()?;
+                tx.execute("INSERT INTO t VALUES (1)", [])?;
+                panic!("boom");
+            })
+            .await;
+        assert!(res.is_err());
+        let res = db
+            .write(|c| -> Result<()> {
+                c.execute_batch("BEGIN; INSERT INTO t VALUES (2);")?;
+                panic!("boom");
+            })
+            .await;
+        assert!(res.is_err());
+
+        // The writer thread survived and the connection is usable again.
+        let (autocommit, count) = db
+            .write(|c| {
+                let autocommit = c.is_autocommit();
+                c.execute("INSERT INTO t VALUES (3)", [])?;
+                let n: i64 = c.query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0))?;
+                Ok((autocommit, n))
+            })
+            .await
+            .unwrap();
+        assert!(autocommit);
+        assert_eq!(count, 1);
     }
 }
 
