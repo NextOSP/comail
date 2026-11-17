@@ -1,10 +1,17 @@
-//! macOS quarantine flag for attachment files Comail writes to disk.
+//! "Downloaded from the internet" marking for attachment files Comail writes
+//! to disk.
 //!
-//! Files a browser downloads carry a `com.apple.quarantine` extended
-//! attribute, so Gatekeeper checks them (and asks before running anything
-//! executable) the first time they're opened. Attachments opened or saved from
-//! Comail get the same attribute, so a hostile attachment opened with the OS
-//! handler is checked like a download instead of trusted as a local file.
+//! Files a browser downloads are marked so the OS checks them (and asks
+//! before running anything executable) the first time they're opened.
+//! Attachments opened or saved from Comail get the same mark, so a hostile
+//! attachment opened with the OS handler is checked like a download instead
+//! of trusted as a local file:
+//!
+//! - macOS: the `com.apple.quarantine` extended attribute (Gatekeeper).
+//! - Windows: the Mark of the Web, a `Zone.Identifier` alternate data stream
+//!   with `ZoneId=3` (SmartScreen, the "Open File - Security Warning"
+//!   prompt, Office Protected View).
+//!
 //! Other platforms have no equivalent; there this is a no-op.
 
 use std::path::Path;
@@ -35,7 +42,39 @@ pub fn mark(path: &Path) -> std::io::Result<()> {
     xattr::set(path, ATTR, value(now).as_bytes())
 }
 
-#[cfg(not(target_os = "macos"))]
+/// The alternate data stream Windows reads the Mark of the Web from.
+#[cfg(windows)]
+fn zone_stream(path: &Path) -> std::path::PathBuf {
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    stream.into()
+}
+
+/// Zone 3 is the Internet zone, what browsers write for a download.
+#[cfg(windows)]
+const ZONE_IDENTIFIER: &[u8] = b"[ZoneTransfer]\r\nZoneId=3\r\n";
+
+/// Mark `path` with the Mark of the Web unless it already has one (kept for
+/// the same reason as on macOS). Volumes without alternate data streams
+/// (FAT, exFAT, some network shares) can't carry the mark, as with a browser
+/// download saved there; that is not an error.
+#[cfg(windows)]
+pub fn mark(path: &Path) -> std::io::Result<()> {
+    /// `ERROR_INVALID_FUNCTION`, `ERROR_NOT_SUPPORTED`, `ERROR_INVALID_NAME`:
+    /// what a volume without stream support answers.
+    const NO_STREAMS: [i32; 3] = [1, 50, 123];
+
+    let stream = zone_stream(path);
+    if std::fs::metadata(&stream).is_ok() {
+        return Ok(());
+    }
+    match std::fs::write(&stream, ZONE_IDENTIFIER) {
+        Err(e) if e.raw_os_error().is_some_and(|c| NO_STREAMS.contains(&c)) => Ok(()),
+        other => other,
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn mark(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
@@ -67,5 +106,39 @@ mod tests {
             xattr::get(&file, ATTR).unwrap().unwrap(),
             b"00c3;69001234;Comail;"
         );
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marks_once_and_keeps_an_existing_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("invoice.pdf");
+        std::fs::write(&file, b"%PDF").unwrap();
+
+        mark(&file).unwrap();
+        assert_eq!(std::fs::read(zone_stream(&file)).unwrap(), ZONE_IDENTIFIER);
+        // The file's own contents are untouched.
+        assert_eq!(std::fs::read(&file).unwrap(), b"%PDF");
+
+        // A mark another tool wrote (e.g. with the source URL) is left alone.
+        let custom = b"[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=about:internet\r\n";
+        std::fs::write(zone_stream(&file), custom).unwrap();
+        mark(&file).unwrap();
+        assert_eq!(std::fs::read(zone_stream(&file)).unwrap(), custom);
+    }
+
+    #[test]
+    fn mark_survives_the_rename_into_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let partial = dir.path().join(".download.part");
+        let file = dir.path().join("setup.exe");
+        std::fs::write(&partial, b"MZ").unwrap();
+        mark(&partial).unwrap();
+        std::fs::rename(&partial, &file).unwrap();
+        assert_eq!(std::fs::read(zone_stream(&file)).unwrap(), ZONE_IDENTIFIER);
     }
 }
