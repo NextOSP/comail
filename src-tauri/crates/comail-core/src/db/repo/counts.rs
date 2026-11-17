@@ -56,7 +56,7 @@ impl Q {
         self.bind.push(Box::new(role.to_string()));
         format!(
             "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
-                      WHERE f.role = ?{})",
+                      WHERE f.role = ?{} AND m.thread_id IS NOT NULL)",
             self.bind.len()
         )
     }

@@ -342,3 +342,44 @@ fn completed_role_repair_is_not_reopened_by_discovery() {
         1
     );
 }
+
+#[test]
+fn done_view_survives_an_inbox_row_without_a_thread() {
+    use crate::db::repo::threads::{self, ListArgs};
+    use crate::models::View;
+
+    let c = seed(true);
+    let inbox = discover(&c, "INBOX", &[]);
+    let archive = discover(&c, "Archive", &[r"\Archive"]);
+    let (archived, message_id) = testutil::seed_message(&c, "a@test.dev", "archived", true);
+    c.execute(
+        "UPDATE messages SET folder_id=?2 WHERE id=?1",
+        params![message_id, archive],
+    )
+    .unwrap();
+    threads::recompute(&c, archived).unwrap();
+    // `messages.thread_id` is nullable. A NULL in the inbox set would make
+    // `NOT t.id IN (...)` NULL for every thread and empty the Done view.
+    c.execute(
+        "INSERT INTO messages (account_id, folder_id, uid, subject, date)
+         VALUES (1, ?1, 777, 'orphan', 1)",
+        params![inbox],
+    )
+    .unwrap();
+    let listed = threads::list(
+        &c,
+        &ListArgs {
+            view: View::Done,
+            folder_id: None,
+            tab: None,
+            account_id: Some(1),
+            cursor: None,
+            limit: 20,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        listed.threads.iter().map(|t| t.id).collect::<Vec<_>>(),
+        vec![archived]
+    );
+}
