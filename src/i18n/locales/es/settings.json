@@ -127,6 +127,8 @@
     "modelPlaceholder": "anthropic/claude-sonnet",
     "zeroRetentionLabel": "Retención de datos cero",
     "zeroRetentionHint": "Envía las solicitudes de chat y de decisión de OpenRouter solo a proveedores que no guardan tu correo ni entrenan con él. Los modelos sin un proveedor así dejan de funcionar hasta que lo desactives.",
+    "quickRepliesLabel": "Respuestas sugeridas",
+    "quickRepliesHint": "Al abrir una respuesta, envía la conversación a la IA para obtener hasta 3 respuestas de un toque. Desactivado no envía nada y muestra respuestas estándar.",
     "providerLabel": "Proveedor",
     "providerHint": "Los preajustes rellenan la URL base; elige Endpoint personalizado para usar cualquier URL compatible con OpenAI. Los servidores locales no necesitan clave de API.",
     "customProvider": "Endpoint personalizado",

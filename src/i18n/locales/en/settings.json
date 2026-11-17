@@ -127,6 +127,8 @@
     "modelPlaceholder": "anthropic/claude-sonnet",
     "zeroRetentionLabel": "Zero data retention",
     "zeroRetentionHint": "Send OpenRouter chat and decision requests only to providers that don't store or train on your mail. Models with no such provider stop working until you turn this off.",
+    "quickRepliesLabel": "Suggested replies",
+    "quickRepliesHint": "When you open a reply, send the conversation to the AI for up to 3 one-tap replies. Off sends nothing and shows standard replies.",
     "providerLabel": "Provider",
     "providerHint": "Presets fill the base URL; pick Custom endpoint to use any OpenAI-compatible URL. Local servers need no API key.",
     "customProvider": "Custom endpoint",

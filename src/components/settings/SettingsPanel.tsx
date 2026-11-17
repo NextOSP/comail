@@ -109,6 +109,7 @@ const DEFAULT_SETTINGS: Settings = {
   msClientSecret: "",
   embeddingBackend: "local",
   embeddingModel: "bge-small-en-v1.5",
+  aiQuickReplies: true,
   voiceDrafting: false,
   voiceProfile: "",
   voiceLearnedAt: 0,
@@ -545,6 +546,11 @@ export function SettingsPanel() {
       tab: "ai",
       label: t("settings:ai.zeroRetentionLabel"),
       keywords: "openrouter zero data retention zdr privacy logging training provider",
+    },
+    {
+      tab: "ai",
+      label: t("settings:ai.quickRepliesLabel"),
+      keywords: "quick replies suggestions chips reply composer ai privacy",
     },
     {
       tab: "ai",
@@ -2251,6 +2257,18 @@ function AiSection({
               />
             </SettingRow>
           )}
+          <SettingRow
+            label={t("settings:ai.quickRepliesLabel")}
+            hint={t("settings:ai.quickRepliesHint")}
+          >
+            <Toggle
+              label={t("settings:ai.quickRepliesLabel")}
+              checked={settings.aiQuickReplies}
+              onChange={(aiQuickReplies) =>
+                void updateSettings({ aiQuickReplies })
+              }
+            />
+          </SettingRow>
           </SettingsGroup>
           <DecisionSettings
             settings={settings}

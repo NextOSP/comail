@@ -1063,6 +1063,10 @@ pub struct Settings {
     /// Registry key of the local embedding model (see `embed::registry`).
     #[serde(default = "default_embedding_model")]
     pub embedding_model: String,
+    /// Suggest AI quick replies when a reply composer opens. Each suggestion
+    /// request sends the thread to the chat model; off makes no request.
+    #[serde(default = "default_true")]
+    pub ai_quick_replies: bool,
     /// When true, AI drafts are written in the user's learned voice.
     #[serde(default)]
     pub voice_drafting: bool,
@@ -1400,6 +1404,7 @@ impl Default for Settings {
             ms_client_secret: String::new(),
             embedding_backend: default_embedding_backend(),
             embedding_model: default_embedding_model(),
+            ai_quick_replies: true,
             voice_drafting: false,
             voice_profile: String::new(),
             voice_learned_at: 0,
@@ -1711,5 +1716,6 @@ mod tests {
         assert!(s.signatures.is_empty());
         assert_eq!(s.ai_base_url, crate::ai::DEFAULT_BASE_URL);
         assert!(s.ai_zero_retention);
+        assert!(s.ai_quick_replies);
     }
 }

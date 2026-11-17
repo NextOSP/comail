@@ -253,14 +253,21 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Quick-reply chips: nothing shows while the AI is generating; the chips pop
-  // in once its suggestions arrive. The static i18n chips are only a fallback
-  // when AI isn't configured or the request fails.
+  // in once its suggestions arrive. The static i18n chips are the fallback
+  // when AI quick replies are off, AI isn't configured, or the request fails.
   const [quickReplies, setQuickReplies] = useState<string[] | null>(null);
   const [quickRepliesFallback, setQuickRepliesFallback] = useState(false);
+  const aiQuickReplies = aiSettings?.aiQuickReplies;
   useEffect(() => {
     if (state.mode !== "reply" && state.mode !== "reply_all") return;
     const threadId = state.replyTo?.threadId;
     if (threadId == null) return;
+    // Wait for settings: the request sends the whole thread to the AI.
+    if (aiQuickReplies === undefined) return;
+    if (!aiQuickReplies) {
+      setQuickRepliesFallback(true);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -281,7 +288,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
     return () => {
       cancelled = true;
     };
-  }, [state.mode, state.replyTo?.threadId]);
+  }, [state.mode, state.replyTo?.threadId, aiQuickReplies]);
 
   const bodyRef = useRef<RichBodyHandle>(null);
   const dirtyRef = useRef(false);

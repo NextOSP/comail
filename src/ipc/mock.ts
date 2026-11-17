@@ -1490,6 +1490,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   msClientSecret: "",
   embeddingBackend: "local",
   embeddingModel: "bge-small-en-v1.5",
+  aiQuickReplies: true,
   voiceDrafting: false,
   voiceProfile: "",
   voiceLearnedAt: 0,
@@ -3899,6 +3900,7 @@ export async function mockInvoke(
     }
 
     case "ai_quick_replies": {
+      if (!settings.aiQuickReplies) return delay([] as string[], 0);
       const t = threads.find((x) => x.id === a.threadId);
       if (!t) throw new Error(`Thread ${a.threadId} not found`);
       const other = threadSender(t);

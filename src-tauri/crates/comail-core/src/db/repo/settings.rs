@@ -164,5 +164,6 @@ mod tests {
         assert!(s.ai_automation_rules.is_empty());
         assert!(s.signatures.is_empty());
         assert!(s.ai_zero_retention);
+        assert!(s.ai_quick_replies);
     }
 }

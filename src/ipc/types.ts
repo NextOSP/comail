@@ -592,6 +592,8 @@ export interface Settings {
   embeddingBackend: "local" | "off";
   /** Registry key of the local embedding model. */
   embeddingModel: string;
+  /** Suggest AI quick replies when a reply composer opens (sends the thread). */
+  aiQuickReplies: boolean;
   /** When true, AI drafts are written in the user's learned voice. */
   voiceDrafting: boolean;
   /** Distilled writing-style profile learned from sent mail. */

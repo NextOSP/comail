@@ -127,6 +127,8 @@
     "modelPlaceholder": "anthropic/claude-sonnet",
     "zeroRetentionLabel": "零数据保留",
     "zeroRetentionHint": "仅将 OpenRouter 的聊天和决策请求发送给不存储你的邮件、也不用其训练模型的服务商。没有此类服务商的模型将无法使用，直到你关闭此选项。",
+    "quickRepliesLabel": "建议回复",
+    "quickRepliesHint": "打开回复时，将会话发送给 AI，生成最多 3 条一键回复。关闭后不发送任何内容，只显示标准回复。",
     "providerLabel": "服务商",
     "providerHint": "预设会自动填入基础 URL；选择自定义端点可使用任何兼容 OpenAI 的 URL。本地服务器无需 API 密钥。",
     "customProvider": "自定义端点",

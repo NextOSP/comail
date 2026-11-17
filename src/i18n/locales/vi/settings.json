@@ -127,6 +127,8 @@
     "modelPlaceholder": "anthropic/claude-sonnet",
     "zeroRetentionLabel": "Không lưu giữ dữ liệu",
     "zeroRetentionHint": "Chỉ gửi yêu cầu chat và quyết định qua OpenRouter tới các nhà cung cấp không lưu trữ hay huấn luyện trên thư của bạn. Mô hình không có nhà cung cấp như vậy sẽ ngừng hoạt động cho đến khi bạn tắt tùy chọn này.",
+    "quickRepliesLabel": "Gợi ý trả lời",
+    "quickRepliesHint": "Khi mở thư trả lời, gửi cuộc hội thoại tới AI để gợi ý tối đa 3 câu trả lời nhanh. Khi tắt, không gửi gì và chỉ hiện các câu trả lời mặc định.",
     "providerLabel": "Nhà cung cấp",
     "providerHint": "Cài đặt sẵn điền URL cơ sở; chọn Điểm cuối tùy chỉnh để dùng bất kỳ URL tương thích OpenAI nào. Máy chủ cục bộ không cần khóa API.",
     "customProvider": "Điểm cuối tùy chỉnh",
