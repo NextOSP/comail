@@ -102,11 +102,31 @@ fn param<'a>(params: &'a [(String, String)], key: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
+/// RFC 5545 DATE (`YYYYMMDD`) or DATE-TIME (`YYYYMMDDTHHMMSS[Z]`), checked
+/// before chrono sees the value: chrono's `%Y` also accepts a signed year of
+/// any length and skips spaces, so `-262143 0101T000000Z` from a hostile
+/// invite would parse to the edge of chrono's range, where later date
+/// arithmetic overflows.
+fn is_ical_date_or_datetime(v: &str) -> bool {
+    let b = v.as_bytes();
+    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
+    match b.len() {
+        8 => digits(0..8),
+        15 | 16 => {
+            digits(0..8) && b[8] == b'T' && digits(9..15) && (b.len() == 15 || b[15] == b'Z')
+        }
+        _ => false,
+    }
+}
+
 /// Parse "20260711", "20260711T130000", "20260711T130000Z" to (ms, all_day).
 /// A bare naive datetime is treated as machine-local; callers with a TZID and a
 /// VTIMEZONE table use [`resolve_dt`] instead so the invite's own zone wins.
 pub(crate) fn parse_dt(value: &str) -> Option<(i64, bool)> {
     let v = value.trim();
+    if !is_ical_date_or_datetime(v) {
+        return None;
+    }
     if let Ok(d) = NaiveDate::parse_from_str(v, "%Y%m%d") {
         let dt = d.and_hms_opt(0, 0, 0)?;
         let ms = chrono::Local
@@ -339,6 +359,9 @@ fn resolve_dt(
     // UTC and date-only forms are unambiguous; TZID does not apply.
     if v.ends_with('Z') || !v.contains('T') {
         return parse_dt(v);
+    }
+    if !is_ical_date_or_datetime(v) {
+        return None;
     }
     if let Some(obs) = tzid.and_then(|id| tztable.get(id)) {
         if let Ok(naive) = NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S") {
@@ -700,6 +723,37 @@ pub fn build_reply_ics(spec: &ReplySpec) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_dt_accepts_only_rfc5545_shapes() {
+        assert!(parse_dt("20260711").is_some_and(|(_, all_day)| all_day));
+        assert!(parse_dt(" 20260711T130000 ").is_some());
+        assert_eq!(
+            parse_dt("20260711T130000Z"),
+            Some((
+                Utc.with_ymd_and_hms(2026, 7, 11, 13, 0, 0)
+                    .unwrap()
+                    .timestamp_millis(),
+                false
+            ))
+        );
+        // chrono's lenient %Y would take these to the edge of its range.
+        assert!(NaiveDateTime::parse_from_str("+262142 1231T235959", "%Y%m%dT%H%M%S").is_ok());
+        for v in [
+            "-262143 0101T000000Z",
+            "+262142 1231T235959Z",
+            "+262142 1231",
+            "-0001 0101",
+            "2026 711",
+            "20260711T1300Z",
+            "20260711t130000z",
+            "２０２６0711",
+            "",
+        ] {
+            assert_eq!(parse_dt(v), None, "{v:?}");
+            assert_eq!(resolve_dt(v, Some("X"), &HashMap::new()), None, "{v:?}");
+        }
+    }
 
     const SAMPLE: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:evt-1@cal.example.com\r\nSUMMARY:Design review\\, part 2\r\nLOCATION:Room 4\r\nORGANIZER;CN=Alice:mailto:alice@example.com\r\nDTSTART:20260715T140000Z\r\nDTEND:20260715T150000Z\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
