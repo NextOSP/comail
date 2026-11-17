@@ -132,12 +132,11 @@ fn parse_rule(rrule: &str) -> Option<Rule> {
 }
 
 fn to_local_naive(ms: i64) -> Option<NaiveDateTime> {
-    Some(
-        chrono::Local
-            .timestamp_millis_opt(ms)
-            .earliest()?
-            .naive_local(),
-    )
+    // Not `DateTime<Local>::naive_local()`: it panics when the local time
+    // falls outside chrono's range, which a hostile DTSTART at the very
+    // first/last representable instant reaches on any non-UTC machine.
+    let utc = chrono::DateTime::from_timestamp_millis(ms)?.naive_utc();
+    utc.checked_add_offset(chrono::Local.offset_from_utc_datetime(&utc))
 }
 
 fn to_ms(naive: NaiveDateTime) -> Option<i64> {
@@ -680,10 +679,20 @@ mod tests {
             .unwrap()
             .and_utc()
             .timestamp_millis();
+        // The last and first representable UTC instants: shifting them to
+        // local time leaves chrono's range on any machine east (resp. west)
+        // of UTC, which `naive_local()` turns into a panic.
+        let max_end_ms = chrono::NaiveDate::MAX
+            .and_hms_milli_opt(23, 59, 59, 999)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
         let starts = [
             max_ms - 400 * DAY,
             max_ms - 2 * DAY,
             max_ms,
+            max_end_ms,
+            min_ms,
             min_ms + 2 * DAY,
             i64::MAX,
             i64::MIN,
