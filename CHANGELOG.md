@@ -9,6 +9,56 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.42] - 2026-11-17
+
+### Added
+
+- **Manual sync and account switching in the sidebar.** Check for new mail
+  on demand, switch accounts from the sidebar, and jump to an account's
+  settings from there (#85, thanks @hungcuong9125).
+- **Private AI routing on OpenRouter.** With OpenRouter as the AI endpoint,
+  requests go only to providers that keep no data (on by default; turn it
+  off in Settings > AI if your model has no such provider) (#91, thanks
+  @andy-n).
+- **Quick replies can be turned off.** A setting in Settings > AI stops the
+  composer from sending the thread to the AI for reply suggestions (#92,
+  thanks @andy-n).
+
+### Changed
+
+- The search field fills the row and lines up with the Search/Ask toggle,
+  and no longer draws a second focus ring around the text.
+- Inbox lists and unread badges load much faster on large mailboxes
+  (#100, thanks @andy-n).
+- The log file records less: info level by default, no sender addresses,
+  unsubscribe links or search text, and it is readable only by you
+  (#96, thanks @andy-n).
+
+### Fixed
+
+- Deleting forever from Trash works for messages moved there by Comail, on
+  Gmail, Microsoft and other IMAP servers (#84, thanks @hungcuong9125).
+- Opening mail from the full-screen calendar leaves the calendar
+  (#82, thanks @hungcuong9125).
+
+### Security
+
+- A malformed calendar invite can no longer crash mail sync, the calendar
+  or reminders; a part the parser can't read is skipped (#88, #89, #90,
+  thanks @andy-n).
+- Attachment names can't disguise their file type with right-to-left
+  characters, and on Windows can't write outside Comail's attachment
+  folder (#93, thanks @andy-n).
+- Opened and saved attachments are marked as downloaded, so macOS
+  Gatekeeper and Windows SmartScreen check them first (#94, thanks
+  @andy-n).
+- Remote images in messages are fetched without a referrer (#95, thanks
+  @andy-n).
+- Raw server responses, which can include message headers, no longer reach
+  error messages or the log (#97, thanks @andy-n).
+- Dependency updates for published advisories in ammonia, calamine,
+  pulldown-cmark, rustls-webpki and others (#87, thanks @andy-n).
+
 ## [0.2.41] - 2026-10-22
 
 ### Added
@@ -562,7 +612,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.41...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.42...HEAD
+[0.2.42]: https://github.com/NextOSP/comail/releases/tag/v0.2.42
 [0.2.41]: https://github.com/NextOSP/comail/releases/tag/v0.2.41
 [0.2.40]: https://github.com/NextOSP/comail/releases/tag/v0.2.40
 [0.2.39]: https://github.com/NextOSP/comail/releases/tag/v0.2.39
