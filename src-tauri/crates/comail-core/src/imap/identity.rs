@@ -161,7 +161,7 @@ pub(super) async fn copy_or_move<
     while let Some(response) = session
         .read_response()
         .await
-        .map_err(|e| CoreError::Imap(e.to_string()))?
+        .map_err(|e| imap_error(e.into()))?
     {
         match response.parsed() {
             Response::Data {

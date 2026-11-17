@@ -21,10 +21,7 @@ impl ServerCaps {
         T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + std::fmt::Debug + Send,
     {
         tokio::time::timeout(imap::METADATA_TIMEOUT, async {
-            let caps = session
-                .capabilities()
-                .await
-                .map_err(|e| CoreError::Imap(e.to_string()))?;
+            let caps = session.capabilities().await.map_err(imap::imap_error)?;
             Ok(Self {
                 uidplus: caps.has_str("UIDPLUS"),
                 move_: caps.has_str("MOVE"),
