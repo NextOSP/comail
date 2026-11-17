@@ -48,11 +48,15 @@ impl Q {
         self
     }
 
+    /// Membership as `t.id IN (…)` rather than a correlated `EXISTS`: SQLite
+    /// builds the folder's thread set once through the folder index, instead
+    /// of probing every thread in the database (the inbox holds dozens of
+    /// threads; the database can hold 100k+). Same rows either way.
     fn role_exists(&mut self, role: &str) -> String {
         self.bind.push(Box::new(role.to_string()));
         format!(
-            "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id = m.folder_id
-                     WHERE m.thread_id = t.id AND f.role = ?{})",
+            "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
+                      WHERE f.role = ?{} AND m.thread_id IS NOT NULL)",
             self.bind.len()
         )
     }
@@ -61,7 +65,7 @@ impl Q {
         let c = self.role_exists(roles::INBOX);
         self.clauses.push(c);
         if self.unread_only {
-            self.clauses.push("EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='inbox')".into());
+            self.clauses.push("t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND f.role='inbox')".into());
             self.unread_only = false;
         }
         self.clauses.push("s.thread_id IS NULL".into());
@@ -116,7 +120,7 @@ impl Q {
 
     fn run(mut self, conn: &Connection) -> Result<i64> {
         if self.unread_only {
-            self.clauses.push("EXISTS (SELECT 1 FROM visible_messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
+            self.clauses.push("t.id IN (SELECT m.thread_id FROM visible_messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
         }
         let where_sql = if self.clauses.is_empty() {
             String::new()
@@ -186,15 +190,15 @@ pub fn unread_counts(
     );
     // Spam is never notified, so its badge is the only signal that mail landed there.
     views.insert("spam".to_string(), Q::any(account_id).clause(
-        "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND f.role='spam')"
+        "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND f.role='spam')"
     ).run(conn)?);
     // Drafts badge = number of threads with a draft, unread or not.
     views.insert(
         "drafts".to_string(),
         Q::any(account_id)
             .clause(
-                "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id = m.folder_id
-                         WHERE m.thread_id = t.id AND m.is_draft = 1 AND f.role = 'drafts')",
+                "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
+                          WHERE m.is_draft = 1 AND f.role = 'drafts')",
             )
             .run(conn)?,
     );

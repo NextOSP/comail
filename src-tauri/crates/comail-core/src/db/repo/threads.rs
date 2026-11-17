@@ -258,11 +258,15 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
         vec!["EXISTS (SELECT 1 FROM visible_messages m WHERE m.thread_id = t.id)".into()];
     let mut bind: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
+    // `t.id IN (…)`, not a correlated EXISTS: the folder's thread set is built
+    // once through the folder index instead of probed for every thread in the
+    // database, which made small views (the inbox) cost as much as the whole
+    // mailbox. Same rows either way.
     let role_exists = |role: &str, bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>| {
         bind.push(Box::new(role.to_string()));
         format!(
-            "EXISTS (SELECT 1 FROM visible_messages m JOIN folders f ON f.id = m.folder_id
-                     WHERE m.thread_id = t.id AND f.role = ?{})",
+            "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
+                      WHERE f.role = ?{} AND m.thread_id IS NOT NULL)",
             bind.len()
         )
     };
