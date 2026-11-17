@@ -1865,6 +1865,11 @@ impl Core {
             .join(attachment_id.to_string());
         tokio::fs::create_dir_all(&dir).await?;
         let path = dir.join(&safe_name);
+        // Defense in depth: the cached file must be a direct child of `dir`
+        // whatever the platform's path rules make of the name.
+        if path.parent() != Some(dir.as_path()) {
+            return Err(CoreError::Other("unsafe attachment filename".into()));
+        }
         let partial = dir.join(".download.part");
         tokio::fs::write(&partial, &bytes).await?;
         tokio::fs::rename(&partial, &path).await?;
@@ -5284,11 +5289,61 @@ fn ext_for_mime(mime: &str) -> Option<&'static str> {
     )
 }
 
+/// Unicode `Bidi_Control` characters. In a filename they reorder how the name
+/// is displayed, e.g. `invoice\u{202E}fdp.app` shows as `invoiceppa.pdf`, so a
+/// sender can disguise the real extension.
+fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
+
+/// An attachment name as shown to the user (attachment chip, preview title,
+/// save-as default). Stripping bidi controls here, not only on the cached
+/// file, is what defeats the spoof: the user decides to open a file from the
+/// name the UI shows.
+pub(crate) fn display_filename(name: &str) -> String {
+    name.chars().filter(|&c| !is_bidi_control(c)).collect()
+}
+
+/// Names Windows maps to devices, with or without an extension (`CON.pdf`,
+/// `com1.txt`). Writing to one talks to the device instead of creating a file.
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end()
+        .to_ascii_uppercase();
+    if matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) {
+        return true;
+    }
+    match (stem.get(..3), stem.get(3..)) {
+        (Some("COM" | "LPT"), Some(n)) => {
+            matches!(
+                n,
+                "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        }
+        _ => false,
+    }
+}
+
 fn safe_filename(name: &str) -> String {
+    // `:` matters beyond portability: on Windows a name like `C:evil.dll` is
+    // drive-relative, and `Path::join` replaces the attachment directory with
+    // it, writing the file into the process's working directory. The other
+    // characters are ones Windows rejects in file names.
     let cleaned: String = name
         .chars()
+        .filter(|&c| !is_bidi_control(c))
         .map(|c| {
-            if c == '/' || c == '\\' || c == '\0' || c.is_control() {
+            if matches!(
+                c,
+                '/' | '\\' | '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|'
+            ) || c.is_control()
+            {
                 '_'
             } else {
                 c
@@ -5301,7 +5356,14 @@ fn safe_filename(name: &str) -> String {
     } else {
         trimmed
     };
-    base.chars().take(200).collect()
+    let base: String = base.chars().take(200).collect();
+    // Truncation can expose a trailing dot or space, which Windows drops.
+    let base = base.trim_end_matches(['.', ' ']);
+    if is_windows_device_name(base) {
+        format!("_{base}")
+    } else {
+        base.to_string()
+    }
 }
 
 /// Copy a composer-picked file into the app-managed draft-attachment staging
@@ -6156,5 +6218,58 @@ mod attachment_ext_tests {
     #[test]
     fn unknown_mime_has_no_extension() {
         assert_eq!(ext_for_mime("application/x-unknown"), None);
+    }
+
+    #[test]
+    fn safe_filename_strips_bidi_controls() {
+        // Right-to-left override disguising an app as a PDF.
+        assert_eq!(safe_filename("invoice\u{202E}fdp.app"), "invoicefdp.app");
+        let every = "a\u{061C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\
+                     \u{2066}\u{2067}\u{2068}\u{2069}b.txt";
+        assert_eq!(safe_filename(every), "ab.txt");
+        // Removing them can't expose a leading dot or leave an empty name.
+        assert_eq!(safe_filename("\u{202E}.hidden"), "hidden");
+        assert_eq!(safe_filename("\u{202E}\u{2066}"), "attachment");
+    }
+
+    #[test]
+    fn safe_filename_blocks_traversal_and_controls() {
+        assert_eq!(safe_filename("../../etc/passwd"), "_.._etc_passwd");
+        assert_eq!(safe_filename("a\\b\0c\nd.pdf"), "a_b_c_d.pdf");
+        assert_eq!(safe_filename(" .. "), "attachment");
+        assert_eq!(safe_filename("résumé 2026.pdf"), "résumé 2026.pdf");
+        assert_eq!(safe_filename(&"x".repeat(300)).chars().count(), 200);
+    }
+
+    #[test]
+    fn safe_filename_stays_inside_the_attachment_dir_on_windows() {
+        // Drive-relative names would replace the base directory on join.
+        assert_eq!(safe_filename("C:evil.dll"), "C_evil.dll");
+        assert_eq!(safe_filename("a:b.txt"), "a_b.txt");
+        assert_eq!(safe_filename("x<y>z|w?v*u\"t.pdf"), "x_y_z_w_v_u_t.pdf");
+        let dir = std::path::Path::new("attachments").join("42");
+        for name in ["C:evil.dll", "D:", "\\\\server\\share\\x", "/etc/passwd"] {
+            let path = dir.join(safe_filename(name));
+            assert_eq!(path.parent(), Some(dir.as_path()), "{name}");
+        }
+    }
+
+    #[test]
+    fn safe_filename_avoids_windows_device_names() {
+        assert_eq!(safe_filename("CON"), "_CON");
+        assert_eq!(safe_filename("con.pdf"), "_con.pdf");
+        assert_eq!(safe_filename("LPT1.txt"), "_LPT1.txt");
+        assert_eq!(safe_filename("COM¹.txt"), "_COM¹.txt");
+        assert_eq!(safe_filename("CONTRACT.pdf"), "CONTRACT.pdf");
+        assert_eq!(safe_filename("COM10.txt"), "COM10.txt");
+        // Truncation can't leave a trailing dot or space behind.
+        let long = format!("{}. tail", "x".repeat(199));
+        assert_eq!(safe_filename(&long), "x".repeat(199));
+    }
+
+    #[test]
+    fn display_filename_strips_bidi_controls() {
+        assert_eq!(display_filename("invoice\u{202E}fdp.app"), "invoicefdp.app");
+        assert_eq!(display_filename("résumé.pdf"), "résumé.pdf");
     }
 }

@@ -882,10 +882,11 @@ fn attachment_meta_from_row(
         id: row.get(first_col)?,
         // Decode RFC 2047 encoded-words at read time so rows synced before the
         // BODYSTRUCTURE decode fix still display a readable name (idempotent for
-        // already-clean values).
+        // already-clean values). Bidi controls are dropped so a right-to-left
+        // override can't disguise the extension the user sees.
         filename: row
             .get::<_, Option<String>>(first_col + 1)?
-            .map(|name| crate::mime::decode_encoded_words(&name)),
+            .map(|name| crate::display_filename(&crate::mime::decode_encoded_words(&name))),
         mime_type: row.get(first_col + 2)?,
         size: row.get(first_col + 3)?,
         is_inline: row.get::<_, i64>(first_col + 4)? != 0,
