@@ -312,138 +312,139 @@ export function SearchScreen() {
       <div className="co-hairline-b shrink-0 px-6 pt-4 pb-3">
         <div className="mx-auto max-w-[860px]">
           <div className="flex items-center gap-3">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ink-faint">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M21 21l-4.35-4.35" />
-            </svg>
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                // Cmd/Ctrl+A selects the query text. Handled explicitly: the
-                // native menu equivalent doesn't reliably reach the field in
-                // the webview (notably with IME input), leaving the key to
-                // fall through as a plain "a".
-                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.currentTarget.select();
-                  return;
-                }
-                // Cmd/Ctrl+J flips between keyword Search and AI Ask without
-                // leaving the field. Stop it here so the global registry's
-                // composer-only mod+j binding never sees it.
-                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setMode((m) => (m === "search" ? "ask" : "search"));
-                  return;
-                }
-                // Cmd/Ctrl+O: turn the plain-language text into a filter.
-                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (mode === "search" && input.trim()) runAiFilter(input.trim(), []);
-                  return;
-                }
-                if (aiFilter && e.key === "Escape") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  cancelAiFilter();
-                  return;
-                }
-                // ⌘/Ctrl+1..9 jumps straight to the Nth result. Stop it here so
-                // the global registry's mod+N (inbox split tabs) never fires
-                // behind the search screen.
-                if ((e.metaKey || e.ctrlKey) && mode === "search" && /^[1-9]$/.test(e.key)) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const row = rows[Number(e.key) - 1];
-                  if (row) openThread(row.id);
-                  return;
-                }
-                // Accept the highlighted operator suggestion with Tab or Enter.
-                if (activeSuggestion && (e.key === "Tab" || e.key === "Enter")) {
-                  e.preventDefault();
-                  applyCompletion(activeSuggestion.insert);
-                  return;
-                }
-                if (mode === "search" && rows.length > 0) {
-                  // Arrow keys move the highlight through the results. Enter
-                  // steps into the list: the first Enter highlights the top
-                  // result (moving focus out of the input), a second Enter
-                  // opens it. It never opens on the first press, so plain
-                  // typing can't yank into an email.
-                  if (e.key === "ArrowDown") {
+            {/* The field: icon, input and the in-field extras share one box
+                that takes all the width the controls on the right leave. */}
+            <div className="co-search-field flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-control border border-hairline bg-bg1 px-3 transition-colors duration-100 focus-within:border-accent/60">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-ink-faint">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  // Cmd/Ctrl+A selects the query text. Handled explicitly: the
+                  // native menu equivalent doesn't reliably reach the field in
+                  // the webview (notably with IME input), leaving the key to
+                  // fall through as a plain "a".
+                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
                     e.preventDefault();
-                    moveCursor(1);
+                    e.stopPropagation();
+                    e.currentTarget.select();
                     return;
                   }
-                  if (e.key === "ArrowUp") {
+                  // Cmd/Ctrl+J flips between keyword Search and AI Ask without
+                  // leaving the field. Stop it here so the global registry's
+                  // composer-only mod+j binding never sees it.
+                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
                     e.preventDefault();
-                    moveCursor(-1);
+                    e.stopPropagation();
+                    setMode((m) => (m === "search" ? "ask" : "search"));
                     return;
                   }
-                  if (e.key === "Enter") {
+                  // Cmd/Ctrl+O: turn the plain-language text into a filter.
+                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
                     e.preventDefault();
-                    if (enterArmed) {
-                      const id = useUi.getState().selectedThreadId;
-                      if (id != null) openThread(id);
-                    } else {
-                      // Highlight the first result (cursor was at -1).
+                    e.stopPropagation();
+                    if (mode === "search" && input.trim()) runAiFilter(input.trim(), []);
+                    return;
+                  }
+                  if (aiFilter && e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cancelAiFilter();
+                    return;
+                  }
+                  // ⌘/Ctrl+1..9 jumps straight to the Nth result. Stop it here so
+                  // the global registry's mod+N (inbox split tabs) never fires
+                  // behind the search screen.
+                  if ((e.metaKey || e.ctrlKey) && mode === "search" && /^[1-9]$/.test(e.key)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const row = rows[Number(e.key) - 1];
+                    if (row) openThread(row.id);
+                    return;
+                  }
+                  // Accept the highlighted operator suggestion with Tab or Enter.
+                  if (activeSuggestion && (e.key === "Tab" || e.key === "Enter")) {
+                    e.preventDefault();
+                    applyCompletion(activeSuggestion.insert);
+                    return;
+                  }
+                  if (mode === "search" && rows.length > 0) {
+                    // Arrow keys move the highlight through the results. Enter
+                    // steps into the list: the first Enter highlights the top
+                    // result (moving focus out of the input), a second Enter
+                    // opens it. It never opens on the first press, so plain
+                    // typing can't yank into an email.
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
                       moveCursor(1);
+                      return;
                     }
-                    return;
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      moveCursor(-1);
+                      return;
+                    }
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (enterArmed) {
+                        const id = useUi.getState().selectedThreadId;
+                        if (id != null) openThread(id);
+                      } else {
+                        // Highlight the first result (cursor was at -1).
+                        moveCursor(1);
+                      }
+                      return;
+                    }
                   }
-                }
-                if (e.key !== "Enter") return;
-                // Ask mode: Enter runs the question. Search mode with no
-                // highlight: nothing - never yank into an email while typing.
-                if (mode === "ask") {
-                  e.preventDefault();
-                  if (input.trim()) ask.run(input.trim(), accountFilter);
-                }
-              }}
-              placeholder={mode === "ask" ? t("common:search.askPlaceholder") : t("common:search.placeholder")}
-              className="w-full bg-transparent py-1 text-lg text-ink outline-none placeholder:text-ink-faint"
-              spellCheck={false}
-            />
-            {mode === "search" && (
-              <button
-                type="button"
-                disabled={input.trim() === "" || aiFilter != null}
-                tabIndex={input.trim() === "" || aiFilter != null ? -1 : undefined}
-                title={t("common:search.aiFilterHint", { shortcut: `${MOD_LABEL}O` })}
-                onClick={() => runAiFilter(input.trim(), [])}
-                className={`co-chip shrink-0 !py-0.5 !text-xs text-ink-muted hover:bg-bg2 ${
-                  input.trim() === "" || aiFilter != null ? "invisible" : ""
-                }`}
-              >
-                <AiBadge label={t("common:search.aiFilter")} className="!text-xs" />
-                <kbd className="co-kbd !text-2xs">{MOD_LABEL}O</kbd>
-              </button>
-            )}
-            {/* Fixed slot: the spinner blinks on every keystroke's refetch, and
-                mounting it in the row would shove the input sideways. */}
-            <span className="flex size-4 shrink-0 items-center justify-center">
-              {(isFetching || ask.status === "pending" || ask.status === "streaming") && (
-                <Spinner className={mode === "ask" ? "co-ai-icon" : "text-ink-faint"} />
+                  if (e.key !== "Enter") return;
+                  // Ask mode: Enter runs the question. Search mode with no
+                  // highlight: nothing - never yank into an email while typing.
+                  if (mode === "ask") {
+                    e.preventDefault();
+                    if (input.trim()) ask.run(input.trim(), accountFilter);
+                  }
+                }}
+                placeholder={mode === "ask" ? t("common:search.askPlaceholder") : t("common:search.placeholder")}
+                className="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-faint"
+                spellCheck={false}
+              />
+              {/* Mounted only when shown: they sit after the left-aligned text,
+                  so appearing never moves what's typed, and an empty field
+                  keeps its full width instead of reserving blank space. */}
+              {mode === "search" && input.trim() !== "" && aiFilter == null && (
+                <button
+                  type="button"
+                  title={t("common:search.aiFilterHint", { shortcut: `${MOD_LABEL}O` })}
+                  onClick={() => runAiFilter(input.trim(), [])}
+                  className="co-chip shrink-0 !py-0.5 !text-xs text-ink-muted hover:bg-bg2"
+                >
+                  <AiBadge label={t("common:search.aiFilter")} className="!text-xs" />
+                  <kbd className="co-kbd !text-2xs">{MOD_LABEL}O</kbd>
+                </button>
               )}
-            </span>
-            {mode === "search" && (
-              <span
-                className={`co-chip min-w-[3rem] shrink-0 justify-center !py-0.5 !text-xs tabular-nums text-ink-muted ${
-                  storedQuery.trim() !== "" && rows.length > 0 ? "" : "invisible"
-                }`}
-                title={`${rows.length}${rows.length >= 60 ? "+" : ""} result${
-                  rows.length === 1 ? "" : "s"
-                }`}
-              >
-                {rows.length}
-                {rows.length >= 60 ? "+" : ""}
+              {mode === "search" && storedQuery.trim() !== "" && rows.length > 0 && (
+                <span
+                  className="co-chip min-w-[3rem] shrink-0 justify-center !py-0.5 !text-xs tabular-nums text-ink-muted"
+                  title={`${rows.length}${rows.length >= 60 ? "+" : ""} result${
+                    rows.length === 1 ? "" : "s"
+                  }`}
+                >
+                  {rows.length}
+                  {rows.length >= 60 ? "+" : ""}
+                </span>
+              )}
+              {/* Fixed slot at the end: the spinner blinks on every keystroke's
+                  refetch, and mounting it would shove the chips sideways. */}
+              <span className="flex size-4 shrink-0 items-center justify-center">
+                {(isFetching || ask.status === "pending" || ask.status === "streaming") && (
+                  <Spinner className={mode === "ask" ? "co-ai-icon" : "text-ink-faint"} />
+                )}
               </span>
-            )}
+            </div>
             {mode === "search" && (
               <div className="relative shrink-0">
                 <button

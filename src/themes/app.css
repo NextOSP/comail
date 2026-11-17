@@ -543,6 +543,12 @@ textarea {
   outline: none;
 }
 
+/* Search field: the bordered box shows focus (focus-within), so the bare
+   input inside must not draw its own ring. */
+.co-search-field input:focus-visible {
+  outline: none;
+}
+
 /* Rich body editor */
 .co-richbody {
   cursor: text;
