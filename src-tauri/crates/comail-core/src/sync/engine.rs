@@ -4070,7 +4070,7 @@ fn decode_selective_content(
             crate::mime::TextSectionKind::Plain => plain.push(decoded.content),
             crate::mime::TextSectionKind::Html => html.push(decoded.content),
             crate::mime::TextSectionKind::Calendar => {
-                calendar_events.extend(crate::calendar::parse_ics(&decoded.content))
+                calendar_events.extend(crate::calendar::parse_ics_guarded(&decoded.content))
             }
         }
     }
@@ -4312,7 +4312,7 @@ async fn persist_body(
     let calendar_events: Vec<crate::calendar::IcsEvent> = parsed
         .calendar_parts
         .iter()
-        .flat_map(|ics| crate::calendar::parse_ics(ics))
+        .flat_map(|ics| crate::calendar::parse_ics_guarded(ics))
         .collect();
     let config_id = config.id;
     let (persisted, thread_id) = ctx

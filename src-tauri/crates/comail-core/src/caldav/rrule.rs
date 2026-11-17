@@ -260,7 +260,35 @@ fn candidates(rule: &Rule, dtstart: NaiveDateTime, horizon: NaiveDateTime) -> Ve
 /// [window_start, window_end). `ical_raw` (when present) supplies EXDATEs and
 /// RECURRENCE-ID overrides. Returns None when the rule is unsupported (caller
 /// shows the master only).
+///
+/// Rules come from untrusted invites and expansion runs in the scheduler
+/// tick and `list_events`, so a panic here is caught per series: that series
+/// shows its master only, and every other series still expands.
 pub fn expand(
+    rrule: &str,
+    dtstart_ms: i64,
+    duration_ms: i64,
+    ical_raw: Option<&str>,
+    window_start: i64,
+    window_end: i64,
+) -> Option<Vec<Occurrence>> {
+    std::panic::catch_unwind(|| {
+        expand_unguarded(
+            rrule,
+            dtstart_ms,
+            duration_ms,
+            ical_raw,
+            window_start,
+            window_end,
+        )
+    })
+    .unwrap_or_else(|_| {
+        tracing::warn!("recurrence skipped: expansion panicked");
+        None
+    })
+}
+
+fn expand_unguarded(
     rrule: &str,
     dtstart_ms: i64,
     duration_ms: i64,
