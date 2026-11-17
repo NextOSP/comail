@@ -571,8 +571,11 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     // hosts serving them invariably support.
     const imgSrc = loadRemoteImages ? "data: cid: http: https:" : "data: cid:";
     const upgrade = loadRemoteImages ? "; upgrade-insecure-requests" : "";
+    // no-referrer: remote images and CSS backgrounds (when loading is on)
+    // don't tell the sender's servers which app or page fetched them.
     return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}${upgrade}">
+<meta name="referrer" content="no-referrer">
 <base target="_top">
 <style>
   :root { color-scheme: ${scheme}; }
@@ -853,6 +856,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
         // on_navigation backstop intercepts and opens in the OS browser if the
         // JS click handler below didn't already.
         sandbox="allow-same-origin allow-top-navigation-by-user-activation"
+        referrerPolicy="no-referrer"
         srcDoc={srcDoc}
         onLoad={onLoad}
         // Hidden with opacity (not visibility) while unmeasured: WebKit skips
