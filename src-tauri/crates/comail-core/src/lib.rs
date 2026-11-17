@@ -1050,14 +1050,16 @@ impl Core {
         match plan {
             unsubscribe::UnsubscribePlan::OneClick { url } => {
                 match unsubscribe::post_one_click(&url).await {
+                    // The URL and recipient identify the user to the list (and
+                    // often carry a token), so only the message id is logged.
                     Ok(()) => {
-                        tracing::info!(message_id, %url, "one-click unsubscribe accepted");
+                        tracing::info!(message_id, "one-click unsubscribe accepted");
                         Ok(UnsubscribeOutcome::OneClick)
                     }
                     // The endpoint exists but didn't take the POST (blocked
                     // bots, expired token, outage): let the user finish there.
                     Err(e) => {
-                        tracing::warn!(message_id, %url, error = %e, "one-click unsubscribe failed; deferring to browser");
+                        tracing::warn!(message_id, error = %e, "one-click unsubscribe failed; deferring to browser");
                         Ok(UnsubscribeOutcome::NeedsBrowser { url })
                     }
                 }
@@ -1065,7 +1067,7 @@ impl Core {
             unsubscribe::UnsubscribePlan::Mailto { to, subject, body } => {
                 self.send_unsubscribe_mail(detail.account_id, &to, &subject, &body)
                     .await?;
-                tracing::info!(message_id, %to, "mailto unsubscribe sent");
+                tracing::info!(message_id, "mailto unsubscribe sent");
                 Ok(UnsubscribeOutcome::MailtoSent)
             }
             unsubscribe::UnsubscribePlan::Browser { url } => {
@@ -3548,9 +3550,10 @@ impl Core {
                 Ok(out)
             })
             .await;
+        // Query text stays out of the log: it is often a name or address.
         tracing::debug!(
-            "search '{}': branches {:?}, rank+hydrate {:?}",
-            parsed.text,
+            query_chars = parsed.text.chars().count(),
+            "search: branches {:?}, rank+hydrate {:?}",
             t_branches,
             t0.elapsed() - t_branches
         );

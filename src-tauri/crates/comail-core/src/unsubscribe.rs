@@ -151,7 +151,8 @@ pub async fn post_one_click(url: &str) -> Result<()> {
         .body("List-Unsubscribe=One-Click")
         .send()
         .await
-        .map_err(|e| CoreError::Network(e.to_string()))?;
+        // The URL is the subscriber's token; keep it out of logged errors.
+        .map_err(|e| CoreError::Network(e.without_url().to_string()))?;
     let status = resp.status();
     if status.is_success() {
         Ok(())
