@@ -2674,12 +2674,7 @@ async fn store_headers(
                     // The audible chime stays human-only regardless of scope.
                     if chime_worthy(nm.is_automated, &from_email) && !fresh_ids.contains(&thread_id)
                     {
-                        tracing::info!(
-                            account_id,
-                            thread_id,
-                            from = %from_email,
-                            "receive: chime-worthy new mail",
-                        );
+                        tracing::info!(account_id, thread_id, "receive: chime-worthy new mail",);
                         fresh_ids.push(thread_id);
                     }
                 }
