@@ -479,6 +479,9 @@ export interface Settings {
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;
+  /** OpenRouter only: route chat and decision requests to zero-data-retention
+   *  providers that don't collect prompts. */
+  aiZeroRetention: boolean;
   aiModel: string;
   /** Per-tier model ids (shared base URL + key). Empty falls back to `aiModel`. */
   aiModelInstant: string;

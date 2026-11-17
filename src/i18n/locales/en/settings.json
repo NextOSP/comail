@@ -125,6 +125,8 @@
     "modelHintEmpty": "Type a model id, or pick one once the endpoint list loads.",
     "modelsFailed": "Couldn't load the model list: {{error}}. Type a model id instead.",
     "modelPlaceholder": "anthropic/claude-sonnet",
+    "zeroRetentionLabel": "Zero data retention",
+    "zeroRetentionHint": "Send OpenRouter chat and decision requests only to providers that don't store or train on your mail. Models with no such provider stop working until you turn this off.",
     "providerLabel": "Provider",
     "providerHint": "Presets fill the base URL; pick Custom endpoint to use any OpenAI-compatible URL. Local servers need no API key.",
     "customProvider": "Custom endpoint",

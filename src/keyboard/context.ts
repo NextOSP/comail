@@ -484,6 +484,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         undoSendSeconds: 10,
         loadRemoteImages: false,
         aiBaseUrl: "",
+        aiZeroRetention: true,
         aiModel: "",
         aiModelInstant: "",
         aiModelCheap: "",

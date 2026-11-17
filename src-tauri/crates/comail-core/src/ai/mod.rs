@@ -25,6 +25,10 @@ pub struct AiConfig {
     /// or `None` to let the model infer the language from the input. Applied to
     /// generative prompts (draft / ask / summarize) via [`apply_language`].
     pub language: Option<String>,
+    /// Ask OpenRouter to route only to zero-data-retention endpoints that
+    /// don't collect prompts (see [`apply_openrouter_privacy`]). No effect on
+    /// other endpoints.
+    pub zero_retention: bool,
     pub usage_sink: Option<Arc<dyn Fn(AiUsage) + Send + Sync>>,
 }
 
@@ -432,6 +436,31 @@ fn split_model_tags(model: &str) -> (&str, Vec<&str>) {
     (base, tags)
 }
 
+/// Is `url` an OpenRouter endpoint (`openrouter.ai` or a regional subdomain
+/// such as `eu.openrouter.ai`)? Matches the parsed host, not a substring.
+pub(crate) fn is_openrouter(url: &str) -> bool {
+    url::Url::parse(url.trim())
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|h| h == "openrouter.ai" || h.ends_with(".openrouter.ai"))
+}
+
+/// With `zero_retention` on and an OpenRouter `url`, restrict routing to
+/// providers that neither collect prompts nor retain them
+/// (`provider: {data_collection: "deny", zdr: true}`). Chat completions and
+/// the Decisions API both accept these `ProviderPreferences`. A model with no
+/// matching endpoint fails the request instead of falling back to one that
+/// keeps the data.
+pub(crate) fn apply_openrouter_privacy(
+    url: &str,
+    zero_retention: bool,
+    body: &mut serde_json::Value,
+) {
+    if zero_retention && is_openrouter(url) {
+        body["provider"] = json!({ "data_collection": "deny", "zdr": true });
+    }
+}
+
 /// `body` with `model` (and any fields its tags map to) filled in for the
 /// configured endpoint.
 fn request_body(cfg: &AiConfig, mut body: serde_json::Value) -> serde_json::Value {
@@ -460,6 +489,7 @@ fn request_body(cfg: &AiConfig, mut body: serde_json::Value) -> serde_json::Valu
         }
     }
     body["model"] = json!(model);
+    apply_openrouter_privacy(&cfg.base_url, cfg.zero_retention, &mut body);
     body
 }
 
@@ -1853,15 +1883,51 @@ pub async fn draft_actions(
 mod tests {
     use super::*;
 
-    fn tagged(base_url: &str, model: &str) -> serde_json::Value {
+    fn body_for(base_url: &str, model: &str, zero_retention: bool) -> serde_json::Value {
         let cfg = AiConfig {
             base_url: base_url.into(),
             model: model.into(),
             api_key: String::new(),
             language: None,
+            zero_retention,
             usage_sink: None,
         };
         request_body(&cfg, json!({ "messages": [] }))
+    }
+
+    fn tagged(base_url: &str, model: &str) -> serde_json::Value {
+        body_for(base_url, model, false)
+    }
+
+    #[test]
+    fn zero_retention_routes_openrouter_to_zdr_providers() {
+        let b = body_for(
+            "https://openrouter.ai/api/v1",
+            "anthropic/claude-haiku-5",
+            true,
+        );
+        assert_eq!(b["provider"]["data_collection"], "deny");
+        assert_eq!(b["provider"]["zdr"], true);
+        let eu = body_for("https://EU.openrouter.ai/api/v1", "m", true);
+        assert_eq!(eu["provider"]["zdr"], true);
+
+        // Off, or any other endpoint: no OpenRouter-only field is sent.
+        assert!(
+            body_for("https://openrouter.ai/api/v1", "m", false)
+                .get("provider")
+                .is_none()
+        );
+        for other in [
+            "https://api.openai.com/v1",
+            "http://localhost:11434/v1",
+            "https://openrouter.ai.evil.example/v1",
+            "https://proxy.example/openrouter.ai/v1",
+        ] {
+            assert!(
+                body_for(other, "m", true).get("provider").is_none(),
+                "{other}"
+            );
+        }
     }
 
     #[test]

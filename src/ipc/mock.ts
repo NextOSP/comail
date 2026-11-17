@@ -1475,6 +1475,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   undoSendSeconds: 10,
   loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",
+  aiZeroRetention: true,
   aiModel: "mock/gpt",
   aiModelInstant: "",
   aiModelCheap: "",

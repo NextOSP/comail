@@ -1018,6 +1018,12 @@ pub struct Settings {
     pub load_remote_images: bool,
     #[serde(default = "default_ai_base_url")]
     pub ai_base_url: String,
+    /// OpenRouter only: route chat and decision requests to providers with
+    /// zero data retention that don't collect prompts (`provider.zdr` +
+    /// `provider.data_collection: "deny"`). Requests for a model with no such
+    /// provider fail instead of falling back.
+    #[serde(default = "default_true")]
+    pub ai_zero_retention: bool,
     #[serde(default = "default_ai_model")]
     pub ai_model: String,
     /// Per-tier model ids, all sharing `ai_base_url` + the stored API key. An
@@ -1379,6 +1385,7 @@ impl Default for Settings {
             undo_send_seconds: 10,
             load_remote_images: true,
             ai_base_url: default_ai_base_url(),
+            ai_zero_retention: true,
             ai_model: default_ai_model(),
             ai_model_instant: String::new(),
             ai_model_cheap: String::new(),
@@ -1703,5 +1710,6 @@ mod tests {
         assert!(s.auto_labels_enabled);
         assert!(s.signatures.is_empty());
         assert_eq!(s.ai_base_url, crate::ai::DEFAULT_BASE_URL);
+        assert!(s.ai_zero_retention);
     }
 }
