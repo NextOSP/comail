@@ -421,6 +421,17 @@ pub fn find_join_url(text: &str) -> Option<String> {
     None
 }
 
+/// [`parse_ics`] for invites in synced mail. Any sender reaches the parser
+/// with no click, so a parser bug that panics skips that calendar part
+/// instead of killing the body worker that called it. The panic payload may
+/// quote the invite, so only a fixed message is logged.
+pub fn parse_ics_guarded(text: &str) -> Vec<IcsEvent> {
+    std::panic::catch_unwind(|| parse_ics(text)).unwrap_or_else(|_| {
+        tracing::warn!("calendar part skipped: invite parser panicked");
+        Vec::new()
+    })
+}
+
 pub fn parse_ics(text: &str) -> Vec<IcsEvent> {
     let lines = unfold(text);
     let tztable = parse_vtimezones(&lines);
@@ -985,5 +996,20 @@ mod tests {
         assert_eq!(ev.method.as_deref(), Some("REPLY"));
         assert_eq!(ev.attendees[0].partstat.as_deref(), Some("ACCEPTED"));
         assert_eq!(ev.attendees[0].email, "bd@northbeam.com");
+    }
+
+    #[test]
+    fn guarded_parse_survives_a_parser_panic() {
+        // Panicked on byte slicing before the VTIMEZONE fix; whatever the
+        // parser does with it, the guarded entry point must return.
+        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:X\r\nBEGIN:STANDARD\r\n\
+                   DTSTART:16010101T020000\r\nTZOFFSETTO:+0\u{e9}00\r\n\
+                   RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\n\
+                   BEGIN:DAYLIGHT\r\nDTSTART:16010101T020000\r\nTZOFFSETTO:+0\u{e9}00\r\n\
+                   RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11\r\nEND:DAYLIGHT\r\n\
+                   END:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:e\r\n\
+                   DTSTART;TZID=X:20260715T090000\r\nEND:VEVENT\r\nEND:VCALENDAR";
+        let _ = parse_ics_guarded(ics);
+        assert_eq!(parse_ics_guarded(SAMPLE).len(), 1);
     }
 }
