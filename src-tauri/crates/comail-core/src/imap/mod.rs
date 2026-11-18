@@ -79,21 +79,57 @@ where
 /// Subject, Message-ID, ...).
 const RAW_RESPONSE_MARKER: &str = " during parsing of ";
 
+/// Prefix of the `CoreError::Imap` text for a response the parser rejected.
+/// [`unparseable_response`] keys on it.
+const UNPARSEABLE_RESPONSE: &str = "io: unparseable server response";
+
+/// The UID of the FETCH response async-imap failed to parse, read from the
+/// `{buffer:?}` half of its error text. The parser consumes every response it
+/// reads, so the buffer starts with the rejected one. Only the items before
+/// the first body item or literal are searched: those hold no message
+/// content, so a crafted header or filename can't spoof the UID.
+fn rejected_fetch_uid(raw: &str) -> Option<u32> {
+    let rest = raw.strip_prefix("\"* ")?;
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    let items = rest
+        .get(digits..)?
+        .strip_prefix(" FETCH (")
+        .filter(|_| digits > 0)?;
+    let end = ["BODY", "ENVELOPE", "{", "\\r\\n"]
+        .iter()
+        .filter_map(|stop| items.find(stop))
+        .min()
+        .unwrap_or(items.len());
+    let mut tokens = items[..end]
+        .split([' ', '(', ')'])
+        .filter(|t| !t.is_empty());
+    while let Some(token) = tokens.next() {
+        if token.eq_ignore_ascii_case("UID") {
+            return tokens.next()?.parse().ok();
+        }
+    }
+    None
+}
+
 /// Log-safe text for an async-imap error. Server status text (NO/BAD), io and
 /// connection errors keep their usual wording, which callers classify on.
 /// Errors that carry raw server data are reduced to their kind and byte
 /// length, so neither `CoreError` text, the `sync_failures` ledger nor the
-/// diagnostics log ever receives message content.
+/// diagnostics log ever receives message content. A rejected FETCH response
+/// keeps its UID, which lets sync set that one message aside.
 fn log_safe_imap_error(error: &async_imap::error::Error) -> String {
     use async_imap::error::{Error as E, ParseError as P};
     match error {
         E::Io(io) => {
             let text = io.to_string();
-            if text.contains(RAW_RESPONSE_MARKER) {
-                format!(
-                    "io: unparseable server response ({} bytes withheld)",
-                    text.len()
-                )
+            if let Some((_, raw)) = text.split_once(RAW_RESPONSE_MARKER) {
+                match rejected_fetch_uid(raw) {
+                    Some(uid) => format!(
+                        "{UNPARSEABLE_RESPONSE} for UID {uid} ({} bytes withheld)",
+                        text.len()
+                    ),
+                    None => format!("{UNPARSEABLE_RESPONSE} ({} bytes withheld)", text.len()),
+                }
             } else {
                 error.to_string()
             }
@@ -127,6 +163,22 @@ fn log_safe_imap_error(error: &async_imap::error::Error) -> String {
 /// [`log_safe_imap_error`].
 pub(crate) fn imap_error(error: async_imap::error::Error) -> CoreError {
     CoreError::Imap(log_safe_imap_error(&error))
+}
+
+/// `Some` when `error` is a server response the IMAP parser rejected, holding
+/// the UID of the message it belonged to when that could be read. The session
+/// that returned it is unusable: async-imap can't step past the response, so
+/// every later command on it fails the same way. Reconnect before going on.
+pub fn unparseable_response(error: &CoreError) -> Option<Option<u32>> {
+    let CoreError::Imap(text) = error else {
+        return None;
+    };
+    let rest = text.strip_prefix(UNPARSEABLE_RESPONSE)?;
+    Some(
+        rest.strip_prefix(" for UID ")
+            .and_then(|uid| uid.split(' ').next())
+            .and_then(|uid| uid.parse().ok()),
+    )
 }
 
 /// Dev/self-hosted escape hatch: COMAIL_TLS_INSECURE=1 disables certificate
@@ -447,7 +499,23 @@ pub async fn fetch_headers(
     with_deadline(
         "UID FETCH headers",
         METADATA_TIMEOUT,
-        fetch_headers_inner(session, uid_set, behavior),
+        fetch_headers_inner(session, uid_set, behavior, true),
+    )
+    .await
+}
+
+/// [`fetch_headers`] without BODYSTRUCTURE, for a message whose structure the
+/// IMAP parser rejects. Its `mime_plan` is `None`, so the body is planned
+/// later or read in full when the message is opened.
+pub async fn fetch_headers_without_structure(
+    session: &mut Session,
+    uid_set: &str,
+    behavior: &dyn crate::provider::MailboxBehavior,
+) -> Result<Vec<FetchedHeader>> {
+    with_deadline(
+        "UID FETCH headers",
+        METADATA_TIMEOUT,
+        fetch_headers_inner(session, uid_set, behavior, false),
     )
     .await
 }
@@ -456,6 +524,7 @@ async fn fetch_headers_inner(
     session: &mut Session,
     uid_set: &str,
     behavior: &dyn crate::provider::MailboxBehavior,
+    with_structure: bool,
 ) -> Result<Vec<FetchedHeader>> {
     let items = behavior.identity_fetch_items();
     let extra = items
@@ -464,8 +533,8 @@ async fn fetch_headers_inner(
         .filter(|item| *item != "EMAILID")
         .collect::<Vec<_>>()
         .join(" ");
-    let query =
-        format!("(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {extra} {HEADER_FIELDS})");
+    let structure = if with_structure { "BODYSTRUCTURE " } else { "" };
+    let query = format!("(UID FLAGS INTERNALDATE RFC822.SIZE {structure}{extra} {HEADER_FIELDS})");
     let mut out = Vec::new();
     {
         let mut stream = session
@@ -818,6 +887,28 @@ async fn uid_search_all_inner(session: &mut Session) -> Result<Vec<u32>> {
     let mut v: Vec<u32> = set.into_iter().collect();
     v.sort_unstable();
     Ok(v)
+}
+
+/// The UIDs in `uid_set` (e.g. "100:599") that exist in the selected folder,
+/// sorted.
+pub async fn uid_search_in(session: &mut Session, uid_set: &str) -> Result<Vec<u32>> {
+    if uid_set.is_empty()
+        || !uid_set
+            .bytes()
+            .all(|b| b.is_ascii_digit() || b == b':' || b == b',')
+    {
+        return Err(CoreError::Imap(format!("invalid UID set: {uid_set}")));
+    }
+    with_deadline("UID SEARCH UID", METADATA_TIMEOUT, async {
+        let set = session
+            .uid_search(format!("UID {uid_set}"))
+            .await
+            .map_err(imap_error)?;
+        let mut v: Vec<u32> = set.into_iter().collect();
+        v.sort_unstable();
+        Ok(v)
+    })
+    .await
 }
 
 pub async fn uid_search_since(session: &mut Session, date: chrono::NaiveDate) -> Result<Vec<u32>> {
@@ -1428,16 +1519,62 @@ mod tests {
         // The library's own text is the leak this guards against.
         assert!(error.to_string().contains("a@example.invalid"));
 
-        let safe = super::imap_error(error).to_string();
+        let safe = super::imap_error(error);
+        // The UID is kept so sync can set the message aside (#101).
+        assert_eq!(super::unparseable_response(&safe), Some(Some(887)));
+        let safe = safe.to_string();
         assert!(safe.contains("unparseable server response"), "{safe}");
-        for secret in [
-            "example.invalid",
-            "private subject",
-            "APPLEDOUBLE",
-            "UID 887",
-        ] {
+        for secret in ["example.invalid", "private subject", "APPLEDOUBLE", "881"] {
             assert!(!safe.contains(secret), "{safe} leaks {secret}");
         }
+    }
+
+    #[tokio::test]
+    async fn rejected_uid_is_never_read_from_message_content() {
+        // UID after the header literal: a Subject line saying "UID 999" must
+        // not be taken for it, so no UID is reported at all.
+        let headers = "Subject: UID 999\r\n\r\n";
+        let bytes = format!(
+            "* 4 FETCH (BODY[HEADER.FIELDS (SUBJECT)] {{{}}}\r\n{headers} UID 5 \
+             BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" NIL NIL NIL \"7BIT\" 5 1 NIL NIL NIL NIL)\
+             (\"APPLEDOUBLE\" NIL (\"ATTACHMENT\" NIL) NIL) \"MIXED\" NIL NIL NIL NIL))\r\n",
+            headers.len()
+        );
+        let error = super::imap_error(decode_error(bytes.as_bytes()).await);
+        assert_eq!(super::unparseable_response(&error), Some(None));
+
+        // Gmail's order: identity items, UID and flags come before any content.
+        let bytes = "* 2 FETCH (X-GM-MSGID 17 UID 40 FLAGS (\\Seen) INTERNALDATE \
+                     \"17-Jul-1996 02:44:25 -0700\" RFC822.SIZE 9 BODYSTRUCTURE \
+                     ((\"TEXT\" \"PLAIN\" NIL NIL NIL \"7BIT\" 5 1 NIL NIL NIL NIL)\
+                     (\"APPLEDOUBLE\" NIL (\"ATTACHMENT\" NIL) NIL) \"MIXED\" NIL NIL NIL NIL))\r\n";
+        let error = super::imap_error(decode_error(bytes.as_bytes()).await);
+        assert_eq!(super::unparseable_response(&error), Some(Some(40)));
+    }
+
+    #[test]
+    fn only_rejected_responses_count_as_unparseable() {
+        for text in [
+            "io: connection reset",
+            "UID FETCH headers timed out after 60s",
+        ] {
+            assert_eq!(
+                super::unparseable_response(&CoreError::Imap(text.into())),
+                None
+            );
+        }
+        assert_eq!(
+            super::unparseable_response(&CoreError::Network(
+                "io: unparseable server response".into()
+            )),
+            None
+        );
+        assert_eq!(
+            super::unparseable_response(&CoreError::Imap(
+                "io: unparseable server response (80 bytes withheld)".into()
+            )),
+            Some(None)
+        );
     }
 
     #[test]

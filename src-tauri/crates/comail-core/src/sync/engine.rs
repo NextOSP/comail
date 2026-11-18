@@ -1748,28 +1748,29 @@ async fn sync_folder(
                 ((last_seen as u64) + HEADER_CHUNK as u64).min((uid_next - 1).max(0) as u64) as u32;
             forward_remaining = (range_end as i64) < uid_next.saturating_sub(1);
             let set = format!("{}:{range_end}", last_seen + 1);
-            let caps = session.server_caps().await?;
-            let behavior = crate::provider::behavior_for(config.provider, &caps);
-            let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
-            let new: Vec<FetchedHeader> = headers
-                .into_iter()
-                .filter(|h| h.uid > last_seen && h.uid <= range_end)
-                .collect();
-            if !new.is_empty() {
+            let notify_min_uid = if is_inbox {
+                inbox_baseline.as_ref().map(|b| b.first_live_uid)
+            } else {
+                None
+            };
+            let (thread_ids, fresh, count) = fetch_and_store_headers(
+                ctx,
+                config,
+                session,
+                &fresh_folder,
+                &set,
+                |h| h.uid > last_seen && h.uid <= range_end,
+                notify_min_uid,
+            )
+            .await?;
+            if count > 0 {
                 tracing::info!(
                     account_id,
                     folder = %folder.imap_name,
-                    count = new.len(),
+                    count,
                     since_uid = last_seen,
                     "receive: new mail on server",
                 );
-                let notify_min_uid = if is_inbox {
-                    inbox_baseline.as_ref().map(|b| b.first_live_uid)
-                } else {
-                    None
-                };
-                let (thread_ids, fresh) =
-                    store_headers(ctx, config, &fresh_folder, new, notify_min_uid).await?;
                 if !thread_ids.is_empty() {
                     ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
                 }
@@ -2074,6 +2075,10 @@ async fn run_history_backfill(
         }
         while rx.try_recv().is_ok() {} // coalesce piled-up nudges
 
+        // Folders whose step failed this round wait for the next nudge/tick,
+        // while the others keep going.
+        let mut failed_folders = std::collections::HashSet::new();
+
         // Work passes: each pass advances every folder that still needs
         // headers by one step - a full (resumable) initial backfill, or one
         // HISTORY_CHUNK extension - until nothing is left or the connection
@@ -2082,11 +2087,10 @@ async fn run_history_backfill(
             let mut progressed = match retry_one_header_failure(&ctx, &config, &mut session).await {
                 Ok(progressed) => progressed,
                 Err(e) => {
+                    // The retry has been pushed back; go on with the folders.
                     tracing::warn!(account_id, error = %e, "header retry failed; reconnecting");
-                    if let Some(s) = session.take() {
-                        imap::logout(s).await;
-                    }
-                    break 'work;
+                    session = None;
+                    false
                 }
             };
             let folders = match ctx
@@ -2112,6 +2116,9 @@ async fn run_history_backfill(
                     continue;
                 }
                 if folder.backfill_cursor.is_some() && folder.backfill_done {
+                    continue;
+                }
+                if failed_folders.contains(&folder.id) {
                     continue;
                 }
                 if session.is_none() {
@@ -2154,10 +2161,12 @@ async fn run_history_backfill(
                             error = %e,
                             "history backfill: step failed; dropping session",
                         );
-                        if let Some(s) = session.take() {
-                            imap::logout(s).await;
-                        }
-                        break 'work; // retry on the next nudge/tick
+                        // The stream may hold an unread response; never reuse it.
+                        session = None;
+                        // Retry this folder on the next nudge/tick, but don't
+                        // let it hold up the rest (#101: one bad Inbox range
+                        // kept every other folder from ever starting).
+                        failed_folders.insert(folder.id);
                     }
                 }
             }
@@ -2195,41 +2204,88 @@ async fn retry_one_header_failure(
     let Some(failure) = failure else {
         return Ok(false);
     };
-    let folder_id = failure
-        .folder_id
-        .ok_or_else(|| CoreError::Other("header retry missing folder".into()))?;
-    let uid = failure
-        .uid
-        .ok_or_else(|| CoreError::Other("header retry missing UID".into()))?;
-    let folder = ctx
+    let (Some(folder_id), Some(uid)) = (failure.folder_id, failure.uid) else {
+        // Malformed row: drop it rather than retry it forever.
+        let id = failure.id;
+        ctx.db
+            .write(move |conn| {
+                conn.execute("DELETE FROM sync_failures WHERE id = ?1", [id])?;
+                Ok(())
+            })
+            .await?;
+        return Ok(true);
+    };
+    let result = retry_header(ctx, config, session, folder_id, uid).await;
+    if let Err(error) = &result {
+        // Push this retry back before the caller drops the session, so one
+        // message that keeps failing can't hold up every later history pass.
+        let detail = error.to_string();
+        let _ = ctx
+            .db
+            .write(move |conn| {
+                let retry_at = header_retry_at(conn, folder_id, uid)?;
+                if repo::folders::get(conn, folder_id)?.is_some() {
+                    repo::sync_failures::record_header(
+                        conn,
+                        folder_id,
+                        uid,
+                        Some(retry_at),
+                        &detail,
+                    )?;
+                }
+                Ok(())
+            })
+            .await;
+    }
+    result.map(|()| true)
+}
+
+async fn retry_header(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Option<Session>,
+    folder_id: i64,
+    uid: i64,
+) -> Result<()> {
+    let Some(folder) = ctx
         .db
         .read(move |conn| repo::folders::get(conn, folder_id))
         .await?
-        .ok_or_else(|| CoreError::NotFound(format!("folder {folder_id}")))?;
+    else {
+        // The folder is gone: nothing left to retry.
+        ctx.db
+            .write(move |conn| {
+                repo::sync_failures::clear_header(conn, folder_id, uid)?;
+                Ok(())
+            })
+            .await?;
+        return Ok(());
+    };
     if session.is_none() {
         *session = Some(connect(ctx, config).await?);
     }
     let s = session.as_mut().unwrap();
     imap::select(s, &folder.imap_name).await?;
-    let caps = s.server_caps().await?;
-    let behavior = crate::provider::behavior_for(config.provider, &caps);
-    let headers = imap::fetch_headers(s, &uid.to_string(), behavior.as_ref()).await?;
-    if headers.is_empty() {
+    let fetched = fetch_headers_tolerant(ctx, config, s, &folder, &uid.to_string()).await?;
+    if !fetched.unreadable.is_empty() {
+        return ledger_unreadable_headers(ctx, folder_id, fetched.unreadable).await;
+    }
+    if fetched.headers.is_empty() {
         let error = "server no longer returns this UID";
-        let retry_at = now_ms() + 5 * 60_000;
         ctx.db
             .write(move |conn| {
+                let retry_at = header_retry_at(conn, folder_id, uid)?;
                 repo::sync_failures::record_header(conn, folder_id, uid, Some(retry_at), error)?;
                 Ok(())
             })
             .await?;
-        return Ok(true);
+        return Ok(());
     }
-    let (thread_ids, _) = store_headers(ctx, config, &folder, headers, None).await?;
+    let (thread_ids, _) = store_headers(ctx, config, &folder, fetched.headers, None).await?;
     if !thread_ids.is_empty() {
         ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
     }
-    Ok(true)
+    Ok(())
 }
 
 async fn initial_backfill(
@@ -2269,11 +2325,9 @@ async fn initial_backfill(
         if set.is_empty() {
             continue;
         }
-        let caps = session.server_caps().await?;
-        let behavior = crate::provider::behavior_for(config.provider, &caps);
-        let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
-        done += headers.len() as u64;
-        let (thread_ids, _) = store_headers(ctx, config, folder, headers, None).await?;
+        let (thread_ids, _, count) =
+            fetch_and_store_headers(ctx, config, session, folder, &set, |_| true, None).await?;
+        done += count as u64;
         if !thread_ids.is_empty() {
             // Let the UI fill in live while the backfill runs.
             ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
@@ -2313,6 +2367,413 @@ async fn initial_backfill(
     Ok(())
 }
 
+/// Replace a session whose protocol stream can't be used any more (it holds a
+/// response the IMAP parser rejected) and select `folder` on the new one.
+async fn reopen_folder(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    folder: &Folder,
+) -> Result<()> {
+    // Dropping the old session closes it; LOGOUT over it would fail anyway.
+    *session = connect(ctx, config).await?;
+    let selected = imap::select(session, &folder.imap_name).await?;
+    if folder.uidvalidity.is_some() && selected.uid_validity != folder.uidvalidity {
+        return Err(CoreError::Imap(format!(
+            "UIDVALIDITY of {} changed while reconnecting",
+            folder.imap_name
+        )));
+    }
+    Ok(())
+}
+
+/// Headers fetched by [`fetch_headers_tolerant`].
+#[derive(Debug, Default)]
+struct HeaderFetch {
+    headers: Vec<FetchedHeader>,
+    /// UIDs whose FETCH response can't be parsed even without BODYSTRUCTURE.
+    unreadable: Vec<u32>,
+}
+
+/// UIDs still to fetch in [`isolate_unparseable`]; `named` marks a message
+/// the parser already named as rejected.
+struct PendingUids {
+    uids: Vec<u32>,
+    named: bool,
+}
+
+/// Split `uids` after a FETCH over all of them was rejected: the message the
+/// parser named goes on its own, otherwise the set is halved.
+fn isolate_rejected(mut uids: Vec<u32>, rejected: Option<u32>) -> [PendingUids; 2] {
+    if let Some(pos) = rejected.and_then(|uid| uids.iter().position(|u| *u == uid)) {
+        let uid = uids.remove(pos);
+        return [
+            PendingUids { uids, named: false },
+            PendingUids {
+                uids: vec![uid],
+                named: true,
+            },
+        ];
+    }
+    let right = uids.split_off(uids.len() / 2);
+    [
+        PendingUids { uids, named: false },
+        PendingUids {
+            uids: right,
+            named: false,
+        },
+    ]
+}
+
+/// [`imap::fetch_headers`] that survives FETCH responses the IMAP parser
+/// rejects (#101). Gmail sends some BODYSTRUCTUREs imap-proto can't read (an
+/// empty `multipart/appledouble`, for one), and async-imap can't step past
+/// such a response: the session is dead and fetching the same set again fails
+/// the same way, forever. So this reconnects, sets the offending message
+/// aside (the error names its UID when it can, otherwise the set is halved
+/// until it is found), fetches the rest normally and that message without
+/// BODYSTRUCTURE. Its body is then planned later, or read in full when the
+/// message is opened. A message that can't be read even then is returned in
+/// `unreadable` for the caller to put in the failure ledger.
+async fn fetch_headers_tolerant(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    folder: &Folder,
+    set: &str,
+) -> Result<HeaderFetch> {
+    let caps = session.server_caps().await?;
+    let behavior = crate::provider::behavior_for(config.provider, &caps);
+    let error = match imap::fetch_headers(session, set, behavior.as_ref()).await {
+        Ok(headers) => {
+            return Ok(HeaderFetch {
+                headers,
+                unreadable: Vec::new(),
+            });
+        }
+        Err(error) => error,
+    };
+    let Some(rejected) = imap::unparseable_response(&error) else {
+        return Err(error);
+    };
+    tracing::warn!(
+        account_id = config.id,
+        folder = %folder.imap_name,
+        %error,
+        "header fetch: server response can't be parsed; setting the message aside",
+    );
+    reopen_folder(ctx, config, session, folder).await?;
+    let uids = imap::uid_search_in(session, set).await?;
+    let mut source = SessionHeaders {
+        ctx,
+        config,
+        session,
+        folder,
+        behavior: behavior.as_ref(),
+    };
+    isolate_unparseable(&mut source, uids, rejected).await
+}
+
+/// What [`isolate_unparseable`] needs from an IMAP session.
+trait HeaderSource {
+    async fn fetch(&mut self, uids: &[u32], with_structure: bool) -> Result<Vec<FetchedHeader>>;
+    /// Replace the session after a rejected response.
+    async fn reopen(&mut self) -> Result<()>;
+}
+
+struct SessionHeaders<'a> {
+    ctx: &'a SyncCtx,
+    config: &'a AccountConfig,
+    session: &'a mut Session,
+    folder: &'a Folder,
+    behavior: &'a dyn crate::provider::MailboxBehavior,
+}
+
+impl HeaderSource for SessionHeaders<'_> {
+    async fn fetch(&mut self, uids: &[u32], with_structure: bool) -> Result<Vec<FetchedHeader>> {
+        let set = imap::uid_set(uids);
+        if with_structure {
+            imap::fetch_headers(self.session, &set, self.behavior).await
+        } else {
+            tracing::warn!(
+                account_id = self.config.id,
+                folder = %self.folder.imap_name,
+                uid = %set,
+                "header fetch: fetching without BODYSTRUCTURE",
+            );
+            imap::fetch_headers_without_structure(self.session, &set, self.behavior).await
+        }
+    }
+
+    async fn reopen(&mut self) -> Result<()> {
+        reopen_folder(self.ctx, self.config, self.session, self.folder).await
+    }
+}
+
+/// Fetch headers for `uids` after a FETCH over them was rejected, naming
+/// `rejected` when the error could. Each further rejection costs a reconnect
+/// and either sets the named message aside or halves the set, so this ends
+/// after at most a few reconnects per offending message.
+async fn isolate_unparseable(
+    source: &mut impl HeaderSource,
+    uids: Vec<u32>,
+    rejected: Option<u32>,
+) -> Result<HeaderFetch> {
+    let mut out = HeaderFetch::default();
+    let mut pending: Vec<PendingUids> = isolate_rejected(uids, rejected).into();
+    while let Some(PendingUids { uids, named }) = pending.pop() {
+        if uids.is_empty() {
+            continue;
+        }
+        if !named {
+            let error = match source.fetch(&uids, true).await {
+                Ok(headers) => {
+                    out.headers.extend(headers);
+                    continue;
+                }
+                Err(error) => error,
+            };
+            let Some(rejected) = imap::unparseable_response(&error) else {
+                return Err(error);
+            };
+            source.reopen().await?;
+            if uids.len() > 1 {
+                pending.extend(isolate_rejected(uids, rejected));
+                continue;
+            }
+        }
+        let [only] = uids[..] else {
+            // Only single messages are ever named; halve anything else.
+            pending.extend(isolate_rejected(uids, None));
+            continue;
+        };
+        match source.fetch(&uids, false).await {
+            Ok(headers) => out.headers.extend(headers),
+            Err(error) if imap::unparseable_response(&error).is_some() => {
+                source.reopen().await?;
+                out.unreadable.push(only);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    out.headers.sort_by_key(|header| header.uid);
+    Ok(out)
+}
+
+#[cfg(test)]
+mod isolate_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// A server whose responses for `poison` UIDs the parser rejects when
+    /// they carry BODYSTRUCTURE, and for `dead` UIDs always. Like async-imap,
+    /// it refuses all further use after a rejection until reopened.
+    struct FakeServer {
+        poison: HashSet<u32>,
+        dead: HashSet<u32>,
+        names_uid: bool,
+        broken: bool,
+        reopens: usize,
+    }
+
+    impl FakeServer {
+        fn new(poison: &[u32], dead: &[u32], names_uid: bool) -> Self {
+            Self {
+                poison: poison.iter().copied().collect(),
+                dead: dead.iter().copied().collect(),
+                names_uid,
+                broken: false,
+                reopens: 0,
+            }
+        }
+    }
+
+    impl HeaderSource for FakeServer {
+        async fn fetch(
+            &mut self,
+            uids: &[u32],
+            with_structure: bool,
+        ) -> Result<Vec<FetchedHeader>> {
+            assert!(
+                !self.broken,
+                "fetch on a session that holds a rejected response"
+            );
+            let bad = uids.iter().find(|uid| {
+                self.dead.contains(uid) || (with_structure && self.poison.contains(uid))
+            });
+            if let Some(uid) = bad {
+                self.broken = true;
+                let named = if self.names_uid {
+                    format!(" for UID {uid}")
+                } else {
+                    String::new()
+                };
+                return Err(CoreError::Imap(format!(
+                    "io: unparseable server response{named} (8033 bytes withheld)"
+                )));
+            }
+            Ok(uids
+                .iter()
+                .map(|&uid| FetchedHeader {
+                    uid,
+                    flags: Default::default(),
+                    gm_msgid: None,
+                    internal_date_ms: None,
+                    size: None,
+                    header_bytes: Vec::new(),
+                    has_attachments: false,
+                    mime_plan: with_structure.then(Default::default),
+                })
+                .collect())
+        }
+
+        async fn reopen(&mut self) -> Result<()> {
+            self.broken = false;
+            self.reopens += 1;
+            Ok(())
+        }
+    }
+
+    fn without_structure(fetch: &HeaderFetch) -> Vec<u32> {
+        fetch
+            .headers
+            .iter()
+            .filter(|h| h.mime_plan.is_none())
+            .map(|h| h.uid)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_named_message_is_set_aside_with_one_reconnect() {
+        let uids: Vec<u32> = (1..=500).collect();
+        let mut server = FakeServer::new(&[37, 400], &[], true);
+        // As fetch_headers_tolerant calls it: the first FETCH named UID 37.
+        let fetch = isolate_unparseable(&mut server, uids.clone(), Some(37))
+            .await
+            .unwrap();
+        assert_eq!(
+            fetch.headers.iter().map(|h| h.uid).collect::<Vec<_>>(),
+            uids
+        );
+        assert_eq!(without_structure(&fetch), vec![37, 400]);
+        assert!(fetch.unreadable.is_empty());
+        // 37 was already named; finding 400 costs one more.
+        assert_eq!(server.reopens, 1);
+    }
+
+    #[tokio::test]
+    async fn an_unnamed_message_is_found_by_halving() {
+        let uids: Vec<u32> = (1..=500).collect();
+        let mut server = FakeServer::new(&[123], &[], false);
+        let fetch = isolate_unparseable(&mut server, uids.clone(), None)
+            .await
+            .unwrap();
+        assert_eq!(fetch.headers.len(), 500);
+        assert_eq!(without_structure(&fetch), vec![123]);
+        assert!(server.reopens <= 10, "{} reconnects", server.reopens);
+    }
+
+    #[tokio::test]
+    async fn a_message_unreadable_even_without_structure_is_reported() {
+        let uids: Vec<u32> = (10..20).collect();
+        let mut server = FakeServer::new(&[12], &[15], true);
+        let fetch = isolate_unparseable(&mut server, uids, Some(12))
+            .await
+            .unwrap();
+        assert_eq!(fetch.unreadable, vec![15]);
+        assert_eq!(fetch.headers.len(), 9);
+        assert_eq!(without_structure(&fetch), vec![12]);
+        assert!(!server.broken);
+    }
+
+    #[tokio::test]
+    async fn other_errors_are_not_swallowed() {
+        struct Offline;
+        impl HeaderSource for Offline {
+            async fn fetch(&mut self, _: &[u32], _: bool) -> Result<Vec<FetchedHeader>> {
+                Err(CoreError::Imap("io: connection reset".into()))
+            }
+            async fn reopen(&mut self) -> Result<()> {
+                Ok(())
+            }
+        }
+        let error = isolate_unparseable(&mut Offline, vec![1, 2, 3], None)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("connection reset"), "{error}");
+    }
+
+    #[test]
+    fn retry_delays_back_off_to_an_hour() {
+        assert_eq!(content_retry_delay_ms(0), 60_000);
+        assert_eq!(content_retry_delay_ms(3), 480_000);
+        assert_eq!(content_retry_delay_ms(30), 3_600_000);
+    }
+}
+
+/// Header retries back off like content retries: 1 min doubling to 1 h.
+fn header_retry_at(conn: &rusqlite::Connection, folder_id: i64, uid: i64) -> Result<i64> {
+    let attempts: i64 = conn.query_row(
+        "SELECT COALESCE((SELECT attempts FROM sync_failures
+                          WHERE stage = 'header' AND folder_id = ?1 AND uid = ?2), 0)",
+        rusqlite::params![folder_id, uid],
+        |row| row.get(0),
+    )?;
+    Ok(now_ms() + content_retry_delay_ms(attempts))
+}
+
+/// Put messages whose FETCH response can't be read at all in the failure
+/// ledger, so the window moves past them and they're retried with back-off.
+async fn ledger_unreadable_headers(ctx: &SyncCtx, folder_id: i64, uids: Vec<u32>) -> Result<()> {
+    if uids.is_empty() {
+        return Ok(());
+    }
+    ctx.db
+        .write(move |conn| {
+            for uid in uids {
+                let uid = i64::from(uid);
+                let retry_at = header_retry_at(conn, folder_id, uid)?;
+                repo::sync_failures::record_header(
+                    conn,
+                    folder_id,
+                    uid,
+                    Some(retry_at),
+                    "server response for this message can't be read",
+                )?;
+                tracing::warn!(
+                    folder_id,
+                    uid,
+                    "header fetch: message unreadable; queued for retry"
+                );
+            }
+            Ok(())
+        })
+        .await
+}
+
+/// Fetch and store headers for `set` in `folder`, putting unreadable messages
+/// in the failure ledger. Returns the stored threads and fresh arrivals, as
+/// [`store_headers`] does.
+async fn fetch_and_store_headers(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    folder: &Folder,
+    set: &str,
+    keep: impl Fn(&FetchedHeader) -> bool,
+    notify_min_uid: Option<u32>,
+) -> Result<(Vec<i64>, Vec<i64>, usize)> {
+    let fetched = fetch_headers_tolerant(ctx, config, session, folder, set).await?;
+    ledger_unreadable_headers(ctx, folder.id, fetched.unreadable).await?;
+    let headers: Vec<FetchedHeader> = fetched.headers.into_iter().filter(keep).collect();
+    let count = headers.len();
+    if headers.is_empty() {
+        return Ok((Vec::new(), Vec::new(), 0));
+    }
+    let (thread_ids, fresh) = store_headers(ctx, config, folder, headers, notify_min_uid).await?;
+    Ok((thread_ids, fresh, count))
+}
+
 async fn extend_history(
     ctx: &SyncCtx,
     config: &AccountConfig,
@@ -2332,10 +2793,8 @@ async fn extend_history(
     let hi = (cursor - 1).max(1) as u32;
     let lo = hi.saturating_sub(HISTORY_CHUNK - 1).max(1);
     let set = format!("{lo}:{hi}");
-    let caps = session.server_caps().await?;
-    let behavior = crate::provider::behavior_for(config.provider, &caps);
-    let headers = imap::fetch_headers(session, &set, behavior.as_ref()).await?;
-    let (thread_ids, _) = store_headers(ctx, config, folder, headers, None).await?;
+    let (thread_ids, _, _) =
+        fetch_and_store_headers(ctx, config, session, folder, &set, |_| true, None).await?;
     if !thread_ids.is_empty() {
         ctx.bus.emit(CoreEvent::MailUpdated { thread_ids });
     }
@@ -2526,7 +2985,7 @@ async fn store_headers(
                 let parsed = match crate::mime::parse_header_block(&fh.header_bytes) {
                     Ok(p) => p,
                     Err(e) => {
-                        let retry_at = now_ms() + 60_000;
+                        let retry_at = header_retry_at(&tx, folder_id, fh.uid as i64)?;
                         repo::sync_failures::record_header(
                             &tx,
                             folder_id,
@@ -3536,6 +3995,68 @@ async fn body_worker(
             Err(BodyChunkError::Reconnect(error)) => {
                 tracing::warn!(account_id, error = %error, "body worker: IMAP chunk failed");
                 let mut retry = chunk;
+                // A response the parser rejects fails the same way every time
+                // (#101). Set the message it names aside - or the last one left
+                // after bisecting - and go on with the rest on a new session.
+                if let Some(rejected) = imap::unparseable_response(&error) {
+                    let position = rejected
+                        .and_then(|uid| {
+                            retry
+                                .items
+                                .iter()
+                                .position(|(_, item_uid)| *item_uid == i64::from(uid))
+                        })
+                        .or((retry.items.len() == 1).then_some(0));
+                    if let Some(position) = position {
+                        let (message_id, uid) = retry.items.remove(position);
+                        skip.lock().unwrap().insert(message_id);
+                        drop(session);
+                        session = match connect(&ctx, &config).await {
+                            Ok(fresh) => fresh,
+                            Err(connect_error) => {
+                                tracing::warn!(
+                                    account_id,
+                                    error = %connect_error,
+                                    "body worker: reconnect after unparseable response failed"
+                                );
+                                if !retry.items.is_empty() {
+                                    queue.lock().await.push_front(retry);
+                                }
+                                let _ = record_content_failure_details(
+                                    &ctx,
+                                    vec![(message_id, error.to_string())],
+                                )
+                                .await;
+                                return Err(error);
+                            }
+                        };
+                        selected = None;
+                        if !read_unparseable_body(
+                            &ctx,
+                            &config,
+                            &mut session,
+                            &retry,
+                            message_id,
+                            uid,
+                        )
+                        .await
+                        {
+                            match connect(&ctx, &config).await {
+                                Ok(fresh) => session = fresh,
+                                Err(connect_error) => {
+                                    if !retry.items.is_empty() {
+                                        queue.lock().await.push_front(retry);
+                                    }
+                                    return Err(connect_error);
+                                }
+                            }
+                        }
+                        if !retry.items.is_empty() {
+                            queue.lock().await.push_front(retry);
+                        }
+                        continue;
+                    }
+                }
                 if retry.items.len() > 1 {
                     // A timeout or server-side response-size limit must not let
                     // one large batch block every sibling forever. Bisect,
@@ -4116,7 +4637,21 @@ async fn fetch_selective_content(
                 "message remote location changed before MIME-plan fetch".into(),
             ));
         }
-        let plans = imap::fetch_mime_plans_batch(session, &[uid]).await?;
+        let plans = match imap::fetch_mime_plans_batch(session, &[uid]).await {
+            Ok(plans) => plans,
+            Err(error) if allow_open_fallback && imap::unparseable_response(&error).is_some() => {
+                tracing::warn!(
+                    message_id,
+                    %error,
+                    "BODYSTRUCTURE can't be parsed; using explicit-open full MIME fallback"
+                );
+                return open_fallback_after(
+                    ctx, config, session, message_id, folder_id, uid, &error,
+                )
+                .await;
+            }
+            Err(error) => return Err(error),
+        };
         plan = plans
             .into_iter()
             .find(|fetched| fetched.uid == uid)
@@ -4181,7 +4716,7 @@ async fn fetch_selective_content(
                 error = %error,
                 "selective content unavailable; using explicit-open full MIME fallback"
             );
-            return fetch_full_open_fallback(ctx, config, session, message_id, folder_id, uid)
+            return open_fallback_after(ctx, config, session, message_id, folder_id, uid, &error)
                 .await;
         }
         Err(error) => return Err(error),
@@ -4212,7 +4747,110 @@ async fn fetch_full_open_fallback(
     let Some(raw) = imap::fetch_full(session, uid).await? else {
         return Err(CoreError::NotFound(format!("remote message UID {uid}")));
     };
-    persist_body(ctx, config, message_id, folder_id, uid, &raw).await
+    persist_body(
+        ctx,
+        config,
+        message_id,
+        folder_id,
+        uid,
+        &raw,
+        SelectivePersistGuard::Priority { folder_id },
+    )
+    .await
+}
+
+/// [`fetch_full_open_fallback`] after a selective read failed with `error`. A
+/// response the parser rejected leaves `session` unusable, so the fallback
+/// then runs on a new one.
+async fn open_fallback_after(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    message_id: i64,
+    folder_id: i64,
+    uid: u32,
+    error: &CoreError,
+) -> Result<()> {
+    if imap::unparseable_response(error).is_some() {
+        let folder = ctx
+            .db
+            .read(move |conn| repo::folders::get(conn, folder_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("folder".into()))?;
+        reopen_folder(ctx, config, session, &folder).await?;
+    }
+    fetch_full_open_fallback(ctx, config, session, message_id, folder_id, uid).await
+}
+
+/// Largest message the background reads whole when the server's BODYSTRUCTURE
+/// for it can't be parsed. Bigger ones wait until they're opened, so the
+/// background never pulls large attachments.
+const UNPARSEABLE_WHOLE_READ_MAX: i64 = 4 * 1024 * 1024;
+
+/// Take a message out of the background queue whose BODYSTRUCTURE the IMAP
+/// parser rejects (#101). It can't be read section by section, and left in the
+/// queue it would fail its batch every round. A small one is read whole on the
+/// fresh `session`; a large one, or one that still fails, goes in the failure
+/// ledger and loads in full when opened. Returns whether `session` is usable.
+async fn read_unparseable_body(
+    ctx: &SyncCtx,
+    config: &AccountConfig,
+    session: &mut Session,
+    chunk: &BodyChunk,
+    message_id: i64,
+    uid: i64,
+) -> bool {
+    let size = ctx
+        .db
+        .read(move |conn| Ok(repo::messages::get_row(conn, message_id)?.and_then(|row| row.size)))
+        .await
+        .ok()
+        .flatten();
+    let result = match (size, u32::try_from(uid)) {
+        (Some(size), Ok(uid)) if size <= UNPARSEABLE_WHOLE_READ_MAX => {
+            async {
+                let mailbox = imap::select(session, &chunk.folder_name).await?;
+                if mailbox.uid_validity != chunk.uid_validity {
+                    return Err(CoreError::NotFound("folder UIDVALIDITY changed".into()));
+                }
+                if !remote_location_is_current(ctx, message_id, chunk.folder_id, i64::from(uid))
+                    .await?
+                {
+                    return Ok(());
+                }
+                let Some(raw) = imap::fetch_full(session, uid).await? else {
+                    return Err(CoreError::NotFound(format!("remote message UID {uid}")));
+                };
+                persist_body(
+                    ctx,
+                    config,
+                    message_id,
+                    chunk.folder_id,
+                    uid,
+                    &raw,
+                    SelectivePersistGuard::Background {
+                        folder_id: chunk.folder_id,
+                    },
+                )
+                .await
+            }
+            .await
+        }
+        _ => Err(CoreError::Mime(
+            "message structure can't be read; it loads in full when opened".into(),
+        )),
+    };
+    let Err(error) = result else {
+        return true;
+    };
+    tracing::warn!(message_id, %error, "body backfill: unparseable message set aside");
+    // Protocol and network errors leave the session in an unknown state.
+    let usable = !matches!(
+        error,
+        CoreError::Imap(_) | CoreError::Network(_) | CoreError::Offline
+    );
+    let _ = record_content_failure_details(ctx, vec![(message_id, error.to_string())]).await;
+    usable
 }
 
 async fn persist_selective_batch(
@@ -4289,6 +4927,7 @@ async fn persist_body(
     folder_id: i64,
     uid: u32,
     raw: &[u8],
+    guard: SelectivePersistGuard,
 ) -> Result<()> {
     if !remote_location_is_current(ctx, message_id, folder_id, i64::from(uid)).await? {
         return Ok(());
@@ -4317,11 +4956,7 @@ async fn persist_body(
             let Some(current) = current_body_row(&tx, message_id)? else {
                 return Ok((false, None));
             };
-            if !can_persist_selective_content(
-                &current,
-                SelectivePersistGuard::Priority { folder_id },
-                uid,
-            ) {
+            if !can_persist_selective_content(&current, guard, uid) {
                 return Ok((false, None));
             }
             repo::messages::store_body(
