@@ -37,6 +37,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/033_folder_role_repairs.sql"),
     include_str!("migrations/034_stable_identity_attempts.sql"),
     include_str!("migrations/035_restore_non_trash_roles.sql"),
+    include_str!("migrations/036_rescan_skipped_headers.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -70,6 +71,53 @@ mod tests {
             tx.pragma_update(None, "user_version", target).unwrap();
             tx.commit().unwrap();
         }
+    }
+
+    #[test]
+    fn migration_036_rewinds_scan_markers_to_saved_mail() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        run_through(&mut conn, 35);
+        crate::db::testutil::seed_account(&conn);
+        conn.execute_batch(
+            "UPDATE accounts SET provider = 'microsoft' WHERE id = 1;
+             INSERT INTO accounts (id, email, provider, auth_kind, username,
+                 imap_host, imap_port, smtp_host, smtp_port, created_at)
+             VALUES (2,'g@test.dev','gmail','oauth2','g','h',993,'h',587,0);
+             -- 1: scanned past its newest saved message. 2: history walk in
+             -- progress below its oldest saved message. 3: nothing saved.
+             -- 4: up to date. 5: a Gmail folder, untouched.
+             UPDATE folders SET last_seen_uid = 222, backfill_cursor = 1, backfill_done = 1
+             WHERE id = 1;
+             INSERT INTO folders (id, account_id, imap_name, last_seen_uid, backfill_cursor,
+                                  backfill_done)
+             VALUES (2,1,'Archive',90,40,0),
+                    (3,1,'Sent Items',500,1,1),
+                    (4,1,'Junk Email',30,1,1),
+                    (5,2,'[Gmail]/All Mail',900,1,1);
+             INSERT INTO messages (account_id, folder_id, uid, date) VALUES
+                 (1,1,100,0),(1,1,120,0),
+                 (1,2,60,0),(1,2,90,0),
+                 (1,3,NULL,0),
+                 (1,4,30,0),
+                 (2,5,10,0);",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let state =
+            |id: i64| {
+                conn.query_row(
+                "SELECT last_seen_uid, backfill_cursor, backfill_done FROM folders WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, bool>(2)?)),
+            )
+            .unwrap()
+            };
+        assert_eq!(state(1), (120, Some(1), true));
+        assert_eq!(state(2), (90, Some(60), false));
+        assert_eq!(state(3), (0, None, false));
+        assert_eq!(state(4), (30, Some(1), true));
+        assert_eq!(state(5), (900, Some(1), true));
     }
 
     #[test]

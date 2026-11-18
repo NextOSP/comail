@@ -520,21 +520,31 @@ pub async fn fetch_headers_without_structure(
     .await
 }
 
+/// The header FETCH items, separated by exactly one space. Outlook answers a
+/// list with a doubled space (an empty provider item, for one) with no
+/// messages and no error, so sync would step past mail it never saved.
+fn header_fetch_query(identity_items: &[&str], with_structure: bool) -> String {
+    let mut items = vec!["UID", "FLAGS", "INTERNALDATE", "RFC822.SIZE"];
+    if with_structure {
+        items.push("BODYSTRUCTURE");
+    }
+    items.extend(
+        identity_items
+            .iter()
+            .copied()
+            .filter(|item| !item.is_empty() && *item != "EMAILID"),
+    );
+    items.push(HEADER_FIELDS);
+    format!("({})", items.join(" "))
+}
+
 async fn fetch_headers_inner(
     session: &mut Session,
     uid_set: &str,
     behavior: &dyn crate::provider::MailboxBehavior,
     with_structure: bool,
 ) -> Result<Vec<FetchedHeader>> {
-    let items = behavior.identity_fetch_items();
-    let extra = items
-        .iter()
-        .copied()
-        .filter(|item| *item != "EMAILID")
-        .collect::<Vec<_>>()
-        .join(" ");
-    let structure = if with_structure { "BODYSTRUCTURE " } else { "" };
-    let query = format!("(UID FLAGS INTERNALDATE RFC822.SIZE {structure}{extra} {HEADER_FIELDS})");
+    let query = header_fetch_query(behavior.identity_fetch_items(), with_structure);
     let mut out = Vec::new();
     {
         let mut stream = session
@@ -1473,7 +1483,10 @@ pub fn uid_set(uids: &[u32]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{MIME_PLAN_QUERY, normalized_uid_set, section_fetch_query, section_paths};
+    use super::{
+        HEADER_FIELDS, MIME_PLAN_QUERY, header_fetch_query, normalized_uid_set,
+        section_fetch_query, section_paths,
+    };
     use crate::error::CoreError;
 
     #[test]
@@ -1550,6 +1563,34 @@ mod tests {
                      (\"APPLEDOUBLE\" NIL (\"ATTACHMENT\" NIL) NIL) \"MIXED\" NIL NIL NIL NIL))\r\n";
         let error = super::imap_error(decode_error(bytes.as_bytes()).await);
         assert_eq!(super::unparseable_response(&error), Some(Some(40)));
+    }
+
+    #[test]
+    fn header_fetch_items_are_single_spaced_for_every_provider() {
+        let plain = header_fetch_query(&[], true);
+        assert_eq!(
+            plain,
+            format!("(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {HEADER_FIELDS})")
+        );
+        assert_eq!(
+            header_fetch_query(&[], false),
+            format!("(UID FLAGS INTERNALDATE RFC822.SIZE {HEADER_FIELDS})")
+        );
+        assert_eq!(
+            header_fetch_query(&["X-GM-MSGID", "EMAILID"], true),
+            format!(
+                "(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE X-GM-MSGID {HEADER_FIELDS})"
+            )
+        );
+        for query in [
+            plain,
+            header_fetch_query(&[], false),
+            header_fetch_query(&[""], true),
+            header_fetch_query(&["X-GM-MSGID"], false),
+        ] {
+            assert!(!query.contains("  "), "doubled space in {query}");
+            assert!(!query.contains("( ") && !query.contains(" )"), "{query}");
+        }
     }
 
     #[test]

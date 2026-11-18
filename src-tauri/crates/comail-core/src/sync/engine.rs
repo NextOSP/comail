@@ -3497,6 +3497,54 @@ mod content_batch_tests {
         assert!(decode_selective_content(attachment_only_item(id, 1), Vec::new()).is_err());
     }
 
+    #[test]
+    fn an_omitted_empty_part_is_not_a_failure() {
+        let section =
+            |section: &str, kind, mime_type: &str, size| crate::mime::PlannedTextSection {
+                section: section.into(),
+                kind,
+                mime_type: mime_type.into(),
+                charset: Some("utf-8".into()),
+                transfer_encoding: "7bit".into(),
+                size,
+            };
+        // Outlook's meeting invites: an empty HTML part, then the readable one.
+        let item = |html_size| PlannedBodyFetch {
+            message_id: 7,
+            uid: 70,
+            plan: crate::mime::MimePlan {
+                version: crate::mime::MIME_PLAN_VERSION,
+                text_sections: vec![
+                    section(
+                        "1",
+                        crate::mime::TextSectionKind::Html,
+                        "text/html",
+                        html_size,
+                    ),
+                    section("2", crate::mime::TextSectionKind::Plain, "text/plain", 5),
+                ],
+                attachments: Vec::new(),
+            },
+        };
+        let served = || {
+            vec![imap::FetchedSection {
+                section: "2".into(),
+                mime_header: b"Content-Type: text/plain; charset=utf-8\r\n\r\n".to_vec(),
+                body: b"Hello".to_vec(),
+            }]
+        };
+
+        let content = decode_selective_content(item(0), served()).unwrap();
+        assert_eq!(content.text_body.as_deref(), Some("Hello"));
+        assert!(content.html_body.is_none());
+
+        // A part with content the server leaves out is still a failure.
+        let Err(error) = decode_selective_content(item(120), served()) else {
+            panic!("a missing non-empty part must fail");
+        };
+        assert!(error.to_string().contains("omitted planned MIME section 1"));
+    }
+
     #[tokio::test]
     async fn malformed_content_keeps_durable_capped_retry_without_no_progress_error() {
         let (_root, ctx) = context().await;
@@ -4574,12 +4622,18 @@ fn decode_selective_content(
     let mut html = Vec::new();
     let mut calendar_events = Vec::new();
     for planned in &item.plan.text_sections {
-        let section = fetched_by_section.get(&planned.section).ok_or_else(|| {
-            CoreError::Imap(format!(
+        let Some(section) = fetched_by_section.get(&planned.section) else {
+            // Outlook leaves out a part its BODYSTRUCTURE lists as 0 bytes
+            // (the empty text part of a meeting invite, for one). There is
+            // nothing to read in it, so it isn't a failure.
+            if planned.size == 0 {
+                continue;
+            }
+            return Err(CoreError::Imap(format!(
                 "server omitted planned MIME section {}",
                 planned.section
-            ))
-        })?;
+            )));
+        };
         let decoded =
             crate::mime::decode_planned_text_section(planned, &section.mime_header, &section.body)?;
         match decoded.kind {
