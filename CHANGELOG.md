@@ -9,6 +9,18 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.44] - 2026-11-18
+
+### Fixed
+
+- Outlook and other accounts that aren't Gmail receive new mail again.
+  0.2.42 and 0.2.43 sent these servers a malformed request for message
+  headers. Outlook answered it with no messages and no error, so new mail
+  was skipped, and accounts added on those versions stayed empty. Updating
+  fetches the mail that was skipped.
+- Outlook meeting invites whose text part is empty load instead of staying
+  unloaded and counting as failed.
+
 ## [0.2.43] - 2026-11-18
 
 ### Fixed
@@ -630,7 +642,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.43...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.44...HEAD
+[0.2.44]: https://github.com/NextOSP/comail/releases/tag/v0.2.44
 [0.2.43]: https://github.com/NextOSP/comail/releases/tag/v0.2.43
 [0.2.42]: https://github.com/NextOSP/comail/releases/tag/v0.2.42
 [0.2.41]: https://github.com/NextOSP/comail/releases/tag/v0.2.41
