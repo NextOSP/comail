@@ -9,6 +9,24 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.43] - 2026-11-18
+
+### Fixed
+
+- Large Gmail mailboxes no longer get stuck syncing history. One message
+  whose structure Gmail describes in a way the IMAP parser rejects used to
+  fail the same 500-message batch forever and keep every other folder from
+  starting. Sync now sets that message aside, saves its headers anyway and
+  carries on, and a failing folder no longer holds up the rest
+  ([#101](https://github.com/NextOSP/comail/issues/101)).
+- New-mail checks and background body downloads get past such a message
+  too. Its body is downloaded whole if it is small, or loads when you open
+  it.
+- Messages with slightly malformed Base64 bodies (stray characters, padding
+  in the middle) now load instead of retrying forever as "1 failed".
+- Failed message retries back off up to an hour instead of retrying every
+  minute.
+
 ## [0.2.42] - 2026-11-17
 
 ### Added
@@ -612,7 +630,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.42...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.43...HEAD
+[0.2.43]: https://github.com/NextOSP/comail/releases/tag/v0.2.43
 [0.2.42]: https://github.com/NextOSP/comail/releases/tag/v0.2.42
 [0.2.41]: https://github.com/NextOSP/comail/releases/tag/v0.2.41
 [0.2.40]: https://github.com/NextOSP/comail/releases/tag/v0.2.40
