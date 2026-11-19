@@ -24,5 +24,9 @@ Proton account before adding it to Comail.
 Comail uses the imported certificates as this account's trust store for IMAP
 and SMTP. Platform certificate and hostname checks remain enabled.
 
+On macOS, platform policy can reject a newly issued 20-year Bridge certificate
+even after you paste it into Comail. If setup reports a TLS error, check the
+certificate installed by Bridge using [Proton’s macOS certificate guide](https://proton.me/support/macos-certificate-warning).
+
 See [Proton's Bridge settings guide](https://proton.me/support/comprehensive-guide-to-bridge-settings)
 for certificate export and connection-mode settings.

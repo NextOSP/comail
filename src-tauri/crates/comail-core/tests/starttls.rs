@@ -60,9 +60,32 @@ fn certificates() -> &'static Certificates {
         let server = params(false, false)
             .signed_by(&server_key, &issuer)
             .unwrap();
-        let bridge_key = KeyPair::generate().unwrap();
-        let bridge = params(true, false).self_signed(&bridge_key).unwrap();
-        let expired = params(true, true).self_signed(&bridge_key).unwrap();
+        let bridge_key =
+            KeyPair::generate_rsa_for(&rcgen::PKCS_RSA_SHA256, rcgen::RsaKeySize::_2048).unwrap();
+        let bridge_certificate = |expired| {
+            let mut p = params(true, expired);
+            p.distinguished_name
+                .push(rcgen::DnType::CommonName, "127.0.0.1");
+            // macOS can reject a newly issued 20-year certificate under its
+            // lifetime policy, even with an explicit anchor. Keep the macOS
+            // fixture policy-valid so it exercises the rest of the handshake.
+            if !expired && !cfg!(target_os = "macos") {
+                p.not_after = p.not_before + time::Duration::days(20 * 365);
+            }
+            p.subject_alt_names = vec![rcgen::SanType::IpAddress(
+                std::net::Ipv4Addr::LOCALHOST.into(),
+            )];
+            p.key_usages = vec![
+                rcgen::KeyUsagePurpose::DigitalSignature,
+                rcgen::KeyUsagePurpose::KeyEncipherment,
+                rcgen::KeyUsagePurpose::KeyCertSign,
+            ];
+            p.extended_key_usages
+                .push(ExtendedKeyUsagePurpose::ClientAuth);
+            p.self_signed(&bridge_key).unwrap()
+        };
+        let bridge = bridge_certificate(false);
+        let expired = bridge_certificate(true);
         Certificates {
             ca: ca.pem(),
             server: server.der().to_vec(),
@@ -365,10 +388,10 @@ async fn smtp_uses_the_account_certificate_and_authenticates_only_after_starttls
 #[tokio::test]
 async fn bridge_ca_as_server_requires_explicit_account_trust_and_matching_hostname() {
     for (host, trust, accepted) in [
-        ("localhost", Some(bridge_certificate()), true),
-        ("localhost", None, false),
-        ("localhost", Some(ca()), false),
-        ("127.0.0.1", Some(bridge_certificate()), false),
+        ("127.0.0.1", Some(bridge_certificate()), true),
+        ("127.0.0.1", None, false),
+        ("127.0.0.1", Some(ca()), false),
+        ("localhost", Some(bridge_certificate()), false),
     ] {
         let (port, server) =
             imap_server_with_certificate(Server::Starttls, CertificateKind::Bridge).await;
@@ -386,13 +409,6 @@ async fn bridge_ca_as_server_requires_explicit_account_trust_and_matching_hostna
             accepted,
             "only a verified peer receives LOGIN"
         );
-    }
-    for (host, trust, accepted) in [
-        ("localhost", Some(bridge_certificate()), true),
-        ("localhost", None, false),
-        ("localhost", Some(ca()), false),
-        ("127.0.0.1", Some(bridge_certificate()), false),
-    ] {
         let (port, server) = smtp_server(CertificateKind::Bridge).await;
         let mut config = smtp_config(port, trust);
         config.smtp_host = host.into();
@@ -418,7 +434,7 @@ async fn importing_an_expired_bridge_certificate_never_authorizes_credentials() 
         imap_server_with_certificate(Server::Starttls, CertificateKind::ExpiredBridge).await;
     assert!(
         imap::connect_with_security(
-            "localhost",
+            "127.0.0.1",
             port,
             credentials(),
             ImapSecurity::Starttls,
@@ -429,13 +445,12 @@ async fn importing_an_expired_bridge_certificate_never_authorizes_credentials() 
     );
     assert!(!server.await.unwrap());
     let (port, server) = smtp_server(CertificateKind::ExpiredBridge).await;
+    let mut config = smtp_config(port, Some(expired_certificate()));
+    config.smtp_host = "127.0.0.1".into();
     assert!(
-        smtp::test_connection(
-            &smtp_config(port, Some(expired_certificate())),
-            &smtp::SmtpAuth::Password("test-password".into())
-        )
-        .await
-        .is_err()
+        smtp::test_connection(&config, &smtp::SmtpAuth::Password("test-password".into()))
+            .await
+            .is_err()
     );
     assert!(!server.await.unwrap());
 }

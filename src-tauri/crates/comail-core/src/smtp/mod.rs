@@ -25,8 +25,7 @@ fn build_transport(
                     .map_err(|_| CoreError::Tls("invalid trust certificate".into()))?,
             );
         }
-    }
-    if crate::imap::tls_insecure() {
+    } else if crate::imap::tls_insecure() {
         params = params
             .dangerous_accept_invalid_certs(true)
             .dangerous_accept_invalid_hostnames(true);

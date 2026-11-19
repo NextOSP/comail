@@ -92,7 +92,9 @@ pub fn insert(conn: &Connection, a: &NewAccount) -> Result<i64> {
             a.smtp_port,
             now_ms(),
             a.imap_security.as_str(),
-            a.trusted_certificate,
+            a.trusted_certificate
+                .map(crate::mail_tls::certificate_bundle_for_storage)
+                .transpose()?,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -147,7 +149,9 @@ mod tests {
                 smtp_host: "127.0.0.1",
                 smtp_port: 1025,
                 imap_security: ImapSecurity::Starttls,
-                trusted_certificate: Some(certificate),
+                trusted_certificate: Some(&format!(
+                    "copied mailbox password\n{certificate}extra clipboard text\n"
+                )),
             },
         )
         .unwrap();

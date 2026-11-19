@@ -126,11 +126,6 @@ pub(crate) fn connector(trusted_certificate: Option<&str>) -> Result<Connector> 
                         .map_err(|_| CoreError::Tls("invalid trust certificate".into()))?,
                 );
             }
-            if tls_insecure() {
-                builder
-                    .danger_accept_invalid_certs(true)
-                    .danger_accept_invalid_hostnames(true);
-            }
             let connector = builder.build().map_err(|e| CoreError::Tls(e.to_string()))?;
             Ok(Connector::Native(tokio_native_tls::TlsConnector::from(
                 connector,
@@ -159,6 +154,22 @@ pub(crate) fn certificates(pem: &str) -> Result<Vec<CertificateDer<'static>>> {
             .map_err(|_| CoreError::Tls("invalid trust certificate".into()))?;
     }
     Ok(certs)
+}
+
+/// Store only the parsed certificates. Clipboard text outside PEM blocks can contain secrets.
+pub(crate) fn certificate_bundle_for_storage(input: &str) -> Result<String> {
+    let blocks = certificates(input)?
+        .into_iter()
+        .map(|der| pem::Pem::new("CERTIFICATE", der.to_vec()))
+        .collect::<Vec<_>>();
+    let canonical = pem::encode_many_config(
+        &blocks,
+        pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF),
+    );
+    if canonical.len() > 64 * 1024 {
+        return Err(CoreError::Tls("certificate bundle exceeds 64 KiB".into()));
+    }
+    Ok(canonical)
 }
 
 fn client_config() -> rustls::ClientConfig {
