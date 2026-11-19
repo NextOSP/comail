@@ -28,14 +28,17 @@
     "password": "Mật khẩu",
     "imapHost": "Máy chủ IMAP",
     "smtpHost": "Máy chủ SMTP",
-    "port": "Cổng"
+    "port": "Cổng",
+    "imapSecurity": "Bảo mật IMAP",
+    "trustedCertificate": "Chứng chỉ tin cậy (PEM)"
   },
   "placeholder": {
     "email": "you@example.com",
     "displayName": "Tùy chọn",
     "password": "Mật khẩu ứng dụng",
     "imapHost": "imap.example.com",
-    "smtpHost": "smtp.example.com"
+    "smtpHost": "smtp.example.com",
+    "trustedCertificate": "-----BEGIN CERTIFICATE-----"
   },
   "testingConnection": "Đang kiểm tra kết nối…",
   "adding": "Đang thêm…",
@@ -364,5 +367,10 @@
       ]
     }
   },
-  "editServers": "Sửa"
+  "editServers": "Sửa",
+  "security": {
+    "tls": "TLS (mã hóa ngay khi kết nối)",
+    "starttls": "STARTTLS"
+  },
+  "trustedCertificateHint": "Không bắt buộc. Dán chứng chỉ được xuất từ Proton Mail Bridge hoặc máy chủ thư của bạn. Chứng chỉ chỉ được tin cậy cho tài khoản này."
 }

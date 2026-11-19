@@ -15,7 +15,7 @@ chrono.workspace = true
 
 # email protocols
 async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
-lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls-tls", "builder", "pool", "hostname"] }
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls-tls", "tokio1-native-tls", "builder", "pool", "hostname"] }
 # full_encoding pulls in encoding_rs so non-UTF-8 header/body charsets
 # (GB2312/GBK/Big5, Shift-JIS, EUC-KR, ...) decode correctly instead of
 # turning into U+FFFD replacement chars. Default features are empty in 0.11.
@@ -26,6 +26,11 @@ mail-builder = "0.4"
 tokio-rustls = "0.26"
 rustls = "0.23"
 webpki-roots = "0.26"
+# Imported local certificates can be CAs used as server certificates (Bridge).
+# Default connections retain rustls; imported trust uses platform validation.
+pem = "4"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
 futures = "0.3"
 
 # storage
@@ -47,7 +52,7 @@ sha2 = "0.10"
 url = "2"
 idna = "1"
 
-# CalDAV (HTTP + multistatus XML); rustls keeps the no-native-TLS property
+# CalDAV (HTTP + multistatus XML)
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"] }
 quick-xml = { version = "0.41", features = ["encoding"] }
 async-trait = "0.1"
@@ -73,5 +78,7 @@ toml_edit = "0.25"
 xattr = "1"
 
 [dev-dependencies]
+rcgen = { version = "0.14.10", default-features = false, features = ["pem", "aws_lc_rs"] }
+time = "0.3"
 tempfile = "3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

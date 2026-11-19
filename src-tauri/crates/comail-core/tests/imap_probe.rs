@@ -107,6 +107,8 @@ async fn probe_smtp_starttls_auth() {
         imap_port: 10993,
         smtp_host: "127.0.0.1".into(),
         smtp_port: 10587,
+        imap_security: Default::default(),
+        trusted_certificate: None,
     };
     let auth = comail_core::smtp::SmtpAuth::Password("pass".into());
     match comail_core::smtp::test_connection(&cfg, &auth).await {

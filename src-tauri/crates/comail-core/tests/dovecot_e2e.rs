@@ -206,6 +206,8 @@ async fn full_sync_triage_and_search() {
             imap_port: 10993,
             smtp_host: "127.0.0.1".into(),
             smtp_port: 10587,
+            imap_security: Default::default(),
+            trusted_certificate: None,
         })
         .await
         .expect("add account");

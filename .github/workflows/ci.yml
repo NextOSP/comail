@@ -76,6 +76,30 @@ jobs:
         working-directory: src-tauri
         run: cargo test -p comail-core
 
+  tls-compat:
+    name: TLS compatibility (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      COMAIL_NO_APPLE_INTELLIGENCE: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Test TLS upgrades and account certificate validation
+        working-directory: src-tauri
+        run: cargo test -p comail-core --test starttls --locked
+      - name: Keep imported certificates verified with the development override
+        working-directory: src-tauri
+        env:
+          COMAIL_TLS_INSECURE: "1"
+        run: cargo test -p comail-core --test starttls --locked importing_an_expired_bridge_certificate_never_authorizes_credentials -- --exact
+
   build-check:
     name: Tauri build check (Linux)
     runs-on: ubuntu-22.04

@@ -81,6 +81,8 @@ async fn first_sync_drains_bodies_fast_and_updates_live() {
         imap_port: 10993,
         smtp_host: "127.0.0.1".into(),
         smtp_port: 10588,
+        imap_security: Default::default(),
+        trusted_certificate: None,
     })
     .await
     .expect("add account");

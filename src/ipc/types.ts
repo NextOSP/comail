@@ -188,6 +188,8 @@ export interface ActionResult {
   actionIds: number[];
 }
 
+export type ImapSecurity = "tls" | "starttls";
+
 export interface AddPasswordAccountArgs {
   email: string;
   displayName: string | null;
@@ -197,6 +199,8 @@ export interface AddPasswordAccountArgs {
   imapPort: number;
   smtpHost: string;
   smtpPort: number;
+  imapSecurity?: ImapSecurity;
+  trustedCertificate?: string | null;
 }
 
 export interface ConnectionTestResult {

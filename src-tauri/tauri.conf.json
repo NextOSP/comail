@@ -44,6 +44,11 @@
     "resources": [
       "resources/models/**/*"
     ],
+    "linux": {
+      "deb": {
+        "depends": ["libssl3 | libssl3t64"]
+      }
+    },
     "macOS": {
       "files": {
         "Resources/Metadata.appintents": "gen/apple-intents/Metadata.appintents"

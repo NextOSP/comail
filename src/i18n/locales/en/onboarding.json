@@ -28,14 +28,17 @@
     "password": "Password",
     "imapHost": "IMAP host",
     "smtpHost": "SMTP host",
-    "port": "Port"
+    "port": "Port",
+    "imapSecurity": "IMAP security",
+    "trustedCertificate": "Trusted certificate (PEM)"
   },
   "placeholder": {
     "email": "you@example.com",
     "displayName": "Optional",
     "password": "App password",
     "imapHost": "imap.example.com",
-    "smtpHost": "smtp.example.com"
+    "smtpHost": "smtp.example.com",
+    "trustedCertificate": "-----BEGIN CERTIFICATE-----"
   },
   "testingConnection": "Testing connection…",
   "adding": "Adding…",
@@ -364,5 +367,10 @@
       ]
     }
   },
-  "editServers": "Edit"
+  "editServers": "Edit",
+  "security": {
+    "tls": "TLS (encrypted from connection)",
+    "starttls": "STARTTLS"
+  },
+  "trustedCertificateHint": "Optional. Paste the certificate exported by Proton Mail Bridge or your mail server. It is trusted only for this account."
 }

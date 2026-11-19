@@ -14,32 +14,37 @@ fn build_transport(
     cfg: &AccountConfig,
     auth: &SmtpAuth,
 ) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
-    use lettre::transport::smtp::client::{Tls, TlsParameters};
+    use lettre::transport::smtp::client::{Certificate, CertificateStore, Tls, TlsParameters};
 
-    let mut builder = if cfg.smtp_port == 465 {
-        // Implicit TLS
-        AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)
-            .map_err(|e| CoreError::Smtp(e.to_string()))?
-            .port(cfg.smtp_port)
-    } else {
-        // STARTTLS (587 and friends)
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.smtp_host)
-            .map_err(|e| CoreError::Smtp(e.to_string()))?
-            .port(cfg.smtp_port)
-    };
-
-    if crate::imap::tls_insecure() {
-        let params = TlsParameters::builder(cfg.smtp_host.clone())
+    let mut params = TlsParameters::builder(cfg.smtp_host.clone());
+    if let Some(pem) = &cfg.trusted_certificate {
+        params = params.certificate_store(CertificateStore::None);
+        for cert in crate::mail_tls::certificates(pem)? {
+            params = params.add_root_certificate(
+                Certificate::from_der(cert.as_ref().to_vec())
+                    .map_err(|_| CoreError::Tls("invalid trust certificate".into()))?,
+            );
+        }
+    } else if crate::imap::tls_insecure() {
+        params = params
             .dangerous_accept_invalid_certs(true)
-            .dangerous_accept_invalid_hostnames(true)
-            .build()
-            .map_err(|e| CoreError::Smtp(e.to_string()))?;
-        builder = if cfg.smtp_port == 465 {
-            builder.tls(Tls::Wrapper(params))
-        } else {
-            builder.tls(Tls::Required(params))
-        };
+            .dangerous_accept_invalid_hostnames(true);
     }
+    // Enabling lettre's native backend must not change existing accounts.
+    let params = if cfg.trusted_certificate.is_some() {
+        params.build_native()
+    } else {
+        params.build_rustls()
+    }
+    .map_err(|e| CoreError::Smtp(e.to_string()))?;
+    let tls = if cfg.smtp_port == 465 {
+        Tls::Wrapper(params)
+    } else {
+        Tls::Required(params)
+    };
+    let builder = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.smtp_host)
+        .port(cfg.smtp_port)
+        .tls(tls);
 
     let builder = match auth {
         SmtpAuth::Password(pw) => builder

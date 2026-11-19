@@ -25,6 +25,12 @@ fn config_from_row(row: &Row) -> rusqlite::Result<AccountConfig> {
         imap_port: row.get::<_, i64>("imap_port")? as u16,
         smtp_host: row.get("smtp_host")?,
         smtp_port: row.get::<_, i64>("smtp_port")? as u16,
+        imap_security: match row.get::<_, String>("imap_security")?.as_str() {
+            "starttls" => ImapSecurity::Starttls,
+            "tls" => ImapSecurity::Tls,
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        },
+        trusted_certificate: row.get("trusted_certificate")?,
     })
 }
 
@@ -64,13 +70,16 @@ pub struct NewAccount<'a> {
     pub imap_port: u16,
     pub smtp_host: &'a str,
     pub smtp_port: u16,
+    pub imap_security: ImapSecurity,
+    pub trusted_certificate: Option<&'a str>,
 }
 
 pub fn insert(conn: &Connection, a: &NewAccount) -> Result<i64> {
     conn.execute(
         "INSERT INTO accounts (email, display_name, provider, auth_kind, username,
-                               imap_host, imap_port, smtp_host, smtp_port, created_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                               imap_host, imap_port, smtp_host, smtp_port, created_at,
+                               imap_security, trusted_certificate)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
         params![
             a.email,
             a.display_name,
@@ -81,7 +90,11 @@ pub fn insert(conn: &Connection, a: &NewAccount) -> Result<i64> {
             a.imap_port,
             a.smtp_host,
             a.smtp_port,
-            now_ms()
+            now_ms(),
+            a.imap_security.as_str(),
+            a.trusted_certificate
+                .map(crate::mail_tls::certificate_bundle_for_storage)
+                .transpose()?,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -117,6 +130,38 @@ pub fn set_sync_state(conn: &Connection, id: i64, state: &str) -> Result<()> {
 mod tests {
     use super::*;
     use crate::db::testutil;
+
+    #[test]
+    fn saved_starttls_and_certificate_survive_reload_without_changing_other_accounts() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let certificate = include_str!("../../../tests/fixtures/tls/ca.pem");
+        let id = insert(
+            &c,
+            &NewAccount {
+                email: "bridge@example.test",
+                display_name: None,
+                provider: Provider::Imap,
+                auth_kind: AuthKind::Password,
+                username: "bridge@example.test",
+                imap_host: "127.0.0.1",
+                imap_port: 1143,
+                smtp_host: "127.0.0.1",
+                smtp_port: 1025,
+                imap_security: ImapSecurity::Starttls,
+                trusted_certificate: Some(&format!(
+                    "copied mailbox password\n{certificate}extra clipboard text\n"
+                )),
+            },
+        )
+        .unwrap();
+        let saved = get_config(&c, id).unwrap().unwrap();
+        assert_eq!(saved.imap_security, ImapSecurity::Starttls);
+        assert_eq!(saved.trusted_certificate.as_deref(), Some(certificate));
+        let existing = get_config(&c, 1).unwrap().unwrap();
+        assert_eq!(existing.imap_security, ImapSecurity::Tls);
+        assert!(existing.trusted_certificate.is_none());
+    }
 
     #[test]
     fn set_display_name_sets_and_clears() {

@@ -7,15 +7,14 @@
 
 use crate::error::{CoreError, Result};
 use crate::mime::{self, MimePlan};
+use crate::models::ImapSecurity;
 use futures::StreamExt;
 use std::future::Future;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio_rustls::TlsConnector;
 
 // async-imap with runtime-tokio speaks tokio's AsyncRead/AsyncWrite natively.
-pub type ImapStream = tokio_rustls::client::TlsStream<TcpStream>;
+pub type ImapStream = crate::mail_tls::SecureStream;
 pub type ReconcileStamp = ((Option<i64>, Option<i64>, u32), std::time::Instant);
 
 pub struct Session {
@@ -181,87 +180,7 @@ pub fn unparseable_response(error: &CoreError) -> Option<Option<u32>> {
     )
 }
 
-/// Dev/self-hosted escape hatch: COMAIL_TLS_INSECURE=1 disables certificate
-/// verification (e.g. self-signed Dovecot). Off by default; never set it for
-/// real accounts.
-pub fn tls_insecure() -> bool {
-    std::env::var("COMAIL_TLS_INSECURE")
-        .map(|v| v == "1")
-        .unwrap_or(false)
-}
-
-#[derive(Debug)]
-struct NoVerify(Arc<rustls::crypto::CryptoProvider>);
-
-impl rustls::client::danger::ServerCertVerifier for NoVerify {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
-    }
-}
-
-pub fn tls_connector() -> TlsConnector {
-    static CONFIG: once_cell::sync::Lazy<Arc<rustls::ClientConfig>> =
-        once_cell::sync::Lazy::new(|| {
-            // Multiple rustls backends may be enabled via the dependency
-            // graph; pick ring explicitly so there's always a default.
-            let _ = rustls::crypto::ring::default_provider().install_default();
-            let mut roots = rustls::RootCertStore::empty();
-            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            let mut config = rustls::ClientConfig::builder()
-                .with_root_certificates(roots)
-                .with_no_client_auth();
-            if tls_insecure() {
-                tracing::warn!("COMAIL_TLS_INSECURE=1: TLS certificate verification is DISABLED");
-                let provider = rustls::crypto::CryptoProvider::get_default()
-                    .cloned()
-                    .unwrap_or_else(|| Arc::new(rustls::crypto::ring::default_provider()));
-                config
-                    .dangerous()
-                    .set_certificate_verifier(Arc::new(NoVerify(provider)));
-            }
-            Arc::new(config)
-        });
-    TlsConnector::from(CONFIG.clone())
-}
+pub use crate::mail_tls::{tls_connector, tls_insecure};
 
 #[derive(Clone)]
 pub enum ImapCredentials {
@@ -316,53 +235,63 @@ impl async_imap::Authenticator for XOAuth2Authenticator {
 }
 
 pub async fn connect(host: &str, port: u16, creds: ImapCredentials) -> Result<Session> {
+    connect_with_security(host, port, creds, ImapSecurity::Tls, None).await
+}
+
+pub async fn connect_with_security(
+    host: &str,
+    port: u16,
+    creds: ImapCredentials,
+    security: ImapSecurity,
+    trusted_certificate: Option<&str>,
+) -> Result<Session> {
     // Bound the whole handshake so a silent stall (server never sends the
     // greeting, or an AUTHENTICATE that never gets a tagged response) surfaces
     // as an error instead of hanging the sync actor forever.
     const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-    tokio::time::timeout(CONNECT_TIMEOUT, connect_inner(host, port, creds))
-        .await
-        .map_err(|_| {
-            tracing::warn!(%host, port, "imap connect: timed out after 30s");
-            CoreError::Imap(format!("connect {host}:{port}: timed out"))
-        })?
+    tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        connect_inner(host, port, creds, security, trusted_certificate),
+    )
+    .await
+    .map_err(|_| {
+        tracing::warn!(%host, port, "imap connect: timed out after 30s");
+        CoreError::Imap(format!("connect {host}:{port}: timed out"))
+    })?
 }
 
-async fn connect_inner(host: &str, port: u16, creds: ImapCredentials) -> Result<Session> {
+async fn connect_inner(
+    host: &str,
+    port: u16,
+    creds: ImapCredentials,
+    security: ImapSecurity,
+    trusted_certificate: Option<&str>,
+) -> Result<Session> {
+    let connector = crate::mail_tls::connector(trusted_certificate)?;
     tracing::debug!(%host, port, "imap connect: opening TCP");
     let tcp = TcpStream::connect((host, port))
         .await
         .map_err(|e| CoreError::Imap(format!("connect {host}:{port}: {e}")))?;
     tcp.set_nodelay(true).ok();
-    let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
-        .map_err(|e| CoreError::Tls(e.to_string()))?;
+    let tcp = if security == ImapSecurity::Starttls {
+        let mut client = async_imap::Client::new(tcp);
+        read_greeting(&mut client, host).await?;
+        // A rejected upgrade ends the connection. Never authenticate in cleartext.
+        client
+            .run_command_and_check_ok("STARTTLS", None)
+            .await
+            .map_err(|e| CoreError::Tls(format!("IMAP STARTTLS: {}", log_safe_imap_error(&e))))?;
+        client.into_inner()
+    } else {
+        tcp
+    };
     tracing::debug!(%host, "imap connect: TCP up, starting TLS");
-    let tls = tls_connector()
-        .connect(server_name, tcp)
-        .await
-        .map_err(|e| CoreError::Tls(e.to_string()))?;
+    let tls = connector.connect(host, tcp).await?;
     tracing::debug!(%host, "imap connect: TLS up, reading greeting");
     let mut client = async_imap::Client::new(tls);
-    // async-imap requires the caller to consume the server greeting before
-    // issuing any command. Skipping it leaves `* OK ...ready` in the buffer,
-    // which the login/AUTHENTICATE handshake then reads in place of the real
-    // tagged/continuation response - desyncing the exchange so it hangs until
-    // the socket times out (the "stuck Offline, never syncs" bug).
-    match client.read_response().await {
-        Ok(Some(greeting)) => {
-            tracing::debug!(%host, greeting = ?greeting.parsed(), "imap connect: greeting received, authenticating");
-        }
-        Ok(None) => {
-            return Err(CoreError::Imap(format!(
-                "{host}: connection closed before IMAP greeting"
-            )));
-        }
-        Err(e) => {
-            let detail = log_safe_imap_error(&async_imap::error::Error::Io(e));
-            return Err(CoreError::Imap(format!(
-                "{host}: reading greeting: {detail}"
-            )));
-        }
+    // STARTTLS keeps the original greeting; the server sends no second greeting.
+    if security == ImapSecurity::Tls {
+        read_greeting(&mut client, host).await?;
     }
 
     let session = match creds {
@@ -388,6 +317,24 @@ async fn connect_inner(host: &str, port: u16, creds: ImapCredentials) -> Result<
         caps: None,
         reconcile_stamps: Default::default(),
     })
+}
+
+async fn read_greeting<T>(client: &mut async_imap::Client<T>, host: &str) -> Result<()>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + std::fmt::Debug,
+{
+    match client.read_response().await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(CoreError::Imap(format!(
+            "{host}: connection closed before IMAP greeting"
+        ))),
+        Err(e) => {
+            let detail = log_safe_imap_error(&async_imap::error::Error::Io(e));
+            Err(CoreError::Imap(format!(
+                "{host}: reading greeting: {detail}"
+            )))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

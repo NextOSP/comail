@@ -20,7 +20,7 @@ export function AddAccountCard({ onClose }: { onClose: () => void }) {
       onMouseDown={onClose}
     >
       <div
-        className="co-pop-in relative z-10 w-[420px] rounded-sheet border border-hairline bg-bg1 p-8 shadow-elev-2"
+        className="co-pop-in relative z-10 max-h-[calc(100dvh-2rem)] w-[420px] overflow-y-auto rounded-sheet border border-hairline bg-bg1 p-8 shadow-elev-2"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <IconButton
