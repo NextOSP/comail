@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { reclaimIframeFocus } from "../../../keyboard/registry";
+import { installFrameMouseNav, reclaimIframeFocus } from "../../../keyboard/registry";
 
 /**
  * Ammonia-sanitized HTML (docx / markdown / html conversions) in a sandboxed,
@@ -45,8 +45,14 @@ export function DocViewer({ html }: { html: string }) {
         srcDoc={srcDoc}
         // Clicking inside steals keyboard focus, and WKWebView delivers keydowns
         // in a scriptless sandboxed frame to no listener at all - hand focus
-        // back to the parent after each click so shortcuts keep working.
-        onLoad={(e) => e.currentTarget.contentDocument?.addEventListener("mouseup", reclaimIframeFocus)}
+        // back to the parent after each click so shortcuts keep working. Mouse
+        // back/forward over the preview fire in here too, not on the parent.
+        onLoad={(e) => {
+          const doc = e.currentTarget.contentDocument;
+          if (!doc) return;
+          doc.addEventListener("mouseup", reclaimIframeFocus);
+          installFrameMouseNav(doc);
+        }}
         className="co-fade-in h-full w-full max-w-[860px] rounded-t-[3px] border-0 bg-white"
         style={{ boxShadow: "0 2px 6px rgb(0 0 0 / 0.35), 0 12px 40px rgb(0 0 0 / 0.35)" }}
         title={t("thread:attachment.preview.documentTitle")}
