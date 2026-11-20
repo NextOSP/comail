@@ -1179,7 +1179,7 @@ export const ALL_COMMANDS: Command[] = [
     id: "open-settings",
     titleKey: "commands:title.openSettings",
     aliases: ["settings", "preferences", "accounts", "options"],
-    keys: ["g ,"],
+    keys: ["mod+,", "g ,"],
     section: "Meta",
     when: (ctx) => !ctx.panelOpen,
     run: () => useUi.getState().set({ panel: "settings" }),
