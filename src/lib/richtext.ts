@@ -35,6 +35,22 @@ export function textToHtml(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
+/** Space beside a tag that breaks the line, which a browser doesn't render. */
+const LINE_TAG_SPACE_RE =
+  / *(<\/?(?:br|div|p|h[1-6]|ul|ol|li|table|thead|tbody|tfoot|tr|td|th|blockquote)\b[^>]*>) */gi;
+
+/** Drop the whitespace that only formats the markup (an HTML signature arrives
+ *  indented): a run spanning a line break renders as one space, and a space
+ *  beside a line-breaking tag as nothing. <pre> blocks keep theirs. */
+function collapseSourceWhitespace(html: string): string {
+  return html
+    .split(/(<pre\b[\s\S]*?<\/pre>)/i)
+    .map((part, i) =>
+      i % 2 ? part : part.replace(/[ \t\f]*[\r\n][ \t\r\n\f]*/g, " ").replace(LINE_TAG_SPACE_RE, "$1"),
+    )
+    .join("");
+}
+
 /** Rich HTML -> plain text fallback. Block elements become newlines,
  *  blockquotes become "> " prefixes, list items become "- ", images become
  *  their alt text (or are dropped). */
@@ -43,6 +59,7 @@ export function htmlToText(html: string): string {
   let s = html
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  s = collapseSourceWhitespace(s);
 
   // Links: keep the target when it isn't the same as the text.
   s = s.replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, inner) => {

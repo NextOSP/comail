@@ -616,6 +616,11 @@
     "emptyHint": "添加签名，自动为此账户的邮件署名。",
     "untitled": "未命名",
     "editorLabel": "签名",
+    "modeRich": "富文本",
+    "modeHtml": "HTML",
+    "htmlLabel": "签名 HTML",
+    "htmlPlaceholder": "粘贴或编写签名的 HTML",
+    "htmlHint": "表格、内联样式、链接和通过 URL 引用的图片会保留。脚本、<style> 块、表单和事件处理程序会被移除。",
     "defaultsTitle": "默认",
     "listTitle": "签名 · {{email}}"
   },

@@ -618,6 +618,11 @@
     "emptyHint": "Add one to sign emails from this account automatically.",
     "untitled": "Untitled",
     "editorLabel": "Signature",
+    "modeRich": "Rich text",
+    "modeHtml": "HTML",
+    "htmlLabel": "Signature HTML",
+    "htmlPlaceholder": "Paste or write your signature's HTML",
+    "htmlHint": "Tables, inline styles, links and images by URL are kept. Scripts, <style> blocks, forms and event handlers are removed.",
     "defaultsTitle": "Defaults",
     "listTitle": "Signatures · {{email}}"
   },

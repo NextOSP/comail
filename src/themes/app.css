@@ -571,6 +571,12 @@ textarea {
 }
 .co-richbody img {
   max-width: 100%;
+}
+/* Editing aids for pasted images and tables. A signature (the composer's
+   signature block, the signature editor and previews) skips them and renders
+   as recipients see it: cell borders, padding and image margins would scramble
+   an HTML signature's layout. */
+.co-richbody img:not(.co-signature *) {
   border-radius: 6px;
   margin: 4px 0;
 }
@@ -578,12 +584,12 @@ textarea {
   color: var(--accent);
   text-decoration: underline;
 }
-.co-richbody table {
+.co-richbody table:not(.co-signature *) {
   border-collapse: collapse;
   margin: 4px 0;
 }
-.co-richbody td,
-.co-richbody th {
+.co-richbody td:not(.co-signature *),
+.co-richbody th:not(.co-signature *) {
   border: 1px solid var(--hairline-strong);
   padding: 6px 8px;
   min-width: 48px;

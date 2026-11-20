@@ -616,6 +616,11 @@
     "emptyHint": "Thêm một chữ ký để tự động ký thư từ tài khoản này.",
     "untitled": "Chưa đặt tên",
     "editorLabel": "Chữ ký",
+    "modeRich": "Văn bản định dạng",
+    "modeHtml": "HTML",
+    "htmlLabel": "HTML của chữ ký",
+    "htmlPlaceholder": "Dán hoặc viết HTML cho chữ ký của bạn",
+    "htmlHint": "Bảng, kiểu nội tuyến, liên kết và hình ảnh qua URL được giữ lại. Script, khối <style>, biểu mẫu và trình xử lý sự kiện sẽ bị xóa.",
     "defaultsTitle": "Mặc định",
     "listTitle": "Chữ ký · {{email}}"
   },
