@@ -4440,23 +4440,25 @@ impl Core {
         Ok(restored)
     }
 
-    /// Re-run routing over all stored mail. Legacy alias kept for the existing
-    /// "Relabel" action; delegates to [`Core::reroute_all`].
+    /// Re-sort every inbox thread (rules, categories, AI queue) without running
+    /// the automation rules. Behind "Re-run auto labels" in the split inbox
+    /// settings and the palette, where archiving or trashing mail, or one AI
+    /// request per conversation, would come as a surprise.
     pub async fn relabel_auto(&self) -> Result<i64> {
-        self.reroute_all().await
+        self.resort(false).await
     }
 
     /// Re-resolve every inbox thread's tab from scratch, run the automation
     /// rules over the inbox, and drain the AI queue, so the caller sees the
-    /// final state. Used by the explicit "Run automations" and "Re-run auto
-    /// labels" actions.
+    /// final state. Behind "Run automations", which asks first when a rule
+    /// would archive, trash or call the AI.
     pub async fn reroute_all(&self) -> Result<i64> {
         self.resort(true).await
     }
 
     /// [`Core::reroute_all`]. Without `automations` the automation rules don't
-    /// run, as for the one-shot startup backfill, which must never archive or
-    /// relabel old mail on its own.
+    /// run, as for [`Core::relabel_auto`] and the one-shot startup backfill,
+    /// which must never archive or relabel old mail on its own.
     async fn resort(&self, automations: bool) -> Result<i64> {
         let n = self.reroute_all_sync().await?;
         // Automations before the AI categories, as for new mail (see

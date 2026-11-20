@@ -3263,6 +3263,7 @@ export async function mockInvoke(
         labelsMap[String(l.id)] = inbox.filter((t) => t.labels.includes(l.id)).length;
       }
       return delay({
+        inbox: inbox.length,
         important: inbox.filter((t) => inSplit(t, -1)).length,
         other: inbox.filter((t) => inSplit(t, -2)).length,
         splits: splitsMap,

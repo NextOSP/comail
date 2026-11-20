@@ -390,6 +390,8 @@ export interface UnreadCounts {
 
 /** Every conversation each inbox tab holds, read or not ("all" tab counts). */
 export interface TabTotals {
+  /** Every conversation in the inbox (not snoozed), whichever tab holds it. */
+  inbox: number;
   important: number;
   other: number;
   splits: Record<string, number>;
@@ -1203,7 +1205,8 @@ export interface Commands {
   tab_totals(args: { accountId?: number | null }): Promise<TabTotals>;
   /** Re-run auto-label classification over stored mail; returns labeled count. */
   relabel_auto(args: Record<string, never>): Promise<number>;
-  /** Re-resolve every thread's tab (rules + AI + heuristic); returns thread count. */
+  /** Re-resolve every thread's tab (rules + AI + heuristic) and run the
+   *  automation rules over the inbox ("Run automations"); returns thread count. */
   reroute_all(args: Record<string, never>): Promise<number>;
 
   get_settings(args: Record<string, never>): Promise<Settings>;

@@ -925,6 +925,8 @@ pub struct UnreadCounts {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TabTotals {
+    /// Every conversation in the inbox (not snoozed), whichever tab holds it.
+    pub inbox: i64,
     pub important: i64,
     pub other: i64,
     pub splits: std::collections::HashMap<String, i64>,

@@ -177,6 +177,12 @@
     "resort": "Ejecutar automatizaciones",
     "resorting": "Ejecutando…",
     "resorted": "{{count}} conversaciones procesadas",
+    "resortConfirm_one": "Esto ejecuta tus reglas en {{count}} conversación de la bandeja de entrada.",
+    "resortConfirm_other": "Esto ejecuta tus reglas en {{count}} conversaciones de la bandeja de entrada.",
+    "resortConfirmEvery": "Esto ejecuta tus reglas en todas las conversaciones de la bandeja de entrada.",
+    "resortConfirmActions": "Acciones sobre el correo que coincida: {{actions}}.",
+    "resortConfirmAi": "Hasta una solicitud de IA por conversación.",
+    "resortConfirmRun": "Ejecutar",
     "actions": {
       "route_to": "Mover a la pestaña",
       "add_label": "Añadir etiqueta",

@@ -177,6 +177,12 @@
     "resort": "Run automations",
     "resorting": "Running…",
     "resorted": "Processed {{count}} conversations",
+    "resortConfirm_one": "This runs your rules on {{count}} inbox conversation.",
+    "resortConfirm_other": "This runs your rules on {{count}} inbox conversations.",
+    "resortConfirmEvery": "This runs your rules on every inbox conversation.",
+    "resortConfirmActions": "Actions on matching mail: {{actions}}.",
+    "resortConfirmAi": "Up to one AI request per conversation.",
+    "resortConfirmRun": "Run",
     "actions": {
       "route_to": "Move to tab",
       "add_label": "Add label",

@@ -177,6 +177,12 @@
     "resort": "Chạy tự động hóa",
     "resorting": "Đang chạy…",
     "resorted": "Đã xử lý {{count}} cuộc hội thoại",
+    "resortConfirm_one": "Thao tác này chạy quy tắc của bạn trên {{count}} cuộc hội thoại trong hộp thư đến.",
+    "resortConfirm_other": "Thao tác này chạy quy tắc của bạn trên {{count}} cuộc hội thoại trong hộp thư đến.",
+    "resortConfirmEvery": "Thao tác này chạy quy tắc của bạn trên mọi cuộc hội thoại trong hộp thư đến.",
+    "resortConfirmActions": "Hành động với thư khớp: {{actions}}.",
+    "resortConfirmAi": "Tối đa một yêu cầu AI cho mỗi cuộc hội thoại.",
+    "resortConfirmRun": "Chạy",
     "actions": {
       "route_to": "Chuyển đến tab",
       "add_label": "Thêm nhãn",

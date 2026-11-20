@@ -615,6 +615,9 @@ async fn run_automations_files_mail_already_in_the_inbox() {
     // The background pass only looks at new mail: nothing here moves.
     assert_eq!(core.run_automations(50).await.unwrap(), 0);
     assert_eq!(tabs(&db, &threads).await, vec![None, None, None]);
+    // "Re-run auto labels" re-sorts without running the rules.
+    core.relabel_auto().await.unwrap();
+    assert_eq!(tabs(&db, &threads).await, vec![None, None, None]);
 
     // "Run automations".
     core.reroute_all().await.unwrap();

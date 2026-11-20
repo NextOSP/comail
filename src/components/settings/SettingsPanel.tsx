@@ -12,12 +12,14 @@ import { appVersion, checkForUpdate } from "../../ipc/updater";
 import { HEATMAP_OPACITY, heatmapLevel } from "../../lib/heatmap";
 import { useInstallUpdate } from "../../lib/useInstallUpdate";
 import type {
+  AiAutomationRule,
   AiTier,
   Settings,
   SyncBackgroundPhase,
   SyncState,
   SyncStatus,
 } from "../../ipc/types";
+import { automationRisk, automationRiskMessage } from "../../lib/automationRisk";
 import { syncNowAndRefresh, useManualSyncBusy } from "../../lib/syncNow";
 import { normalizeSyncStatus } from "../../lib/syncStatus";
 import { inboxTabOrder } from "../../lib/splitOrder";
@@ -33,6 +35,7 @@ import {
   useLearnVoice,
   useSettings,
   useSplits,
+  useTabTotals,
 } from "../../queries/hooks";
 import { commandScore } from "../../keyboard/commandScore";
 import { useUi, type SettingsTab } from "../../stores/ui";
@@ -2392,14 +2395,11 @@ function AiSection({
               tierLabel={(tier) => t(`settings:ai.tier.${tier}`)}
             />
           )}
-          <SettingRow
-            label={t("settings:ai.resortLabel")}
-            hint={t("settings:ai.resortHint")}
-          >
-            <Button size="sm" busy={resorting} onClick={() => void resort()}>
-              {resorting ? t("settings:ai.resorting") : t("settings:ai.resort")}
-            </Button>
-          </SettingRow>
+          <RunAutomationsRow
+            rules={settings.aiAutomationRules}
+            busy={resorting}
+            onRun={() => void resort()}
+          />
           </SettingsGroup>
           <SettingsGroup
             title={t("settings:rules.section")}
@@ -2474,6 +2474,65 @@ const EMBEDDING_MODELS: { id: string; label: string }[] = [
 ];
 
 /** Semantic search: local embedding backend, model picker, index progress. */
+/** "Run automations": runs straight away when the rules only file and tag
+ *  mail, and asks first when one would archive, trash or otherwise change
+ *  mail, or call the AI, saying how many inbox conversations it runs on. */
+function RunAutomationsRow({
+  rules,
+  busy,
+  onRun,
+}: {
+  rules: AiAutomationRule[];
+  busy: boolean;
+  onRun: () => void;
+}) {
+  const { t } = useTranslation();
+  const risk = automationRisk(rules);
+  const { data: totals } = useTabTotals(null, risk != null);
+  const [confirming, setConfirming] = useState(false);
+  const asking = confirming && risk != null;
+  return (
+    <SettingRow
+      label={t("settings:ai.resortLabel")}
+      hint={
+        asking ? (
+          <span role="alert" className="text-danger">
+            {automationRiskMessage(risk, totals?.inbox, t)}
+          </span>
+        ) : (
+          t("settings:ai.resortHint")
+        )
+      }
+    >
+      {asking ? (
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="ghost" autoFocus onClick={() => setConfirming(false)}>
+            {t("common:action.cancel")}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => {
+              setConfirming(false);
+              onRun();
+            }}
+          >
+            {t("settings:ai.resortConfirmRun")}
+          </Button>
+        </div>
+      ) : (
+        <Button
+          size="sm"
+          busy={busy}
+          onClick={() => (risk ? setConfirming(true) : onRun())}
+        >
+          {busy ? t("settings:ai.resorting") : t("settings:ai.resort")}
+        </Button>
+      )}
+    </SettingRow>
+  );
+}
+
 function SemanticSearchSection({ settings }: { settings: Settings }) {
   const { t } = useTranslation();
   const { data: status } = useEmbeddingStatus();

@@ -177,6 +177,12 @@
     "resort": "Exécuter les automatisations",
     "resorting": "Exécution…",
     "resorted": "{{count}} conversations traitées",
+    "resortConfirm_one": "Vos règles vont s’exécuter sur {{count}} conversation de la boîte de réception.",
+    "resortConfirm_other": "Vos règles vont s’exécuter sur {{count}} conversations de la boîte de réception.",
+    "resortConfirmEvery": "Vos règles vont s’exécuter sur toutes les conversations de la boîte de réception.",
+    "resortConfirmActions": "Actions sur le courrier correspondant : {{actions}}.",
+    "resortConfirmAi": "Jusqu’à une requête IA par conversation.",
+    "resortConfirmRun": "Exécuter",
     "actions": {
       "route_to": "Déplacer vers l’onglet",
       "add_label": "Ajouter un libellé",

@@ -213,15 +213,17 @@ pub fn unread_counts(
     })
 }
 
-/// How many conversations each inbox tab holds, read or not. Same tab
-/// membership as the badges in `unread_counts`, minus the unread filter; only
-/// queried while the "all" tab-count setting is on.
+/// How many conversations each inbox tab, and the inbox as a whole, holds,
+/// read or not. Same tab membership as the badges in `unread_counts`, minus
+/// the unread filter; queried while the "all" tab-count setting is on, and
+/// for the "Run automations" confirmation.
 pub fn tab_totals(
     conn: &Connection,
     account_id: Option<i64>,
     splits: &[SplitRule],
     labels: &[Label],
 ) -> Result<TabTotals> {
+    let inbox = Q::any(account_id).inbox().run(conn)?;
     let important = Q::any(account_id).inbox().bucket(false).run(conn)?;
     let other = Q::any(account_id).inbox().bucket(true).run(conn)?;
 
@@ -243,6 +245,7 @@ pub fn tab_totals(
     }
 
     Ok(TabTotals {
+        inbox,
         important,
         other,
         splits: splits_map,
@@ -513,12 +516,14 @@ mod tests {
         };
 
         let t = tab_totals(&conn, None, &[split.clone()], &[label.clone()]).unwrap();
+        assert_eq!(t.inbox, 5, "every tab's conversations, not the snoozed one");
         assert_eq!(t.important, 2, "read and unread Important mail");
         assert_eq!(t.other, 1);
         assert_eq!(t.splits["7"], 1);
         assert_eq!(t.labels["9"], 1);
 
         let none = tab_totals(&conn, Some(99), &[split], &[label]).unwrap();
+        assert_eq!(none.inbox, 0);
         assert_eq!(none.important, 0);
         assert_eq!(none.splits["7"], 0);
     }
