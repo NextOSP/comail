@@ -17,6 +17,7 @@
     "reading": "Lecture",
     "compose": "Rédaction",
     "calendar": "Calendrier",
+    "shortcuts": "Raccourcis",
     "about": "À propos",
     "mcp": "Apps d'IA (MCP)"
   },
@@ -554,6 +555,23 @@
     "label": "Avancer après sélection",
     "hint": "Après avoir sélectionné un fil avec X, déplacer le curseur vers la ligne suivante. Désactivé, bascule sur place (façon Gmail)."
   },
+  "shortcuts": {
+    "filter": "Filtrer les commandes",
+    "noMatches": "Aucune commande ne correspond à « {{query}} »",
+    "none": "Aucun raccourci",
+    "add": "Ajouter un raccourci pour {{command}}",
+    "change": "Changer {{keys}} pour {{command}}",
+    "remove": "Retirer {{keys}} de {{command}}",
+    "reset": "Rétablir le raccourci par défaut de {{command}}",
+    "resetAll": "Tout rétablir",
+    "resetAllConfirm": "Rétablir tous les raccourcis ?",
+    "recording": "Appuyez sur des touches…",
+    "recordHint": "Appuyez sur une touche ou une combinaison, ou sur deux touches à la suite pour une séquence comme G puis I. Échap annule.",
+    "reserved": "{{keys}} est réservé à l'app ou au système et ne peut pas servir de raccourci.",
+    "conflict": "{{keys}} est déjà utilisé par {{commands}}.",
+    "replace": "Remplacer",
+    "cancel": "Annuler"
+  },
   "inboxUi": {
     "label": "Interface de la boîte",
     "hint": "Choisissez l'apparence de la liste des e-mails.",
@@ -696,6 +714,7 @@
     "reading": "Ouverture des messages et ce qui se passe après une action.",
     "compose": "Comportement d'envoi et vos signatures.",
     "calendar": "Vue du calendrier, rappels de réunion et calendriers connectés.",
+    "shortcuts": "Changez les touches de n'importe quelle commande. Cliquez sur un raccourci pour enregistrer de nouvelles touches.",
     "about": "Version, mises à jour et diagnostics.",
     "mcp": "Laissez Claude, ChatGPT, Cursor, VS Code et d'autres apps d'IA utiliser votre courrier via MCP."
   },

@@ -17,6 +17,7 @@
     "reading": "Đọc thư",
     "compose": "Soạn thư",
     "calendar": "Lịch",
+    "shortcuts": "Phím tắt",
     "about": "Giới thiệu",
     "mcp": "Ứng dụng AI (MCP)"
   },
@@ -554,6 +555,23 @@
     "label": "Chuyển tiếp sau khi chọn",
     "hint": "Sau khi chọn một cuộc hội thoại bằng phím X, di chuyển con trỏ xuống hàng kế tiếp. Tắt thì chọn tại chỗ (kiểu Gmail)."
   },
+  "shortcuts": {
+    "filter": "Lọc lệnh",
+    "noMatches": "Không có lệnh nào khớp với “{{query}}”",
+    "none": "Không có phím tắt",
+    "add": "Thêm phím tắt cho {{command}}",
+    "change": "Đổi {{keys}} của {{command}}",
+    "remove": "Bỏ {{keys}} khỏi {{command}}",
+    "reset": "Đặt lại {{command}} về mặc định",
+    "resetAll": "Đặt lại tất cả",
+    "resetAllConfirm": "Đặt lại mọi phím tắt?",
+    "recording": "Nhấn phím…",
+    "recordHint": "Nhấn một phím hoặc tổ hợp phím, hoặc hai phím liên tiếp cho chuỗi như G rồi I. Esc để hủy.",
+    "reserved": "{{keys}} được dành cho ứng dụng hoặc hệ thống nên không thể làm phím tắt.",
+    "conflict": "{{keys}} đang được dùng cho {{commands}}.",
+    "replace": "Thay thế",
+    "cancel": "Hủy"
+  },
   "inboxUi": {
     "label": "Giao diện hộp thư",
     "hint": "Chọn cách hiển thị danh sách thư.",
@@ -696,6 +714,7 @@
     "reading": "Cách thư được mở và điều xảy ra sau khi bạn thao tác.",
     "compose": "Cách gửi thư và chữ ký của bạn.",
     "calendar": "Chế độ xem lịch, nhắc cuộc họp và lịch đã kết nối.",
+    "shortcuts": "Đổi phím cho bất kỳ lệnh nào. Nhấp vào một phím tắt để ghi phím mới.",
     "about": "Phiên bản, cập nhật và chẩn đoán.",
     "mcp": "Cho phép Claude, ChatGPT, Cursor, VS Code và các ứng dụng AI khác dùng thư của bạn qua MCP."
   },

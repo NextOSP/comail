@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { calendarPrefill } from "../../lib/calendarSuggestion";
 import { call } from "../../ipc/commands";
@@ -7,7 +7,8 @@ import { deleteDrafts, performThreadAction } from "../../queries/actions";
 import { useThread } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 
-import { MOD_LABEL, relativeTime } from "../../lib/format";
+import { relativeTime } from "../../lib/format";
+import { useShortcutHint } from "../../keyboard/registry";
 import { latestUnsubscribeMessage, unsubscribeFromMessage } from "../../lib/unsubscribe";
 import { Composer } from "../compose/Composer";
 import { AiBadge, AiSurface } from "../ui/Ai";
@@ -22,6 +23,7 @@ const USER_SCROLL_EVENTS = ["wheel", "touchstart", "keydown", "mousedown"] as co
 
 export function ConversationScreen({ threadId }: { threadId: number }) {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
   const { data, isLoading, isError } = useThread(threadId);
   const focusedMessageId = useUi((s) => s.focusedMessageId);
   const visibleThreadIds = useUi((s) => s.visibleThreadIds);
@@ -381,12 +383,32 @@ export function ConversationScreen({ threadId }: { threadId: number }) {
         )}
 
         <footer className="mt-2 flex items-center gap-2 text-[12px] text-ink-faint">
-          <kbd className="co-kbd">↵</kbd> {t("thread:footer.replyAll")} · <kbd className="co-kbd">R</kbd> {t("thread:footer.reply")} ·{" "}
-          <kbd className="co-kbd">F</kbd> {t("thread:footer.forward")} · <kbd className="co-kbd">E</kbd> {t("thread:footer.done")} ·{" "}
-          <kbd className="co-kbd">H</kbd> {t("thread:footer.snooze")} · <kbd className="co-kbd">{MOD_LABEL}J</kbd> {t("thread:footer.summarize")} ·{" "}
-          <kbd className="co-kbd">↑</kbd>
-          <kbd className="co-kbd">↓</kbd> {t("thread:footer.message")} · <kbd className="co-kbd">J</kbd>
-          <kbd className="co-kbd">K</kbd> {t("thread:footer.nextPrev")}
+          {[
+            { keys: [hint("reply-all")], label: t("thread:footer.replyAll") },
+            { keys: [hint("reply")], label: t("thread:footer.reply") },
+            { keys: [hint("forward")], label: t("thread:footer.forward") },
+            { keys: [hint("mark-done")], label: t("thread:footer.done") },
+            { keys: [hint("snooze")], label: t("thread:footer.snooze") },
+            { keys: [hint("ai-summarize")], label: t("thread:footer.summarize") },
+            {
+              keys: [hint("prev-message", "arrowup"), hint("next-message", "arrowdown")],
+              label: t("thread:footer.message"),
+            },
+            { keys: [hint("next-thread"), hint("prev-thread")], label: t("thread:footer.nextPrev") },
+          ]
+            .map((item) => ({ ...item, keys: item.keys.filter(Boolean) }))
+            .filter((item) => item.keys.length > 0)
+            .map((item, i, items) => (
+              <Fragment key={item.label}>
+                {item.keys.map((k, j) => (
+                  <kbd key={j} className="co-kbd">
+                    {k}
+                  </kbd>
+                ))}
+                {item.label}
+                {i < items.length - 1 && " ·"}
+              </Fragment>
+            ))}
         </footer>
       </div>
       </div>
@@ -429,6 +451,7 @@ function AiThreadSummary({
   const entry = useUi((s) => s.aiSummaries[threadId]);
   const set = useUi((s) => s.set);
   const [collapsed, setCollapsed] = useState(false);
+  const summaryKey = useShortcutHint()("ai-summarize");
   if (!entry) return null;
 
   const dismiss = () => {
@@ -452,7 +475,7 @@ function AiThreadSummary({
             className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left"
             onClick={() => setCollapsed((c) => !c)}
             aria-expanded={!collapsed}
-            title={t("thread:aiSummary.shortcutHint", { kbd: `${MOD_LABEL}J` })}
+            title={summaryKey ? t("thread:aiSummary.shortcutHint", { kbd: summaryKey }) : undefined}
           >
             <AiBadge label={t("thread:aiSummary.title")} className="text-sm" />
             {entry.pending && <Spinner className="co-ai-icon" />}

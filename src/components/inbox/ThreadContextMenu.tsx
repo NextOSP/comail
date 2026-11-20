@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { buildCommandContext, type CommandCtx } from "../../keyboard/context";
+import { useShortcutHint } from "../../keyboard/registry";
 import { useUi } from "../../stores/ui";
 import { MenuDivider as Divider, MenuItem as Item, Popover } from "../ui/Menu";
 
@@ -11,6 +12,7 @@ import { MenuDivider as Divider, MenuItem as Item, Popover } from "../ui/Menu";
  */
 export function ThreadContextMenu() {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
   const menu = useUi((s) => s.contextMenu);
   const inTrash = useUi((s) => s.view === "trash");
   const set = useUi((s) => s.set);
@@ -33,7 +35,7 @@ export function ThreadContextMenu() {
         <>
           <Item
             label={t("common:contextMenu.open")}
-            kbd="↵"
+            kbd={hint("open-thread")}
             onClick={() => {
               close();
               useUi.getState().openThread(targets[0]);
@@ -44,22 +46,22 @@ export function ThreadContextMenu() {
       )}
       <Item
         label={menu.unread ? t("common:contextMenu.markRead") : t("common:contextMenu.markUnread")}
-        kbd="U"
+        kbd={hint("read")}
         onClick={run((c) => c.toggleRead())}
       />
       <Item
         label={menu.starred ? t("common:contextMenu.unstar") : t("common:contextMenu.star")}
-        kbd="S"
+        kbd={hint("star")}
         onClick={run((c) => c.toggleStar())}
       />
       <Divider />
-      <Item label={t("common:contextMenu.archive")} kbd="E" onClick={run((c) => c.act("archive"))} />
-      <Item label={t("common:contextMenu.snooze")} kbd="H" onClick={run((c) => c.openSnooze())} />
-      <Item label={t("common:contextMenu.move")} kbd="V" onClick={run((c) => c.openMove())} />
-      <Item label={t("common:contextMenu.label")} kbd="L" onClick={run((c) => c.openLabel())} />
+      <Item label={t("common:contextMenu.archive")} kbd={hint("mark-done")} onClick={run((c) => c.act("archive"))} />
+      <Item label={t("common:contextMenu.snooze")} kbd={hint("snooze")} onClick={run((c) => c.openSnooze())} />
+      <Item label={t("common:contextMenu.move")} kbd={hint("move-to-folder")} onClick={run((c) => c.openMove())} />
+      <Item label={t("common:contextMenu.label")} kbd={hint("label")} onClick={run((c) => c.openLabel())} />
       <Divider />
-      <Item danger label={t(inTrash ? "common:permanentDelete.title" : "common:contextMenu.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
-      <Item label={t("common:contextMenu.spam")} kbd="!" onClick={run((c) => c.act("spam"))} />
+      <Item danger label={t(inTrash ? "common:permanentDelete.title" : "common:contextMenu.trash")} kbd={hint("trash")} onClick={run((c) => c.act("trash"))} />
+      <Item label={t("common:contextMenu.spam")} kbd={hint("spam")} onClick={run((c) => c.act("spam"))} />
     </Popover>
   );
 }

@@ -86,12 +86,12 @@
     "settingsWithShortcut": "Paramètres ({{shortcut}})",
     "allAccounts": "Tous les comptes",
     "menu": "Boîtes aux lettres",
-    "calendar": "Calendrier (0 aujourd’hui, 2 semaine)",
+    "calendar": "Calendrier ({{today}} aujourd’hui, {{week}} semaine)",
     "mail": "Courrier"
   },
   "loading": "Chargement…",
   "selectedCount": "{{count}} sélectionné(s)",
-  "undoSuffix": "{{label}} · Z pour annuler",
+  "undoSuffix": "{{label}} · {{key}} pour annuler",
   "palette": {
     "placeholder": "Saisir une commande…",
     "empty": "Aucune commande correspondante"
@@ -278,7 +278,8 @@
   "shortcutHelp": {
     "title": "Raccourcis clavier",
     "escToClose": "Esc pour fermer",
-    "then": "puis"
+    "then": "puis",
+    "customize": "Personnaliser"
   },
   "move": {
     "title": "Déplacer vers un dossier",

@@ -86,12 +86,12 @@
     "settingsWithShortcut": "Cài đặt ({{shortcut}})",
     "allAccounts": "Tất cả tài khoản",
     "menu": "Hộp thư",
-    "calendar": "Lịch (0 hôm nay, 2 tuần)",
+    "calendar": "Lịch ({{today}} hôm nay, {{week}} tuần)",
     "mail": "Thư"
   },
   "loading": "Đang tải…",
   "selectedCount": "Đã chọn {{count}}",
-  "undoSuffix": "{{label}} · Z để hoàn tác",
+  "undoSuffix": "{{label}} · {{key}} để hoàn tác",
   "palette": {
     "placeholder": "Nhập một lệnh…",
     "empty": "Không có lệnh phù hợp"
@@ -278,7 +278,8 @@
   "shortcutHelp": {
     "title": "Phím tắt",
     "escToClose": "Esc để đóng",
-    "then": "rồi"
+    "then": "rồi",
+    "customize": "Tùy chỉnh"
   },
   "move": {
     "title": "Chuyển đến thư mục",

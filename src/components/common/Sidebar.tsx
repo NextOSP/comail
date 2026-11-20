@@ -12,6 +12,7 @@ import {
   useUnreadCounts,
 } from "../../queries/hooks";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi, type PanelKind } from "../../stores/ui";
+import { useShortcutHint } from "../../keyboard/registry";
 import { Icon } from "../ui/Icon";
 import { AccountSwitcher, ACCOUNT_MENU_ATTR } from "./AccountSwitcher";
 
@@ -20,6 +21,7 @@ const VIEWS: View[] = ["starred", "snoozed", "drafts", "sent", "done", "spam", "
 /** Left drawer: mailboxes, splits, and management panels. */
 export function Sidebar({ docked = false }: { docked?: boolean }) {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
   const drawerOpen = useUi((s) => s.sidebarOpen);
   const pinned = useUi((s) => s.sidebarPinned);
   const open = docked || drawerOpen;
@@ -276,12 +278,12 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
         </div>
         <SideRow
           label={t("calendar:today")}
-          kbd="0"
+          kbd={hint("calendar-today")}
           onClick={() => set({ calendarDrawer: "day", calendarFocusDay: null, sidebarOpen: false })}
         />
         <SideRow
           label={t("calendar:thisWeek")}
-          kbd="2"
+          kbd={hint("calendar-week")}
           onClick={() =>
             set({
               calendarScreen: true,
@@ -293,7 +295,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
         />
         <SideRow
           label={t("calendar:create.title")}
-          kbd="B"
+          kbd={hint("create-event")}
           onClick={() => set({ eventCreate: {}, sidebarOpen: false })}
         />
 

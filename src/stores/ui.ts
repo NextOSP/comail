@@ -57,6 +57,7 @@ export type SettingsTab =
   | "reading"
   | "compose"
   | "calendar"
+  | "shortcuts"
   | "stats"
   | "splits"
   | "snippets"

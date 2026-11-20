@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getCommands, shortcutFor } from "../../keyboard/registry";
+import { useShortcutHint } from "../../keyboard/registry";
 import { useUi } from "../../stores/ui";
 import { Button, IconButton } from "../ui/Button";
 
@@ -44,14 +44,16 @@ export function TipsBar() {
   const [dismissed, setDismissed] = useState(() => isDismissed());
   const [splitsTipDismissed, setSplitsTipDismissed] = useState(() => isDismissed(SPLITS_TIP_KEY));
 
-  const tips = useMemo(() => {
-    const cmds = getCommands();
-    return TIPS.flatMap(([id, key]) => {
-      const cmd = cmds.find((c) => c.id === id);
-      const sc = cmd && shortcutFor(cmd);
-      return sc ? [{ key, shortcut: sc }] : [];
-    });
-  }, []);
+  const hint = useShortcutHint();
+  const tips = useMemo(
+    () =>
+      TIPS.flatMap(([id, key]) => {
+        const sc = hint(id);
+        return sc ? [{ key, shortcut: sc }] : [];
+      }),
+    [hint],
+  );
+  const splitsKey = hint("next-split");
 
   const dismissSplitsTip = () => {
     setSplitsTipDismissed(true);
@@ -62,7 +64,7 @@ export function TipsBar() {
     return (
       <div className="co-fade-in flex h-8 shrink-0 items-center justify-center gap-3 border-t border-hairline bg-bg1 px-4 text-sm text-ink-faint">
         <span className="flex min-w-0 items-center gap-1.5">
-          <kbd className="co-kbd">Tab</kbd>
+          {splitsKey && <kbd className="co-kbd">{splitsKey}</kbd>}
           <span className="truncate">{t("inbox:tips.splits")}</span>
         </span>
         <Button

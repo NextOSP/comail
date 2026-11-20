@@ -6,6 +6,7 @@
     "Compose": "Redactar",
     "AI": "IA",
     "Calendar": "Calendario",
+    "Inbox": "Bandeja de entrada",
     "Meta": "Meta"
   },
   "title": {
@@ -87,6 +88,7 @@
     "relabelAuto": "Reejecutar etiquetas automáticas",
     "openAiSettings": "Ajustes de IA",
     "openAccountSettings": "Ajustes de la cuenta",
+    "openShortcutSettings": "Personalizar atajos de teclado",
     "toggleSidebar": "Mostrar menú de buzones",
     "aiProofread": "Revisar",
     "calendarDay": "Calendario: vista de día",

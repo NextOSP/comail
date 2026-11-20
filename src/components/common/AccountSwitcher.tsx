@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { displayShortcut } from "../../keyboard/registry";
-import { accountLabel, IS_MAC } from "../../lib/format";
+import { useShortcutHint } from "../../keyboard/registry";
+import { accountLabel } from "../../lib/format";
 import { useAccounts } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { Icon } from "../ui/Icon";
@@ -20,6 +20,7 @@ const NAV_FOCUS = "outline-none focus-visible:ring-1 focus-visible:ring-accent/6
  */
 export function AccountSwitcher({ onSelected }: { onSelected?: () => void }) {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
   const accountFilter = useUi((s) => s.accountFilter);
   const setAccountFilter = useUi((s) => s.setAccountFilter);
   const { data: accounts } = useAccounts();
@@ -119,7 +120,7 @@ export function AccountSwitcher({ onSelected }: { onSelected?: () => void }) {
             <div ref={menuRef} role="group" aria-label={t("common:topbar.switchAccount")} {...{ [ACCOUNT_MENU_ATTR]: "" }}>
               <AccountItem
                 label={t("common:topbar.allAccounts")}
-                hint={displayShortcut(IS_MAC ? "ctrl+0" : "alt+0")}
+                hint={hint("account-filter-0")}
                 selected={accountFilter == null}
                 onClick={() => choose(null)}
               />
@@ -128,7 +129,7 @@ export function AccountSwitcher({ onSelected }: { onSelected?: () => void }) {
                   key={a.id}
                   label={accountLabel(a)}
                   detail={a.displayName?.trim() ? a.email : undefined}
-                  hint={i < 9 ? displayShortcut(IS_MAC ? `ctrl+${i + 1}` : `alt+${i + 1}`) : undefined}
+                  hint={hint(`account-filter-${i + 1}`)}
                   sub={a.syncState !== "idle" ? t(`common:syncState.${a.syncState}`) : undefined}
                   selected={accountFilter === a.id}
                   onClick={() => choose(a.id)}

@@ -12,6 +12,7 @@ import { RecipientField } from "./RecipientField";
 import { Checkbox } from "../ui/Field";
 import { onComposerAction } from "../../keyboard/commands";
 import { advanceAfter, buildCommandContext } from "../../keyboard/context";
+import { shortcutHint, useShortcutHint, withShortcut } from "../../keyboard/registry";
 import { calendarPrefill } from "../../lib/calendarSuggestion";
 import { addressName, longTime, MOD_LABEL } from "../../lib/format";
 import { stripQuoteMarkers } from "../../lib/quotes";
@@ -184,6 +185,11 @@ function quoteToHtml(quoteText: string): string {
 
 export function Composer({ state, inline }: { state: ComposerState; inline?: boolean }) {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
+  const sendHints =
+    hint("send") && hint("send-done")
+      ? t("compose:footerHints", { send: hint("send"), sendDone: hint("send-done") })
+      : "";
   const { data: accounts } = useAccounts();
   const { data: snippets } = useSnippets();
   const { data: aiSettings } = useSettings();
@@ -502,9 +508,10 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
           });
         } else {
           const durationMs = Math.max(1000, res.dispatchAt - Date.now());
+          const undoKey = shortcutHint("undo");
           const toastId = pushToast({
             kind: "info",
-            message: t("compose:sendingIn"),
+            message: undoKey ? t("compose:sendingIn", { key: undoKey }) : t("compose:sendingInNoKey"),
             countdown: true,
             durationMs,
             secondaryLabel: t("compose:sendNow"),
@@ -1280,7 +1287,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
           <Button
             icon="paperclip"
             onClick={() => void attachFiles()}
-            title={`${t("compose:attach")} (${MOD_LABEL}⇧A)`}
+            title={withShortcut(t("compose:attach"), hint("attach-files"))}
           >
             {t("compose:attach")}
           </Button>
@@ -1290,7 +1297,7 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
             onClick={() => void runProofread()}
             busy={proofPending}
             disabled={isHtmlEmpty(stripSignature(body))}
-            title={`${t("compose:proofread")} (${MOD_LABEL}⇧P)`}
+            title={withShortcut(t("compose:proofread"), hint("ai-proofread"))}
           >
             {t("compose:proofread")}
           </Button>
@@ -1304,19 +1311,18 @@ export function Composer({ state, inline }: { state: ComposerState; inline?: boo
               {t("compose:teamsMeeting")}
             </Button>
           )}
-          <span
-            className="min-w-0 truncate whitespace-nowrap text-xs text-ink-faint"
-            title={t("compose:footerHints", { mod: MOD_LABEL })}
-          >
-            {t("compose:footerHints", { mod: MOD_LABEL })}
-          </span>
+          {sendHints && (
+            <span className="min-w-0 truncate whitespace-nowrap text-xs text-ink-faint" title={sendHints}>
+              {sendHints}
+            </span>
+          )}
           <div className="grow" />
           <Button
             variant="ghost"
             size="sm"
             icon="trash"
             onClick={() => set({ composerConfirmOpen: true })}
-            title={`${t("compose:discardDraft")} (${MOD_LABEL}⇧⌫)`}
+            title={withShortcut(t("compose:discardDraft"), hint("discard-draft"))}
           >
             {t("compose:discard")}
           </Button>

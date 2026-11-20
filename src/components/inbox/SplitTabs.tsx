@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { displayShortcut, useShortcutHint } from "../../keyboard/registry";
 import { activeInboxTabKey, inboxTabOrder } from "../../lib/splitOrder";
 import { useModHeld } from "../../lib/useModHeld";
 import {
@@ -27,8 +28,11 @@ export function SplitTabs() {
   const { data: counts } = useUnreadCounts(accountFilter);
   const countMode = settings?.tabCounts ?? "unread";
   const { data: totals } = useTabTotals(accountFilter, countMode === "all");
-  // While ⌘/Ctrl is held, reveal each tab's jump-to number (Cmd+1..9).
+  // While ⌘/Ctrl is held, reveal each tab's jump-to number (Cmd+1..9), unless
+  // the user moved that tab's shortcut off ⌘/Ctrl+N.
   const modHeld = useModHeld();
+  const hint = useShortcutHint();
+  const jumpsByNumber = (n: number) => hint(`split-tab-${n}`, `mod+${n}`) === displayShortcut(`mod+${n}`);
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const autoLabels = settings?.autoLabelsEnabled !== false;
@@ -122,7 +126,7 @@ export function SplitTabs() {
             // slot keeps its width so switching tabs doesn't shift the bar.
             hideCount={countMode === "all" && activeKey === tab.key}
             hasNew={activeKey !== tab.key && hasNewMail(seen, tab.key, tabCounts[tab.key] ?? 0)}
-            keyHint={index < 9 ? String(index + 1) : undefined}
+            keyHint={index < 9 && jumpsByNumber(index + 1) ? String(index + 1) : undefined}
             showKeyHint={modHeld}
             active={activeKey === tab.key}
             focusable={focusKey === tab.key}

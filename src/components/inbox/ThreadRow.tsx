@@ -1,6 +1,7 @@
 import { memo, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
+import { useShortcutHint, withShortcut } from "../../keyboard/registry";
 import { participantSummary, primaryCorrespondent, relativeTime } from "../../lib/format";
 import { IconButton } from "../ui/Button";
 import { Icon, type IconName } from "../ui/Icon";
@@ -66,6 +67,7 @@ function ThreadRowImpl({
   photos?: boolean;
 }) {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
   const unread = thread.unreadCount > 0;
   const correspondent = avatarUi ? primaryCorrespondent(thread.participants, selfEmails) : null;
 
@@ -215,19 +217,19 @@ function ThreadRowImpl({
             <QuickButton
               icon="check"
               label={t("common:contextMenu.archive")}
-              kbd="E"
+              kbd={hint("mark-done")}
               onClick={() => onQuickAction(thread.id, "done")}
             />
             <QuickButton
               icon="clock"
               label={t("common:contextMenu.snooze")}
-              kbd="H"
+              kbd={hint("snooze")}
               onClick={() => onQuickAction(thread.id, "remind")}
             />
             <QuickButton
               icon="star"
               label={thread.isStarred ? t("common:contextMenu.unstar") : t("common:contextMenu.star")}
-              kbd="S"
+              kbd={hint("star")}
               onClick={() => onQuickAction(thread.id, "star")}
               active={thread.isStarred}
             />
@@ -258,7 +260,7 @@ function QuickButton({
       icon={icon}
       size="xs"
       label={label}
-      title={`${label} (${kbd})`}
+      title={withShortcut(label, kbd)}
       filled={active}
       className={active ? "!text-star" : undefined}
       tabIndex={-1}

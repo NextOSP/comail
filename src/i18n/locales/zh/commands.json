@@ -6,6 +6,7 @@
     "Compose": "撰写",
     "AI": "AI",
     "Calendar": "日历",
+    "Inbox": "收件箱",
     "Meta": "其他"
   },
   "title": {
@@ -87,6 +88,7 @@
     "relabelAuto": "重新运行自动标签",
     "openAiSettings": "AI 设置",
     "openAccountSettings": "账户设置",
+    "openShortcutSettings": "自定义键盘快捷键",
     "toggleSidebar": "显示邮箱菜单",
     "aiProofread": "校对",
     "calendarDay": "日历：日视图",

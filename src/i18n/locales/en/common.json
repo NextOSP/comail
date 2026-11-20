@@ -86,12 +86,12 @@
     "settingsWithShortcut": "Settings ({{shortcut}})",
     "allAccounts": "All accounts",
     "menu": "Mailboxes",
-    "calendar": "Calendar (0 today, 2 week)",
+    "calendar": "Calendar ({{today}} today, {{week}} week)",
     "mail": "Mail"
   },
   "loading": "Loading…",
   "selectedCount": "{{count}} selected",
-  "undoSuffix": "{{label}} · Z to undo",
+  "undoSuffix": "{{label}} · {{key}} to undo",
   "palette": {
     "placeholder": "Type a command…",
     "empty": "No matching commands"
@@ -278,7 +278,8 @@
   "shortcutHelp": {
     "title": "Keyboard shortcuts",
     "escToClose": "Esc to close",
-    "then": "then"
+    "then": "then",
+    "customize": "Customize"
   },
   "move": {
     "title": "Move to folder",

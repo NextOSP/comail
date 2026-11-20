@@ -18,7 +18,7 @@ import { findCachedSummary } from "../queries/actions";
 import { queryClient } from "../queries/client";
 import { useUi } from "../stores/ui";
 import { inboxTabs, type CommandCtx } from "./context";
-import { displayShortcut, type Command } from "./registry";
+import type { Command } from "./registry";
 
 /** Bridge for composer-scoped commands (composer owns the form state). */
 export type ComposerAction =
@@ -363,6 +363,9 @@ function labelSlotCommand(i: number): Command {
     aliases: ["label", "go to label", "filter by label"],
     keys: [],
     section: "Go to",
+    // Positional palette slots: a key here would follow whichever label
+    // happens to sit in the slot.
+    fixedKeys: true,
     when: (ctx) => !ctx.composerOpen && !ctx.panelOpen && cachedLabels().length > i,
     run: () => {
       const l = cachedLabels()[i];
@@ -515,7 +518,7 @@ export const ALL_COMMANDS: Command[] = [
     titleKey: "commands:title.unsubscribe",
     aliases: ["stop emails", "list unsubscribe", "opt out"],
     keys: [],
-    shortcut: displayShortcut("mod+u"),
+    keysFrom: "unsubscribe-key",
     section: "Triage",
     when: (ctx) => noPanel(ctx) && ctx.hasTargets && canUnsubscribe(ctx),
     run: runUnsubscribe,
@@ -626,6 +629,8 @@ export const ALL_COMMANDS: Command[] = [
     keys: ["escape"],
     shortcut: "Esc",
     section: "Navigation",
+    // Esc always closes whatever is on top, so it can't move elsewhere.
+    fixedKeys: true,
     run: (ctx) => ctx.escape(),
     hiddenInPalette: true,
   },
@@ -1131,7 +1136,7 @@ export const ALL_COMMANDS: Command[] = [
     titleKey: "commands:title.viewFromSender",
     title: () => {
       const s = currentSender();
-      return i18n.t("commands:title.viewFromSender", { name: s ? addressName(s) : "" });
+      return i18n.t("commands:title.viewFromSender", { name: s ? addressName(s) : "…" });
     },
     aliases: ["view all from this sender", "all from sender", "from sender", "sender emails", "search sender"],
     keys: [],
@@ -1201,6 +1206,15 @@ export const ALL_COMMANDS: Command[] = [
     section: "Meta",
     when: (ctx) => !ctx.panelOpen,
     run: () => useUi.getState().set({ panel: "settings", settingsTab: "accounts" }),
+  },
+  {
+    id: "open-shortcut-settings",
+    titleKey: "commands:title.openShortcutSettings",
+    aliases: ["keyboard shortcuts", "hotkeys", "keymap", "key bindings", "rebind keys", "change shortcuts"],
+    keys: [],
+    section: "Meta",
+    when: (ctx) => !ctx.panelOpen,
+    run: () => useUi.getState().set({ panel: "settings", settingsTab: "shortcuts" }),
   },
   {
     id: "toggle-sidebar",

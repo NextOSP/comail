@@ -1,10 +1,13 @@
+import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
+import { useShortcutHint } from "../../keyboard/registry";
 import { friendlyDate } from "../../lib/format";
 
 /** `viewTitle` is shown as-is (no case folding: lowercasing translated text
  *  is wrong in many languages); in the inbox it is the active tab's name. */
 export function InboxZero({ viewTitle }: { viewTitle: string }) {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
   return (
     <div className="relative flex flex-1 items-center justify-center overflow-hidden">
       <div className="co-halo" aria-hidden />
@@ -27,8 +30,18 @@ export function InboxZero({ viewTitle }: { viewTitle: string }) {
           {t("inbox:zero.nothingIn", { view: viewTitle, date: friendlyDate(Date.now()) })}
         </p>
         <p className="mt-4 text-sm text-ink-faint">
-          <kbd className="co-kbd">Tab</kbd> {t("inbox:zero.hintNextSplit")} &ensp;·&ensp; <kbd className="co-kbd">C</kbd>{" "}
-          {t("inbox:zero.hintCompose")} &ensp;·&ensp; <kbd className="co-kbd">?</kbd> {t("inbox:zero.hintShortcuts")}
+          {[
+            [hint("next-split"), t("inbox:zero.hintNextSplit")],
+            [hint("compose"), t("inbox:zero.hintCompose")],
+            [hint("help"), t("inbox:zero.hintShortcuts")],
+          ]
+            .filter(([key]) => key)
+            .map(([key, label], i) => (
+              <Fragment key={label}>
+                {i > 0 && <>&ensp;·&ensp;</>}
+                <kbd className="co-kbd">{key}</kbd> {label}
+              </Fragment>
+            ))}
         </p>
       </div>
     </div>

@@ -1,6 +1,8 @@
 // Shortcut registry: one global keydown handler, chord support ("g then i"),
 // and a single command list shared by the palette, keymap, and help panel.
 
+import { useCallback, useSyncExternalStore } from "react";
+import i18n from "../i18n";
 import { IS_MAC } from "../lib/format";
 import { useUi } from "../stores/ui";
 import { buildCommandContext, type CommandCtx } from "./context";
@@ -15,10 +17,18 @@ export interface Command {
    *  for commands whose target only exists at runtime (e.g. "Go to <label>") */
   title?: () => string;
   aliases: string[];
-  /** display string, e.g. "E", "⌘K", "G then I" (auto-derived if omitted) */
+  /** display string, e.g. "E", "⌘K", "G then I" (auto-derived if omitted;
+   *  ignored once the user rebinds the command) */
   shortcut?: string;
-  /** key matchers: "e", "shift+e", "mod+enter", "g i" (chord) */
+  /** key matchers: "e", "shift+e", "mod+enter", "g i" (chord). Defaults: the
+   *  user's rebinding (Settings > Shortcuts) replaces the whole list. */
   keys: string[];
+  /** Show the keys of this other command instead of our own: a palette entry
+   *  whose key lives on a hidden twin with a broader `when`. Settings lists
+   *  only the twin. */
+  keysFrom?: string;
+  /** Keys can't be changed in Settings > Shortcuts. */
+  fixedKeys?: boolean;
   /** grouping for the help panel */
   section: string;
   /** context filter (palette + dispatch) */
@@ -38,39 +48,138 @@ export function getCommands(): Command[] {
   return commands;
 }
 
-/** "mod+shift+enter" -> "⌘⇧↵" / "Ctrl+Shift+Enter"; "g i" -> "G then I" */
-export function displayShortcut(keys: string | undefined): string {
-  if (!keys) return "";
-  if (keys.includes(" ") && !keys.includes("+")) {
-    return keys
-      .split(" ")
-      .map((k) => k.toUpperCase())
-      .join(" then ");
+// ---------------------------------------------------------------------------
+// User rebindings (Settings > Shortcuts)
+// ---------------------------------------------------------------------------
+
+/** Command id -> the full key list the user chose ([] = unbound). Commands
+ *  without an entry keep their default `keys`. */
+export type KeyOverrides = Record<string, string[]>;
+
+let overrides: KeyOverrides = {};
+const overrideListeners = new Set<() => void>();
+
+/** Adopt the persisted rebindings (App keeps this in step with Settings). */
+export function setKeyOverrides(next: KeyOverrides | null | undefined) {
+  const clean: KeyOverrides = {};
+  for (const [id, keys] of Object.entries(next ?? {})) {
+    if (Array.isArray(keys)) clean[id] = keys.filter((k) => typeof k === "string" && k !== "");
   }
-  const parts = keys.split("+");
-  const out: string[] = [];
-  for (const p of parts) {
-    if (p === "mod") out.push(IS_MAC ? "⌘" : "Ctrl");
-    else if (p === "ctrl") out.push(IS_MAC ? "⌃" : "Ctrl");
-    else if (p === "shift") out.push(IS_MAC ? "⇧" : "Shift");
-    else if (p === "alt") out.push(IS_MAC ? "⌥" : "Alt");
-    else if (p === "enter") out.push("↵");
-    else if (p === "escape") out.push("Esc");
-    else if (p === "tab") out.push("Tab");
-    else out.push(p.length === 1 ? p.toUpperCase() : p);
+  overrides = clean;
+  for (const fn of overrideListeners) fn();
+}
+
+export function getKeyOverrides(): KeyOverrides {
+  return overrides;
+}
+
+function subscribeKeyOverrides(fn: () => void) {
+  overrideListeners.add(fn);
+  return () => {
+    overrideListeners.delete(fn);
+  };
+}
+
+/** The keys a command answers to: the user's rebinding, else its defaults. */
+export function commandKeys(cmd: Command, map: KeyOverrides = overrides): string[] {
+  return map[cmd.id] ?? cmd.keys;
+}
+
+/** "mod+shift+k" -> mods ["mod", "shift"], key "k". The key may itself be
+ *  "+" ("mod++"). */
+export function splitKeyToken(token: string): { mods: string[]; key: string } {
+  const mods: string[] = [];
+  let rest = token;
+  let m: RegExpExecArray | null;
+  while ((m = /^(mod|ctrl|alt|shift)\+(?=.)/.exec(rest))) {
+    mods.push(m[1]);
+    rest = rest.slice(m[0].length);
   }
+  return { mods, key: rest };
+}
+
+/** `ctrl+` is its own modifier only on macOS; elsewhere Ctrl is `mod`, so a
+ *  default like the palette's "ctrl+k" can never fire there. */
+export function isReachableKey(keys: string): boolean {
+  return IS_MAC || !keys.split(" ").some((t) => splitKeyToken(t).mods.includes("ctrl"));
+}
+
+const MOD_NAMES: Record<string, [mac: string, other: string]> = {
+  mod: ["⌘", "Ctrl"],
+  ctrl: ["⌃", "Ctrl"],
+  alt: ["⌥", "Alt"],
+  shift: ["⇧", "Shift"],
+};
+
+const KEY_NAMES: Record<string, string> = {
+  enter: "↵",
+  escape: "Esc",
+  tab: "Tab",
+  space: "Space",
+  backspace: "⌫",
+  delete: "Del",
+  arrowup: "↑",
+  arrowdown: "↓",
+  arrowleft: "←",
+  arrowright: "→",
+  pageup: "PgUp",
+  pagedown: "PgDn",
+};
+
+function displayToken(token: string): string {
+  const { mods, key } = splitKeyToken(token);
+  const out = mods.map((m) => MOD_NAMES[m][IS_MAC ? 0 : 1]);
+  out.push(KEY_NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key.charAt(0).toUpperCase() + key.slice(1)));
   return out.join(IS_MAC ? "" : "+");
 }
 
-export function shortcutFor(cmd: Command): string {
-  return cmd.shortcut ?? displayShortcut(cmd.keys[0]);
+/** "mod+shift+enter" -> "⌘⇧↵" / "Ctrl+Shift+↵"; "g i" -> "G then I" */
+export function displayShortcut(keys: string | undefined): string {
+  if (!keys) return "";
+  return keys.split(" ").map(displayToken).join(" then ");
+}
+
+export function shortcutFor(cmd: Command, map: KeyOverrides = overrides): string {
+  const owner = (cmd.keysFrom && commands.find((c) => c.id === cmd.keysFrom)) || cmd;
+  const custom = map[owner.id];
+  if (custom) return displayShortcut(custom.find(isReachableKey));
+  return owner.shortcut ?? displayShortcut(owner.keys[0]);
+}
+
+/** How a hint names command `id`'s shortcut: `prefer` while the command still
+ *  answers to it (the ↓ of next-message rather than its first key, N), else
+ *  its first key; "" when it has none (unbound, or unknown id). */
+export function shortcutHint(id: string, prefer?: string, map: KeyOverrides = overrides): string {
+  const cmd = commands.find((c) => c.id === id);
+  if (!cmd) return "";
+  if (prefer && commandKeys(cmd, map).includes(prefer)) return displayShortcut(prefer);
+  return shortcutFor(cmd, map);
+}
+
+/** `shortcutHint` for components: re-renders them when the user rebinds keys. */
+export function useShortcutHint(): (id: string, prefer?: string) => string {
+  const map = useSyncExternalStore(subscribeKeyOverrides, getKeyOverrides);
+  return useCallback((id: string, prefer?: string) => shortcutHint(id, prefer, map), [map]);
+}
+
+/** "Label (⌘K)", or just "Label" when the command has no key. */
+export function withShortcut(label: string, shortcut: string): string {
+  return shortcut ? `${label} (${shortcut})` : label;
+}
+
+/** Action toast text: "Marked done · Z to undo" with undo's current key, or
+ *  just the label when undo has none (the toast's Undo button still works). */
+export function withUndoHint(label: string): string {
+  const key = shortcutHint("undo");
+  return key ? i18n.t("common:undoSuffix", { label, key }) : label;
 }
 
 // ---------------------------------------------------------------------------
 // Global keydown dispatch
 // ---------------------------------------------------------------------------
 
-const CHORD_TIMEOUT = 1500;
+/** How long the second key of a sequence ("G then I") may take. */
+export const CHORD_TIMEOUT = 1500;
 let pendingSeq = "";
 let pendingAt = 0;
 
@@ -128,7 +237,7 @@ export function dispatchKeyboardEvent(e: KeyboardEvent) {
   const ctx = buildCommandContext();
 
   const exact = commands.find(
-    (c) => c.keys.includes(seq) && (!c.when || c.when(ctx)),
+    (c) => commandKeys(c).includes(seq) && (!c.when || c.when(ctx)),
   );
   if (exact) {
     e.preventDefault();
@@ -141,7 +250,7 @@ export function dispatchKeyboardEvent(e: KeyboardEvent) {
 
   // Is this the start of a chord?
   const isPrefix = commands.some(
-    (c) => c.keys.some((k) => k.startsWith(`${seq} `)) && (!c.when || c.when(ctx)),
+    (c) => commandKeys(c).some((k) => k.startsWith(`${seq} `)) && (!c.when || c.when(ctx)),
   );
   if (isPrefix) {
     e.preventDefault();
