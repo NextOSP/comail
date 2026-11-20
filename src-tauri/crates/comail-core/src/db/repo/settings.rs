@@ -46,9 +46,13 @@ mod tests {
         assert!(d.show_sender_photos);
         assert_eq!(d.accent_color, "violet");
         assert_eq!(d.font_family, "");
+        assert_eq!(d.zoom_percent, 100);
+        assert!(!d.higher_dark_contrast);
 
         let mut s = d.clone();
         s.theme = "carbon".into();
+        s.zoom_percent = 125;
+        s.higher_dark_contrast = true;
         s.calendar_week_start = "sunday".into();
         s.inbox_ui = "avatar".into();
         s.show_sender_photos = false;
@@ -83,6 +87,8 @@ mod tests {
 
         let back = get(&c).unwrap();
         assert_eq!(back.theme, "carbon");
+        assert_eq!(back.zoom_percent, 125);
+        assert!(back.higher_dark_contrast);
         assert_eq!(back.calendar_week_start, "sunday");
         assert_eq!(back.inbox_ui, "avatar");
         assert!(!back.show_sender_photos);
@@ -153,6 +159,8 @@ mod tests {
         let s = get(&c).unwrap();
         assert_eq!(s.theme, "snow");
         assert_eq!(s.undo_send_seconds, 20);
+        assert_eq!(s.zoom_percent, 100);
+        assert!(!s.higher_dark_contrast);
         assert!(s.load_remote_images);
         assert_eq!(s.calendar_week_start, "monday");
         assert_eq!(s.inbox_ui, "classic");

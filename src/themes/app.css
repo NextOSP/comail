@@ -72,6 +72,12 @@
   --iframe-scheme: dark;
 }
 
+:root[data-theme="carbon"][data-higher-dark-contrast] {
+  --text: rgb(var(--ink));
+  --text-muted: rgb(var(--ink) / 0.82);
+  --text-faint: rgb(var(--ink) / 0.68);
+}
+
 @theme inline {
   --color-bg0: var(--bg0);
   --color-bg1: var(--bg1);

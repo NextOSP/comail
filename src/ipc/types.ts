@@ -476,6 +476,10 @@ export interface Settings {
   accentColor: string;
   /** Interface font: "" = system, otherwise a Google Fonts family name. */
   fontFamily: string;
+  /** Page zoom as a percentage. */
+  zoomPercent: number;
+  /** Use brighter text when the active theme is dark. */
+  higherDarkContrast: boolean;
   /** UI language: "system" follows the OS locale, otherwise a code like "en". */
   language: string;
   /** First day shown in calendar week and month views. */

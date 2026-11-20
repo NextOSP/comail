@@ -85,13 +85,12 @@ Dev/test env switches (never for real accounts): `COMAIL_TLS_INSECURE=1`,
 `comail-core/src/models.rs` describe the same shapes (serde renames to
 camelCase). Change one, change the other in the same commit.
 
-**Adding a `Settings` field touches five places**, all in one commit:
+**Adding a `Settings` field touches four places**, all in one commit:
 1. `models.rs` (`Settings` struct - give it a `#[serde(default)]` so old blobs
    still deserialize - plus the `Default` impl)
 2. `src/ipc/types.ts`
 3. `DEFAULT_SETTINGS` in `src/components/settings/SettingsPanel.tsx`
 4. `DEFAULT_MOCK_SETTINGS` in `src/ipc/mock.ts`
-5. The settings literal in `src/keyboard/context.ts` (`setTheme`)
 
 There is a unit test (`settings::tests::old_blob_gets_field_defaults`) that
 catches forgetting the serde default.
