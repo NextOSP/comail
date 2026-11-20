@@ -1,6 +1,7 @@
 //! WebDAV 207 multistatus parsing (namespace-agnostic: servers use `D:`,
 //! `d:`, default namespaces, `C:`/`caldav:` interchangeably, so elements are
 //! matched by local name only) plus the small XML request bodies we send.
+//! CardDAV (`crate::carddav`) shares this parser and the HTTP layer.
 
 use crate::error::Result;
 use quick_xml::Reader;
@@ -29,6 +30,12 @@ pub struct DavItem {
     pub saw_component_set: bool,
     pub ctag: Option<String>,
     pub sync_token: Option<String>,
+    // -- CardDAV --
+    pub address_data: Option<String>,
+    pub addressbook_home_set: Option<String>,
+    pub is_addressbook: bool,
+    /// `<collection/>` in resourcetype: a folder, not a vCard resource.
+    pub is_collection: bool,
 }
 
 /// The whole multistatus: items + top-level sync-token (RFC 6578).
@@ -85,6 +92,7 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
                     }
                     "current-user-principal" => href_target = Some("principal"),
                     "calendar-home-set" => href_target = Some("home"),
+                    "addressbook-home-set" => href_target = Some("abhome"),
                     "resourcetype" => {}
                     "supported-calendar-component-set" => {
                         if let Some(item) = cur.as_mut() {
@@ -102,6 +110,13 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
                     "calendar" if path.last().is_some_and(|p| p == "resourcetype") => {
                         if let Some(item) = cur.as_mut() {
                             item.is_calendar = true;
+                        }
+                    }
+                    "addressbook" | "collection"
+                        if path.last().is_some_and(|p| p == "resourcetype") =>
+                    {
+                        if let Some(item) = cur.as_mut() {
+                            mark_resourcetype(item, &name);
                         }
                     }
                     "comp" => {
@@ -155,6 +170,7 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
                                     item.current_user_principal = Some(value);
                                 }
                                 Some("home") => item.calendar_home_set = Some(value),
+                                Some("abhome") => item.addressbook_home_set = Some(value),
                                 _ => {
                                     if item.href.is_empty() {
                                         item.href = value;
@@ -163,7 +179,23 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
                             }
                         }
                     }
-                    "current-user-principal" | "calendar-home-set" => href_target = None,
+                    "current-user-principal" | "calendar-home-set" | "addressbook-home-set" => {
+                        href_target = None
+                    }
+                    // `<addressbook></addressbook>` spelled out instead of
+                    // self-closing.
+                    "addressbook" | "collection"
+                        if path.last().is_some_and(|p| p == "resourcetype") =>
+                    {
+                        if let Some(item) = cur.as_mut() {
+                            mark_resourcetype(item, &name);
+                        }
+                    }
+                    "address-data" => {
+                        if let Some(item) = cur.as_mut() {
+                            item.address_data = Some(value);
+                        }
+                    }
                     "status" => {
                         let code = parse_status_line(&value);
                         // <status> directly under <response> is the item's
@@ -222,6 +254,14 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
         buf.clear();
     }
     Ok(out)
+}
+
+fn mark_resourcetype(item: &mut DavItem, local_name: &str) {
+    match local_name {
+        "addressbook" => item.is_addressbook = true,
+        "collection" => item.is_collection = true,
+        _ => {}
+    }
 }
 
 impl DavItem {
@@ -290,6 +330,43 @@ pub fn report_multiget(hrefs: &[String]) -> String {
 <c:calendar-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
 <d:prop><d:getetag/><c:calendar-data/></d:prop>{hrefs_xml}
 </c:calendar-multiget>"#
+    )
+}
+
+// ---------- CardDAV (RFC 6352) ----------
+
+pub fn propfind_addressbook_home_set() -> String {
+    r#"<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:prop><card:addressbook-home-set/></d:prop></d:propfind>"#
+        .into()
+}
+
+pub fn propfind_addressbooks() -> String {
+    r#"<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
+<d:prop><d:resourcetype/><d:displayname/><cs:getctag/><d:sync-token/></d:prop>
+</d:propfind>"#
+        .into()
+}
+
+/// Depth:1 listing of a collection's members with their etags - the full
+/// listing CardDAV falls back to when sync-collection is unavailable.
+pub fn propfind_etags() -> String {
+    r#"<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getetag/></d:prop></d:propfind>"#
+        .into()
+}
+
+pub fn report_addressbook_multiget(hrefs: &[String]) -> String {
+    let hrefs_xml: String = hrefs
+        .iter()
+        .map(|h| format!("<d:href>{}</d:href>", xml_escape(h)))
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<card:addressbook-multiget xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+<d:prop><d:getetag/><card:address-data/></d:prop>{hrefs_xml}
+</card:addressbook-multiget>"#
     )
 }
 
@@ -453,6 +530,113 @@ END:VCALENDAR</c:calendar-data>
         assert_eq!(events[0].uid, "abc@server");
     }
 
+    /// Nextcloud-style address book home listing: the home itself, then one
+    /// address book written self-closing and one spelled out.
+    const NEXTCLOUD_ADDRESSBOOKS: &str = r#"<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:card="urn:ietf:params:xml:ns:carddav" xmlns:cs="http://calendarserver.org/ns/">
+ <d:response>
+  <d:href>/remote.php/dav/addressbooks/users/me/</d:href>
+  <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>
+  <d:propstat><d:prop><d:displayname/><cs:getctag/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat>
+ </d:response>
+ <d:response>
+  <d:href>/remote.php/dav/addressbooks/users/me/contacts/</d:href>
+  <d:propstat>
+   <d:prop>
+    <d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>
+    <d:displayname>Contacts</d:displayname>
+    <cs:getctag>http://sabre.io/ns/sync/12</cs:getctag>
+    <d:sync-token>http://sabre.io/ns/sync/12</d:sync-token>
+   </d:prop>
+   <d:status>HTTP/1.1 200 OK</d:status>
+  </d:propstat>
+ </d:response>
+ <d:response>
+  <d:href>/remote.php/dav/addressbooks/users/me/work/</d:href>
+  <d:propstat>
+   <d:prop>
+    <d:resourcetype><d:collection></d:collection><card:addressbook></card:addressbook></d:resourcetype>
+    <d:displayname>Work &amp; friends</d:displayname>
+   </d:prop>
+   <d:status>HTTP/1.1 200 OK</d:status>
+  </d:propstat>
+ </d:response>
+</d:multistatus>"#;
+
+    /// addressbook-multiget with a CDATA vCard, an escaped one and a 404.
+    const CARD_MULTIGET: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+ <D:response>
+  <D:href>/ab/a.vcf</D:href>
+  <D:propstat>
+   <D:prop><D:getetag>"a1"</D:getetag><C:address-data><![CDATA[BEGIN:VCARD
+VERSION:3.0
+FN:Ann <Admin>
+EMAIL:ann@example.com
+END:VCARD]]></C:address-data></D:prop>
+   <D:status>HTTP/1.1 200 OK</D:status>
+  </D:propstat>
+ </D:response>
+ <D:response>
+  <D:href>/ab/b.vcf</D:href>
+  <D:propstat>
+   <D:prop><D:getetag>"b1"</D:getetag><C:address-data>BEGIN:VCARD
+VERSION:4.0
+FN:Bob &amp; Co
+END:VCARD</C:address-data></D:prop>
+   <D:status>HTTP/1.1 200 OK</D:status>
+  </D:propstat>
+ </D:response>
+ <D:response>
+  <D:href>/ab/gone.vcf</D:href>
+  <D:status>HTTP/1.1 404 Not Found</D:status>
+ </D:response>
+</D:multistatus>"#;
+
+    #[test]
+    fn parses_addressbook_home_set() {
+        let body = r#"<d:multistatus xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:response><d:href>/principals/me/</d:href><d:propstat><d:prop><card:addressbook-home-set><d:href>/ab/me/</d:href></card:addressbook-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#;
+        let ms = parse_multistatus(body).unwrap();
+        assert_eq!(ms.items[0].href, "/principals/me/");
+        assert_eq!(ms.items[0].addressbook_home_set.as_deref(), Some("/ab/me/"));
+        assert!(ms.items[0].calendar_home_set.is_none());
+    }
+
+    #[test]
+    fn parses_addressbook_listing() {
+        let ms = parse_multistatus(NEXTCLOUD_ADDRESSBOOKS).unwrap();
+        assert_eq!(ms.items.len(), 3);
+        let home = &ms.items[0];
+        assert!(home.is_collection && !home.is_addressbook);
+        // A 404 propstat for unknown props doesn't fail the response.
+        assert_eq!(home.status, 200);
+        let contacts = &ms.items[1];
+        assert!(contacts.is_addressbook && contacts.is_collection);
+        assert_eq!(contacts.displayname.as_deref(), Some("Contacts"));
+        assert_eq!(
+            contacts.sync_token.as_deref(),
+            Some("http://sabre.io/ns/sync/12")
+        );
+        let work = &ms.items[2];
+        assert!(work.is_addressbook, "spelled-out element counts too");
+        assert_eq!(work.displayname.as_deref(), Some("Work & friends"));
+        assert!(!work.is_calendar);
+    }
+
+    #[test]
+    fn parses_addressbook_multiget() {
+        let ms = parse_multistatus(CARD_MULTIGET).unwrap();
+        assert_eq!(ms.items.len(), 3);
+        let a = ms.items[0].address_data.as_deref().unwrap();
+        assert!(a.contains("FN:Ann <Admin>"));
+        assert_eq!(ms.items[0].etag.as_deref(), Some("\"a1\""));
+        let b = ms.items[1].address_data.as_deref().unwrap();
+        assert!(b.contains("FN:Bob & Co"));
+        assert!(b.ends_with("END:VCARD"));
+        assert_eq!(ms.items[2].status, 404);
+        assert!(ms.items[2].address_data.is_none());
+    }
+
     #[test]
     fn request_bodies_are_wellformed() {
         for body in [
@@ -463,6 +647,10 @@ END:VCALENDAR</c:calendar-data>
             report_sync_collection("tok&<>"),
             report_calendar_query(),
             report_multiget(&["/a b.ics".into(), "/c&d.ics".into()]),
+            propfind_addressbook_home_set(),
+            propfind_addressbooks(),
+            propfind_etags(),
+            report_addressbook_multiget(&["/a b.vcf".into(), "/c&d.vcf".into()]),
         ] {
             let mut reader = Reader::from_str(&body);
             let mut buf = Vec::new();

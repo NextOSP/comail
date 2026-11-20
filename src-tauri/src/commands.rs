@@ -507,6 +507,65 @@ pub async fn calendar_sync_now(
     Ok(())
 }
 
+// ---------- carddav (read-only contacts) ----------
+
+#[tauri::command]
+pub async fn connect_contacts(
+    state: State<'_, AppState>,
+    args: ConnectContactsArgs,
+) -> CmdResult<ContactServer> {
+    state.core.connect_contacts(args).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn disconnect_contacts(state: State<'_, AppState>, account_id: i64) -> CmdResult<()> {
+    state
+        .core
+        .disconnect_contacts(account_id)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn list_contact_servers(state: State<'_, AppState>) -> CmdResult<Vec<ContactServer>> {
+    state.core.list_contact_servers().await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_address_book_enabled(
+    state: State<'_, AppState>,
+    address_book_id: i64,
+    enabled: bool,
+) -> CmdResult<()> {
+    state
+        .core
+        .set_address_book_enabled(address_book_id, enabled)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn contacts_sync_now(
+    state: State<'_, AppState>,
+    account_id: Option<i64>,
+) -> CmdResult<()> {
+    state.core.contacts_sync_now(account_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_contact_card(
+    state: State<'_, AppState>,
+    email: String,
+) -> CmdResult<Option<ContactCard>> {
+    state.core.get_contact_card(email).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn list_calendar_logins(state: State<'_, AppState>) -> CmdResult<Vec<CalendarLogin>> {
+    state.core.list_calendar_logins().await.map_err(err)
+}
+
 /// The frontend reports its startup show (first-run intro) is done - or that
 /// there is none - releasing the deferred account sync (and with it the first
 /// OS keyring access) in comail-core.

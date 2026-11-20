@@ -107,6 +107,13 @@ pub enum CoreEvent {
         event_id: i64,
         summary: Option<String>,
     },
+    /// CardDAV sync status changed (a cycle finished, a server was connected
+    /// or disconnected, an address book toggled). `changed` = contact data
+    /// itself changed, so names shown in thread lists may be stale.
+    ContactsUpdated {
+        account_id: i64,
+        changed: bool,
+    },
     /// An AI client called a tool on the local MCP server.
     McpActivity(crate::mcp::McpCall),
 }

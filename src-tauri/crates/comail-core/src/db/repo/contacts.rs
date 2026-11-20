@@ -78,9 +78,17 @@ fn like_escape(tok: &str) -> String {
         .replace('_', "\\_")
 }
 
+/// Folded text a query matches against: the harvested name and address,
+/// plus the name and nickname from a synced address book.
+const MATCH_TEXT: &str = "(COALESCE(c.folded, c.email) || COALESCE(' ' || c.book_folded, ''))";
+
+/// The name shown for a contact: an address-book name wins over the one
+/// harvested from mail headers.
+const SHOWN_NAME: &str = "COALESCE(NULLIF(c.book_name, ''), c.name)";
+
 /// Build the WHERE fragment requiring every folded query token to appear in
-/// `contacts.folded`, pushing one `%tok%` bind per token. Returns None for
-/// queries with no usable tokens.
+/// the contact's match text, pushing one `%tok%` bind per token. Returns None
+/// for queries with no usable tokens.
 fn folded_clauses(query: &str, bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>) -> Option<String> {
     let folded = fold(query);
     let tokens: Vec<&str> = folded.split_whitespace().collect();
@@ -90,10 +98,7 @@ fn folded_clauses(query: &str, bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>) 
     let mut clauses = Vec::with_capacity(tokens.len());
     for tok in tokens {
         bind.push(Box::new(format!("%{}%", like_escape(tok))));
-        clauses.push(format!(
-            "COALESCE(folded, email) LIKE ?{} ESCAPE '\\'",
-            bind.len()
-        ));
+        clauses.push(format!("{MATCH_TEXT} LIKE ?{} ESCAPE '\\'", bind.len()));
     }
     Some(clauses.join(" AND "))
 }
@@ -144,8 +149,8 @@ fn suggest_at(
     let word_ix = bind.len();
     bind.push(Box::new(now_ms));
     let now_ix = bind.len();
-    // `contact_accounts` has no name/email/folded columns, so the folded WHERE
-    // clause stays unambiguous; only the affinity columns get an alias.
+    // Contact columns are qualified with `c`; only the affinity columns switch
+    // between the global row and the per-account `contact_accounts` row.
     let (stats, from) = if let Some(aid) = account_id {
         bind.push(Box::new(aid));
         (
@@ -162,12 +167,12 @@ fn suggest_at(
     // Over-fetch so name grouping below still fills `limit`.
     bind.push(Box::new(limit.saturating_mul(3)));
     let sql = format!(
-        "SELECT c.name, c.email, {stats}.send_count * 3 + {stats}.recv_count,
+        "SELECT {SHOWN_NAME}, c.email, {stats}.send_count * 3 + {stats}.recv_count,
                 COALESCE({stats}.last_interacted, 0)
          FROM {from}
          WHERE {where_sql}
-         ORDER BY (COALESCE(c.folded, c.email) LIKE ?{starts_ix} ESCAPE '\\'
-                   OR COALESCE(c.folded, c.email) LIKE ?{word_ix} ESCAPE '\\'
+         ORDER BY ({MATCH_TEXT} LIKE ?{starts_ix} ESCAPE '\\'
+                   OR {MATCH_TEXT} LIKE ?{word_ix} ESCAPE '\\'
                    OR c.email LIKE ?{starts_ix} ESCAPE '\\') DESC,
                   ({stats}.send_count * 3 + {stats}.recv_count) * {RECENCY_HALF_LIFE_DAYS}
                     / ({RECENCY_HALF_LIFE_DAYS}
@@ -271,6 +276,61 @@ pub fn affinity_for(
         out.insert(email, score);
     }
     Ok(out)
+}
+
+/// Address-book names for these lowercase addresses (only those a synced,
+/// enabled address book names).
+pub fn book_names(
+    conn: &Connection,
+    emails: &[String],
+) -> Result<std::collections::HashMap<String, String>> {
+    let mut out = std::collections::HashMap::new();
+    for chunk in emails.chunks(500) {
+        let placeholders = (1..=chunk.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT LOWER(email), book_name FROM contacts
+             WHERE email IN ({placeholders}) AND book_name <> ''"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (email, name) = row?;
+            out.insert(email, name);
+        }
+    }
+    Ok(out)
+}
+
+/// Show people saved in a synced address book under that name instead of
+/// the one their mail headers carry. A no-op (one cheap EXISTS) for users
+/// without CardDAV.
+pub fn apply_book_names(conn: &Connection, addrs: Vec<&mut Address>) -> Result<()> {
+    if addrs.is_empty() {
+        return Ok(());
+    }
+    let any_book: bool = conn
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM address_books WHERE enabled = 1)")?
+        .query_row([], |r| r.get(0))?;
+    if !any_book {
+        return Ok(());
+    }
+    let mut emails: Vec<String> = addrs.iter().map(|a| a.email.to_lowercase()).collect();
+    emails.sort_unstable();
+    emails.dedup();
+    let names = book_names(conn, &emails)?;
+    if names.is_empty() {
+        return Ok(());
+    }
+    for a in addrs {
+        if let Some(name) = names.get(&a.email.to_lowercase()) {
+            a.name = Some(name.clone());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

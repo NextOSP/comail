@@ -8,6 +8,7 @@ pub mod autolabel;
 pub mod avatars;
 pub mod caldav;
 pub mod calendar;
+pub mod carddav;
 pub mod config;
 pub mod db;
 pub mod embed;
@@ -222,6 +223,8 @@ pub struct Core {
     tokens: TokenProvider,
     handles: Arc<RwLock<HashMap<i64, AccountHandle>>>,
     cal_handles: Arc<RwLock<HashMap<i64, caldav::task::CalTaskHandle>>>,
+    /// Read-only CardDAV contact sync tasks, one per connected account.
+    contacts_handles: Arc<RwLock<HashMap<i64, carddav::task::ContactsTaskHandle>>>,
     /// Per-attachment single-flight locks. Concurrent preview/open/save calls
     /// share one remote fetch and cannot race the same `.download.part` file.
     attachment_locks:
@@ -262,6 +265,7 @@ impl Core {
             tokens: TokenProvider::new(),
             handles: Arc::new(RwLock::new(HashMap::new())),
             cal_handles: Arc::new(RwLock::new(HashMap::new())),
+            contacts_handles: Arc::new(RwLock::new(HashMap::new())),
             attachment_locks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             embed: Arc::new(embed::EmbedState::new()),
             oauth_cancel: Arc::new(tokio::sync::Notify::new()),
@@ -361,6 +365,14 @@ impl Core {
                 {
                     for cfg in cal_accounts {
                         core.spawn_cal_task(cfg.account_id).await;
+                    }
+                }
+                // Contact sync tasks for accounts with a connected CardDAV server.
+                if let Ok(card_accounts) =
+                    core.db.read(|conn| repo::carddav::all_configs(conn)).await
+                {
+                    for cfg in card_accounts {
+                        core.spawn_contacts_task(cfg.account_id).await;
                     }
                 }
             });
@@ -517,6 +529,30 @@ impl Core {
             account_id,
         );
         self.cal_handles.write().await.insert(account_id, handle);
+    }
+
+    async fn spawn_contacts_task(&self, account_id: i64) {
+        let handle = carddav::task::spawn(self.db.clone(), self.bus.clone(), account_id);
+        self.contacts_handles
+            .write()
+            .await
+            .insert(account_id, handle);
+    }
+
+    async fn nudge_contacts(&self, account_id: Option<i64>) {
+        let handles = self.contacts_handles.read().await;
+        match account_id {
+            Some(id) => {
+                if let Some(h) = handles.get(&id) {
+                    h.nudge();
+                }
+            }
+            None => {
+                for h in handles.values() {
+                    h.nudge();
+                }
+            }
+        }
     }
 
     async fn nudge_cal(&self, account_id: Option<i64>) {
@@ -825,9 +861,14 @@ impl Core {
             h.send(SyncCmd::Shutdown);
         }
         self.cal_handles.write().await.remove(&account_id);
+        self.contacts_handles.write().await.remove(&account_id);
         credentials::delete_all(account_id);
         self.db
-            .write(move |conn| repo::accounts::delete(conn, account_id))
+            .write(move |conn| {
+                // Unwind address-book names before the cascade drops the cards.
+                repo::carddav::delete_config(conn, account_id)?;
+                repo::accounts::delete(conn, account_id)
+            })
             .await?;
         let _ = tokio::fs::remove_dir_all(self.paths.mail_dir(account_id)).await;
         let _ = tokio::fs::remove_dir_all(self.paths.attachments_dir(account_id)).await;
@@ -2874,6 +2915,198 @@ impl Core {
 
     pub async fn calendar_sync_now(&self, account_id: Option<i64>) {
         self.nudge_cal(account_id).await;
+    }
+
+    // ---------- carddav (read-only contacts) ----------
+
+    /// Connect a CardDAV server to an account. The password is typed, or
+    /// reused from a generic CalDAV login on the same server. Discovery
+    /// doubles as the connection test - nothing persists on failure.
+    pub async fn connect_contacts(&self, args: ConnectContactsArgs) -> Result<ContactServer> {
+        let account_id = args.account_id;
+        let base_url = carddav::normalize_url(&args.url)
+            .ok_or_else(|| CoreError::CardDav("server URL is required".into()))?;
+        let host = carddav::host_of(&base_url)
+            .ok_or_else(|| CoreError::CardDav(format!("bad server URL {base_url}")))?;
+
+        let (username, password) = match args.reuse_calendar_account_id {
+            Some(cal_account) => {
+                let login = self
+                    .list_calendar_logins()
+                    .await?
+                    .into_iter()
+                    .find(|l| l.account_id == cal_account)
+                    .ok_or_else(|| CoreError::CardDav("no calendar sign-in to reuse".into()))?;
+                // The calendar password only ever goes to its own server.
+                if !login.hosts.iter().any(|h| carddav::same_server(&host, h)) {
+                    return Err(CoreError::CardDav(format!(
+                        "the calendar sign-in belongs to a different server than {host}"
+                    )));
+                }
+                let pass = credentials::load_async(cal_account, Slot::CaldavPassword).await?;
+                (login.username, pass)
+            }
+            None => {
+                let pass = args
+                    .password
+                    .clone()
+                    .filter(|p| !p.is_empty())
+                    .ok_or_else(|| CoreError::CardDav("password is required".into()))?;
+                (args.username.clone().unwrap_or_default(), pass)
+            }
+        };
+
+        let transport =
+            caldav::HttpTransport::new(caldav::DavAuth::Basic(username.clone(), password.clone()))
+                .map_err(carddav::as_carddav)?;
+        let discovery = carddav::discovery::discover(&transport, &base_url).await?;
+
+        // Persist: keyring first, then config + address books.
+        credentials::store_async(account_id, Slot::CarddavPassword, password).await?;
+        let cfg = repo::carddav::CarddavConfig {
+            account_id,
+            base_url,
+            username: Some(username),
+            principal_url: discovery.principal_url.clone(),
+            home_set_url: Some(discovery.home_set_url.clone()),
+            enabled: true,
+            last_error: None,
+            last_synced_at: None,
+        };
+        let books = discovery.books;
+        let server = self
+            .db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                repo::carddav::upsert_config(&tx, &cfg)?;
+                let urls: Vec<String> = books.iter().map(|b| b.url.clone()).collect();
+                repo::carddav::prune_address_books(&tx, account_id, &urls)?;
+                for b in &books {
+                    repo::carddav::upsert_address_book(
+                        &tx,
+                        account_id,
+                        &b.url,
+                        b.display_name.as_deref(),
+                    )?;
+                }
+                let server = repo::carddav::list_servers(&tx)?
+                    .into_iter()
+                    .find(|s| s.account_id == account_id);
+                tx.commit()?;
+                Ok(server)
+            })
+            .await?
+            .ok_or_else(|| CoreError::NotFound("contact server".into()))?;
+
+        // A reconnect replaces the running task; the first pull starts now.
+        self.spawn_contacts_task(account_id).await;
+        self.nudge_contacts(Some(account_id)).await;
+        self.bus.emit(CoreEvent::ContactsUpdated {
+            account_id,
+            changed: false,
+        });
+        Ok(server)
+    }
+
+    /// Disconnect the CardDAV server: its contacts go (harvested ones keep
+    /// what mail taught us), credentials are removed.
+    pub async fn disconnect_contacts(&self, account_id: i64) -> Result<()> {
+        self.contacts_handles.write().await.remove(&account_id);
+        self.db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                repo::carddav::delete_config(&tx, account_id)?;
+                tx.commit()?;
+                Ok(())
+            })
+            .await?;
+        let _ = tokio::task::spawn_blocking(move || {
+            credentials::delete(account_id, Slot::CarddavPassword);
+        })
+        .await;
+        self.bus.emit(CoreEvent::ContactsUpdated {
+            account_id,
+            changed: true,
+        });
+        Ok(())
+    }
+
+    /// Every connected CardDAV server with its address books and sync status.
+    pub async fn list_contact_servers(&self) -> Result<Vec<ContactServer>> {
+        self.db.read(|conn| repo::carddav::list_servers(conn)).await
+    }
+
+    /// Include or exclude one address book. Excluding drops its contacts
+    /// right away; including pulls it in full.
+    pub async fn set_address_book_enabled(
+        &self,
+        address_book_id: i64,
+        enabled: bool,
+    ) -> Result<()> {
+        let book = self
+            .db
+            .read(move |conn| repo::carddav::get_address_book(conn, address_book_id))
+            .await?
+            .ok_or_else(|| CoreError::NotFound("address book".into()))?;
+        self.db
+            .write(move |conn| {
+                let tx = conn.transaction()?;
+                repo::carddav::set_address_book_enabled(&tx, address_book_id, enabled)?;
+                tx.commit()?;
+                Ok(())
+            })
+            .await?;
+        if enabled {
+            self.nudge_contacts(Some(book.account_id)).await;
+        }
+        self.bus.emit(CoreEvent::ContactsUpdated {
+            account_id: book.account_id,
+            changed: !enabled,
+        });
+        Ok(())
+    }
+
+    pub async fn contacts_sync_now(&self, account_id: Option<i64>) {
+        self.nudge_contacts(account_id).await;
+    }
+
+    /// Address-book details for one email address (contact pane); None when
+    /// no enabled address book holds it.
+    pub async fn get_contact_card(&self, email: String) -> Result<Option<ContactCard>> {
+        self.db
+            .read(move |conn| repo::carddav::card_for_email(conn, &email))
+            .await
+    }
+
+    /// Generic CalDAV logins a CardDAV connection could reuse (no secrets).
+    pub async fn list_calendar_logins(&self) -> Result<Vec<CalendarLogin>> {
+        self.db
+            .read(|conn| {
+                let mut out = Vec::new();
+                for cfg in repo::caldav::all_configs(conn)? {
+                    if cfg.kind != "generic" {
+                        continue;
+                    }
+                    let calendars = repo::caldav::list_calendars(conn, Some(cfg.account_id))?;
+                    let mut hosts: Vec<String> = Vec::new();
+                    for url in
+                        std::iter::once(&cfg.base_url).chain(calendars.iter().map(|c| &c.url))
+                    {
+                        if let Some(h) = carddav::host_of(url) {
+                            if !hosts.contains(&h) {
+                                hosts.push(h);
+                            }
+                        }
+                    }
+                    out.push(CalendarLogin {
+                        account_id: cfg.account_id,
+                        username: cfg.username.unwrap_or_default(),
+                        hosts,
+                    });
+                }
+                Ok(out)
+            })
+            .await
     }
 
     /// Queue a CalDAV write for the account's calendar task, when the account

@@ -949,6 +949,8 @@ pub fn list_for_thread(conn: &Connection, thread_id: i64) -> Result<Vec<MessageD
             m.attachments = atts;
         }
     }
+    // Senders saved in a synced address book read under that name.
+    super::contacts::apply_book_names(conn, out.iter_mut().map(|m| &mut m.from).collect())?;
     Ok(out)
 }
 

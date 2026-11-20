@@ -170,14 +170,29 @@ pub fn recompute(conn: &Connection, thread_id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Senders saved in a synced address book are shown under that name.
+fn with_book_names(conn: &Connection, threads: &mut [ThreadSummary]) -> Result<()> {
+    super::contacts::apply_book_names(
+        conn,
+        threads
+            .iter_mut()
+            .flat_map(|t| t.participants.iter_mut())
+            .collect(),
+    )
+}
+
 pub fn get_summary(conn: &Connection, thread_id: i64) -> Result<Option<ThreadSummary>> {
     let sql = format!(
         "{SUMMARY_SELECT} WHERE t.id = ?1 AND EXISTS (SELECT 1 FROM visible_messages m WHERE m.thread_id = t.id)"
     );
     let mut stmt = conn.prepare_cached(&sql)?;
-    Ok(stmt
+    let mut summary = stmt
         .query_row(params![thread_id], summary_from_row)
-        .optional()?)
+        .optional()?;
+    if let Some(t) = summary.as_mut() {
+        with_book_names(conn, std::slice::from_mut(t))?;
+    }
+    Ok(summary)
 }
 
 /// Summaries for many threads in one query, returned in `thread_ids` order.
@@ -201,10 +216,12 @@ pub fn get_summaries(conn: &Connection, thread_ids: &[i64]) -> Result<Vec<Thread
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut by_id: std::collections::HashMap<i64, ThreadSummary> =
         rows.into_iter().map(|t| (t.id, t)).collect();
-    Ok(thread_ids
+    let mut ordered: Vec<ThreadSummary> = thread_ids
         .iter()
         .filter_map(|id| by_id.remove(id))
-        .collect())
+        .collect();
+    with_book_names(conn, &mut ordered)?;
+    Ok(ordered)
 }
 
 /// Which inbox tab to filter to. Overlay tabs (Split/AutoLabel) read the single
@@ -402,6 +419,7 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
     } else {
         None
     };
+    with_book_names(conn, &mut threads)?;
     Ok(ThreadPage {
         threads,
         next_cursor,

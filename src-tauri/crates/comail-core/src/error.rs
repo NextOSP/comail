@@ -24,6 +24,8 @@ pub enum CoreError {
     Mime(String),
     #[error("caldav error: {0}")]
     CalDav(String),
+    #[error("carddav error: {0}")]
+    CardDav(String),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("permanent deletion rejected: {0}")]
@@ -57,6 +59,7 @@ impl CoreError {
             CoreError::Keyring(_) => "keyring",
             CoreError::Mime(_) => "mime",
             CoreError::CalDav(_) => "caldav",
+            CoreError::CardDav(_) => "carddav",
             CoreError::NotFound(_) => "not_found",
             CoreError::Offline => "offline",
             CoreError::DeleteRejected(_) => "delete_rejected",

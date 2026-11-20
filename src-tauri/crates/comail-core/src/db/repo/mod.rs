@@ -3,6 +3,7 @@ pub mod actions;
 pub mod ai_usage;
 pub mod caldav;
 pub mod calendar;
+pub mod carddav;
 pub mod contacts;
 pub mod counts;
 pub mod email_stats;

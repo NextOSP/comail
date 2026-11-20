@@ -13,6 +13,8 @@ pub enum Slot {
     AiApiKey,
     /// Generic-CalDAV app password (Google CalDAV reuses the OAuth tokens).
     CaldavPassword,
+    /// CardDAV app password (read-only contact sync).
+    CarddavPassword,
     /// Bearer token for the local MCP server (stored under account id 0).
     McpToken,
     /// OpenRouter decision API key (stored under account id 0). Unset falls
@@ -32,6 +34,7 @@ impl Slot {
             Slot::AccessToken => "access_token",
             Slot::AiApiKey => "ai_api_key",
             Slot::CaldavPassword => "caldav_password",
+            Slot::CarddavPassword => "carddav_password",
             Slot::McpToken => "mcp_token",
             Slot::DecisionApiKey => "decision_api_key",
             Slot::DecisionOpenAiKey => "decision_api_key_openai",
@@ -204,6 +207,7 @@ pub fn delete_all(account_id: i64) {
         Slot::RefreshToken,
         Slot::AccessToken,
         Slot::CaldavPassword,
+        Slot::CarddavPassword,
     ] {
         if let Ok(e) = entry(account_id, &slot) {
             let _ = e.delete_credential();

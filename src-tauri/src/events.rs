@@ -163,6 +163,15 @@ fn emit(app: &AppHandle, ev: CoreEvent) {
                 json!({ "eventId": event_id, "summary": summary }),
             );
         }
+        CoreEvent::ContactsUpdated {
+            account_id,
+            changed,
+        } => {
+            let _ = app.emit(
+                "contacts:updated",
+                json!({ "accountId": account_id, "changed": changed }),
+            );
+        }
         CoreEvent::McpActivity(call) => {
             let _ = app.emit("mcp:activity", &call);
         }

@@ -16,7 +16,7 @@ const MULTIGET_BATCH: usize = 50;
 
 /// Normalize an href to path form so stored values compare stably no matter
 /// whether the server answered with absolute URLs or paths.
-fn href_path(href: &str) -> String {
+pub(crate) fn href_path(href: &str) -> String {
     match url::Url::parse(href) {
         Ok(u) => u.path().to_string(),
         Err(_) => href.to_string(),
