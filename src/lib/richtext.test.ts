@@ -54,6 +54,29 @@ describe("htmlToText", () => {
       "<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table>";
     expect(htmlToText(table)).toBe("a\tb\nc\td");
   });
+
+  it("ignores source indentation, as a browser does (HTML signatures)", () => {
+    const sig = `<table cellpadding="0">
+  <tr>
+    <td>
+      <img src="https://x.dev/logo.png" alt="Acme">
+    </td>
+    <td>
+      <strong>Jane Doe</strong><br>
+      Head of Sales<br>
+      <a href="https://acme.com">acme.com</a>
+    </td>
+  </tr>
+</table>`;
+    expect(htmlToText(`Hi<br><br><div class="co-signature">${sig}</div>`)).toBe(
+      "Hi\n\n[Acme]\tJane Doe\nHead of Sales\nacme.com (https://acme.com)",
+    );
+    expect(htmlToText("<div>\n  one\n  two\n</div>")).toBe("one two");
+  });
+
+  it("keeps the line breaks of preformatted text", () => {
+    expect(htmlToText("<pre>a\n  b</pre>\n<div>c</div>")).toBe("a\n  b\nc");
+  });
 });
 
 describe("stripFormatting", () => {

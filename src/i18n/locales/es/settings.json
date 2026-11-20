@@ -616,6 +616,11 @@
     "emptyHint": "Añade una para firmar automáticamente los correos de esta cuenta.",
     "untitled": "Sin título",
     "editorLabel": "Firma",
+    "modeRich": "Texto enriquecido",
+    "modeHtml": "HTML",
+    "htmlLabel": "HTML de la firma",
+    "htmlPlaceholder": "Pega o escribe el HTML de tu firma",
+    "htmlHint": "Se conservan las tablas, los estilos en línea, los enlaces y las imágenes por URL. Se eliminan los scripts, los bloques <style>, los formularios y los controladores de eventos.",
     "defaultsTitle": "Predeterminadas",
     "listTitle": "Firmas · {{email}}"
   },

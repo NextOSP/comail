@@ -616,6 +616,11 @@
     "emptyHint": "Ajoutez-en une pour signer automatiquement les e-mails de ce compte.",
     "untitled": "Sans titre",
     "editorLabel": "Signature",
+    "modeRich": "Texte enrichi",
+    "modeHtml": "HTML",
+    "htmlLabel": "HTML de la signature",
+    "htmlPlaceholder": "Collez ou écrivez le HTML de votre signature",
+    "htmlHint": "Les tableaux, les styles en ligne, les liens et les images par URL sont conservés. Les scripts, les blocs <style>, les formulaires et les gestionnaires d’événements sont supprimés.",
     "defaultsTitle": "Par défaut",
     "listTitle": "Signatures · {{email}}"
   },

@@ -5,12 +5,13 @@ import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import type { Settings, Signature } from "../../ipc/types";
 import { isHtmlEmpty, textToHtml } from "../../lib/richtext";
+import { sanitizeSignatureHtml } from "../../lib/signatures";
 import { useAccounts } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { RichBody } from "../compose/RichBody";
 import { Icon } from "../ui/Icon";
 import { Modal } from "../ui/Modal";
-import { Button, ConfirmButton, EmptyState, FormField, inputCls, Select, SettingRow, SettingsGroup, Toggle } from "./panelKit";
+import { Button, ConfirmButton, EmptyState, FormField, inputCls, Segmented, Select, SettingRow, SettingsGroup, Toggle } from "./panelKit";
 import { updateSettings } from "./SettingsPanel";
 
 type Defaults = Settings["signatureDefaults"];
@@ -194,11 +195,11 @@ function SignatureRow({
         {empty ? (
           <div className="mt-1 text-sm text-ink-faint italic">{t("settings:signature.previewEmpty")}</div>
         ) : (
-          // Rendered (scrubbed) preview, clamped so the list stays compact.
+          // Rendered (sanitized) preview, clamped so the list stays compact.
           <div
-            className="co-richbody pointer-events-none mt-1 line-clamp-3 text-sm leading-snug text-ink-muted"
+            className="co-richbody co-signature pointer-events-none mt-1 line-clamp-3 text-sm leading-snug text-ink-muted"
             aria-readonly="true"
-            dangerouslySetInnerHTML={{ __html: previewSafeHtml(sig.html) }}
+            dangerouslySetInnerHTML={{ __html: sanitizeSignatureHtml(sig.html) }}
           />
         )}
       </div>
@@ -217,7 +218,11 @@ function Badge({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Create / edit one signature. Local draft until Save. */
+type EditorMode = "rich" | "html";
+
+/** Create / edit one signature. Local draft until Save. The signature is edited
+ *  either in the rich editor or as HTML source (for a ready-made HTML
+ *  signature, which pasting into the rich editor would reflow). */
 function SignatureDialog({
   sig,
   accountId,
@@ -237,10 +242,20 @@ function SignatureDialog({
   const pushToast = useUi((s) => s.pushToast);
   const isNew = sig == null;
   const [name, setName] = useState(sig?.name ?? "");
-  const [html, setHtml] = useState(sig?.html ?? "");
+  // Only sanitized markup reaches the rich editor, which renders it live.
+  const [original] = useState(() => sanitizeSignatureHtml(sig?.html ?? ""));
+  const [html, setHtml] = useState(original);
+  const [mode, setMode] = useState<EditorMode>("rich");
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const dirty = isNew ? name.trim() !== "" || !isHtmlEmpty(html) : name !== sig.name || html !== sig.html;
+  const dirty = isNew ? name.trim() !== "" || !isHtmlEmpty(html) : name !== sig.name || html !== original;
+
+  const switchMode = (next: EditorMode) => {
+    // Typed source is sanitized before the rich editor renders it, so going
+    // back to HTML shows what will actually be kept.
+    if (next === "rich") setHtml((cur) => sanitizeSignatureHtml(cur));
+    setMode(next);
+  };
 
   const generate = async () => {
     setGenerating(true);
@@ -258,10 +273,12 @@ function SignatureDialog({
     setSaving(true);
     const key = String(accountId);
     const finalName = name.trim() || t("settings:signature.newName");
+    // HTML typed in source mode has not been through the sanitizer yet.
+    const clean = sanitizeSignatureHtml(html);
     let list: Signature[];
     let defaults = settings.signatureDefaults;
     if (isNew) {
-      const created: Signature = { id: crypto.randomUUID(), accountId, name: finalName, html };
+      const created: Signature = { id: crypto.randomUUID(), accountId, name: finalName, html: clean };
       list = [...settings.signatureList, created];
       // The account's first signature becomes its default for new mail and
       // replies, so it is used without a second trip to the toggles below.
@@ -270,7 +287,7 @@ function SignatureDialog({
         defaults = { ...defaults, [key]: { newId: created.id, replyId: created.id } };
       }
     } else {
-      list = settings.signatureList.map((s) => (s.id === sig.id ? { ...s, name: finalName, html } : s));
+      list = settings.signatureList.map((s) => (s.id === sig.id ? { ...s, name: finalName, html: clean } : s));
     }
     try {
       await writeSignatures(list, defaults);
@@ -329,26 +346,53 @@ function SignatureDialog({
         </FormField>
 
         <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-ink-faint">{t("settings:signature.editorLabel")}</span>
-            <Button
-              variant="ai"
-              size="sm"
-              busy={generating}
-              title={t("settings:signature.aiHint")}
-              onClick={() => void generate()}
-            >
-              {generating ? t("settings:signature.aiGenerating") : t("settings:signature.aiHint")}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Segmented<EditorMode>
+                value={mode}
+                options={[
+                  { value: "rich", label: t("settings:signature.modeRich") },
+                  { value: "html", label: t("settings:signature.modeHtml") },
+                ]}
+                onChange={switchMode}
+              />
+              <Button
+                variant="ai"
+                size="sm"
+                busy={generating}
+                title={t("settings:signature.aiHint")}
+                onClick={() => void generate()}
+              >
+                {generating ? t("settings:signature.aiGenerating") : t("settings:signature.aiHint")}
+              </Button>
+            </div>
           </div>
-          <div className="rounded-control border border-hairline bg-bg0 px-3 pb-1 focus-within:border-accent/60">
-            <RichBody
-              value={html}
-              onChange={setHtml}
-              placeholder={t("settings:signature.placeholder")}
-              minHeightClass="min-h-[140px]"
-            />
-          </div>
+          {mode === "rich" ? (
+            // co-signature: tables and images render as recipients see them.
+            <div className="co-signature rounded-control border border-hairline bg-bg0 px-3 pb-1 focus-within:border-accent/60">
+              <RichBody
+                value={html}
+                onChange={setHtml}
+                placeholder={t("settings:signature.placeholder")}
+                minHeightClass="min-h-[140px]"
+              />
+            </div>
+          ) : (
+            <>
+              <textarea
+                className={`${inputCls} min-h-[180px] resize-y font-mono !text-sm leading-relaxed`}
+                value={html}
+                onChange={(e) => setHtml(e.target.value)}
+                spellCheck={false}
+                autoFocus
+                aria-label={t("settings:signature.htmlLabel")}
+                placeholder={t("settings:signature.htmlPlaceholder")}
+                data-testid="signature-html"
+              />
+              <p className="text-xs text-ink-faint">{t("settings:signature.htmlHint")}</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -396,27 +440,4 @@ function DefaultSelect({
       </Select>
     </SettingRow>
   );
-}
-
-const PREVIEW_DROP_TAGS = "script,style,iframe,object,embed,link,meta,base,form,input,button,textarea,select";
-
-/** Signature HTML is stored as the editor produced it (not sanitized on save),
- *  so the read-only preview renders a scrubbed copy: parsed inertly with
- *  DOMParser, active elements removed, event handlers and script URLs dropped. */
-function previewSafeHtml(html: string): string {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.body.querySelectorAll(PREVIEW_DROP_TAGS).forEach((el) => el.remove());
-  doc.body.querySelectorAll("*").forEach((el) => {
-    for (const attr of Array.from(el.attributes)) {
-      const name = attr.name.toLowerCase();
-      if (
-        name.startsWith("on") ||
-        ((name === "href" || name === "src" || name === "xlink:href") &&
-          /^\s*(javascript|vbscript|data:text\/html)/i.test(attr.value))
-      ) {
-        el.removeAttribute(attr.name);
-      }
-    }
-  });
-  return doc.body.innerHTML;
 }

@@ -2031,4 +2031,34 @@ mod tests {
         assert!(images.is_empty());
         assert_eq!(rewritten, html);
     }
+
+    #[test]
+    fn html_signature_is_sent_verbatim() {
+        // A signature written in the editor's HTML mode (already sanitized in
+        // the frontend): the send path must not reflow its layout table.
+        let html = concat!(
+            r#"<div>Hi</div><br><br><div class="co-signature">"#,
+            r#"<table cellpadding="0" cellspacing="0" border="0" style="font-family: Arial, sans-serif;">"#,
+            r#"<tr><td valign="top" width="76" style="padding-right: 12px;">"#,
+            r#"<img src="https://example.com/logo.png" alt="Acme" width="64" height="64"></td>"#,
+            r#"<td><strong style="color:#111">Jane Doe</strong><br>"#,
+            r#"<a href="https://acme.com" style="color:#0a66c2;text-decoration:none">acme.com</a>"#,
+            r#"</td></tr></table></div>"#,
+        );
+        let (_, raw) = build_message(&outgoing("plain", Some(html))).unwrap();
+        let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
+        assert_eq!(parsed.body_html(0).as_deref(), Some(html));
+
+        // Our own Sent view still renders the layout through the (unchanged)
+        // receive-side sanitizer.
+        let shown = sanitize_html(html);
+        for kept in [
+            r#"cellpadding="0""#,
+            r#"style="padding-right: 12px;""#,
+            r#"src="https://example.com/logo.png""#,
+            r#"class="co-signature""#,
+        ] {
+            assert!(shown.contains(kept), "{kept} missing from {shown}");
+        }
+    }
 }
