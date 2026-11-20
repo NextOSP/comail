@@ -24,7 +24,20 @@
     "empty": "未选择会话",
     "recent": "最近的会话",
     "noRecent": "没有其他会话",
-    "noSubject": "(无主题)"
+    "noSubject": "(无主题)",
+    "emails": "邮箱",
+    "phones": "电话",
+    "fromBook": "来自通讯录：{{book}}",
+    "kinds": {
+      "home": "住宅",
+      "work": "工作",
+      "cell": "手机",
+      "mobile": "手机",
+      "fax": "传真",
+      "main": "主要",
+      "other": "其他",
+      "pager": "寻呼机"
+    }
   },
   "tips": {
     "done": "标记完成",

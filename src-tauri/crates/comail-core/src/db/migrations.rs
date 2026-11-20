@@ -39,6 +39,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/035_restore_non_trash_roles.sql"),
     include_str!("migrations/036_rescan_skipped_headers.sql"),
     include_str!("migrations/037_tab_override.sql"),
+    include_str!("migrations/038_carddav.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -71,6 +72,52 @@ mod tests {
             tx.execute_batch(sql).unwrap();
             tx.pragma_update(None, "user_version", target).unwrap();
             tx.commit().unwrap();
+        }
+    }
+
+    #[test]
+    fn migration_038_adds_carddav_storage_without_touching_contacts() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        run_through(&mut conn, 37);
+        crate::db::testutil::seed_account(&conn);
+        conn.execute(
+            "INSERT INTO contacts (id, email, name, folded, send_count, recv_count, last_interacted)
+             VALUES (1, 'bao@acme.com', 'Bao', 'bao bao@acme.com', 3, 1, 50)",
+            [],
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+
+        let (name, book_name, sends): (String, Option<String>, i64) = conn
+            .query_row(
+                "SELECT name, book_name, send_count FROM contacts WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((name.as_str(), book_name, sends), ("Bao", None, 3));
+
+        // The new tables cascade from the account down to card emails.
+        conn.execute_batch(
+            "INSERT INTO carddav_config (account_id, base_url) VALUES (1, 'https://dav.example.com/');
+             INSERT INTO address_books (id, account_id, url) VALUES (5, 1, 'https://dav.example.com/ab/');
+             INSERT INTO contact_cards (id, address_book_id, href) VALUES (7, 5, '/ab/a.vcf');
+             INSERT INTO contact_card_emails (card_id, email, position) VALUES (7, 'bao@acme.com', 0);",
+        )
+        .unwrap();
+        conn.execute("DELETE FROM accounts WHERE id = 1", [])
+            .unwrap();
+        for table in [
+            "carddav_config",
+            "address_books",
+            "contact_cards",
+            "contact_card_emails",
+        ] {
+            let n: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(n, 0, "{table} should cascade");
         }
     }
 

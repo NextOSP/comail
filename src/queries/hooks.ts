@@ -241,6 +241,39 @@ export function useSetDefaultCalendar() {
   });
 }
 
+/** Connected CardDAV servers with their address books and sync status
+ *  (refreshed by the `contacts:updated` event). */
+export function useContactServers() {
+  return useQuery({
+    queryKey: ["contactServers"],
+    queryFn: () => call("list_contact_servers", {}),
+    staleTime: 60_000,
+  });
+}
+
+/** Generic CalDAV logins a new CardDAV connection could reuse. */
+export function useCalendarLogins(enabled = true) {
+  return useQuery({
+    queryKey: ["calendarLogins"],
+    queryFn: () => call("list_calendar_logins", {}),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+/** Address-book card for an email address. Skipped entirely (no IPC) until a
+ *  CardDAV server is connected, so the contact pane stays query-free. */
+export function useContactCard(email: string | null) {
+  const { data: servers } = useContactServers();
+  const anyBook = (servers ?? []).some((s) => s.addressBooks.some((b) => b.enabled));
+  return useQuery({
+    queryKey: ["contactCard", email?.toLowerCase() ?? null],
+    queryFn: () => call("get_contact_card", { email: email ?? "" }),
+    enabled: anyBook && !!email,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useCalendarEvents(startMs: number, endMs: number, enabled = true) {
   return useQuery({
     queryKey: ["events", startMs, endMs],

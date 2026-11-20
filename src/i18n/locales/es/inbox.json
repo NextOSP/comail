@@ -24,7 +24,20 @@
     "empty": "Ninguna conversación seleccionada",
     "recent": "Conversaciones recientes",
     "noRecent": "No hay otras conversaciones",
-    "noSubject": "(sin asunto)"
+    "noSubject": "(sin asunto)",
+    "emails": "Correo",
+    "phones": "Teléfono",
+    "fromBook": "De la libreta de direcciones: {{book}}",
+    "kinds": {
+      "home": "Casa",
+      "work": "Trabajo",
+      "cell": "Móvil",
+      "mobile": "Móvil",
+      "fax": "Fax",
+      "main": "Principal",
+      "other": "Otro",
+      "pager": "Buscapersonas"
+    }
   },
   "tips": {
     "done": "para marcar como hecho",

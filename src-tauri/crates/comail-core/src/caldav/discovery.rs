@@ -33,7 +33,8 @@ pub fn resolve(base: &str, href: &str) -> Result<String> {
     Ok(joined.to_string())
 }
 
-async fn propfind(
+/// PROPFIND that must answer 207 (shared with CardDAV discovery).
+pub(crate) async fn propfind(
     t: &dyn Transport,
     url: &str,
     depth: &str,

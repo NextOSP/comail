@@ -693,6 +693,62 @@ export interface Calendar {
   lastSyncedAt: number | null;
 }
 
+/** A discovered CardDAV address book (read-only contact sync). */
+export interface AddressBook {
+  id: number;
+  accountId: number;
+  url: string;
+  displayName: string | null;
+  enabled: boolean;
+  /** Cards in it that carry at least one email address. */
+  cardCount: number;
+  lastSyncedAt: number | null;
+}
+
+/** A mail account's CardDAV connection with its address books. */
+export interface ContactServer {
+  accountId: number;
+  baseUrl: string;
+  username: string | null;
+  /** Last sync cycle's error ("needs_reauth" when the login was rejected);
+   *  null when it succeeded. */
+  lastError: string | null;
+  /** End of the last sync cycle that finished without errors. */
+  lastSyncedAt: number | null;
+  addressBooks: AddressBook[];
+}
+
+/** A generic CalDAV login a CardDAV connection on the same server can reuse.
+ *  Never carries the password. */
+export interface CalendarLogin {
+  accountId: number;
+  username: string;
+  /** Hosts the login works on: the configured server and its calendars'. */
+  hosts: string[];
+}
+
+export interface CardEmail {
+  email: string;
+  /** TYPE or label: "work", "home", "cell"…; comma-joined when several. */
+  kind: string | null;
+}
+
+export interface CardPhone {
+  number: string;
+  kind: string | null;
+}
+
+/** Address-book details for one email address (contact pane). */
+export interface ContactCard {
+  name: string | null;
+  nickname: string | null;
+  org: string | null;
+  title: string | null;
+  emails: CardEmail[];
+  phones: CardPhone[];
+  addressBook: string | null;
+}
+
 export interface EventAttendee {
   email: string;
   name: string | null;
@@ -982,6 +1038,13 @@ export interface CalendarUpdatedEvent {
   accountId: number;
 }
 
+/** CardDAV sync status changed; `changed` = contact data itself changed, so
+ *  sender names in thread lists may be stale. */
+export interface ContactsUpdatedEvent {
+  accountId: number;
+  changed: boolean;
+}
+
 /** Desktop reminder for an upcoming meeting (per occurrence for recurrences). */
 export interface CalendarReminderEvent {
   event: CalendarEvent;
@@ -1038,6 +1101,7 @@ export interface EventMap {
   "calendar:new": CalendarNewEvent;
   "calendar:reminder": CalendarReminderEvent;
   "calendar:conflict": CalendarConflictEvent;
+  "contacts:updated": ContactsUpdatedEvent;
   /** OS mailto: deep link; payload is the raw mailto URL. */
   "deeplink:mailto": string;
   /** Siri / Shortcuts "Search Mail"; payload is the query. */
@@ -1279,6 +1343,31 @@ export interface Commands {
   /** Make this calendar the account's target for newly created events. */
   set_default_calendar(args: { calendarId: number }): Promise<void>;
   calendar_sync_now(args: { accountId?: number | null }): Promise<void>;
+  /**
+   * Connect a CardDAV server (read-only contact sync) to a mail account.
+   * Credentials are typed, or reused from the generic CalDAV login of
+   * `reuseCalendarAccountId` on the same server.
+   */
+  connect_contacts(args: {
+    args: {
+      accountId: number;
+      url: string;
+      username?: string;
+      password?: string;
+      reuseCalendarAccountId?: number | null;
+    };
+  }): Promise<ContactServer>;
+  disconnect_contacts(args: { accountId: number }): Promise<void>;
+  list_contact_servers(args: Record<string, never>): Promise<ContactServer[]>;
+  /** Excluding drops the book's contacts; including pulls it in full. */
+  set_address_book_enabled(args: {
+    addressBookId: number;
+    enabled: boolean;
+  }): Promise<void>;
+  contacts_sync_now(args: { accountId?: number | null }): Promise<void>;
+  /** Address-book card for an email address; null when none holds it. */
+  get_contact_card(args: { email: string }): Promise<ContactCard | null>;
+  list_calendar_logins(args: Record<string, never>): Promise<CalendarLogin[]>;
 
   /** Startup show (first-run intro) is done, or absent: release the deferred
    *  account sync (and with it the first OS keyring access). */

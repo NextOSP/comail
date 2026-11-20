@@ -41,6 +41,7 @@ import { commandScore } from "../../keyboard/commandScore";
 import { useUi, type SettingsTab } from "../../stores/ui";
 import { AccountsSection } from "./AccountsSettings";
 import { CalendarSettings } from "./CalendarSettings";
+import { ContactsSettings } from "./ContactsSettings";
 import { SignaturesSection } from "./SignaturesSettings";
 import { InboxUiPicker } from "./InboxUiPicker";
 import { LabelsSection } from "./LabelsPanel";
@@ -473,6 +474,11 @@ export function SettingsPanel() {
       tab: "calendar",
       label: t("settings:calendar.section"),
       keywords: "calendar google outlook connect events",
+    },
+    {
+      tab: "calendar",
+      label: t("settings:contacts.section"),
+      keywords: "contacts carddav address book vcard nextcloud fastmail icloud radicale people",
     },
     {
       tab: "appearance",
@@ -1101,6 +1107,7 @@ export function SettingsPanel() {
             </SettingRow>
             </SettingsGroup>
             <CalendarSettings />
+            <ContactsSettings />
           </>
         )}
 

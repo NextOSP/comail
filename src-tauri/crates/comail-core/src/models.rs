@@ -1681,6 +1681,91 @@ pub struct ConnectCalendarArgs {
     pub password: Option<String>,
 }
 
+// ---------- CardDAV contacts (read-only) ----------
+
+/// Connect a CardDAV server to a mail account. Credentials are either typed
+/// (`username` + `password`) or reused from the generic CalDAV login of
+/// `reuse_calendar_account_id`, which must point at the same server.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectContactsArgs {
+    pub account_id: i64,
+    pub url: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub reuse_calendar_account_id: Option<i64>,
+}
+
+/// A discovered CardDAV address book.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddressBook {
+    pub id: i64,
+    pub account_id: i64,
+    pub url: String,
+    pub display_name: Option<String>,
+    pub enabled: bool,
+    pub card_count: i64,
+    pub last_synced_at: Option<i64>,
+}
+
+/// A mail account's CardDAV connection and its address books.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactServer {
+    pub account_id: i64,
+    pub base_url: String,
+    pub username: Option<String>,
+    /// Last sync cycle's error ("needs_reauth" for a rejected login); None
+    /// when it succeeded.
+    pub last_error: Option<String>,
+    /// End of the last sync cycle that finished without errors.
+    pub last_synced_at: Option<i64>,
+    pub address_books: Vec<AddressBook>,
+}
+
+/// A generic CalDAV login whose credentials a CardDAV connection on the same
+/// server can reuse. Never carries the password.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarLogin {
+    pub account_id: i64,
+    pub username: String,
+    /// Hosts the login is known to work on: the configured server and the
+    /// hosts its calendars live on.
+    pub hosts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardEmail {
+    pub email: String,
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardPhone {
+    pub number: String,
+    pub kind: Option<String>,
+}
+
+/// Address-book details for one email address, for the contact pane.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactCard {
+    pub name: Option<String>,
+    pub nickname: Option<String>,
+    pub org: Option<String>,
+    pub title: Option<String>,
+    pub emails: Vec<CardEmail>,
+    pub phones: Vec<CardPhone>,
+    pub address_book: Option<String>,
+}
+
 /// Standard IMAP folder roles.
 pub mod roles {
     pub const INBOX: &str = "inbox";

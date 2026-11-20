@@ -188,9 +188,11 @@ fn label_id_for(conn: &Connection, category: Category) -> Result<Option<i64>> {
 /// every inbound sender is harvested into `contacts` during the same sync
 /// transaction that routes the thread, so "appears in contacts" would make
 /// every sender look known and cold outreach (Pitch) could never be detected.
+/// Someone saved in a synced address book (`book_name` set) is known too.
 pub fn sender_known(conn: &Connection, from_addr: &str) -> bool {
     conn.query_row(
-        "SELECT 1 FROM contacts WHERE email = ?1 COLLATE NOCASE AND send_count > 0 LIMIT 1",
+        "SELECT 1 FROM contacts WHERE email = ?1 COLLATE NOCASE
+           AND (send_count > 0 OR book_name IS NOT NULL) LIMIT 1",
         params![from_addr],
         |_| Ok(()),
     )
@@ -396,6 +398,14 @@ mod tests {
             sender_known(&c, "BD@AGENCY.IO"),
             "contact match must be case-insensitive"
         );
+        // A contact from a synced address book is known without any mail.
+        c.execute(
+            "INSERT INTO contacts (email, send_count, recv_count, book_name)
+             VALUES ('kim@partner.io', 0, 0, 'Kim')",
+            [],
+        )
+        .unwrap();
+        assert!(sender_known(&c, "kim@partner.io"));
     }
 
     #[test]

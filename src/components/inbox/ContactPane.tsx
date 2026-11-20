@@ -1,12 +1,28 @@
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import type { ThreadSummary } from "../../ipc/types";
+import type { ContactCard, ThreadSummary } from "../../ipc/types";
 import { addressName, hueOf, initials, primaryCorrespondent, relativeTime } from "../../lib/format";
+import { useContactCard } from "../../queries/hooks";
+
+/** vCard TYPE values / labels the pane translates; others show as written. */
+const KNOWN_KINDS = new Set(["home", "work", "cell", "mobile", "fax", "main", "other", "pager"]);
+
+function kindLabel(kind: string | null, t: TFunction): string | null {
+  if (!kind) return null;
+  return kind
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean)
+    .map((k) => (KNOWN_KINDS.has(k) ? t(`inbox:pane.kinds.${k}`) : k))
+    .join(" · ");
+}
 
 /**
  * Superhuman-style contact pane pinned to the right of the inbox list. Shows
  * the correspondent for the highlighted thread (avatar, name, email) and their
- * recent conversations. Purely presentational - the parent derives `thread` and
- * `recent` so this re-renders instantly on J/K / hover without extra queries.
+ * recent conversations. The parent derives `thread` and `recent` so this
+ * re-renders instantly on J/K / hover; the only query is the address-book card,
+ * and it is skipped entirely until a CardDAV server is connected.
  */
 export function ContactPane({
   thread,
@@ -24,6 +40,7 @@ export function ContactPane({
   const { t } = useTranslation();
 
   const primary = thread ? primaryCorrespondent(thread.participants, selfEmails) : null;
+  const { data: card } = useContactCard(primary?.email ?? null);
 
   // No selection (or a thread with no participants) - mainly first-paint/defensive,
   // since InboxScreen keeps a valid cursor whenever the list is non-empty.
@@ -51,10 +68,19 @@ export function ContactPane({
           {initials(primary)}
         </span>
         <div className="mt-3 max-w-full text-center">
-          <div className="truncate text-md font-semibold text-ink">{addressName(primary)}</div>
+          <div className="truncate text-md font-semibold text-ink">
+            {card?.name ?? addressName(primary)}
+          </div>
           <div className="mt-0.5 truncate text-sm text-ink-faint">{primary.email}</div>
+          {card && (card.title || card.org) && (
+            <div className="mt-0.5 truncate text-sm text-ink-muted">
+              {[card.title, card.org].filter(Boolean).join(", ")}
+            </div>
+          )}
         </div>
       </div>
+
+      {card && <CardDetails card={card} email={primary.email} />}
 
       {/* Recent conversations with this person */}
       <div className="border-t border-hairline px-4 py-4">
@@ -83,5 +109,55 @@ export function ContactPane({
         )}
       </div>
     </aside>
+  );
+}
+
+/** Address-book extras: the person's other addresses and phone numbers. */
+function CardDetails({ card, email }: { card: ContactCard; email: string }) {
+  const { t } = useTranslation();
+  const others = card.emails.filter((e) => e.email.toLowerCase() !== email.toLowerCase());
+  if (others.length === 0 && card.phones.length === 0) return null;
+  return (
+    <div className="border-t border-hairline px-4 py-4">
+      {others.length > 0 && (
+        <CardSection
+          label={t("inbox:pane.emails")}
+          rows={others.map((e) => ({ value: e.email, kind: kindLabel(e.kind, t) }))}
+        />
+      )}
+      {card.phones.length > 0 && (
+        <CardSection
+          label={t("inbox:pane.phones")}
+          rows={card.phones.map((p) => ({ value: p.number, kind: kindLabel(p.kind, t) }))}
+        />
+      )}
+      {card.addressBook && (
+        <p className="mt-1 px-1 text-xs text-ink-faint">
+          {t("inbox:pane.fromBook", { book: card.addressBook })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CardSection({
+  label,
+  rows,
+}: {
+  label: string;
+  rows: { value: string; kind: string | null }[];
+}) {
+  return (
+    <div className="mb-3">
+      <div className="mb-1 px-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+        {label}
+      </div>
+      {rows.map((r) => (
+        <div key={r.value} className="flex items-baseline gap-2 px-1 py-0.5 text-sm">
+          <span className="min-w-0 flex-1 truncate text-ink-muted select-text">{r.value}</span>
+          {r.kind && <span className="shrink-0 text-xs text-ink-faint">{r.kind}</span>}
+        </div>
+      ))}
+    </div>
   );
 }

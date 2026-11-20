@@ -18,6 +18,7 @@
   "oauthFailed": "Đăng nhập OAuth thất bại",
   "connectionFailed": "Kết nối thất bại",
   "caldav": "Lỗi máy chủ lịch",
+  "carddav": "Lỗi máy chủ danh bạ",
   "crash": {
     "title": "Đã xảy ra lỗi",
     "body": "Màn hình này gặp lỗi không mong muốn. Thư của bạn vẫn an toàn — hãy thử lại hoặc tải lại ứng dụng.",

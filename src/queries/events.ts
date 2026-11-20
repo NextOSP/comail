@@ -254,6 +254,16 @@ export function useBackendEvents() {
         void queryClient.invalidateQueries({ queryKey: ["messageEvents"] });
         void queryClient.invalidateQueries({ queryKey: ["calendars"] });
       }),
+      onEvent("contacts:updated", ({ changed }) => {
+        void queryClient.invalidateQueries({ queryKey: ["contactServers"] });
+        if (changed) {
+          // Address-book names replace header names for senders.
+          void queryClient.invalidateQueries({ queryKey: ["contactCard"] });
+          void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          void queryClient.invalidateQueries({ queryKey: ["bundles"] });
+          void queryClient.invalidateQueries({ queryKey: ["thread"] });
+        }
+      }),
       onEvent("calendar:new", ({ events }) => {
         void queryClient.invalidateQueries({ queryKey: ["events"] });
         void notifyNewEvents(events);

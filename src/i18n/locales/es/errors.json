@@ -18,6 +18,7 @@
   "oauthFailed": "Error al iniciar sesión con OAuth",
   "connectionFailed": "Error de conexión",
   "caldav": "Error del servidor de calendario",
+  "carddav": "Error del servidor de contactos",
   "crash": {
     "title": "Algo salió mal",
     "body": "Esta vista encontró un error inesperado. Tu correo está a salvo: inténtalo de nuevo o recarga la aplicación.",
