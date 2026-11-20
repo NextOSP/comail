@@ -817,7 +817,7 @@
   },
   "rules": {
     "section": "Règles",
-    "intro": "Exécutez des actions sur les nouveaux messages : ciblez-les avec une condition, une vérification IA, ou les deux. Les règles s’exécutent une fois par message, sur le courrier des 3 derniers jours.",
+    "intro": "Exécutez des actions sur les nouveaux messages : ciblez-les avec une condition, une vérification IA, ou les deux. Les règles s’exécutent une fois par message, sur le courrier des 3 derniers jours. Pour les appliquer au courrier déjà dans votre boîte de réception, utilisez Exécuter les automatisations.",
     "newTitle": "Nouvelle règle",
     "editTitle": "Modifier la règle",
     "editorHint": "Une condition est vérifiée localement et instantanément. Une vérification IA pose une question fermée (oui/non) au modèle de décision.",

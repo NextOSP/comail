@@ -1,5 +1,7 @@
 //! Inbox routing: resolve each thread to exactly one overlay tab so an email
 //! lands in a single place. Precedence:
+//!   0. the tab the user filed the thread into by labelling it with a category
+//!      (`threads.tab_override`, see [`label_tab_changed`])
 //!   1. user rules (split_rules, first match by position wins)
 //!   2. AI classifier (async, `Core::classify_pending`) when enabled + keyed
 //!   3. built-in heuristic ([`crate::autolabel::classify`]) when AI is off
@@ -163,6 +165,67 @@ pub fn apply_ai_tab(conn: &Connection, thread_id: i64, key: Option<&str>) -> Res
     Ok(true)
 }
 
+/// The tab the user filed a thread into by labelling it with a category (see
+/// [`label_tab_changed`]), while that category still exists. Routing keeps the
+/// thread there ahead of every rule.
+pub fn tab_override(conn: &Connection, thread_id: i64) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT tab_override FROM threads
+             WHERE id = ?1
+               AND tab_override IN (SELECT 'label:' || id FROM labels WHERE is_auto = 1)",
+            params![thread_id],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// A category label, which is also an inbox tab, was added to or removed from
+/// a thread, by hand or by a rule's label action. The label is the tab: adding
+/// it files the thread there and stores that choice in `threads.tab_override`,
+/// so later syncs and re-sorts keep the thread in place. Removing the label of
+/// the tab the thread is in sends it back to where the user's rules put it, or
+/// Important/Other, but not straight back into the tab it was taken out of.
+pub fn label_tab_changed(
+    conn: &Connection,
+    splits: &[SplitRule],
+    thread_id: i64,
+    label_id: i64,
+    added: bool,
+) -> Result<()> {
+    let key = format!("label:{label_id}");
+    if added {
+        conn.execute(
+            "UPDATE threads SET tab_override = ?2 WHERE id = ?1",
+            params![thread_id, key],
+        )?;
+        return apply_tab(conn, thread_id, Some(&key));
+    }
+    conn.execute(
+        "UPDATE threads SET tab_override = NULL WHERE id = ?1 AND tab_override = ?2",
+        params![thread_id, key],
+    )?;
+    let current: Option<String> = conn
+        .query_row(
+            "SELECT routed_tab FROM threads WHERE id = ?1",
+            params![thread_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if current.as_deref() != Some(key.as_str()) {
+        return Ok(());
+    }
+    let d = decide(&RuleSubject::load(conn, thread_id)?, splits);
+    let next = match d.route.map(|k| k.to_string()) {
+        Some(k) if k != key => Some(k),
+        Some(_) => None,
+        None if d.needs_ai => Some("pending".to_string()),
+        None => None,
+    };
+    apply_tab(conn, thread_id, next.as_deref())
+}
+
 /// Re-check only the user split rules for one thread and, if one now matches,
 /// route the thread to it. Unlike [`route_thread_deterministic`] it never falls
 /// through to the AI queue or heuristic, so a non-match leaves the thread's
@@ -174,7 +237,7 @@ pub fn reapply_splits_only(
     splits: &[SplitRule],
     thread_id: i64,
 ) -> Result<bool> {
-    if splits.is_empty() {
+    if splits.is_empty() || tab_override(conn, thread_id)?.is_some() {
         return Ok(false);
     }
     let d = decide(&RuleSubject::load(conn, thread_id)?, splits);
@@ -196,12 +259,16 @@ pub fn reapply_splits_only(
 /// that now matches claims the thread; if none does and the thread was in a
 /// split's own tab, it falls back (removing the label it was filed by). AI and
 /// heuristic verdicts are otherwise left alone, so labelling costs no model call.
+/// A thread filed into a tab by a category label stays there.
 pub fn reroute_after_label_change(
     conn: &Connection,
     splits: &[SplitRule],
     fallback: Fallback,
     thread_id: i64,
 ) -> Result<()> {
+    if tab_override(conn, thread_id)?.is_some() {
+        return Ok(());
+    }
     let current: Option<String> = conn
         .query_row(
             "SELECT routed_tab FROM threads WHERE id = ?1",
@@ -255,13 +322,18 @@ impl Fallback {
 }
 
 /// Resolve and store a thread's tab from rules, then `fallback` when no rule
-/// matches. `splits` must be position-ordered.
+/// matches. `splits` must be position-ordered. A thread the user filed into a
+/// tab by labelling it stays there.
 pub fn route_thread_deterministic(
     conn: &Connection,
     splits: &[SplitRule],
     fallback: Fallback,
     thread_id: i64,
 ) -> Result<()> {
+    if let Some(key) = tab_override(conn, thread_id)? {
+        apply_tab(conn, thread_id, Some(&key))?;
+        return Ok(());
+    }
     if !splits.is_empty() {
         let d = decide(&RuleSubject::load(conn, thread_id)?, splits);
         if let Some(key) = d.route {
@@ -1645,6 +1717,128 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    fn sender_rule(id: i64, sender: &str, target: Option<crate::models::RouteKey>) -> SplitRule {
+        SplitRule {
+            id,
+            name: format!("r{id}"),
+            position: id,
+            query: SplitRuleQuery {
+                senders: Some(vec![sender.into()]),
+                ..Default::default()
+            },
+            condition: None,
+            target,
+            ai: None,
+            count_all: false,
+        }
+    }
+
+    /// Issue #103: a category's label is its inbox tab. Labelling a thread
+    /// with it files the thread there, and no later routing moves it back.
+    #[test]
+    fn category_label_files_the_thread_and_keeps_it_there() {
+        use crate::db::repo::labels;
+        use crate::db::repo::threads::TabFilter;
+        use crate::models::RouteKey;
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        // An automated notification nothing claims: it sits in Other.
+        let (t, msg) = testutil::seed_message(&c, "notifications@github.com", "CI failed", true);
+        route_thread_deterministic(&c, &[], Fallback::Heuristic, t).unwrap();
+        assert_eq!(tab_ids(&c, TabFilter::Other), vec![t]);
+
+        let news = label_id(&c, "ComailAutoNews");
+        let key = format!("label:{news}");
+        labels::add_to_message(&c, msg, news).unwrap();
+        label_tab_changed(&c, &[], t, news, true).unwrap();
+        assert_eq!(routed(&c, t).as_deref(), Some(key.as_str()));
+        assert_eq!(tab_ids(&c, TabFilter::AutoLabel(news)), vec![t]);
+        assert!(tab_ids(&c, TabFilter::Other).is_empty());
+
+        // A rule for the sender, a full re-sort, a label re-check and a rule
+        // edit all leave it where the user put it.
+        let rules = vec![sender_rule(1, "github.com", Some(RouteKey::Other))];
+        route_thread_deterministic(&c, &rules, Fallback::Ai, t).unwrap();
+        assert!(!reapply_splits_only(&c, &rules, t).unwrap());
+        reroute_after_label_change(&c, &rules, Fallback::Heuristic, t).unwrap();
+        let ids = reroute::inbox_thread_ids(&c).unwrap();
+        assert_eq!(
+            reroute::apply_diff(&c, &[], &rules, Fallback::Heuristic, &ids).unwrap(),
+            0
+        );
+        assert_eq!(reroute::impact(&c, &[], &rules, 5).unwrap().moved, 0);
+        assert_eq!(routed(&c, t).as_deref(), Some(key.as_str()));
+        assert_eq!(labels::for_thread(&c, t).unwrap(), vec![news]);
+
+        // Filing it under another category moves it; one category at a time.
+        let social = label_id(&c, "ComailAutoSocial");
+        labels::add_to_message(&c, msg, social).unwrap();
+        label_tab_changed(&c, &rules, t, social, true).unwrap();
+        assert_eq!(routed(&c, t), Some(format!("label:{social}")));
+        assert_eq!(labels::for_thread(&c, t).unwrap(), vec![social]);
+
+        // Taking the label off sends it back to where the rules put it.
+        labels::remove_from_message(&c, msg, social).unwrap();
+        label_tab_changed(&c, &rules, t, social, false).unwrap();
+        assert_eq!(routed(&c, t).as_deref(), Some("other"));
+        assert_eq!(tab_override(&c, t).unwrap(), None);
+        // With no rule for it, routing decides again.
+        route_thread_deterministic(&c, &[], Fallback::Heuristic, t).unwrap();
+        assert_eq!(routed(&c, t), None);
+    }
+
+    #[test]
+    fn removing_a_category_label_leaves_that_tab() {
+        use crate::db::repo::labels;
+        use crate::db::repo::threads::TabFilter;
+        use crate::models::RouteKey;
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        // The heuristic files a digest under News, with the News chip.
+        let (t, msg) = testutil::seed_message(&c, "digest@daily.example", "Your digest", true);
+        let news = label_id(&c, "ComailAutoNews");
+        let key = format!("label:{news}");
+        route_thread_deterministic(&c, &[], Fallback::Heuristic, t).unwrap();
+        assert_eq!(routed(&c, t).as_deref(), Some(key.as_str()));
+
+        // Removing a category the thread isn't in changes nothing.
+        let social = label_id(&c, "ComailAutoSocial");
+        label_tab_changed(&c, &[], t, social, false).unwrap();
+        assert_eq!(routed(&c, t).as_deref(), Some(key.as_str()));
+
+        // Removing the chip takes it out of News, even though the heuristic
+        // and a rule targeting News would both put it straight back.
+        let rules = vec![sender_rule(1, "daily.example", Some(RouteKey::Label(news)))];
+        labels::remove_from_message(&c, msg, news).unwrap();
+        label_tab_changed(&c, &rules, t, news, false).unwrap();
+        assert_eq!(routed(&c, t), None);
+        assert_eq!(tab_ids(&c, TabFilter::Other), vec![t]);
+        assert!(labels::for_thread(&c, t).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deleting_a_category_releases_threads_filed_under_it() {
+        use crate::db::repo::labels;
+        let c = testutil::conn();
+        c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        testutil::seed_account(&c);
+        let (t, msg) = testutil::seed_message(&c, "a@b.c", "hi", false);
+        let cat = labels::create_auto(&c, "Invites", "#888").unwrap();
+        labels::add_to_message(&c, msg, cat.id).unwrap();
+        label_tab_changed(&c, &[], t, cat.id, true).unwrap();
+        assert!(tab_override(&c, t).unwrap().is_some());
+        labels::delete(&c, cat.id).unwrap();
+        let stored: Option<String> = c
+            .query_row(
+                "SELECT tab_override FROM threads WHERE id = ?1",
+                params![t],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, None);
+        assert_eq!(routed(&c, t), None);
     }
 
     #[test]

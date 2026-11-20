@@ -819,7 +819,7 @@
   },
   "rules": {
     "section": "Rules",
-    "intro": "Run actions on new mail: match it with a condition, an AI check, or both. Rules run once per message, on mail from the last 3 days.",
+    "intro": "Run actions on new mail: match it with a condition, an AI check, or both. Rules run once per message, on mail from the last 3 days. To apply them to mail already in your inbox, use Run automations.",
     "newTitle": "New rule",
     "editTitle": "Edit rule",
     "editorHint": "A condition is checked locally and instantly. An AI check asks the decision model a yes/no question.",

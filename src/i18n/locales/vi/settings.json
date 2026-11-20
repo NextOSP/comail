@@ -817,7 +817,7 @@
   },
   "rules": {
     "section": "Quy tắc",
-    "intro": "Thực hiện hành động với thư mới: khớp thư bằng một điều kiện, một kiểm tra AI, hoặc cả hai. Quy tắc chạy một lần cho mỗi thư, với thư trong 3 ngày gần nhất.",
+    "intro": "Thực hiện hành động với thư mới: khớp thư bằng một điều kiện, một kiểm tra AI, hoặc cả hai. Quy tắc chạy một lần cho mỗi thư, với thư trong 3 ngày gần nhất. Để áp dụng cho thư đã có trong hộp thư đến, hãy dùng Chạy tự động hóa.",
     "newTitle": "Quy tắc mới",
     "editTitle": "Sửa quy tắc",
     "editorHint": "Điều kiện được kiểm tra ngay trên máy và tức thì. Kiểm tra AI hỏi mô hình quyết định một câu hỏi có/không.",
