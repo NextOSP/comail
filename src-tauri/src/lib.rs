@@ -422,6 +422,7 @@ pub fn run() {
             commands::sync_now,
             commands::get_sync_status,
             commands::unread_counts,
+            commands::tab_totals,
             commands::relabel_auto,
             commands::reroute_all,
             commands::get_settings,

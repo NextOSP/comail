@@ -320,7 +320,9 @@
     "label": "Onglets de la boîte de réception",
     "newMail": "nouveau message",
     "unread_one": "{{count}} non lu",
-    "unread_other": "{{count}} non lus"
+    "unread_other": "{{count}} non lus",
+    "total_one": "{{count}} conversation",
+    "total_other": "{{count}} conversations"
   },
   "threadRow": {
     "hasAttachments": "Contient des pièces jointes",

@@ -531,3 +531,38 @@ export function splitCount(
   if (splitId === -2) return counts.other;
   return counts.splits[String(splitId)] ?? 0;
 }
+
+/** Every conversation each inbox tab holds (the "all" tab-count setting).
+ *  Keyed under ["unreadCounts"] so every badge invalidation refreshes it too. */
+export function useTabTotals(accountId: number | null, enabled = true) {
+  return useQuery({
+    queryKey: ["unreadCounts", "tabTotals", accountId],
+    queryFn: () => call("tab_totals", { accountId }),
+    enabled,
+    staleTime: 5_000,
+  });
+}
+
+/** One tab's number under the tab-count setting: unread conversations, every
+ *  conversation it holds, or nothing ("off", or totals still loading). */
+export function tabCount(
+  mode: "unread" | "all" | "off",
+  tab: { splitId?: number; labelId?: number },
+  counts: import("../ipc/types").UnreadCounts | undefined,
+  totals: import("../ipc/types").TabTotals | undefined,
+): number | undefined {
+  if (mode === "off") return undefined;
+  if (mode === "unread") {
+    return tab.labelId != null ? counts?.labels[String(tab.labelId)] : splitCount(counts, tab.splitId ?? null);
+  }
+  if (!totals) return undefined;
+  if (tab.labelId != null) return totals.labels[String(tab.labelId)];
+  if (tab.splitId === -1) return totals.important;
+  if (tab.splitId === -2) return totals.other;
+  return tab.splitId != null ? (totals.splits[String(tab.splitId)] ?? 0) : undefined;
+}
+
+/** A tab number as shown: capped at "99+" so a tab never needs more room. */
+export function formatTabCount(n: number): string {
+  return n > 99 ? "99+" : String(n);
+}

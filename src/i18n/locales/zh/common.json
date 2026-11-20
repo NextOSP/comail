@@ -320,7 +320,9 @@
     "label": "收件箱分栏",
     "newMail": "有新邮件",
     "unread_one": "{{count}} 封未读",
-    "unread_other": "{{count}} 封未读"
+    "unread_other": "{{count}} 封未读",
+    "total_one": "{{count}} 个会话",
+    "total_other": "{{count}} 个会话"
   },
   "threadRow": {
     "hasAttachments": "含附件",

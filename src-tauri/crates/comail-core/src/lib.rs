@@ -5023,6 +5023,18 @@ impl Core {
             .await
     }
 
+    /// Every conversation each inbox tab holds, read or not (the "all"
+    /// tab-count setting).
+    pub async fn tab_totals(&self, account_id: Option<i64>) -> Result<TabTotals> {
+        self.db
+            .read(move |conn| {
+                let splits = repo::splits::list(conn)?;
+                let labels = repo::labels::list(conn)?;
+                repo::counts::tab_totals(conn, account_id, &splits, &labels)
+            })
+            .await
+    }
+
     /// The newest verification code received in the last `max_age_minutes`.
     pub async fn latest_verification_code(
         &self,

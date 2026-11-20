@@ -320,7 +320,9 @@
     "label": "Các tab hộp thư",
     "newMail": "có thư mới",
     "unread_one": "{{count}} chưa đọc",
-    "unread_other": "{{count}} chưa đọc"
+    "unread_other": "{{count}} chưa đọc",
+    "total_one": "{{count}} cuộc hội thoại",
+    "total_other": "{{count}} cuộc hội thoại"
   },
   "threadRow": {
     "hasAttachments": "Có tệp đính kèm",

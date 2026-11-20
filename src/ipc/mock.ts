@@ -1472,6 +1472,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   inboxUi: "classic",
   showSenderPhotos: true,
   showBundles: true,
+  tabCounts: "unread",
   undoSendSeconds: 10,
   loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",
@@ -3225,6 +3226,27 @@ export async function mockInvoke(
           spam: pool.filter((t) => inView(t, "spam") && isUnread(t)).length,
           drafts: pool.filter((t) => inView(t, "drafts")).length,
         },
+      });
+    }
+
+    case "tab_totals": {
+      const accId = (a.accountId ?? null) as number | null;
+      const inbox = threads.filter(
+        (t) => (accId == null || t.accountId === accId) && inView(t, "inbox"),
+      );
+      const splitsMap: Record<string, number> = {};
+      for (const r of splits) {
+        splitsMap[String(r.id)] = inbox.filter((t) => inSplit(t, r.id)).length;
+      }
+      const labelsMap: Record<string, number> = {};
+      for (const l of labels) {
+        labelsMap[String(l.id)] = inbox.filter((t) => t.labels.includes(l.id)).length;
+      }
+      return delay({
+        important: inbox.filter((t) => inSplit(t, -1)).length,
+        other: inbox.filter((t) => inSplit(t, -2)).length,
+        splits: splitsMap,
+        labels: labelsMap,
       });
     }
 

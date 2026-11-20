@@ -568,6 +568,13 @@
     "label": "Afficher les autres onglets en haut",
     "hint": "Regroupe Marketing, Actualités, Social et Autres en lignes compactes au-dessus de vos e-mails Importants. Désactivez pour ne voir que Important."
   },
+  "tabCounts": {
+    "label": "Compteurs d'onglets",
+    "hint": "Le nombre à côté de chaque onglet de la boîte de réception. Tous indique combien de conversations contient un onglet, lues ou non, et le masque sur l'onglet ouvert.",
+    "unread": "Non lus",
+    "all": "Tous",
+    "off": "Désactivé"
+  },
   "groupByDate": {
     "label": "Grouper par date",
     "hint": "Afficher des en-têtes Aujourd'hui / Hier / … entre les conversations dans la liste."

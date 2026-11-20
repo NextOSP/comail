@@ -320,7 +320,9 @@
     "label": "Inbox tabs",
     "newMail": "new mail",
     "unread_one": "{{count}} unread",
-    "unread_other": "{{count}} unread"
+    "unread_other": "{{count}} unread",
+    "total_one": "{{count}} conversation",
+    "total_other": "{{count}} conversations"
   },
   "threadRow": {
     "hasAttachments": "Has attachments",

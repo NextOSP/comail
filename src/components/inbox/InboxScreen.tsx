@@ -3,12 +3,14 @@ import { useTranslation } from "react-i18next";
 import {
   flattenThreads,
   splitCount,
+  tabCount,
   useAccounts,
   useFolders,
   useInboxBundles,
   useLabels,
   useSettings,
   useSplits,
+  useTabTotals,
   useThreads,
   useUnreadCounts,
 } from "../../queries/hooks";
@@ -113,22 +115,26 @@ export function InboxScreen() {
   }, [showBundles, splits, labels, autoLabelsEnabled, t]);
   const bundleData = useInboxBundles(bundleTabs, accountFilter, showBundles);
   const { data: counts } = useUnreadCounts(accountFilter, showBundles);
+  // Bundle rows show the same number as their tab (Settings → Tab counts).
+  const countMode = settings?.tabCounts ?? "unread";
+  const { data: totals } = useTabTotals(accountFilter, showBundles && countMode === "all");
   const bundles = useMemo<Bundle[]>(
     () =>
       bundleTabs.flatMap((tab, i) => {
         const page = bundleData[i];
         if (!page || page.threads.length === 0) return [];
-        const count =
+        const unreadBadge =
           tab.labelId != null ? counts?.labels[String(tab.labelId)] : splitCount(counts, tab.splitId ?? null);
         // A count-all split's badge includes read mail, so it can't say whether
         // anything is unread; the loaded threads can.
         const countAll = splits?.find((s) => s.id === tab.splitId)?.countAll === true;
         const unread = countAll
           ? page.threads.some((th) => th.unreadCount > 0)
-          : (count ?? 0) > 0;
+          : (unreadBadge ?? 0) > 0;
+        const count = tabCount(countMode, tab, counts, totals);
         return [{ ...tab, count, unread, threads: page.threads }];
       }),
-    [bundleTabs, bundleData, counts, splits],
+    [bundleTabs, bundleData, counts, totals, countMode, splits],
   );
   const openBundle = useCallback((b: Bundle) => selectInboxTab(b), [selectInboxTab]);
 

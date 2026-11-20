@@ -91,6 +91,7 @@ const DEFAULT_SETTINGS: Settings = {
   inboxUi: "classic",
   showSenderPhotos: true,
   showBundles: true,
+  tabCounts: "unread",
   undoSendSeconds: 10,
   loadRemoteImages: false,
   aiBaseUrl: "",
@@ -789,6 +790,20 @@ export function SettingsPanel() {
                 />
               </SettingRow>
             )}
+            <SettingRow
+              label={t("settings:tabCounts.label")}
+              hint={t("settings:tabCounts.hint")}
+            >
+              <Segmented
+                value={s.tabCounts ?? "unread"}
+                options={[
+                  { value: "unread", label: t("settings:tabCounts.unread") },
+                  { value: "all", label: t("settings:tabCounts.all") },
+                  { value: "off", label: t("settings:tabCounts.off") },
+                ]}
+                onChange={(tabCounts) => void updateSettings({ tabCounts })}
+              />
+            </SettingRow>
             <SettingRow
               label={t("settings:groupByDate.label")}
               hint={t("settings:groupByDate.hint")}

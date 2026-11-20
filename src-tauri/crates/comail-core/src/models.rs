@@ -920,6 +920,17 @@ pub struct UnreadCounts {
     pub views: std::collections::HashMap<String, i64>,
 }
 
+/// Every conversation each inbox tab holds, read or not (the "all" tab-count
+/// setting). Same tab membership as `UnreadCounts`, without the unread filter.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabTotals {
+    pub important: i64,
+    pub other: i64,
+    pub splits: std::collections::HashMap<String, i64>,
+    pub labels: std::collections::HashMap<String, i64>,
+}
+
 /// One deterministic action attached to an AI-matched automation. `value` is
 /// a route key, label id, or local annotation text depending on `kind`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1014,6 +1025,11 @@ pub struct Settings {
     /// Important.
     #[serde(default = "default_true")]
     pub show_bundles: bool,
+    /// Number beside inbox tabs and bundle rows: "unread" (unread
+    /// conversations) | "all" (every conversation the tab holds, hidden on
+    /// the open tab) | "off".
+    #[serde(default = "default_tab_counts")]
+    pub tab_counts: String,
     pub undo_send_seconds: i64,
     pub load_remote_images: bool,
     #[serde(default = "default_ai_base_url")]
@@ -1338,6 +1354,9 @@ fn default_accent_color() -> String {
 fn default_inbox_ui() -> String {
     "classic".into()
 }
+fn default_tab_counts() -> String {
+    "unread".into()
+}
 fn default_ai_base_url() -> String {
     crate::ai::DEFAULT_BASE_URL.into()
 }
@@ -1386,6 +1405,7 @@ impl Default for Settings {
             inbox_ui: default_inbox_ui(),
             show_sender_photos: true,
             show_bundles: true,
+            tab_counts: default_tab_counts(),
             undo_send_seconds: 10,
             load_remote_images: true,
             ai_base_url: default_ai_base_url(),

@@ -320,7 +320,9 @@
     "label": "Pestañas de la bandeja",
     "newMail": "correo nuevo",
     "unread_one": "{{count}} sin leer",
-    "unread_other": "{{count}} sin leer"
+    "unread_other": "{{count}} sin leer",
+    "total_one": "{{count}} conversación",
+    "total_other": "{{count}} conversaciones"
   },
   "threadRow": {
     "hasAttachments": "Tiene adjuntos",

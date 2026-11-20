@@ -388,6 +388,14 @@ export interface UnreadCounts {
   views: Record<string, number>;
 }
 
+/** Every conversation each inbox tab holds, read or not ("all" tab counts). */
+export interface TabTotals {
+  important: number;
+  other: number;
+  splits: Record<string, number>;
+  labels: Record<string, number>;
+}
+
 /** A named, rich-HTML signature belonging to one account. */
 export interface Signature {
   id: string;
@@ -476,6 +484,9 @@ export interface Settings {
   showSenderPhotos: boolean;
   /** Avatar inbox UI: other tabs as bundle rows at the top of Important. */
   showBundles: boolean;
+  /** Number beside inbox tabs and bundle rows: unread conversations, every
+   *  conversation the tab holds (hidden on the open tab), or none. */
+  tabCounts: "unread" | "all" | "off";
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;
@@ -1188,6 +1199,8 @@ export interface Commands {
   get_sync_status(args: Record<string, never>): Promise<SyncStatus[]>;
   /** Exact unread counts for split tabs and sidebar rows. */
   unread_counts(args: { accountId?: number | null }): Promise<UnreadCounts>;
+  /** Every conversation each inbox tab holds, read or not. */
+  tab_totals(args: { accountId?: number | null }): Promise<TabTotals>;
   /** Re-run auto-label classification over stored mail; returns labeled count. */
   relabel_auto(args: Record<string, never>): Promise<number>;
   /** Re-resolve every thread's tab (rules + AI + heuristic); returns thread count. */

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { Address, ThreadSummary } from "../../ipc/types";
 import { addressName, primaryCorrespondent } from "../../lib/format";
+import { formatTabCount } from "../../queries/hooks";
 import type { Bundle } from "../../lib/listItems";
 import { Icon } from "../ui/Icon";
 import { Avatar } from "./Avatar";
@@ -58,7 +59,7 @@ function BundleRowImpl({
         <span className={`truncate text-base ${unread ? "font-medium text-ink" : "text-ink-muted"}`}>
           {bundle.name}
         </span>
-        {count > 0 && <span className="text-xs text-ink-faint tabular-nums">{count}</span>}
+        {count > 0 && <span className="text-xs text-ink-faint tabular-nums">{formatTabCount(count)}</span>}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
         {senders.map((s) => (

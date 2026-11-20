@@ -2,7 +2,16 @@ import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { activeInboxTabKey, inboxTabOrder } from "../../lib/splitOrder";
 import { useModHeld } from "../../lib/useModHeld";
-import { splitCount, useLabels, useSettings, useSplits, useUnreadCounts } from "../../queries/hooks";
+import {
+  formatTabCount,
+  splitCount,
+  tabCount,
+  useLabels,
+  useSettings,
+  useSplits,
+  useTabTotals,
+  useUnreadCounts,
+} from "../../queries/hooks";
 import { hasNewMail, useTabSeen } from "../../stores/tabSeen";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../../stores/ui";
 
@@ -16,6 +25,8 @@ export function SplitTabs() {
   const { data: labels } = useLabels();
   const { data: settings } = useSettings();
   const { data: counts } = useUnreadCounts(accountFilter);
+  const countMode = settings?.tabCounts ?? "unread";
+  const { data: totals } = useTabTotals(accountFilter, countMode === "all");
   // While ⌘/Ctrl is held, reveal each tab's jump-to number (Cmd+1..9).
   const modHeld = useModHeld();
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -40,7 +51,8 @@ export function SplitTabs() {
   // Roving tabindex: the active tab, or the first one while none is active.
   const focusKey = activeKey != null && tabs.some((tab) => tab.key === activeKey) ? activeKey : tabs[0]?.key;
 
-  // Current unread per tab; only tabs whose count is known take part.
+  // Current unread per tab; only tabs whose count is known take part. Drives
+  // the "new mail" dot whatever number the tab shows.
   const tabCounts = useMemo(() => {
     const out: Record<string, number> = {};
     for (const tab of tabs) {
@@ -104,7 +116,11 @@ export function SplitTabs() {
               else tabRefs.current.delete(tab.key);
             }}
             name={tab.name}
-            unread={tabCounts[tab.key]}
+            count={tabCount(countMode, tab, counts, totals)}
+            countLabel={countMode === "all" ? "total" : "unread"}
+            // The open tab's pile is in view, so "all" hides its number; the
+            // slot keeps its width so switching tabs doesn't shift the bar.
+            hideCount={countMode === "all" && activeKey === tab.key}
             hasNew={activeKey !== tab.key && hasNewMail(seen, tab.key, tabCounts[tab.key] ?? 0)}
             keyHint={index < 9 ? String(index + 1) : undefined}
             showKeyHint={modHeld}
@@ -125,7 +141,9 @@ export function SplitTabs() {
 function SplitTab({
   ref,
   name,
-  unread,
+  count: rawCount,
+  countLabel,
+  hideCount,
   hasNew,
   keyHint,
   showKeyHint,
@@ -135,7 +153,12 @@ function SplitTab({
 }: {
   ref: (el: HTMLButtonElement | null) => void;
   name: string;
-  unread: number | undefined;
+  /** the number beside the name (unread or total, per the tab-count setting) */
+  count: number | undefined;
+  /** what the number counts, for screen readers */
+  countLabel: "unread" | "total";
+  /** keep the number's room but don't show it (the open tab under "all") */
+  hideCount: boolean;
   /** mail arrived since the user last viewed this tab */
   hasNew: boolean;
   /** jump-to number (Cmd+1..9) */
@@ -148,8 +171,18 @@ function SplitTab({
   onClick: () => void;
 }) {
   const { t } = useTranslation();
-  const count = unread ?? 0;
+  const count = rawCount ?? 0;
   const hint = showKeyHint && keyHint;
+  const countCell = (
+    <span className="grid shrink-0 items-center justify-items-end" aria-hidden>
+      <span
+        className={`text-sm text-ink-faint tabular-nums [grid-area:1/1] ${hint || hideCount ? "invisible" : ""}`}
+      >
+        {formatTabCount(count)}
+      </span>
+      {keyHint && <span className={`co-kbd [grid-area:1/1] ${hint ? "" : "invisible"}`}>{keyHint}</span>}
+    </span>
+  );
   return (
     <button
       ref={ref}
@@ -174,30 +207,40 @@ function SplitTab({
           <span className="sr-only">{t("common:splitTabs.newMail")}</span>
         </>
       )}
-      <span className="max-w-[16ch] truncate">{name}</span>
-      {/* At rest a tab is just name + count. With a count, the jump-to number
-          overlays it in one grid cell so holding ⌘/Ctrl doesn't shift tabs;
-          a count-less tab shows the number only while held, so it never
-          carries a blank placeholder. */}
-      {count > 0 ? (
-        <span className="grid shrink-0 items-center justify-items-end" aria-hidden>
-          <span
-            className={`text-sm text-ink-faint tabular-nums [grid-area:1/1] ${hint ? "invisible" : ""}`}
-          >
-            {count}
+      {count > 0 && hideCount && !hint ? (
+        // The open tab under "all" counts: an invisible copy of name + number
+        // holds the tab at its usual width, and the name sits centered over
+        // it, so the spare room reads as padding rather than a missing number.
+        <span className="grid items-center">
+          <span className="invisible flex items-center gap-1.5 [grid-area:1/1]" aria-hidden>
+            <span className="max-w-[16ch] truncate">{name}</span>
+            {countCell}
           </span>
-          {keyHint && (
-            <span className={`co-kbd [grid-area:1/1] ${hint ? "" : "invisible"}`}>{keyHint}</span>
-          )}
+          <span className="max-w-[16ch] truncate justify-self-center [grid-area:1/1]">{name}</span>
         </span>
       ) : (
-        hint && (
-          <span className="co-kbd shrink-0" aria-hidden>
-            {keyHint}
-          </span>
-        )
+        <>
+          <span className="max-w-[16ch] truncate">{name}</span>
+          {/* At rest a tab is just name + count. With a count, the jump-to
+              number overlays it in one grid cell so holding ⌘/Ctrl doesn't
+              shift tabs; a count-less tab shows the number only while held,
+              so it never carries a blank placeholder. */}
+          {count > 0
+            ? countCell
+            : hint && (
+                <span className="co-kbd shrink-0" aria-hidden>
+                  {keyHint}
+                </span>
+              )}
+        </>
       )}
-      {count > 0 && <span className="sr-only">{t("common:splitTabs.unread", { count })}</span>}
+      {count > 0 && !hideCount && (
+        <span className="sr-only">
+          {countLabel === "total"
+            ? t("common:splitTabs.total", { count })
+            : t("common:splitTabs.unread", { count })}
+        </span>
+      )}
     </button>
   );
 }

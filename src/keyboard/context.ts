@@ -481,6 +481,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         inboxUi: "classic",
         showSenderPhotos: true,
         showBundles: true,
+        tabCounts: "unread",
         undoSendSeconds: 10,
         loadRemoteImages: false,
         aiBaseUrl: "",

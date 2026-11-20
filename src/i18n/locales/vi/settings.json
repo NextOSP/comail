@@ -568,6 +568,13 @@
     "label": "Hiện các tab khác ở trên cùng",
     "hint": "Gom Tiếp thị, Tin tức, Mạng xã hội và Khác thành các dòng gọn phía trên thư Quan trọng. Tắt để chỉ xem Quan trọng."
   },
+  "tabCounts": {
+    "label": "Số đếm trên tab",
+    "hint": "Con số cạnh mỗi tab hộp thư. Tất cả hiện số cuộc hội thoại trong tab, đã đọc hay chưa, và ẩn ở tab đang mở.",
+    "unread": "Chưa đọc",
+    "all": "Tất cả",
+    "off": "Tắt"
+  },
   "groupByDate": {
     "label": "Nhóm theo ngày",
     "hint": "Hiển thị tiêu đề Hôm nay / Hôm qua / … giữa các cuộc hội thoại trong danh sách."

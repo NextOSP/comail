@@ -568,6 +568,13 @@
     "label": "Mostrar otras pestañas arriba",
     "hint": "Agrupa Marketing, Noticias, Social y Otros en filas compactas sobre tu correo Importante. Desactívalo para ver solo Importante."
   },
+  "tabCounts": {
+    "label": "Contadores de pestañas",
+    "hint": "El número junto a cada pestaña del buzón. Todos muestra cuántas conversaciones tiene una pestaña, leídas o no, y lo oculta en la pestaña abierta.",
+    "unread": "No leídos",
+    "all": "Todos",
+    "off": "Desactivado"
+  },
   "groupByDate": {
     "label": "Agrupar por fecha",
     "hint": "Muestra encabezados Hoy / Ayer / … entre conversaciones en la lista."

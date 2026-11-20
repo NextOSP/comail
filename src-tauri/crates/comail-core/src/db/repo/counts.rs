@@ -3,7 +3,7 @@
 //! threads.rs so the two evolve independently.
 
 use crate::error::Result;
-use crate::models::{Label, SplitRule, UnreadCounts, roles};
+use crate::models::{Label, SplitRule, TabTotals, UnreadCounts, roles};
 use rusqlite::Connection;
 use std::collections::HashMap;
 
@@ -210,6 +210,43 @@ pub fn unread_counts(
         splits: splits_map,
         labels: labels_map,
         views,
+    })
+}
+
+/// How many conversations each inbox tab holds, read or not. Same tab
+/// membership as the badges in `unread_counts`, minus the unread filter; only
+/// queried while the "all" tab-count setting is on.
+pub fn tab_totals(
+    conn: &Connection,
+    account_id: Option<i64>,
+    splits: &[SplitRule],
+    labels: &[Label],
+) -> Result<TabTotals> {
+    let important = Q::any(account_id).inbox().bucket(false).run(conn)?;
+    let other = Q::any(account_id).inbox().bucket(true).run(conn)?;
+
+    let mut splits_map = HashMap::new();
+    for sp in splits {
+        let n = Q::any(account_id).inbox().routed_split(sp.id).run(conn)?;
+        splits_map.insert(sp.id.to_string(), n);
+    }
+
+    let mut labels_map = HashMap::new();
+    for l in labels {
+        let q = Q::any(account_id).inbox();
+        let n = if l.is_auto {
+            q.routed_label(l.id).run(conn)?
+        } else {
+            q.label(l.id).run(conn)?
+        };
+        labels_map.insert(l.id.to_string(), n);
+    }
+
+    Ok(TabTotals {
+        important,
+        other,
+        splits: splits_map,
+        labels: labels_map,
     })
 }
 
@@ -434,5 +471,55 @@ mod tests {
         // untouched by it.
         assert_eq!(all.inbox, unread_only.inbox);
         assert_eq!(all.important, unread_only.important);
+    }
+
+    #[test]
+    fn tab_totals_count_read_and_unread_per_tab() {
+        let conn = test_db();
+        seed_thread(&conn, 1, 1, false); // unread human -> Important
+        seed_thread(&conn, 2, 0, false); // read human -> Important
+        seed_thread(&conn, 3, 0, true); // read automated -> Other
+        seed_thread(&conn, 4, 0, false); // read, routed to split 7
+        seed_thread(&conn, 5, 1, true); // unread, routed to auto label 9
+        conn.execute("UPDATE threads SET routed_tab = 'split:7' WHERE id = 4", [])
+            .unwrap();
+        conn.execute("UPDATE threads SET routed_tab = 'label:9' WHERE id = 5", [])
+            .unwrap();
+        // Snoozed mail is out of the inbox, so no tab holds it.
+        seed_thread(&conn, 6, 0, false);
+        conn.execute(
+            "INSERT INTO snoozes (thread_id, account_id, wake_at) VALUES (6, 1, 9999999999999)",
+            [],
+        )
+        .unwrap();
+
+        let split = SplitRule {
+            id: 7,
+            name: "s".into(),
+            position: 0,
+            query: SplitRuleQuery::default(),
+            condition: None,
+            target: None,
+            ai: None,
+            count_all: false,
+        };
+        let label = Label {
+            id: 9,
+            name: "News".into(),
+            color: "#fff".into(),
+            keyword: "KwNews".into(),
+            position: 0,
+            is_auto: true,
+        };
+
+        let t = tab_totals(&conn, None, &[split.clone()], &[label.clone()]).unwrap();
+        assert_eq!(t.important, 2, "read and unread Important mail");
+        assert_eq!(t.other, 1);
+        assert_eq!(t.splits["7"], 1);
+        assert_eq!(t.labels["9"], 1);
+
+        let none = tab_totals(&conn, Some(99), &[split], &[label]).unwrap();
+        assert_eq!(none.important, 0);
+        assert_eq!(none.splits["7"], 0);
     }
 }

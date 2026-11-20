@@ -570,6 +570,13 @@
     "label": "Show other tabs at the top",
     "hint": "Bundles Marketing, News, Social and Other into compact rows above your Important mail. Turn off to see only Important here."
   },
+  "tabCounts": {
+    "label": "Tab counts",
+    "hint": "The number next to each inbox tab. All shows how many conversations a tab holds, read or not, and hides it on the tab you're on.",
+    "unread": "Unread",
+    "all": "All",
+    "off": "Off"
+  },
   "groupByDate": {
     "label": "Group by date",
     "hint": "Show Today / Yesterday / … headers between conversations in the list."

@@ -1038,6 +1038,14 @@ pub async fn unread_counts(
 }
 
 #[tauri::command]
+pub async fn tab_totals(
+    state: State<'_, AppState>,
+    account_id: Option<i64>,
+) -> CmdResult<TabTotals> {
+    state.core.tab_totals(account_id).await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn sender_avatar(state: State<'_, AppState>, email: String) -> CmdResult<Option<String>> {
     Ok(state.core.sender_avatar(&email).await)
 }
