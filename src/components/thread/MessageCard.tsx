@@ -17,7 +17,11 @@ import {
   trimTrailingEmptyHtml,
 } from "../../lib/quotes";
 import { InviteCard } from "../calendar/InviteCard";
-import { dispatchKeyboardEvent, reclaimIframeFocus } from "../../keyboard/registry";
+import {
+  dispatchKeyboardEvent,
+  installFrameMouseNav,
+  reclaimIframeFocus,
+} from "../../keyboard/registry";
 import { fileKind } from "../../lib/fileKind";
 import { AttachmentThumb } from "./viewer/AttachmentThumb";
 import { Icon } from "../ui/Icon";
@@ -709,6 +713,8 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     // fire in here, and a click is the only way focus gets in - so reclaim
     // focus for the parent right after each click / completed selection.
     doc.addEventListener("mouseup", reclaimIframeFocus);
+    // Mouse back/forward over the body fire in here, not on the parent window.
+    installFrameMouseNav(doc);
     // In Blink, keydowns do fire on this document while it briefly holds
     // focus, so also route them through the registry directly. It applies its own guards (typing in a field or
     // activating a focused link is left native), so we forward every key -

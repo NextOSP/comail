@@ -296,6 +296,21 @@ function handleMouseNav(e: MouseEvent) {
   }
 }
 
+/** Mouse events over an iframe fire on the iframe's own document and never
+ *  reach the parent window, so the listeners below go deaf whenever the
+ *  pointer rests on an email body or attachment preview - which it does right
+ *  after clicking a thread open (#107). Those frames are same-origin
+ *  (`allow-same-origin`), so their owners call this from `onLoad` to route the
+ *  extra buttons through the same handler. That also cancels the webview's own
+ *  back/forward inside the frame, which would otherwise step the iframe's
+ *  history (e.g. back to an earlier srcdoc). Other buttons are left alone, so
+ *  selection, links and the context menu are unaffected. */
+export function installFrameMouseNav(doc: Document) {
+  doc.addEventListener("mousedown", handleMouseNav);
+  doc.addEventListener("mouseup", handleMouseNav);
+  doc.addEventListener("auxclick", handleMouseNav);
+}
+
 /** Install the global mouse back/forward handler (idempotent). */
 export function installMouseNav() {
   if (mouseInstalled) return () => {};
