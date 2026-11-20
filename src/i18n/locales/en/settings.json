@@ -799,6 +799,15 @@
     },
     "custom": "Custom color"
   },
+  "zoom": {
+    "label": "Zoom",
+    "hint": "Scale the interface and message text.",
+    "failed": "Couldn’t apply zoom: {{detail}}"
+  },
+  "darkContrast": {
+    "label": "Higher text contrast in dark mode",
+    "hint": "Brighten text on dark backgrounds."
+  },
   "font": {
     "hint": "The typeface used across Comail. Message bodies keep their own fonts.",
     "system": "System",

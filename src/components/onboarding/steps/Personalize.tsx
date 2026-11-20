@@ -5,7 +5,7 @@ import { ACCENT_PRESETS, accentHex, DEFAULT_ACCENT } from "../../../lib/accent";
 import { MOD_LABEL } from "../../../lib/format";
 import { useSettings } from "../../../queries/hooks";
 import { useUi } from "../../../stores/ui";
-import { updateSettings } from "../../settings/SettingsPanel";
+import { updateSettings } from "../../../queries/settings";
 import { Icon } from "../../ui/Icon";
 import { Item, PrimaryCta, SPRING, Stagger, StepHeader } from "../flowParts";
 

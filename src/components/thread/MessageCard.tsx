@@ -525,6 +525,11 @@ function BodySkeleton({ snippet }: { snippet?: string | null }) {
   );
 }
 
+function syncEmailTextColors(root: HTMLElement, style: CSSStyleDeclaration) {
+  root.style.setProperty("--comail-text", style.getPropertyValue("--text").trim());
+  root.style.setProperty("--comail-muted", style.getPropertyValue("--text-muted").trim());
+}
+
 /** Sanitized HTML rendered inside a sandboxed iframe with theme-matched CSS.
  *  The trailing quoted/forwarded reply is collapsed behind a "⋯" toggle so a
  *  message shows just its new content, matching the plaintext path. */
@@ -589,7 +594,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
   html, body { margin: 0; padding: 0; background: transparent; height: auto !important; min-height: 0 !important; }
   body {
     font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: ${text}; overflow-wrap: break-word;
+    color: var(--comail-text, ${text}); overflow-wrap: break-word;
     /* The app sets a global user-select:none; make email text explicitly
        selectable so the user can copy content (e.g. an OTP) out of it. */
     -webkit-user-select: text; user-select: text;
@@ -606,7 +611,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     text-decoration-color: color-mix(in srgb, ${accent} 40%, transparent); }
   a:hover { text-decoration-line: underline; }
   ::selection { background: color-mix(in srgb, ${accent} 24%, transparent); }
-  h1, h2, h3, h4, h5, h6 { color: ${text}; line-height: 1.3; }
+  h1, h2, h3, h4, h5, h6 { color: var(--comail-text, ${text}); line-height: 1.3; }
   /* max-width caps an overflowing image; height:auto keeps its aspect ratio
      when that cap shrinks the width. Scope height:auto to imgs that declare a
      width - an unconditional rule overrides a height-only signature logo's
@@ -623,10 +628,15 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     border-radius: 8px; overflow-x: auto; }
   pre code { background: none; padding: 0; font-size: inherit; }
   blockquote { border-left: 3px solid color-mix(in srgb, ${accent} 45%, transparent);
-    margin: 0.8em 0; padding: 2px 0 2px 14px; color: ${muted}; }
+    margin: 0.8em 0; padding: 2px 0 2px 14px; color: var(--comail-muted, ${muted}); }
   table { max-width: 100%; }
 </style></head><body>${body}</body></html>`;
   }, [html, loadRemoteImages, theme]);
+
+  useEffect(() => {
+    const root = iframeRef.current?.contentDocument?.documentElement;
+    if (root) syncEmailTextColors(root, getComputedStyle(document.documentElement));
+  }, [settings?.higherDarkContrast]);
 
   // Wide emails (fixed-width layout tables, long unbreakable tokens) overflow
   // the card and would otherwise show a horizontal scrollbar. Zoom the whole
@@ -684,6 +694,7 @@ function HtmlBody({ html: fullHtml, messageId }: { html: string; messageId: numb
     // when the sanitizer stripped its <style>/class rule (it would render
     // invisibly on our light card).
     const rootStyle = getComputedStyle(document.documentElement);
+    syncEmailTextColors(doc.documentElement, rootStyle);
     const scheme = rootStyle.getPropertyValue("--iframe-scheme").trim();
     if (scheme === "dark") {
       adaptDocumentForDarkMode(doc.body);

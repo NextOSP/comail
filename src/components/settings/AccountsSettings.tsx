@@ -11,7 +11,7 @@ import { useUi } from "../../stores/ui";
 import { Icon } from "../ui/Icon";
 import { Modal } from "../ui/Modal";
 import { SWATCHES } from "./LabelsPanel";
-import { updateSettings } from "./SettingsPanel";
+import { updateSettings } from "../../queries/settings";
 import {
   Button,
   ConfirmButton,

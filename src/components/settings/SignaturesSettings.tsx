@@ -12,7 +12,7 @@ import { RichBody } from "../compose/RichBody";
 import { Icon } from "../ui/Icon";
 import { Modal } from "../ui/Modal";
 import { Button, ConfirmButton, EmptyState, FormField, inputCls, Segmented, Select, SettingRow, SettingsGroup, Toggle } from "./panelKit";
-import { updateSettings } from "./SettingsPanel";
+import { updateSettings } from "../../queries/settings";
 
 type Defaults = Settings["signatureDefaults"];
 

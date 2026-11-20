@@ -24,6 +24,7 @@ import { syncNowAndRefresh, useManualSyncBusy } from "../../lib/syncNow";
 import { normalizeSyncStatus } from "../../lib/syncStatus";
 import { inboxTabOrder } from "../../lib/splitOrder";
 import { queryClient } from "../../queries/client";
+import { updateSettings } from "../../queries/settings";
 import {
   useAccounts,
   useAiModels,
@@ -53,6 +54,7 @@ import {
   isCustomAccent,
 } from "../../lib/accent";
 import { FONT_PRESETS, normalizeFontFamily } from "../../lib/font";
+import { DEFAULT_ZOOM_PERCENT, ZOOM_LEVELS, zoomPercent } from "../../lib/zoom";
 import { splitModelTags, tagsFor, toggleModelTag } from "../../lib/modelTags";
 import { usesOpenRouter } from "../../lib/openrouter";
 import { ShortcutsSection } from "./ShortcutsSettings";
@@ -91,6 +93,8 @@ const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   accentColor: DEFAULT_ACCENT,
   fontFamily: "",
+  zoomPercent: DEFAULT_ZOOM_PERCENT,
+  higherDarkContrast: false,
   language: "system",
   calendarWeekStart: "monday",
   inboxUi: "classic",
@@ -163,28 +167,6 @@ const DEFAULT_SETTINGS: Settings = {
   accountShortNames: {},
   keyboardShortcuts: {},
 };
-
-/** Optimistic settings write: cache first, backend follows, rollback on error. */
-export async function updateSettings(patch: Partial<Settings>): Promise<boolean> {
-  const cur =
-    queryClient.getQueryData<Settings>(["settings"]) ?? DEFAULT_SETTINGS;
-  const next: Settings = { ...cur, ...patch };
-  queryClient.setQueryData(["settings"], next);
-  if (patch.theme) useUi.getState().set({ theme: patch.theme });
-  try {
-    await call("set_settings", { settings: next });
-    return true;
-  } catch (err) {
-    useUi.getState().pushToast({
-      kind: "error",
-      message: i18n.t("settings:toast.settingsSaveFailed", {
-        detail: errorMessage(err),
-      }),
-    });
-    void queryClient.invalidateQueries({ queryKey: ["settings"] });
-    return false;
-  }
-}
 
 function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
   if (tab === "ai") return <Icon name="sparkle" size={18} className="co-ai-icon" />;
@@ -357,6 +339,7 @@ export function SettingsPanel() {
 
   if (!open) return null;
   const s = settings ?? DEFAULT_SETTINGS;
+  const formatZoom = new Intl.NumberFormat(i18n.language, { style: "percent" });
 
   // The inbox tabs a "specific tabs" notification scope can pick from, keyed by
   // the same route keys the backend stores in `threads.routed_tab`.
@@ -444,6 +427,16 @@ export function SettingsPanel() {
       tab: "appearance",
       label: t("settings:theme.label"),
       keywords: "appearance dark light snow carbon color",
+    },
+    {
+      tab: "appearance",
+      label: t("settings:zoom.label"),
+      keywords: "text size font scale enlarge magnify accessibility",
+    },
+    {
+      tab: "appearance",
+      label: t("settings:darkContrast.label"),
+      keywords: "dark mode text brightness readability accessibility",
     },
     {
       tab: "appearance",
@@ -776,8 +769,34 @@ export function SettingsPanel() {
                 onChange={(accentColor) => void updateSettings({ accentColor })}
               />
             </SettingRow>
+            <SettingRow
+              label={t("settings:darkContrast.label")}
+              hint={t("settings:darkContrast.hint")}
+            >
+              <Toggle
+                label={t("settings:darkContrast.label")}
+                checked={s.higherDarkContrast}
+                onChange={(higherDarkContrast) => void updateSettings({ higherDarkContrast })}
+              />
+            </SettingRow>
             </SettingsGroup>
             <SettingsGroup title={t("settings:groups.font")}>
+              <SettingRow
+                label={t("settings:zoom.label")}
+                hint={t("settings:zoom.hint")}
+              >
+                <Select
+                  aria-label={t("settings:zoom.label")}
+                  value={zoomPercent(s.zoomPercent)}
+                  onChange={(e) => void updateSettings({ zoomPercent: Number(e.target.value) })}
+                >
+                  {ZOOM_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {formatZoom.format(level / 100)}
+                    </option>
+                  ))}
+                </Select>
+              </SettingRow>
               <FontPicker
                 value={s.fontFamily ?? ""}
                 onChange={(fontFamily) => void updateSettings({ fontFamily })}

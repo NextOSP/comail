@@ -1,6 +1,7 @@
 // In-memory mock backend so the whole app demos in a plain browser
 // (`pnpm dev` without Tauri). Implements every command in the contract.
 
+import { DEFAULT_ZOOM_PERCENT } from "../lib/zoom";
 import { emitMockEvent } from "./mockEvents";
 import type {
   Calendar,
@@ -1470,6 +1471,8 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   theme: "system",
   accentColor: "violet",
   fontFamily: "",
+  zoomPercent: DEFAULT_ZOOM_PERCENT,
+  higherDarkContrast: false,
   language: "system",
   calendarWeekStart: "monday",
   inboxUi: "classic",

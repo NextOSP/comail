@@ -20,7 +20,7 @@ import {
   Toggle,
 } from "./panelKit";
 import { CLIENT_LOGOS } from "./mcpLogos";
-import { updateSettings } from "./SettingsPanel";
+import { updateSettings } from "../../queries/settings";
 
 function useMcpStatus() {
   return useQuery({

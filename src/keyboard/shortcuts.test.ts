@@ -361,6 +361,24 @@ describe("dispatch", () => {
     dispatchKeyboardEvent(keydown("F1"));
     expect(useUi.getState().helpOpen).toBe(true);
   });
+
+  it.each([
+    ["+", true, "zoom-in"],
+    ["+", false, "zoom-in"],
+    ["=", false, "zoom-in"],
+    ["-", false, "zoom-out"],
+    ["0", false, "zoom-reset"],
+  ] as const)("dispatches key %s with shift=%s to %s", (key, shift, id) => {
+    const run = vi.fn();
+    registerCommands(ALL_COMMANDS.map((command) => command.id === id ? { ...command, run } : command));
+    dispatchKeyboardEvent(keydown(key, { shift }));
+    expect(run).not.toHaveBeenCalled();
+    const event = keydown(key, { mod: true, shift });
+    event.preventDefault = vi.fn();
+    dispatchKeyboardEvent(event);
+    expect(run).toHaveBeenCalledOnce();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
 });
 
 describe("translations", () => {

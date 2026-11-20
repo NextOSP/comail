@@ -57,7 +57,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
-        className={`co-pop-in max-w-[calc(100vw-32px)] border border-hairline bg-bg1 shadow-elev-2 ${
+        className={`co-pop-in max-w-[calc(100%-32px)] border border-hairline bg-bg1 shadow-elev-2 ${
           sheet ? "rounded-sheet" : "rounded-card"
         } ${className}`}
         style={{ width, ...style }}
