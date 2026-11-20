@@ -660,6 +660,27 @@
     "makeDefault": "Hacer predeterminado",
     "colorTip": "Cambiar el color del calendario"
   },
+  "contacts": {
+    "section": "Contactos (CardDAV)",
+    "hint": "Sincronización de solo lectura de tus libretas de direcciones de Nextcloud, Fastmail, iCloud, Radicale o cualquier servidor CardDAV. Sus nombres aparecen en las sugerencias de destinatarios, en los remitentes y en el panel de contacto; no se modifica nada en el servidor.",
+    "connectCarddav": "Conectar CardDAV…",
+    "connect": "Conectar",
+    "urlPlaceholder": "URL del servidor, p. ej. https://carddav.fastmail.com",
+    "username": "Usuario",
+    "appPassword": "Contraseña de aplicación",
+    "reuseLogin": "Usar el inicio de sesión del calendario ({{username}} en {{host}})",
+    "connected": "Libretas de direcciones conectadas - primera sincronización en curso",
+    "disconnected": "Contactos desconectados - los nombres aprendidos del correo se conservan",
+    "syncStarted": "Sincronización de contactos iniciada",
+    "syncNow": "Sincronizar ahora",
+    "disconnect": "Desconectar",
+    "syncedAt": "Sincronizado {{when}}",
+    "notSynced": "Aún no sincronizado",
+    "failed": "La última sincronización falló: {{error}}",
+    "needsReauth": "El servidor rechazó el usuario o la contraseña de aplicación: desconecta y vuelve a conectar.",
+    "cardCount_one": "{{count}} con correo",
+    "cardCount_other": "{{count}} con correo"
+  },
   "meetingReminder": {
     "label": "Recordatorios de reuniones",
     "hint": "Notificación de escritorio antes de que empiece el evento; haz clic para unirte a la llamada.",
@@ -695,7 +716,7 @@
     "notifications": "Alertas de escritorio, sonidos e indicador del Dock.",
     "reading": "Cómo se abren los mensajes y qué pasa después de actuar sobre uno.",
     "compose": "Comportamiento al enviar y tus firmas.",
-    "calendar": "Vista de calendario, recordatorios de reuniones y calendarios conectados.",
+    "calendar": "Vista de calendario, recordatorios de reuniones, calendarios conectados y libretas de direcciones.",
     "about": "Versión, actualizaciones y diagnóstico.",
     "mcp": "Permite que Claude, ChatGPT, Cursor, VS Code y otras apps de IA usen tu correo mediante MCP."
   },

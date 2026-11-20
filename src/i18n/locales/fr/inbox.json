@@ -24,7 +24,20 @@
     "empty": "Aucune conversation sélectionnée",
     "recent": "Conversations récentes",
     "noRecent": "Aucune autre conversation",
-    "noSubject": "(sans objet)"
+    "noSubject": "(sans objet)",
+    "emails": "E-mail",
+    "phones": "Téléphone",
+    "fromBook": "Depuis le carnet d’adresses : {{book}}",
+    "kinds": {
+      "home": "Domicile",
+      "work": "Travail",
+      "cell": "Mobile",
+      "mobile": "Mobile",
+      "fax": "Fax",
+      "main": "Principal",
+      "other": "Autre",
+      "pager": "Bipeur"
+    }
   },
   "tips": {
     "done": "pour marquer comme traité",

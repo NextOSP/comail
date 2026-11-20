@@ -41,12 +41,12 @@ export function errorMessage(err: unknown): string {
   const { code, message } = parseError(err);
   if (isAiKeyRejected(err)) return i18n.t("errors:ai_key_rejected");
   const localized = i18n.t(`errors:${code}`, { defaultValue: message });
-  // CalDAV/calendar failures are opaque without the server's own reason (an
+  // CalDAV/CardDAV failures are opaque without the server's own reason (an
   // HTTP status, "no calendars found", a redirect target). The generic label
   // alone leaves the user stuck, so append the backend detail when it carries
   // more than the label already says.
-  if (code === "caldav") {
-    const detail = message.replace(/^caldav error:\s*/i, "").trim();
+  if (code === "caldav" || code === "carddav") {
+    const detail = message.replace(/^ca(?:l|rd)dav error:\s*/i, "").trim();
     if (detail && detail !== localized) return `${localized}: ${detail}`;
   }
   // "other"/"unknown" are the catch-all buckets: every AI failure (unparseable

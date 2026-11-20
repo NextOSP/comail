@@ -18,6 +18,7 @@
   "oauthFailed": "Échec de la connexion OAuth",
   "connectionFailed": "Échec de la connexion",
   "caldav": "Erreur du serveur de calendrier",
+  "carddav": "Erreur du serveur de contacts",
   "crash": {
     "title": "Une erreur s’est produite",
     "body": "Cette vue a rencontré une erreur inattendue. Vos e-mails sont en sécurité : réessayez ou rechargez l’application.",

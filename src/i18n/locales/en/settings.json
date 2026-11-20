@@ -662,6 +662,27 @@
     "makeDefault": "Make default",
     "colorTip": "Change calendar color"
   },
+  "contacts": {
+    "section": "Contacts (CardDAV)",
+    "hint": "Read-only sync of your address books from Nextcloud, Fastmail, iCloud, Radicale or any CardDAV server. Their names show in recipient suggestions, on senders and in the contact pane; nothing is changed on the server.",
+    "connectCarddav": "Connect CardDAV…",
+    "connect": "Connect",
+    "urlPlaceholder": "Server URL, e.g. https://carddav.fastmail.com",
+    "username": "Username",
+    "appPassword": "App password",
+    "reuseLogin": "Use the calendar sign-in ({{username}} on {{host}})",
+    "connected": "Address books connected - first sync running",
+    "disconnected": "Contacts disconnected - names learned from mail stay",
+    "syncStarted": "Contact sync started",
+    "syncNow": "Sync now",
+    "disconnect": "Disconnect",
+    "syncedAt": "Synced {{when}}",
+    "notSynced": "Not synced yet",
+    "failed": "Last sync failed: {{error}}",
+    "needsReauth": "The server rejected the username or app password - disconnect and connect again.",
+    "cardCount_one": "{{count}} with email",
+    "cardCount_other": "{{count}} with email"
+  },
   "meetingReminder": {
     "label": "Meeting reminders",
     "hint": "Desktop notification before events start; click it to join the call.",
@@ -697,7 +718,7 @@
     "notifications": "Desktop alerts, sounds and the dock badge.",
     "reading": "How messages open and what happens after you act on one.",
     "compose": "Sending behavior and your signatures.",
-    "calendar": "Calendar view, meeting reminders and connected calendars.",
+    "calendar": "Calendar view, meeting reminders, connected calendars and address books.",
     "about": "Version, updates and diagnostics.",
     "mcp": "Let Claude, ChatGPT, Cursor, VS Code and other AI apps use your mail through MCP."
   },

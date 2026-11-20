@@ -660,6 +660,27 @@
     "makeDefault": "Définir par défaut",
     "colorTip": "Changer la couleur du calendrier"
   },
+  "contacts": {
+    "section": "Contacts (CardDAV)",
+    "hint": "Synchronisation en lecture seule de vos carnets d’adresses depuis Nextcloud, Fastmail, iCloud, Radicale ou tout serveur CardDAV. Leurs noms apparaissent dans les suggestions de destinataires, sur les expéditeurs et dans le panneau de contact ; rien n’est modifié sur le serveur.",
+    "connectCarddav": "Connecter CardDAV…",
+    "connect": "Connecter",
+    "urlPlaceholder": "URL du serveur, p. ex. https://carddav.fastmail.com",
+    "username": "Identifiant",
+    "appPassword": "Mot de passe d’application",
+    "reuseLogin": "Utiliser l’identifiant du calendrier ({{username}} sur {{host}})",
+    "connected": "Carnets d’adresses connectés - première synchronisation en cours",
+    "disconnected": "Contacts déconnectés - les noms appris des e-mails sont conservés",
+    "syncStarted": "Synchronisation des contacts lancée",
+    "syncNow": "Synchroniser",
+    "disconnect": "Déconnecter",
+    "syncedAt": "Synchronisé {{when}}",
+    "notSynced": "Pas encore synchronisé",
+    "failed": "Échec de la dernière synchronisation : {{error}}",
+    "needsReauth": "Le serveur a refusé l’identifiant ou le mot de passe d’application - déconnectez puis reconnectez.",
+    "cardCount_one": "{{count}} avec e-mail",
+    "cardCount_other": "{{count}} avec e-mail"
+  },
   "meetingReminder": {
     "label": "Rappels de réunion",
     "hint": "Notification avant le début de l’événement ; cliquez pour rejoindre l’appel.",
@@ -695,7 +716,7 @@
     "notifications": "Alertes de bureau, sons et pastille du Dock.",
     "reading": "Ouverture des messages et ce qui se passe après une action.",
     "compose": "Comportement d'envoi et vos signatures.",
-    "calendar": "Vue du calendrier, rappels de réunion et calendriers connectés.",
+    "calendar": "Vue du calendrier, rappels de réunion, calendriers et carnets d’adresses connectés.",
     "about": "Version, mises à jour et diagnostics.",
     "mcp": "Laissez Claude, ChatGPT, Cursor, VS Code et d'autres apps d'IA utiliser votre courrier via MCP."
   },

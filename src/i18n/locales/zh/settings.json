@@ -660,6 +660,27 @@
     "makeDefault": "设为默认",
     "colorTip": "更改日历颜色"
   },
+  "contacts": {
+    "section": "联系人 (CardDAV)",
+    "hint": "以只读方式同步来自 Nextcloud、Fastmail、iCloud、Radicale 或任何 CardDAV 服务器的通讯录。其中的姓名会显示在收件人建议、发件人和联系人面板中；不会修改服务器上的任何内容。",
+    "connectCarddav": "连接 CardDAV…",
+    "connect": "连接",
+    "urlPlaceholder": "服务器地址，如 https://carddav.fastmail.com",
+    "username": "用户名",
+    "appPassword": "应用专用密码",
+    "reuseLogin": "使用日历的登录信息（{{host}} 上的 {{username}}）",
+    "connected": "通讯录已连接 - 正在进行首次同步",
+    "disconnected": "联系人已断开 - 从邮件中获知的姓名仍保留",
+    "syncStarted": "联系人同步已开始",
+    "syncNow": "立即同步",
+    "disconnect": "断开连接",
+    "syncedAt": "同步于 {{when}}",
+    "notSynced": "尚未同步",
+    "failed": "上次同步失败：{{error}}",
+    "needsReauth": "服务器拒绝了用户名或应用专用密码 - 请断开后重新连接。",
+    "cardCount_one": "{{count}} 个有邮箱",
+    "cardCount_other": "{{count}} 个有邮箱"
+  },
   "meetingReminder": {
     "label": "会议提醒",
     "hint": "日程开始前发送桌面通知；点击即可加入会议。",
@@ -695,7 +716,7 @@
     "notifications": "桌面提醒、声音和程序坞标记。",
     "reading": "邮件如何打开，以及操作后接下来发生什么。",
     "compose": "发送行为和你的签名。",
-    "calendar": "日历视图、会议提醒和已连接的日历。",
+    "calendar": "日历视图、会议提醒、已连接的日历和通讯录。",
     "about": "版本、更新和诊断。",
     "mcp": "通过 MCP 让 Claude、ChatGPT、Cursor、VS Code 等 AI 应用使用你的邮件。"
   },

@@ -18,6 +18,7 @@
   "oauthFailed": "OAuth 登录失败",
   "connectionFailed": "连接失败",
   "caldav": "日历服务器错误",
+  "carddav": "联系人服务器错误",
   "crash": {
     "title": "出错了",
     "body": "此视图遇到意外错误。您的邮件是安全的——请重试或重新加载应用。",

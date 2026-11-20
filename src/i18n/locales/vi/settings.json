@@ -660,6 +660,27 @@
     "makeDefault": "Đặt làm mặc định",
     "colorTip": "Đổi màu lịch"
   },
+  "contacts": {
+    "section": "Danh bạ (CardDAV)",
+    "hint": "Đồng bộ chỉ đọc sổ địa chỉ từ Nextcloud, Fastmail, iCloud, Radicale hoặc bất kỳ máy chủ CardDAV nào. Tên trong danh bạ hiện ở gợi ý người nhận, tên người gửi và khung liên hệ; không có gì bị thay đổi trên máy chủ.",
+    "connectCarddav": "Kết nối CardDAV…",
+    "connect": "Kết nối",
+    "urlPlaceholder": "URL máy chủ, ví dụ https://carddav.fastmail.com",
+    "username": "Tên đăng nhập",
+    "appPassword": "Mật khẩu ứng dụng",
+    "reuseLogin": "Dùng thông tin đăng nhập của lịch ({{username}} trên {{host}})",
+    "connected": "Đã kết nối sổ địa chỉ - đang đồng bộ lần đầu",
+    "disconnected": "Đã ngắt kết nối danh bạ - tên học được từ thư vẫn được giữ",
+    "syncStarted": "Đã bắt đầu đồng bộ danh bạ",
+    "syncNow": "Đồng bộ ngay",
+    "disconnect": "Ngắt kết nối",
+    "syncedAt": "Đã đồng bộ {{when}}",
+    "notSynced": "Chưa đồng bộ",
+    "failed": "Lần đồng bộ gần nhất thất bại: {{error}}",
+    "needsReauth": "Máy chủ từ chối tên đăng nhập hoặc mật khẩu ứng dụng - hãy ngắt kết nối rồi kết nối lại.",
+    "cardCount_one": "{{count}} có email",
+    "cardCount_other": "{{count}} có email"
+  },
   "meetingReminder": {
     "label": "Nhắc cuộc họp",
     "hint": "Thông báo trên máy trước khi sự kiện bắt đầu; nhấp để tham gia cuộc gọi.",
@@ -695,7 +716,7 @@
     "notifications": "Cảnh báo trên màn hình, âm thanh và huy hiệu Dock.",
     "reading": "Cách thư được mở và điều xảy ra sau khi bạn thao tác.",
     "compose": "Cách gửi thư và chữ ký của bạn.",
-    "calendar": "Chế độ xem lịch, nhắc cuộc họp và lịch đã kết nối.",
+    "calendar": "Chế độ xem lịch, nhắc cuộc họp, lịch và sổ địa chỉ đã kết nối.",
     "about": "Phiên bản, cập nhật và chẩn đoán.",
     "mcp": "Cho phép Claude, ChatGPT, Cursor, VS Code và các ứng dụng AI khác dùng thư của bạn qua MCP."
   },

@@ -4,6 +4,9 @@
 import { emitMockEvent } from "./mockEvents";
 import type {
   Calendar,
+  CalendarLogin,
+  ContactCard,
+  ContactServer,
   Account,
   ActionResult,
   Address,
@@ -1801,6 +1804,58 @@ const mockCalendars: Calendar[] = [
   },
 ];
 
+// CardDAV contacts (read-only). Starts disconnected; connect_contacts adds a
+// server with two address books whose cards feed get_contact_card.
+const mockContactServers: ContactServer[] = [];
+const mockCards: { book: string; card: ContactCard }[] = [
+  {
+    book: "Contacts",
+    card: {
+      name: "Elena Marsh",
+      nickname: "Lena",
+      org: "Quietloop",
+      title: "Founder",
+      emails: [
+        { email: "elena@quietloop.dev", kind: "work" },
+        { email: "elena.marsh@fastmail.com", kind: "home" },
+      ],
+      phones: [{ number: "+44 20 7946 0958", kind: "cell" }],
+      addressBook: "Contacts",
+    },
+  },
+  {
+    book: "Contacts",
+    card: {
+      name: "Sofia Lindqvist",
+      nickname: null,
+      org: "Brightline",
+      title: null,
+      emails: [{ email: "sofia@brightline.se", kind: null }],
+      phones: [
+        { number: "+46 8 123 456 78", kind: "work" },
+        { number: "+46 70 123 45 67", kind: "cell" },
+      ],
+      addressBook: "Contacts",
+    },
+  },
+  {
+    book: "Work",
+    card: {
+      name: "Tom Okafor",
+      nickname: null,
+      org: "Northbeam",
+      title: "Staff engineer",
+      emails: [{ email: "tom@northbeam.com", kind: "work" }],
+      phones: [],
+      addressBook: "Work",
+    },
+  },
+];
+
+function mockCardCount(book: string): number {
+  return mockCards.filter((c) => c.book === book).length;
+}
+
 // Attach the CRDT walkthrough invite to Elena's "Calendar invite sent"
 // message so the thread invite card (RSVP) renders in mock mode.
 {
@@ -3563,6 +3618,111 @@ export async function mockInvoke(
 
     case "calendar_sync_now":
       return delay(undefined, 150);
+
+    case "connect_contacts": {
+      const args = a.args as {
+        accountId: number;
+        url: string;
+        username?: string;
+        password?: string;
+        reuseCalendarAccountId?: number | null;
+      };
+      const url = args.url.trim();
+      if (!url) throw new Error("server URL is required");
+      if (args.reuseCalendarAccountId == null && !args.password) {
+        throw new Error("password is required");
+      }
+      const base = (url.includes("://") ? url : `https://${url}`).replace(/\/$/, "");
+      const now = Date.now();
+      const server: ContactServer = {
+        accountId: args.accountId,
+        baseUrl: base,
+        username:
+          args.reuseCalendarAccountId != null
+            ? (accounts.find((x) => x.id === args.reuseCalendarAccountId)?.email ?? null)
+            : (args.username ?? null),
+        lastError: null,
+        lastSyncedAt: now,
+        addressBooks: ["Contacts", "Work"].map((name) => ({
+          id: id(),
+          accountId: args.accountId,
+          url: `${base}/addressbooks/${name.toLowerCase()}/`,
+          displayName: name,
+          enabled: true,
+          cardCount: mockCardCount(name),
+          lastSyncedAt: now,
+        })),
+      };
+      const at = mockContactServers.findIndex((s) => s.accountId === args.accountId);
+      if (at === -1) mockContactServers.push(server);
+      else mockContactServers[at] = server;
+      return delay(structuredClone(server), 500);
+    }
+
+    case "disconnect_contacts": {
+      const accountId = a.accountId as number;
+      const at = mockContactServers.findIndex((s) => s.accountId === accountId);
+      if (at !== -1) mockContactServers.splice(at, 1);
+      emitMockEvent("contacts:updated", { accountId, changed: true });
+      return delay(undefined, 100);
+    }
+
+    case "list_contact_servers":
+      return delay(structuredClone(mockContactServers), 40);
+
+    case "set_address_book_enabled": {
+      for (const s of mockContactServers) {
+        const book = s.addressBooks.find((b) => b.id === (a.addressBookId as number));
+        if (book) {
+          book.enabled = a.enabled as boolean;
+          emitMockEvent("contacts:updated", { accountId: s.accountId, changed: true });
+        }
+      }
+      return delay(undefined, 60);
+    }
+
+    case "contacts_sync_now": {
+      const accountId = a.accountId as number | null | undefined;
+      for (const s of mockContactServers) {
+        if (accountId != null && s.accountId !== accountId) continue;
+        s.lastSyncedAt = Date.now();
+        s.lastError = null;
+        // The real backend reports back when the pull finishes.
+        setTimeout(() => emitMockEvent("contacts:updated", { accountId: s.accountId, changed: false }), 600);
+      }
+      return delay(undefined, 150);
+    }
+
+    case "get_contact_card": {
+      const email = ((a.email as string) ?? "").toLowerCase();
+      const enabled = new Set(
+        mockContactServers.flatMap((s) =>
+          s.addressBooks.filter((b) => b.enabled).map((b) => b.displayName),
+        ),
+      );
+      const hit = mockCards.find(
+        (c) => enabled.has(c.book) && c.card.emails.some((e) => e.email === email),
+      );
+      return delay(hit ? structuredClone(hit.card) : null, 30);
+    }
+
+    case "list_calendar_logins": {
+      const logins: CalendarLogin[] = [];
+      for (const cal of mockCalendars) {
+        const host = new URL(cal.url).host;
+        let login = logins.find((l) => l.accountId === cal.accountId);
+        if (!login) {
+          login = {
+            accountId: cal.accountId,
+            username: accounts.find((x) => x.id === cal.accountId)?.email ?? "",
+            hosts: [],
+          };
+          logins.push(login);
+        }
+        if (!login.hosts.includes(host)) login.hosts.push(host);
+      }
+      return delay(logins, 30);
+    }
 
     case "ui_ready":
       return delay(undefined, 10);

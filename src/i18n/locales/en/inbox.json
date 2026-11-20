@@ -24,7 +24,20 @@
     "empty": "No conversation selected",
     "recent": "Recent conversations",
     "noRecent": "No other conversations",
-    "noSubject": "(no subject)"
+    "noSubject": "(no subject)",
+    "emails": "Email",
+    "phones": "Phone",
+    "fromBook": "From address book: {{book}}",
+    "kinds": {
+      "home": "Home",
+      "work": "Work",
+      "cell": "Mobile",
+      "mobile": "Mobile",
+      "fax": "Fax",
+      "main": "Main",
+      "other": "Other",
+      "pager": "Pager"
+    }
   },
   "tips": {
     "done": "to mark done",

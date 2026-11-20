@@ -24,7 +24,20 @@
     "empty": "Chưa chọn cuộc trò chuyện",
     "recent": "Cuộc trò chuyện gần đây",
     "noRecent": "Không có cuộc trò chuyện nào khác",
-    "noSubject": "(không có chủ đề)"
+    "noSubject": "(không có chủ đề)",
+    "emails": "Email",
+    "phones": "Điện thoại",
+    "fromBook": "Từ sổ địa chỉ: {{book}}",
+    "kinds": {
+      "home": "Nhà",
+      "work": "Công việc",
+      "cell": "Di động",
+      "mobile": "Di động",
+      "fax": "Fax",
+      "main": "Chính",
+      "other": "Khác",
+      "pager": "Máy nhắn tin"
+    }
   },
   "tips": {
     "done": "để đánh dấu xong",
