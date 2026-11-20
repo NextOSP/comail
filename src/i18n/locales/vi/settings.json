@@ -177,6 +177,12 @@
     "resort": "Chạy tự động hóa",
     "resorting": "Đang chạy…",
     "resorted": "Đã xử lý {{count}} cuộc hội thoại",
+    "resortConfirm_one": "Thao tác này chạy quy tắc của bạn trên {{count}} cuộc hội thoại trong hộp thư đến.",
+    "resortConfirm_other": "Thao tác này chạy quy tắc của bạn trên {{count}} cuộc hội thoại trong hộp thư đến.",
+    "resortConfirmEvery": "Thao tác này chạy quy tắc của bạn trên mọi cuộc hội thoại trong hộp thư đến.",
+    "resortConfirmActions": "Hành động với thư khớp: {{actions}}.",
+    "resortConfirmAi": "Tối đa một yêu cầu AI cho mỗi cuộc hội thoại.",
+    "resortConfirmRun": "Chạy",
     "actions": {
       "route_to": "Chuyển đến tab",
       "add_label": "Thêm nhãn",
@@ -822,7 +828,7 @@
   },
   "rules": {
     "section": "Quy tắc",
-    "intro": "Thực hiện hành động với thư mới: khớp thư bằng một điều kiện, một kiểm tra AI, hoặc cả hai. Quy tắc chạy một lần cho mỗi thư, với thư trong 3 ngày gần nhất.",
+    "intro": "Thực hiện hành động với thư mới: khớp thư bằng một điều kiện, một kiểm tra AI, hoặc cả hai. Quy tắc chạy một lần cho mỗi thư, với thư trong 3 ngày gần nhất. Để áp dụng cho thư đã có trong hộp thư đến, hãy dùng Chạy tự động hóa.",
     "newTitle": "Quy tắc mới",
     "editTitle": "Sửa quy tắc",
     "editorHint": "Điều kiện được kiểm tra ngay trên máy và tức thì. Kiểm tra AI hỏi mô hình quyết định một câu hỏi có/không.",

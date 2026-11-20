@@ -131,6 +131,26 @@ fn rule(
 /// Seed an offline account, three inbound messages (two recent, one too old
 /// to automate) and the settings, all before the core starts.
 async fn seed(db: &Db, settings: Settings) -> Vec<i64> {
+    let day = 24 * 60 * 60 * 1000;
+    seed_mail(
+        db,
+        settings,
+        vec![
+            ("billing@vendor.test", "Invoice 1042", 0, false),
+            ("friend@pals.test", "Dinner?", 0, false),
+            ("billing@vendor.test", "Invoice 0999", 10 * day, false),
+        ],
+    )
+    .await
+}
+
+/// Seed an offline account, one inbox thread per `(from, subject, age in ms,
+/// automated)` and the settings, all before the core starts.
+async fn seed_mail(
+    db: &Db,
+    settings: Settings,
+    mail: Vec<(&'static str, &'static str, i64, bool)>,
+) -> Vec<i64> {
     db.write(move |conn| {
         let port = dead_port();
         let account_id = repo::accounts::insert(
@@ -148,16 +168,8 @@ async fn seed(db: &Db, settings: Settings) -> Vec<i64> {
             },
         )?;
         let inbox = repo::folders::upsert(conn, account_id, "INBOX", None, Some(roles::INBOX))?;
-        let day = 24 * 60 * 60 * 1000;
         let mut ids = Vec::new();
-        for (i, (from, subject, age)) in [
-            ("billing@vendor.test", "Invoice 1042", 0),
-            ("friend@pals.test", "Dinner?", 0),
-            ("billing@vendor.test", "Invoice 0999", 10 * day),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (i, (from, subject, age, automated)) in mail.into_iter().enumerate() {
             let thread_id = repo::threads::create(conn, account_id, None, subject)?;
             let msg = repo::messages::NewMessage {
                 account_id,
@@ -183,7 +195,7 @@ async fn seed(db: &Db, settings: Settings) -> Vec<i64> {
                 is_starred: false,
                 is_draft: false,
                 is_outgoing: false,
-                is_automated: false,
+                is_automated: automated,
                 has_attachments: false,
                 size: None,
                 snippet: "amount due".into(),
@@ -483,4 +495,235 @@ async fn per_rule_confidence_overrides_global() {
     while core.run_automations(50).await.unwrap() > 0 {}
     let s = state(&db, &threads).await;
     assert_eq!(s[0].0, "[L] ", "0.8 passes the global 0.6 but not 0.95");
+}
+
+/// Mark the one-shot startup re-sort done, so it can't race a test's own.
+async fn skip_backfill(db: &Db) {
+    db.write(|conn| {
+        conn.execute(
+            "INSERT INTO route_cache (sender_domain, route_key)
+             VALUES ('__routing_backfill__', '1')",
+            [],
+        )?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
+
+/// A rule that moves mail matching `condition` to the tab `route`.
+fn route_rule(id: &str, condition: RuleCondition, route: &str) -> AiAutomationRule {
+    AiAutomationRule {
+        id: id.into(),
+        name: id.into(),
+        source_prompt: String::new(),
+        instruction: String::new(),
+        enabled: true,
+        actions: vec![AiAutomationAction {
+            kind: "route_to".into(),
+            value: route.into(),
+        }],
+        condition: Some(condition),
+        min_confidence: None,
+    }
+}
+
+fn sorted_ids(page: ThreadPage) -> Vec<i64> {
+    let mut ids: Vec<i64> = page.threads.iter().map(|t| t.id).collect();
+    ids.sort();
+    ids
+}
+
+/// The reporter's tabs in #103: the built-in categories replaced by three.
+async fn reporter_categories(core: &Core) -> Vec<Label> {
+    for label in core.list_labels().await.unwrap() {
+        if label.is_auto {
+            core.delete_label(label.id).await.unwrap();
+        }
+    }
+    let mut out = Vec::new();
+    for name in ["Notifications", "Newsletters", "Invites"] {
+        out.push(
+            core.create_category(name.into(), "#888888".into(), String::new())
+                .await
+                .unwrap(),
+        );
+    }
+    out
+}
+
+/// Issue #103: rules made under Rules & automations never filed the mail
+/// already in the inbox. "Run automations" only re-ran split rules and
+/// categories, and the automation rules only ever saw newly received mail.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_automations_files_mail_already_in_the_inbox() {
+    insecure_creds();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = Paths::for_tests(tmp.path());
+    paths.ensure().unwrap();
+    let db = Db::open(&paths.db_file()).unwrap();
+    let day = 24 * 60 * 60 * 1000;
+    let threads = seed_mail(
+        &db,
+        Settings::default(),
+        vec![
+            (
+                "notifications@github.com",
+                "Re: [NextOSP/comail] Understanding tabs and tagging (Issue #103)",
+                0,
+                true,
+            ),
+            (
+                "wordpress@blog.example",
+                "[My Blog] Please moderate: \"Hello world\"",
+                12 * day,
+                true,
+            ),
+            ("friend@pals.test", "Dinner?", 0, false),
+        ],
+    )
+    .await;
+    skip_backfill(&db).await;
+    let core = Core::start(Paths::for_tests(tmp.path())).await.unwrap();
+    // The mail arrived before any rule existed, so it counts as handled.
+    core.run_automations(50).await.unwrap();
+
+    // Notifications is the first of the reporter's three tabs.
+    let tab_id = reporter_categories(&core).await[0].id;
+    let notifications = format!("label:{tab_id}");
+    let mut settings = core.get_settings().await.unwrap();
+    settings.ai_automation_rules = vec![
+        route_rule(
+            "github",
+            RuleCondition::Sender {
+                op: TextOp::EndsWith,
+                value: "@github.com".into(),
+            },
+            &notifications,
+        ),
+        route_rule(
+            "wordpress",
+            RuleCondition::Sender {
+                op: TextOp::Contains,
+                value: "wordpress".into(),
+            },
+            &notifications,
+        ),
+    ];
+    core.set_settings(settings).await.unwrap();
+
+    // The background pass only looks at new mail: nothing here moves.
+    assert_eq!(core.run_automations(50).await.unwrap(), 0);
+    assert_eq!(tabs(&db, &threads).await, vec![None, None, None]);
+    // "Re-run auto labels" re-sorts without running the rules.
+    core.relabel_auto().await.unwrap();
+    assert_eq!(tabs(&db, &threads).await, vec![None, None, None]);
+
+    // "Run automations".
+    core.reroute_all().await.unwrap();
+    let filed = vec![Some(notifications.clone()), Some(notifications), None];
+    assert_eq!(tabs(&db, &threads).await, filed);
+    let tab = core
+        .list_threads(View::Inbox, None, None, Some(tab_id), None, None, 50)
+        .await
+        .unwrap();
+    assert_eq!(sorted_ids(tab), vec![threads[0], threads[1]]);
+    let other = core
+        .list_threads(View::Inbox, Some(-2), None, None, None, None, 50)
+        .await
+        .unwrap();
+    assert!(other.threads.is_empty(), "nothing left in Other");
+
+    // Running it again changes nothing.
+    core.reroute_all().await.unwrap();
+    assert_eq!(tabs(&db, &threads).await, filed);
+}
+
+/// Issue #103: giving a conversation a category's label files it under that
+/// tab, and it stays there through re-sorts until the label comes off. Other
+/// labels stay plain tags.
+#[tokio::test(flavor = "multi_thread")]
+async fn category_label_moves_the_conversation_to_its_tab() {
+    insecure_creds();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = Paths::for_tests(tmp.path());
+    paths.ensure().unwrap();
+    let db = Db::open(&paths.db_file()).unwrap();
+    let threads = seed_mail(
+        &db,
+        Settings::default(),
+        vec![
+            ("news@letters.example", "This week in Rust", 0, true),
+            ("friend@pals.test", "Dinner?", 0, false),
+        ],
+    )
+    .await;
+    skip_backfill(&db).await;
+    let core = Core::start(Paths::for_tests(tmp.path())).await.unwrap();
+    let categories = reporter_categories(&core).await;
+    let newsletters = categories[1].id;
+    let label = |kind, thread: i64, label_id: i64| PerformActionArgs {
+        kind,
+        thread_ids: vec![thread],
+        params: Some(ActionParams {
+            wake_at: None,
+            target_folder_id: None,
+            label_id: Some(label_id),
+        }),
+    };
+
+    core.perform_action(label(ActionKind::AddLabel, threads[0], newsletters))
+        .await
+        .unwrap();
+    let key = format!("label:{newsletters}");
+    assert_eq!(tabs(&db, &threads).await, vec![Some(key.clone()), None]);
+    let tab = core
+        .list_threads(View::Inbox, None, None, Some(newsletters), None, None, 50)
+        .await
+        .unwrap();
+    assert_eq!(sorted_ids(tab), vec![threads[0]]);
+
+    // A rule sending this sender elsewhere, then "Run automations": it stays.
+    let mut settings = core.get_settings().await.unwrap();
+    settings.ai_automation_rules = vec![route_rule(
+        "letters",
+        RuleCondition::Sender {
+            op: TextOp::EndsWith,
+            value: "@letters.example".into(),
+        },
+        "important",
+    )];
+    core.set_settings(settings).await.unwrap();
+    core.reroute_all().await.unwrap();
+    assert_eq!(tabs(&db, &threads).await, vec![Some(key), None]);
+
+    // Taking the label off sends it back; the next run applies the rule.
+    core.perform_action(label(ActionKind::RemoveLabel, threads[0], newsletters))
+        .await
+        .unwrap();
+    assert_eq!(tabs(&db, &threads).await, vec![None, None]);
+    core.reroute_all().await.unwrap();
+    assert_eq!(
+        tabs(&db, &threads).await,
+        vec![Some("important".into()), None]
+    );
+
+    // A label that isn't a tab is just a tag.
+    let work = core
+        .save_label(None, "Work".into(), "#2563eb".into(), 0)
+        .await
+        .unwrap();
+    core.perform_action(label(ActionKind::AddLabel, threads[1], work.id))
+        .await
+        .unwrap();
+    assert_eq!(tabs(&db, &threads).await[1], None);
+
+    // With category tabs switched off, a category label is a tag too.
+    let mut settings = core.get_settings().await.unwrap();
+    settings.auto_labels_enabled = false;
+    core.set_settings(settings).await.unwrap();
+    core.perform_action(label(ActionKind::AddLabel, threads[1], newsletters))
+        .await
+        .unwrap();
+    assert_eq!(tabs(&db, &threads).await[1], None);
 }

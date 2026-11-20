@@ -13,6 +13,7 @@ const counts: UnreadCounts = {
   views: {},
 };
 const totals: TabTotals = {
+  inbox: 172,
   important: 120,
   other: 40,
   splits: { "7": 12 },

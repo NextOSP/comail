@@ -177,6 +177,12 @@
     "resort": "Ejecutar automatizaciones",
     "resorting": "Ejecutando…",
     "resorted": "{{count}} conversaciones procesadas",
+    "resortConfirm_one": "Esto ejecuta tus reglas en {{count}} conversación de la bandeja de entrada.",
+    "resortConfirm_other": "Esto ejecuta tus reglas en {{count}} conversaciones de la bandeja de entrada.",
+    "resortConfirmEvery": "Esto ejecuta tus reglas en todas las conversaciones de la bandeja de entrada.",
+    "resortConfirmActions": "Acciones sobre el correo que coincida: {{actions}}.",
+    "resortConfirmAi": "Hasta una solicitud de IA por conversación.",
+    "resortConfirmRun": "Ejecutar",
     "actions": {
       "route_to": "Mover a la pestaña",
       "add_label": "Añadir etiqueta",
@@ -822,7 +828,7 @@
   },
   "rules": {
     "section": "Reglas",
-    "intro": "Ejecuta acciones sobre el correo nuevo: identifícalo con una condición, una comprobación de IA o ambas. Las reglas se ejecutan una vez por mensaje, sobre el correo de los últimos 3 días.",
+    "intro": "Ejecuta acciones sobre el correo nuevo: identifícalo con una condición, una comprobación de IA o ambas. Las reglas se ejecutan una vez por mensaje, sobre el correo de los últimos 3 días. Para aplicarlas al correo que ya está en tu bandeja de entrada, usa Ejecutar automatizaciones.",
     "newTitle": "Nueva regla",
     "editTitle": "Editar regla",
     "editorHint": "Una condición se comprueba localmente y al instante. Una comprobación de IA hace al modelo de decisión una pregunta de sí o no.",

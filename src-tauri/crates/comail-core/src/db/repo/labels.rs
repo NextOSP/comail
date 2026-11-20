@@ -91,6 +91,10 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
         "UPDATE threads SET routed_tab = NULL WHERE routed_tab = ?1",
         params![key],
     )?;
+    conn.execute(
+        "UPDATE threads SET tab_override = NULL WHERE tab_override = ?1",
+        params![key],
+    )?;
     // A rule that routed matches into this category would dangle (and fail the
     // message_labels foreign key on the next route); revert those rules to their
     // own tab.

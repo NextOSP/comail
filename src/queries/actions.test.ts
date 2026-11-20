@@ -90,6 +90,61 @@ describe("trash destination caches", () => {
   });
 });
 
+describe("category labels are inbox tabs (#103)", () => {
+  type Page = { pages: { threads: ThreadSummary[]; nextCursor: null }[]; pageParams: null[] };
+  const page = (...threads: ThreadSummary[]): Page => ({
+    pages: [{ threads, nextCursor: null }],
+    pageParams: [null],
+  });
+  const inbox = (splitId: number | null, labelId: number | null = null) =>
+    ["threads", "inbox", splitId, null, labelId, null] as const;
+  const important = inbox(-1);
+  const newsletters = inbox(null, 5);
+  const whole = inbox(null);
+  const work = ["threads", "all", null, null, 7, null] as const;
+  const rows = (key: readonly unknown[]) =>
+    queryClient.getQueryData<Page>(key)!.pages[0].threads.map((t) => [t.id, t.labels]);
+
+  beforeEach(() => {
+    queryClient.setQueryData(["labels"], [
+      { id: 5, name: "Newsletters", color: "#888", keyword: "k5", position: 0, isAuto: true },
+      { id: 6, name: "Invites", color: "#888", keyword: "k6", position: 1, isAuto: true },
+      { id: 7, name: "Work", color: "#888", keyword: "Work", position: 2, isAuto: false },
+    ]);
+    const filed = { ...thread(1), labels: [6, 7] };
+    queryClient.setQueryData(important, page(filed, thread(2)));
+    queryClient.setQueryData(newsletters, page(thread(3)));
+    queryClient.setQueryData(whole, page(filed, thread(2), thread(3)));
+    queryClient.setQueryData(work, page(filed));
+  });
+
+  it("files the conversation under the category's tab right away", async () => {
+    await performThreadAction("add_label", [1], { labelId: 5 });
+    expect(rows(important)).toEqual([[2, []]]);
+    // The whole inbox and plain-label views keep it, with one category chip.
+    expect(rows(whole)[0]).toEqual([1, [7, 5]]);
+    expect(rows(work)).toEqual([[1, [7, 5]]]);
+    // The destination tab comes from the backend.
+    expect(queryClient.getQueryState(newsletters)?.isInvalidated).toBe(true);
+  });
+
+  it("takes it out of that tab when the label comes off", () => {
+    applyOptimistic("remove_label", [3], { labelId: 5 });
+    expect(rows(newsletters)).toEqual([]);
+    expect(rows(whole).map(([id]) => id)).toEqual([1, 2, 3]);
+  });
+
+  it("leaves plain labels, and categories with tabs off, as tags", () => {
+    applyOptimistic("add_label", [2], { labelId: 7 });
+    queryClient.setQueryData(["settings"], { autoLabelsEnabled: false });
+    applyOptimistic("add_label", [2], { labelId: 5 });
+    expect(rows(important)).toEqual([
+      [1, [6, 7]],
+      [2, [7, 5]],
+    ]);
+  });
+});
+
 describe("actions on search results", () => {
   it("finds a thread cached only in search results", () => {
     const data = results([thread(1), thread(2, 3)]);

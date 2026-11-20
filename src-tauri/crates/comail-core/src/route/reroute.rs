@@ -50,6 +50,10 @@ fn verdicts_differ(
     after: &[SplitRule],
     thread_id: i64,
 ) -> Result<Option<super::Decision>> {
+    // Filed into a tab by its label: no rule moves it.
+    if super::tab_override(conn, thread_id)?.is_some() {
+        return Ok(None);
+    }
     let s = RuleSubject::load(conn, thread_id)?;
     let old = decide(&s, before);
     let new = decide(&s, after);

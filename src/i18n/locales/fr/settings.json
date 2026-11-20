@@ -177,6 +177,12 @@
     "resort": "Exécuter les automatisations",
     "resorting": "Exécution…",
     "resorted": "{{count}} conversations traitées",
+    "resortConfirm_one": "Vos règles vont s’exécuter sur {{count}} conversation de la boîte de réception.",
+    "resortConfirm_other": "Vos règles vont s’exécuter sur {{count}} conversations de la boîte de réception.",
+    "resortConfirmEvery": "Vos règles vont s’exécuter sur toutes les conversations de la boîte de réception.",
+    "resortConfirmActions": "Actions sur le courrier correspondant : {{actions}}.",
+    "resortConfirmAi": "Jusqu’à une requête IA par conversation.",
+    "resortConfirmRun": "Exécuter",
     "actions": {
       "route_to": "Déplacer vers l’onglet",
       "add_label": "Ajouter un libellé",
@@ -822,7 +828,7 @@
   },
   "rules": {
     "section": "Règles",
-    "intro": "Exécutez des actions sur les nouveaux messages : ciblez-les avec une condition, une vérification IA, ou les deux. Les règles s’exécutent une fois par message, sur le courrier des 3 derniers jours.",
+    "intro": "Exécutez des actions sur les nouveaux messages : ciblez-les avec une condition, une vérification IA, ou les deux. Les règles s’exécutent une fois par message, sur le courrier des 3 derniers jours. Pour les appliquer au courrier déjà dans votre boîte de réception, utilisez Exécuter les automatisations.",
     "newTitle": "Nouvelle règle",
     "editTitle": "Modifier la règle",
     "editorHint": "Une condition est vérifiée localement et instantanément. Une vérification IA pose une question fermée (oui/non) au modèle de décision.",

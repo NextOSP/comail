@@ -401,7 +401,7 @@ impl Core {
                     .unwrap_or((1, 0, false));
                 if marker == 0 {
                     if auto && threads > 0 {
-                        match c.reroute_all().await {
+                        match c.resort(false).await {
                             Ok(n) => tracing::info!("routing backfill resolved {n} threads"),
                             Err(e) => tracing::warn!("routing backfill failed: {e}"),
                         }
@@ -1339,17 +1339,35 @@ impl Core {
             }
         }
 
-        // A label split ("has label Invoices") must follow manual labelling
-        // straight away, not only on the next full re-sort.
+        // A category is an inbox tab and its label is the tab: adding it files
+        // the thread there, removing it sends the thread back. Any other label
+        // can satisfy a label split ("has label Invoices"), which must follow
+        // manual labelling straight away, not only on the next full re-sort.
         if matches!(args.kind, ActionKind::AddLabel | ActionKind::RemoveLabel) {
             let thread_ids = args.thread_ids.clone();
+            let label_id = args.params.as_ref().and_then(|p| p.label_id);
+            let added = args.kind == ActionKind::AddLabel;
             self.db
                 .write(move |conn| {
                     let splits = repo::splits::list(conn)?;
+                    let s = repo::settings::get(conn)?;
+                    // With category tabs off, adding one is a plain tag, but
+                    // taking it off still releases a thread filed under it.
+                    let tab_label = match label_id {
+                        Some(id) if s.auto_labels_enabled || !added => {
+                            repo::labels::get(conn, id)?.filter(|l| l.is_auto)
+                        }
+                        _ => None,
+                    };
+                    if let Some(label) = tab_label {
+                        for tid in thread_ids {
+                            route::label_tab_changed(conn, &splits, tid, label.id, added)?;
+                        }
+                        return Ok(());
+                    }
                     if splits.is_empty() {
                         return Ok(());
                     }
-                    let s = repo::settings::get(conn)?;
                     let fallback =
                         route::Fallback::from_settings(s.auto_labels_enabled, s.ai_categorize);
                     for tid in thread_ids {
@@ -4422,17 +4440,32 @@ impl Core {
         Ok(restored)
     }
 
-    /// Re-run routing over all stored mail. Legacy alias kept for the existing
-    /// "Relabel" action; delegates to [`Core::reroute_all`].
+    /// Re-sort every inbox thread (rules, categories, AI queue) without running
+    /// the automation rules. Behind "Re-run auto labels" in the split inbox
+    /// settings and the palette, where archiving or trashing mail, or one AI
+    /// request per conversation, would come as a surprise.
     pub async fn relabel_auto(&self) -> Result<i64> {
-        self.reroute_all().await
+        self.resort(false).await
     }
 
-    /// Re-resolve every inbox thread's tab from scratch and drain the AI
-    /// queue, so the caller sees the final state. Used by the explicit
-    /// "Re-sort" action and the one-shot startup backfill.
+    /// Re-resolve every inbox thread's tab from scratch, run the automation
+    /// rules over the inbox, and drain the AI queue, so the caller sees the
+    /// final state. Behind "Run automations", which asks first when a rule
+    /// would archive, trash or call the AI.
     pub async fn reroute_all(&self) -> Result<i64> {
+        self.resort(true).await
+    }
+
+    /// [`Core::reroute_all`]. Without `automations` the automation rules don't
+    /// run, as for [`Core::relabel_auto`] and the one-shot startup backfill,
+    /// which must never archive or relabel old mail on its own.
+    async fn resort(&self, automations: bool) -> Result<i64> {
         let n = self.reroute_all_sync().await?;
+        // Automations before the AI categories, as for new mail (see
+        // ai_router_loop), so a rule's route_to wins over the category.
+        if automations && let Err(e) = self.run_automations_on_inbox().await {
+            tracing::warn!("automations on existing mail failed: {e}");
+        }
         // Drain the AI queue now so the caller sees the final state. A failing
         // model leaves the rest 'pending' for the background router.
         while let Ok(done) = self.classify_pending(200).await {
@@ -4446,8 +4479,8 @@ impl Core {
     /// Deterministic re-route of every inbox thread (rules, then the heuristic
     /// or the AI queue), in chunks so sync can interleave. Clears the AI
     /// sender cache so an edited category prompt re-evaluates. Local AI
-    /// annotations are kept, and automations never re-run on mail they
-    /// already handled (`messages.automations_applied`).
+    /// annotations are kept, and the automation rules don't run here (see
+    /// [`Core::reroute_all`]).
     async fn reroute_all_sync(&self) -> Result<i64> {
         let (ids, splits, fallback) = self
             .db
@@ -4708,6 +4741,34 @@ impl Core {
     /// classifier as fallback) says yes. Only the rule's own action allow-list
     /// runs. Returns the number of threads processed.
     pub async fn run_automations(&self, limit: i64) -> Result<i64> {
+        self.run_automations_on(AutomationScope::New(limit)).await
+    }
+
+    /// Run the automation rules over every conversation already in the inbox,
+    /// whatever its age and whether they ran on it before: the explicit "Run
+    /// automations" action, so a rule also files the mail that arrived before
+    /// it was made. In chunks, so sync and the background router interleave.
+    async fn run_automations_on_inbox(&self) -> Result<i64> {
+        let ids = self
+            .db
+            .read(|conn| route::reroute::inbox_thread_ids(conn))
+            .await?;
+        let mut processed = 0;
+        for chunk in ids.chunks(50) {
+            match self
+                .run_automations_on(AutomationScope::Threads(chunk.to_vec()))
+                .await
+            {
+                Ok(n) => processed += n,
+                // Every AI check in this chunk failed; the next chunk may
+                // still have rules that need no model.
+                Err(e) => tracing::warn!("automations on existing mail: {e}"),
+            }
+        }
+        Ok(processed)
+    }
+
+    async fn run_automations_on(&self, scope: AutomationScope) -> Result<i64> {
         /// Mail older than this is never automated, so a fresh account's
         /// backfill or a long outage can't archive history.
         const MAX_AGE_MS: i64 = 3 * 24 * 60 * 60 * 1000;
@@ -4725,6 +4786,9 @@ impl Core {
             .collect();
         let cutoff = now_ms() - MAX_AGE_MS;
         let no_rules = rules.is_empty();
+        if no_rules && matches!(scope, AutomationScope::Threads(_)) {
+            return Ok(0);
+        }
 
         // (thread id, newest inbound message id, rule facts, AI facts)
         let jobs = self
@@ -4739,22 +4803,38 @@ impl Core {
                     )?;
                     return Ok(Vec::new());
                 }
-                conn.execute(
-                    "UPDATE messages SET automations_applied = 1
-                     WHERE automations_applied = 0
-                       AND (date < ?1 OR is_outgoing = 1 OR is_draft = 1)",
-                    rusqlite::params![cutoff],
-                )?;
-                let mut stmt = conn.prepare(
-                    "SELECT thread_id, MAX(id) FROM messages
-                     WHERE automations_applied = 0 AND is_outgoing = 0 AND is_draft = 0
-                     GROUP BY thread_id ORDER BY MAX(date) DESC LIMIT ?1",
-                )?;
-                let rows = stmt
-                    .query_map(rusqlite::params![limit], |r| {
-                        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                let rows = match &scope {
+                    AutomationScope::New(limit) => {
+                        conn.execute(
+                            "UPDATE messages SET automations_applied = 1
+                             WHERE automations_applied = 0
+                               AND (date < ?1 OR is_outgoing = 1 OR is_draft = 1)",
+                            rusqlite::params![cutoff],
+                        )?;
+                        let mut stmt = conn.prepare(
+                            "SELECT thread_id, MAX(id) FROM messages
+                             WHERE automations_applied = 0 AND is_outgoing = 0 AND is_draft = 0
+                             GROUP BY thread_id ORDER BY MAX(date) DESC LIMIT ?1",
+                        )?;
+                        stmt.query_map(rusqlite::params![limit], |r| {
+                            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+                        })?
+                        .collect::<rusqlite::Result<Vec<_>>>()?
+                    }
+                    AutomationScope::Threads(ids) => {
+                        let mut rows = Vec::new();
+                        for &tid in ids {
+                            let mid: Option<i64> = conn.query_row(
+                                "SELECT MAX(id) FROM messages
+                                 WHERE thread_id = ?1 AND is_outgoing = 0 AND is_draft = 0",
+                                rusqlite::params![tid],
+                                |r| r.get(0),
+                            )?;
+                            rows.extend(mid.map(|mid| (tid, mid)));
+                        }
+                        rows
+                    }
+                };
                 let mut out = Vec::new();
                 for (tid, mid) in rows {
                     let subject = route::RuleSubject::load(conn, tid)?;
@@ -4850,7 +4930,12 @@ impl Core {
                     let mut notes = Vec::new();
                     for action in &actions {
                         match action.kind.as_str() {
-                            "route_to" if valid_automation_route(conn, &action.value)? => {
+                            // A thread the user filed into a tab by its label
+                            // stays there.
+                            "route_to"
+                                if valid_automation_route(conn, &action.value)?
+                                    && route::tab_override(conn, tid)?.is_none() =>
+                            {
                                 route::apply_tab(conn, tid, Some(&action.value))?;
                             }
                             "subject_prefix" if !action.value.trim().is_empty() => {
@@ -5468,6 +5553,16 @@ fn apply_oauth_settings(settings: &Settings) {
         &settings.ms_client_id,
         &settings.ms_client_secret,
     );
+}
+
+/// Which mail an automation pass looks at.
+enum AutomationScope {
+    /// Newly received mail the rules haven't handled yet, up to this many
+    /// threads.
+    New(i64),
+    /// These threads as of their newest incoming message, however old and
+    /// whether or not the rules ran on them before.
+    Threads(Vec<i64>),
 }
 
 /// Validate a model-selected route against current local rows. The model only

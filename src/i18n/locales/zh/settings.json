@@ -177,6 +177,12 @@
     "resort": "运行自动化",
     "resorting": "运行中…",
     "resorted": "已处理 {{count}} 个会话",
+    "resortConfirm_one": "将对收件箱中的 {{count}} 个会话运行你的规则。",
+    "resortConfirm_other": "将对收件箱中的 {{count}} 个会话运行你的规则。",
+    "resortConfirmEvery": "将对收件箱中的所有会话运行你的规则。",
+    "resortConfirmActions": "对匹配邮件执行：{{actions}}。",
+    "resortConfirmAi": "每个会话最多发起一次 AI 请求。",
+    "resortConfirmRun": "运行",
     "actions": {
       "route_to": "移动到分栏",
       "add_label": "添加标签",
@@ -822,7 +828,7 @@
   },
   "rules": {
     "section": "规则",
-    "intro": "对新邮件执行操作：通过条件、AI 检查或两者结合来匹配。每封邮件只运行一次规则，仅针对最近 3 天的邮件。",
+    "intro": "对新邮件执行操作：通过条件、AI 检查或两者结合来匹配。每封邮件只运行一次规则，仅针对最近 3 天的邮件。要对收件箱中已有的邮件应用规则，请使用“运行自动化”。",
     "newTitle": "新建规则",
     "editTitle": "编辑规则",
     "editorHint": "条件在本地即时检查。AI 检查会向决策模型提出一个是/否问题。",

@@ -4,7 +4,9 @@ import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import type {
   ActionKind,
+  Label,
   SearchResults,
+  Settings,
   ThreadDetail,
   ThreadPage,
   ThreadSummary,
@@ -47,6 +49,32 @@ function patchSummary(
   }
 }
 
+/** Ids of the categories (auto labels): the labels that are inbox tabs. */
+function categoryIds(): Set<number> {
+  const labels = queryClient.getQueryData<Label[]>(["labels"]) ?? [];
+  return new Set(labels.filter((l) => l.isAuto).map((l) => l.id));
+}
+
+/** The tab a label action moves threads into or out of: the label itself when
+ *  it is a category and category tabs are on. Such a label is its tab, so
+ *  adding it files the conversation there and removing it takes it out. */
+function labelTab(kind: ActionKind, labelId: number | undefined): number | null {
+  if ((kind !== "add_label" && kind !== "remove_label") || labelId == null) return null;
+  if (queryClient.getQueryData<Settings>(["settings"])?.autoLabelsEnabled === false) return null;
+  return categoryIds().has(labelId) ? labelId : null;
+}
+
+/** Whether a cached thread list is an inbox tab the threads leave when filed
+ *  under category `tab` (add) or taken out of it (remove). Keys follow
+ *  threadsKey: ["threads", view, splitId, accountId, labelId, folderId]. */
+function leavesTab(key: readonly unknown[], kind: ActionKind, tab: number, categories: Set<number>) {
+  if (key[1] !== "inbox") return false;
+  const labelId = key[4] as number | null | undefined;
+  if (kind === "remove_label") return labelId === tab;
+  const isTab = key[2] != null || (labelId != null && categories.has(labelId));
+  return isTab && labelId !== tab;
+}
+
 /** Optimistically update every cached thread list + thread detail. */
 export function applyOptimistic(
   kind: ActionKind,
@@ -59,10 +87,21 @@ export function applyOptimistic(
   // cannot be inferred from summaries. Reconcile these actions from the backend
   // rather than optimistically removing rows and making them bounce back.
   const removes = REMOVAL_KINDS.includes(kind) && kind !== "spam" && kind !== "move";
+  const tab = labelTab(kind, params?.labelId);
+  const categories = categoryIds();
+  // A thread is in one category at a time: filing it drops the other chip.
+  const patch = (s: ThreadSummary) => {
+    const next = patchSummary(s, kind, params);
+    return tab != null && kind === "add_label"
+      ? { ...next, labels: next.labels.filter((id) => id === tab || !categories.has(id)) }
+      : next;
+  };
 
   for (const [key] of queryClient.getQueriesData({ queryKey: ["threads"] })) {
     // Destination lists must not animate an existing item out and back in.
-    const removesFromView = removes && !(kind === "trash" && key[1] === "trash");
+    const removesFromView =
+      (removes && !(kind === "trash" && key[1] === "trash")) ||
+      (tab != null && leavesTab(key, kind, tab, categories));
     queryClient.setQueryData<InfiniteData<ThreadPage>>(key, (data) => {
       if (!data) return data;
       return {
@@ -71,7 +110,7 @@ export function applyOptimistic(
           ...p,
           threads: removesFromView
             ? p.threads.filter((t) => !ids.has(t.id))
-            : p.threads.map((t) => (ids.has(t.id) ? patchSummary(t, kind, params) : t)),
+            : p.threads.map((t) => (ids.has(t.id) ? patch(t) : t)),
         })),
       };
     });
@@ -85,7 +124,7 @@ export function applyOptimistic(
       ...data,
       threads: removes
         ? data.threads.filter((t) => !ids.has(t.id))
-        : data.threads.map((t) => (ids.has(t.id) ? patchSummary(t, kind, params) : t)),
+        : data.threads.map((t) => (ids.has(t.id) ? patch(t) : t)),
       hits: removes ? data.hits.filter((h) => !ids.has(h.threadId)) : data.hits,
     };
   });
@@ -93,7 +132,7 @@ export function applyOptimistic(
   for (const id of threadIds) {
     queryClient.setQueryData<ThreadDetail>(["thread", id], (d) => {
       if (!d) return d;
-      const thread = patchSummary(d.thread, kind, params);
+      const thread = patch(d.thread);
       const messages =
         kind === "mark_read"
           ? d.messages.map((m) => ({ ...m, isRead: true }))
@@ -123,12 +162,14 @@ export function performThreadAction(
     useUi.getState().set({ permanentDeleteTarget: [...threadIds] });
     return Promise.resolve();
   }
+  // A category label moves threads between inbox tabs.
+  const movesTab = labelTab(kind, params?.labelId) != null;
   applyOptimistic(kind, threadIds, params);
   return call("perform_action", { args: { kind, threadIds, params } })
     .then(() => {
       // reconcile in the background: labels/counts may have shifted, and
       // operator filters (is:unread, in:...) must re-apply on the backend
-      if (REMOVAL_KINDS.includes(kind)) {
+      if (REMOVAL_KINDS.includes(kind) || movesTab) {
         refetchLists();
       } else {
         void queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });

@@ -1942,6 +1942,7 @@ function inSplit(t: MockThread, splitId: number | null | undefined): boolean {
   }
   if (t.routedTab === "important") return splitId === -1;
   if (t.routedTab === "other") return splitId === -2;
+  if (t.routedTab?.startsWith("label:")) return false;
   if (matchesAnyCustomSplit(t)) return false;
   const automated = isAutomatedSender(threadSender(t));
   return splitId === -1 ? !automated : automated;
@@ -1999,6 +2000,7 @@ function snapshotThreads(ids: number[]): () => void {
       isStarred: t.isStarred,
       snoozedUntil: t.snoozedUntil,
       labels: [...t.labels],
+      routedTab: t.routedTab,
       read: t.messages.map((m) => m.isRead),
     }));
   return () => {
@@ -2007,12 +2009,23 @@ function snapshotThreads(ids: number[]): () => void {
       s.t.isStarred = s.isStarred;
       s.t.snoozedUntil = s.snoozedUntil;
       s.t.labels = [...s.labels];
+      s.t.routedTab = s.routedTab;
       s.t.messages.forEach((m, i) => (m.isRead = s.read[i] ?? m.isRead));
     }
   };
 }
 
 const queuedDeletions = new Map<number, number[]>();
+
+/** A category while category tabs are on: its label files a thread under
+ *  that inbox tab, as in the core. */
+function isTabLabel(labelId: number | undefined): boolean {
+  return (
+    labelId != null &&
+    settings.autoLabelsEnabled &&
+    labels.some((l) => l.id === labelId && l.isAuto)
+  );
+}
 
 function performAction(args: PerformActionArgs): ActionResult {
   if (args.kind === "delete_permanently") {
@@ -2097,10 +2110,17 @@ function performAction(args: PerformActionArgs): ActionResult {
         ) {
           t.labels = [...t.labels, args.params.labelId];
         }
+        // A category is an inbox tab: its label files the thread there.
+        if (isTabLabel(args.params?.labelId)) {
+          const tab = args.params!.labelId!;
+          t.routedTab = `label:${tab}`;
+          t.labels = t.labels.filter((l) => l === tab || !isTabLabel(l));
+        }
         break;
       case "remove_label":
         if (args.params?.labelId != null) {
           t.labels = t.labels.filter((l) => l !== args.params!.labelId);
+          if (t.routedTab === `label:${args.params.labelId}`) t.routedTab = null;
         }
         break;
     }
@@ -3243,6 +3263,7 @@ export async function mockInvoke(
         labelsMap[String(l.id)] = inbox.filter((t) => t.labels.includes(l.id)).length;
       }
       return delay({
+        inbox: inbox.length,
         important: inbox.filter((t) => inSplit(t, -1)).length,
         other: inbox.filter((t) => inSplit(t, -2)).length,
         splits: splitsMap,
