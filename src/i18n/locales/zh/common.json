@@ -86,12 +86,12 @@
     "settingsWithShortcut": "设置（{{shortcut}}）",
     "allAccounts": "所有账户",
     "menu": "邮箱",
-    "calendar": "日历（0 今天，2 本周）",
+    "calendar": "日历（{{today}} 今天，{{week}} 本周）",
     "mail": "邮件"
   },
   "loading": "加载中…",
   "selectedCount": "已选 {{count}} 项",
-  "undoSuffix": "{{label}} · 按 Z 撤销",
+  "undoSuffix": "{{label}} · 按 {{key}} 撤销",
   "palette": {
     "placeholder": "输入命令…",
     "empty": "无匹配命令"
@@ -278,7 +278,8 @@
   "shortcutHelp": {
     "title": "键盘快捷键",
     "escToClose": "按 Esc 关闭",
-    "then": "然后"
+    "then": "然后",
+    "customize": "自定义"
   },
   "move": {
     "title": "移动到文件夹",

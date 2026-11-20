@@ -6,6 +6,7 @@
     "Compose": "Compose",
     "AI": "AI",
     "Calendar": "Calendar",
+    "Inbox": "Inbox",
     "Meta": "Meta"
   },
   "title": {
@@ -87,6 +88,7 @@
     "relabelAuto": "Re-run auto labels",
     "openAiSettings": "AI settings",
     "openAccountSettings": "Account settings",
+    "openShortcutSettings": "Customize keyboard shortcuts",
     "toggleSidebar": "Show mailboxes menu",
     "aiProofread": "Proofread",
     "calendarDay": "Calendar: Day view",

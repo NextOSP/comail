@@ -17,6 +17,7 @@
     "reading": "Reading",
     "compose": "Composing",
     "calendar": "Calendar",
+    "shortcuts": "Shortcuts",
     "about": "About",
     "mcp": "AI clients (MCP)"
   },
@@ -562,6 +563,23 @@
     "label": "Advance after select",
     "hint": "After selecting a thread with X, move the cursor to the next row. Off toggles in place (Gmail-style)."
   },
+  "shortcuts": {
+    "filter": "Filter commands",
+    "noMatches": "No commands match “{{query}}”",
+    "none": "No shortcut",
+    "add": "Add a shortcut for {{command}}",
+    "change": "Change {{keys}} for {{command}}",
+    "remove": "Remove {{keys}} from {{command}}",
+    "reset": "Reset {{command}} to its default",
+    "resetAll": "Reset all",
+    "resetAllConfirm": "Reset every shortcut?",
+    "recording": "Press keys…",
+    "recordHint": "Press a key or a combination, or two keys in a row for a sequence like G then I. Esc cancels.",
+    "reserved": "{{keys}} is reserved for the app or your system, so it can't be a shortcut.",
+    "conflict": "{{keys}} is already used by {{commands}}.",
+    "replace": "Replace",
+    "cancel": "Cancel"
+  },
   "inboxUi": {
     "label": "Inbox UI",
     "hint": "Choose how the mail list looks.",
@@ -709,6 +727,7 @@
     "reading": "How messages open and what happens after you act on one.",
     "compose": "Sending behavior and your signatures.",
     "calendar": "Calendar view, meeting reminders and connected calendars.",
+    "shortcuts": "Change the keys for any command. Click a shortcut to record new keys.",
     "about": "Version, updates and diagnostics.",
     "mcp": "Let Claude, ChatGPT, Cursor, VS Code and other AI apps use your mail through MCP."
   },

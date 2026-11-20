@@ -1243,6 +1243,11 @@ pub struct Settings {
     /// Missing = display name, else the address local part.
     #[serde(default)]
     pub account_short_names: std::collections::HashMap<String, String>,
+    /// Rebound keyboard shortcuts: command id -> its full key list in the
+    /// frontend registry's form ("e", "shift+e", "mod+enter", "g i"); an
+    /// empty list unbinds the command. Missing ids keep their default keys.
+    #[serde(default)]
+    pub keyboard_shortcuts: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// A named, rich-HTML signature belonging to one account.
@@ -1472,6 +1477,7 @@ impl Default for Settings {
             show_account_badges: true,
             account_colors: std::collections::HashMap::new(),
             account_short_names: std::collections::HashMap::new(),
+            keyboard_shortcuts: std::collections::HashMap::new(),
         }
     }
 }
@@ -1739,5 +1745,20 @@ mod tests {
         assert_eq!(s.ai_base_url, crate::ai::DEFAULT_BASE_URL);
         assert!(s.ai_zero_retention);
         assert!(s.ai_quick_replies);
+        assert!(s.keyboard_shortcuts.is_empty());
+    }
+
+    #[test]
+    fn settings_keyboard_shortcuts_roundtrip() {
+        let s: Settings = serde_json::from_str(
+            r#"{"theme":"snow","undoSendSeconds":5,"loadRemoteImages":false,
+                "keyboardShortcuts":{"mark-done":["y","g e"],"compose":[]}}"#,
+        )
+        .unwrap();
+        assert_eq!(s.keyboard_shortcuts["mark-done"], vec!["y", "g e"]);
+        assert!(s.keyboard_shortcuts["compose"].is_empty());
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["keyboardShortcuts"]["mark-done"][1], "g e");
+        assert_eq!(json["keyboardShortcuts"]["compose"], serde_json::json!([]));
     }
 }

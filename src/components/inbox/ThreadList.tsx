@@ -10,6 +10,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { Label, ThreadSummary } from "../../ipc/types";
 import { buildCommandContext } from "../../keyboard/context";
+import { useShortcutHint } from "../../keyboard/registry";
 import { primaryCorrespondent } from "../../lib/format";
 import { buildListItems, type Bundle, type SectionHeader } from "../../lib/listItems";
 import { prefetchThread } from "../../queries/hooks";
@@ -506,6 +507,7 @@ function BulkBar({
   onClear: () => void;
 }) {
   const { t } = useTranslation();
+  const hint = useShortcutHint();
   const inTrash = useUi((s) => s.view === "trash");
   const run = (fn: (ctx: ReturnType<typeof buildCommandContext>) => void) => () => {
     fn(buildCommandContext());
@@ -516,12 +518,12 @@ function BulkBar({
         className="co-pop-in pointer-events-auto flex items-center gap-1 rounded-card border border-hairline bg-bg1 px-2 py-1.5 shadow-elev-2"
       >
         <span className="px-2 text-sm font-semibold text-ink">{t("common:selectedCount", { count })}</span>
-        <BulkButton label={t("common:action.done")} kbd="E" onClick={run((c) => c.act("archive"))} />
-        <BulkButton label={t("common:action.snooze")} kbd="H" onClick={run((c) => c.openSnooze())} />
-        <BulkButton label={t("common:action.star")} kbd="S" onClick={run((c) => c.toggleStar())} />
-        <BulkButton label={t("common:action.read")} kbd="U" onClick={run((c) => c.toggleRead())} />
-        <BulkButton label={t(inTrash ? "common:permanentDelete.title" : "common:action.trash")} kbd="#" onClick={run((c) => c.act("trash"))} />
-        <BulkButton label={t("common:action.spam")} kbd="!" onClick={run((c) => c.act("spam"))} />
+        <BulkButton label={t("common:action.done")} kbd={hint("mark-done")} onClick={run((c) => c.act("archive"))} />
+        <BulkButton label={t("common:action.snooze")} kbd={hint("snooze")} onClick={run((c) => c.openSnooze())} />
+        <BulkButton label={t("common:action.star")} kbd={hint("star")} onClick={run((c) => c.toggleStar())} />
+        <BulkButton label={t("common:action.read")} kbd={hint("read")} onClick={run((c) => c.toggleRead())} />
+        <BulkButton label={t(inTrash ? "common:permanentDelete.title" : "common:action.trash")} kbd={hint("trash")} onClick={run((c) => c.act("trash"))} />
+        <BulkButton label={t("common:action.spam")} kbd={hint("spam")} onClick={run((c) => c.act("spam"))} />
         <Button variant="ghost" size="sm" className="ml-1 px-2" onClick={onClear}>
           {t("common:action.deselect")}
         </Button>
@@ -534,7 +536,7 @@ function BulkButton({ label, kbd, onClick }: { label: string; kbd: string; onCli
   return (
     <Button variant="ghost" size="sm" onClick={onClick}>
       {label}
-      <kbd className="co-kbd !h-[1.35em] !text-2xs">{kbd}</kbd>
+      {kbd && <kbd className="co-kbd !h-[1.35em] !text-2xs">{kbd}</kbd>}
     </Button>
   );
 }

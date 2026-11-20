@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { FolderInfo, View } from "../../ipc/types";
 import { commandScore } from "../../keyboard/commandScore";
 import { buildCommandContext } from "../../keyboard/context";
+import { withUndoHint } from "../../keyboard/registry";
 import { findCachedSummary, performThreadAction } from "../../queries/actions";
 import { useFolders } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
@@ -71,7 +72,7 @@ export function MovePopover() {
     } else {
       void performThreadAction("move", ids, { targetFolderId: f.id });
       useUi.getState().set({ lastUndo: { type: "action", label } });
-      useUi.getState().pushToast({ kind: "info", message: t("common:undoSuffix", { label }) });
+      useUi.getState().pushToast({ kind: "info", message: withUndoHint(label) });
     }
   };
 

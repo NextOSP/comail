@@ -54,6 +54,7 @@ import {
 import { FONT_PRESETS, normalizeFontFamily } from "../../lib/font";
 import { splitModelTags, tagsFor, toggleModelTag } from "../../lib/modelTags";
 import { usesOpenRouter } from "../../lib/openrouter";
+import { ShortcutsSection } from "./ShortcutsSettings";
 import { SnippetsSection } from "./SnippetsPanel";
 import { SplitInboxSection } from "./SplitsPanel";
 import { CategoriesEditor } from "./CategoriesEditor";
@@ -159,6 +160,7 @@ const DEFAULT_SETTINGS: Settings = {
   showAccountBadges: true,
   accountColors: {},
   accountShortNames: {},
+  keyboardShortcuts: {},
 };
 
 /** Optimistic settings write: cache first, backend follows, rollback on error. */
@@ -214,6 +216,12 @@ function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
       <>
         <rect x="3" y="5" width="18" height="16" rx="2" />
         <path d="M3 10h18M8 3v4M16 3v4" />
+      </>
+    ),
+    shortcuts: (
+      <>
+        <rect x="2" y="6" width="20" height="12" rx="2" />
+        <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
       </>
     ),
     about: (
@@ -319,6 +327,7 @@ export function SettingsPanel() {
     "reading",
     "compose",
     "calendar",
+    "shortcuts",
     "splits",
     "snippets",
     "labels",
@@ -382,6 +391,7 @@ export function SettingsPanel() {
     reading: t("settings:section.reading"),
     compose: t("settings:section.compose"),
     calendar: t("settings:section.calendar"),
+    shortcuts: t("settings:section.shortcuts"),
     stats: t("settings:section.stats"),
     splits: t("settings:section.splitInbox"),
     snippets: t("settings:section.snippets"),
@@ -398,7 +408,7 @@ export function SettingsPanel() {
   const TAB_GROUPS: { label: string; tabs: SettingsTab[] }[] = [
     {
       label: t("settings:navigation.general"),
-      tabs: ["appearance", "notifications", "reading", "compose", "calendar"],
+      tabs: ["appearance", "notifications", "reading", "compose", "calendar", "shortcuts"],
     },
     {
       label: t("settings:navigation.organization"),
@@ -494,6 +504,11 @@ export function SettingsPanel() {
       tab: "notifications",
       label: t("settings:dockBadge.label"),
       keywords: "dock badge unread count icon red important",
+    },
+    {
+      tab: "shortcuts",
+      label: t("settings:section.shortcuts"),
+      keywords: "keyboard shortcuts hotkeys keys keymap bindings rebind custom gmail spark superhuman",
     },
     {
       tab: "reading",
@@ -1088,6 +1103,8 @@ export function SettingsPanel() {
             <CalendarSettings />
           </>
         )}
+
+        {tab === "shortcuts" && <ShortcutsSection settings={s} />}
 
         {tab === "about" && <AboutSection />}
 

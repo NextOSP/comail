@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { buildCommandContext } from "../../keyboard/context";
+import { withUndoHint } from "../../keyboard/registry";
 import { performThreadAction } from "../../queries/actions";
 import { useUi } from "../../stores/ui";
 import { TimePopover } from "./TimePopover";
@@ -30,7 +31,7 @@ export function SnoozePopover() {
           useUi.getState().set({ lastUndo: { type: "action", label: t("common:snoozePopover.snoozed") } });
           useUi.getState().pushToast({
             kind: "info",
-            message: t("common:undoSuffix", { label: untilLabel }),
+            message: withUndoHint(untilLabel),
           });
         }
       }}

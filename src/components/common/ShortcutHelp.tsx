@@ -1,10 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { getCommands, shortcutFor } from "../../keyboard/registry";
+import { commandKeys, getCommands, shortcutFor } from "../../keyboard/registry";
+import { SHORTCUT_SECTIONS } from "../../keyboard/shortcuts";
 import { useUi } from "../../stores/ui";
+import { Button } from "../ui/Button";
 import { SectionLabel } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 
-const SECTION_ORDER = ["Triage", "Navigation", "Go to", "Compose", "AI", "Calendar", "Meta"];
 const AI_HERE_KEY = "mod+j";
 
 export function ShortcutHelp() {
@@ -19,7 +20,7 @@ export function ShortcutHelp() {
     if (!sc) continue;
     // ⌘J is contextual (write in compose, summary in a thread, Ask in
     // search), so its per-context commands collapse into one "AI here" row.
-    const aiHere = cmd.keys.includes(AI_HERE_KEY);
+    const aiHere = commandKeys(cmd).includes(AI_HERE_KEY);
     const title = aiHere
       ? t("commands:aiHere.title")
       : cmd.title
@@ -41,10 +42,19 @@ export function ShortcutHelp() {
     >
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="text-md font-semibold text-ink">{t("common:shortcutHelp.title")}</h2>
-          <span className="text-sm text-ink-faint">{t("common:shortcutHelp.escToClose")}</span>
+          <span className="flex items-baseline gap-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => set({ helpOpen: false, panel: "settings", settingsTab: "shortcuts" })}
+            >
+              {t("common:shortcutHelp.customize")}
+            </Button>
+            <span className="text-sm text-ink-faint">{t("common:shortcutHelp.escToClose")}</span>
+          </span>
         </div>
         <div className="grid grid-cols-2 gap-x-10 gap-y-5">
-          {SECTION_ORDER.filter((s) => bySection.has(s)).map((section) => (
+          {SHORTCUT_SECTIONS.filter((s) => bySection.has(s)).map((section) => (
             <div key={section}>
               <SectionLabel>{t(`commands:section.${section}`)}</SectionLabel>
               <ul className="flex flex-col gap-1">

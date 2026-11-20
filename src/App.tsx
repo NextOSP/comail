@@ -36,6 +36,7 @@ import {
   installKeyboard,
   installMouseNav,
   registerCommands,
+  setKeyOverrides,
 } from "./keyboard/registry";
 import { call } from "./ipc/commands";
 import { checkForUpdate } from "./ipc/updater";
@@ -66,6 +67,7 @@ export default function App() {
   useBackendEvents();
   useDockBadge();
   useThemeSync();
+  useKeyOverridesSync();
   useStartupUpdateCheck();
 
   useEffect(() => installKeyboard(), []);
@@ -305,6 +307,13 @@ function ThreadOrderSync() {
   }, [ids, set]);
 
   return null;
+}
+
+/** Feeds the user's rebound shortcuts (Settings > Shortcuts) to the keymap. */
+function useKeyOverridesSync() {
+  const { data: settings } = useSettings();
+  const overrides = settings?.keyboardShortcuts;
+  useEffect(() => setKeyOverrides(overrides), [overrides]);
 }
 
 /** Applies the theme setting to <html data-theme> and follows the OS in system mode. */

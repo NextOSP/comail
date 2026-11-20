@@ -615,6 +615,10 @@ export interface Settings {
   voiceLearnedAt: number;
   /** Minutes before a meeting to fire a desktop reminder; 0 disables. */
   meetingNotifyLeadMinutes: number;
+  /** Rebound keyboard shortcuts: command id -> its full key list in registry
+   *  form ("e", "shift+e", "mod+enter", "g i"); [] = unbound. Commands without
+   *  an entry keep their default keys. */
+  keyboardShortcuts: Record<string, string[]>;
 }
 
 export interface AiUsageDay {

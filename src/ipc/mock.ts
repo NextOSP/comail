@@ -1537,6 +1537,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   showAccountBadges: true,
   accountColors: {},
   accountShortNames: {},
+  keyboardShortcuts: {},
 };
 
 let settings: Settings = (() => {

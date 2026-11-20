@@ -70,6 +70,9 @@ Today / Yesterday date headers.
 | `Cmd+U` | Unsubscribe | `Ctrl+1`-`9` | Switch account |
 | `2` / `0` | Calendar / quick peek | `?` | Every shortcut |
 
+Used to Gmail's or Spark's keys? Rebind any command, including two-key
+sequences like `G` then `I`, in Settings > Shortcuts.
+
 ## Search that finds it
 
 - **Ask in your own words.** "What did Ana want changed on the roadmap deck"

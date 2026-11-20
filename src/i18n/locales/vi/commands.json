@@ -6,6 +6,7 @@
     "Compose": "Soạn thư",
     "AI": "AI",
     "Calendar": "Lịch",
+    "Inbox": "Hộp thư đến",
     "Meta": "Khác"
   },
   "title": {
@@ -87,6 +88,7 @@
     "relabelAuto": "Chạy lại gắn nhãn tự động",
     "openAiSettings": "Cài đặt AI",
     "openAccountSettings": "Cài đặt tài khoản",
+    "openShortcutSettings": "Tùy chỉnh phím tắt",
     "toggleSidebar": "Hiện menu hộp thư",
     "aiProofread": "Soát lỗi",
     "calendarDay": "Lịch: Xem theo ngày",

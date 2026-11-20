@@ -2,10 +2,10 @@ import { toggleSidebar } from "../../lib/sidebar";
 import { useTranslation } from "react-i18next";
 import { folderLeafName } from "../../lib/folders";
 import { errorMessage } from "../../ipc/errors";
-import { accountLabel, MOD_LABEL } from "../../lib/format";
+import { accountLabel } from "../../lib/format";
 import { syncNowAndRefresh, useManualSyncBusy } from "../../lib/syncNow";
 import { aggregateSyncStatuses } from "../../lib/syncStatus";
-import { displayShortcut } from "../../keyboard/registry";
+import { useShortcutHint, withShortcut } from "../../keyboard/registry";
 import { useAccounts, useFolders, useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { IconButton } from "../ui/Button";
@@ -22,6 +22,7 @@ export function TopBar() {
   const keySequence = useUi((s) => s.keySequence);
   const accountFilter = useUi((s) => s.accountFilter);
   const set = useUi((s) => s.set);
+  const hint = useShortcutHint();
   const { data: folders } = useFolders(accountFilter);
   const { data: settings } = useSettings();
   // Avatar inbox UI: a quieter bar (search icon, no wordmark).
@@ -43,6 +44,11 @@ export function TopBar() {
     });
   };
 
+  const calendarToday = hint("calendar-today");
+  const calendarWeek = hint("calendar-week");
+  const composeKey = hint("compose");
+  const settingsKey = hint("open-settings");
+
   const activeFolder = folders?.find((f) => f.id === folderFilter);
   const title = searchOpen
     ? t("common:topbar.search")
@@ -58,7 +64,7 @@ export function TopBar() {
       <IconButton
         icon="menu"
         label={t("common:topbar.menu")}
-        title={`${t("common:topbar.menu")} (${displayShortcut("mod+\\")})`}
+        title={withShortcut(t("common:topbar.menu"), hint("toggle-sidebar"))}
         className="-ml-1"
         onClick={toggleSidebar}
       />
@@ -94,7 +100,7 @@ export function TopBar() {
         <IconButton
           icon="search"
           label={t("common:topbar.search")}
-          title={`${t("common:topbar.search")} (${displayShortcut("/")})`}
+          title={withShortcut(t("common:topbar.search"), hint("search"))}
           onClick={() => set({ calendarScreen: false, searchOpen: true, openThreadId: null })}
         />
       )}
@@ -102,13 +108,23 @@ export function TopBar() {
       <IconButton
         icon="edit"
         label={t("common:topbar.compose")}
-        title={t("common:topbar.composeWithShortcut", { shortcut: displayShortcut("c") })}
+        title={
+          composeKey
+            ? t("common:topbar.composeWithShortcut", { shortcut: composeKey })
+            : t("common:topbar.compose")
+        }
         onClick={() => useUi.getState().openComposer({ mode: "new" })}
       />
 
       <IconButton
         icon={calendarScreen ? "mail" : "calendar"}
-        label={calendarScreen ? t("common:topbar.mail") : t("common:topbar.calendar")}
+        label={
+          calendarScreen
+            ? t("common:topbar.mail")
+            : calendarToday && calendarWeek
+              ? t("common:topbar.calendar", { today: calendarToday, week: calendarWeek })
+              : t("common:sidebar.calendar")
+        }
         onClick={() => {
           const s = useUi.getState();
           s.set(
@@ -122,7 +138,11 @@ export function TopBar() {
       <IconButton
         icon="settings"
         label={t("common:topbar.settings")}
-        title={t("common:topbar.settingsWithShortcut", { shortcut: `${MOD_LABEL}+,` })}
+        title={
+          settingsKey
+            ? t("common:topbar.settingsWithShortcut", { shortcut: settingsKey })
+            : t("common:topbar.settings")
+        }
         onClick={() => set({ panel: "settings" })}
       />
 

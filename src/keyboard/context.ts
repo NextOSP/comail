@@ -23,6 +23,7 @@ import {
 import { queryClient } from "../queries/client";
 import type { ThreadDetail } from "../ipc/types";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../stores/ui";
+import { withUndoHint } from "./registry";
 
 /** Maps an action kind to its i18n key for the undo-toast label. */
 const ACTION_LABEL_KEY: Partial<Record<ActionKind, string>> = {
@@ -209,7 +210,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
       useUi.getState().set({ lastUndo: { type: "action", label } });
       useUi.getState().pushToast({
         kind: "info",
-        message: i18n.t("common:undoSuffix", { label: labelWithCount }),
+        message: withUndoHint(labelWithCount),
         actionLabel: i18n.t("common:action.undo"),
         onAction: () => void doUndo(),
       });
@@ -548,6 +549,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         showAccountBadges: true,
         accountColors: {},
         accountShortNames: {},
+        keyboardShortcuts: {},
         ...settings,
         theme,
       },

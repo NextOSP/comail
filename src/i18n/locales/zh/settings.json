@@ -17,6 +17,7 @@
     "reading": "阅读",
     "compose": "撰写",
     "calendar": "日历",
+    "shortcuts": "快捷键",
     "about": "关于",
     "mcp": "AI 应用 (MCP)"
   },
@@ -560,6 +561,23 @@
     "label": "选择后前进",
     "hint": "用 X 选择会话后，将光标移到下一行。关闭则原地切换（Gmail 风格）。"
   },
+  "shortcuts": {
+    "filter": "筛选命令",
+    "noMatches": "没有与“{{query}}”匹配的命令",
+    "none": "无快捷键",
+    "add": "为{{command}}添加快捷键",
+    "change": "更改{{command}}的 {{keys}}",
+    "remove": "从{{command}}移除 {{keys}}",
+    "reset": "将{{command}}恢复为默认",
+    "resetAll": "全部恢复默认",
+    "resetAllConfirm": "恢复所有快捷键？",
+    "recording": "请按键…",
+    "recordHint": "按一个键或组合键，也可以连按两个键组成序列，例如 G 然后 I。按 Esc 取消。",
+    "reserved": "{{keys}} 已保留给应用或系统，不能用作快捷键。",
+    "conflict": "{{keys}} 已被{{commands}}使用。",
+    "replace": "替换",
+    "cancel": "取消"
+  },
   "inboxUi": {
     "label": "收件箱界面",
     "hint": "选择邮件列表的显示方式。",
@@ -707,6 +725,7 @@
     "reading": "邮件如何打开，以及操作后接下来发生什么。",
     "compose": "发送行为和你的签名。",
     "calendar": "日历视图、会议提醒和已连接的日历。",
+    "shortcuts": "为任意命令更换按键。点击一个快捷键即可录入新按键。",
     "about": "版本、更新和诊断。",
     "mcp": "通过 MCP 让 Claude、ChatGPT、Cursor、VS Code 等 AI 应用使用你的邮件。"
   },
