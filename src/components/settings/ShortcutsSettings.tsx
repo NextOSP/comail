@@ -26,7 +26,7 @@ import {
 } from "../../keyboard/shortcuts";
 import { Icon } from "../ui/Icon";
 import { Button, ConfirmButton, IconButton, inputCls, SettingsGroup } from "./panelKit";
-import { updateSettings } from "./SettingsPanel";
+import { updateSettings } from "../../queries/settings";
 
 /** Where the recorder writes: a key slot of a command, or a new key (null). */
 type Target = { row: string; id: string; slot: number | null };

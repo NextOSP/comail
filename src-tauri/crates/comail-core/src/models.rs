@@ -1010,6 +1010,12 @@ pub struct Settings {
     /// Interface font: "" = system stack, otherwise a Google Fonts family name.
     #[serde(default)]
     pub font_family: String,
+    /// Page zoom as a percentage.
+    #[serde(default = "default_zoom_percent")]
+    pub zoom_percent: u16,
+    /// Use brighter text when the active theme is dark.
+    #[serde(default)]
+    pub higher_dark_contrast: bool,
     /// UI language: "system" follows the OS locale, otherwise a code like "en".
     #[serde(default = "default_language")]
     pub language: String,
@@ -1401,12 +1407,18 @@ fn default_notification_scope() -> String {
     "important".into()
 }
 
+fn default_zoom_percent() -> u16 {
+    100
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: "system".into(),
             accent_color: default_accent_color(),
             font_family: String::new(),
+            zoom_percent: default_zoom_percent(),
+            higher_dark_contrast: false,
             language: "system".into(),
             calendar_week_start: default_calendar_week_start(),
             inbox_ui: default_inbox_ui(),

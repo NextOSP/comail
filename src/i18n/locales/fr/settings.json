@@ -797,6 +797,15 @@
     },
     "custom": "Couleur personnalisée"
   },
+  "zoom": {
+    "label": "Zoom",
+    "hint": "Ajuste la taille de l’interface et du texte des messages.",
+    "failed": "Impossible d’appliquer le zoom : {{detail}}"
+  },
+  "darkContrast": {
+    "label": "Contraste du texte renforcé en mode sombre",
+    "hint": "Éclaircit le texte sur les fonds sombres."
+  },
   "font": {
     "hint": "La police utilisée dans Comail. Le corps des messages garde ses propres polices.",
     "system": "Système",

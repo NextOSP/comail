@@ -55,7 +55,7 @@ export function PanelShell({
       width={width}
       top="6vh"
       sheet
-      className="flex max-h-[86vh] flex-col overflow-hidden"
+      className="flex max-h-[calc(100%-8vh)] flex-col overflow-hidden"
     >
       <header className="co-hairline-b flex shrink-0 items-center justify-between gap-4 px-5 py-3">
         <h2 className="shrink-0 text-md font-semibold text-ink">{title}</h2>

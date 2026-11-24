@@ -14,11 +14,20 @@ import { addressName, IS_MAC, primaryCorrespondent } from "../lib/format";
 import { syncNowAndRefresh } from "../lib/syncNow";
 import { parsePartialAiSummary } from "../lib/summaryStream";
 import { latestUnsubscribeMessage, unsubscribeThread } from "../lib/unsubscribe";
+import { DEFAULT_ZOOM_PERCENT, stepZoom } from "../lib/zoom";
 import { findCachedSummary } from "../queries/actions";
 import { queryClient } from "../queries/client";
+import { updateSettings } from "../queries/settings";
 import { useUi } from "../stores/ui";
 import { inboxTabs, type CommandCtx } from "./context";
 import type { Command } from "./registry";
+
+function changeZoom(step: -1 | 0 | 1) {
+  void updateSettings(({ zoomPercent }) => {
+    const next = step === 0 ? DEFAULT_ZOOM_PERCENT : stepZoom(zoomPercent, step);
+    return next === zoomPercent ? null : { zoomPercent: next };
+  });
+}
 
 /** Bridge for composer-scoped commands (composer owns the form state). */
 export type ComposerAction =
@@ -1188,6 +1197,30 @@ export const ALL_COMMANDS: Command[] = [
     section: "Meta",
     when: (ctx) => !ctx.panelOpen,
     run: () => useUi.getState().set({ panel: "settings" }),
+  },
+  {
+    id: "zoom-in",
+    titleKey: "commands:title.zoomIn",
+    aliases: ["zoom in", "increase text size", "larger text"],
+    keys: ["mod++", "mod+="],
+    section: "Meta",
+    run: () => changeZoom(1),
+  },
+  {
+    id: "zoom-out",
+    titleKey: "commands:title.zoomOut",
+    aliases: ["zoom out", "decrease text size", "smaller text"],
+    keys: ["mod+-"],
+    section: "Meta",
+    run: () => changeZoom(-1),
+  },
+  {
+    id: "zoom-reset",
+    titleKey: "commands:title.zoomReset",
+    aliases: ["actual size", "reset text size", "default zoom"],
+    keys: ["mod+0"],
+    section: "Meta",
+    run: () => changeZoom(0),
   },
   {
     id: "open-ai-settings",

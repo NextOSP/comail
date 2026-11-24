@@ -21,6 +21,7 @@ import {
   undoLastAction,
 } from "../queries/actions";
 import { queryClient } from "../queries/client";
+import { updateSettings } from "../queries/settings";
 import type { ThreadDetail } from "../ipc/types";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../stores/ui";
 import { withUndoHint } from "./registry";
@@ -473,90 +474,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
   };
 
   const setTheme = (theme: "snow" | "carbon" | "system") => {
-    useUi.getState().set({ theme });
-    const settings = queryClient.getQueryData<Settings>(["settings"]);
-    void call("set_settings", {
-      settings: {
-        language: "system",
-        calendarWeekStart: "monday",
-        inboxUi: "classic",
-        showSenderPhotos: true,
-        showBundles: true,
-        tabCounts: "unread",
-        undoSendSeconds: 10,
-        loadRemoteImages: false,
-        aiBaseUrl: "",
-        aiZeroRetention: true,
-        aiModel: "",
-        aiModelInstant: "",
-        aiModelCheap: "",
-        aiModelIntelligent: "",
-        aiTierAsk: "intelligent",
-        aiTierDraft: "intelligent",
-        aiTierSummarize: "instant",
-        aiTierVoice: "cheap",
-        googleClientId: "",
-        googleClientSecret: "",
-        msClientId: "",
-        msClientSecret: "",
-        embeddingBackend: "local",
-        embeddingModel: "bge-small-en-v1.5",
-        aiQuickReplies: true,
-        voiceDrafting: false,
-        voiceProfile: "",
-        voiceLearnedAt: 0,
-        meetingNotifyLeadMinutes: 10,
-        notificationsEnabled: true,
-        notificationScope: "important",
-        notificationTabs: [],
-        soundEnabled: true,
-        copyVerificationCodes: true,
-        autoAdvance: true,
-        selectAdvance: true,
-        autoLabelsEnabled: true,
-        aiCategorize: false,
-        aiCategoryPrompt: "",
-        aiAutomationRules: [],
-        decisionProvider: "off",
-        decisionBaseUrl: "",
-        decisionFormat: "openrouter",
-        decisionModel: "",
-        decisionMinConfidence: 0.6,
-        decisionBackups: [],
-        decisionUseCategories: true,
-        decisionUseRules: true,
-        decisionUseSplits: true,
-        decisionChatFallback: true,
-        aiCategoryDescriptions: {},
-        mcpEnabled: false,
-        mcpPort: 47823,
-        mcpAllowDrafts: true,
-        mcpAllowSend: false,
-        mcpAllowActions: false,
-        mcpAllowPermanentDelete: false,
-        mcpInstructions: "",
-        aiTierCategorize: "instant",
-        groupByDate: true,
-        contactSuggestAllAccounts: false,
-        dockBadgeEnabled: true,
-        dockBadgeSource: "inbox",
-        signatures: {},
-        signatureList: [],
-        signatureDefaults: {},
-        accountThemes: {},
-        accentColor: "violet",
-        fontFamily: "",
-        showAccountBadges: true,
-        accountColors: {},
-        accountShortNames: {},
-        keyboardShortcuts: {},
-        ...settings,
-        theme,
-      },
-    });
-    queryClient.setQueryData(["settings"], (s: unknown) =>
-      s ? { ...(s as Record<string, unknown>), theme } : s,
-    );
+    void updateSettings({ theme });
   };
 
   return {

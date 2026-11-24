@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarDrawer } from "./components/calendar/CalendarDrawer";
 import { CalendarScreen } from "./components/calendar/CalendarScreen";
@@ -39,11 +40,13 @@ import {
   setKeyOverrides,
 } from "./keyboard/registry";
 import { call } from "./ipc/commands";
+import { errorMessage } from "./ipc/errors";
 import { checkForUpdate } from "./ipc/updater";
 import { useInstallUpdate } from "./lib/useInstallUpdate";
 import { applyAccent, DEFAULT_ACCENT } from "./lib/accent";
 import { applyFont } from "./lib/font";
 import { initSounds } from "./lib/sound";
+import { zoomPercent } from "./lib/zoom";
 import { useDockBadge } from "./queries/dockBadge";
 import { useBackendEvents } from "./queries/events";
 import { flattenThreads, useAccounts, useSearch, useSettings, useThreads } from "./queries/hooks";
@@ -316,7 +319,7 @@ function useKeyOverridesSync() {
   useEffect(() => setKeyOverrides(overrides), [overrides]);
 }
 
-/** Applies the theme setting to <html data-theme> and follows the OS in system mode. */
+/** Applies appearance settings and follows the OS in system theme mode. */
 function useThemeSync() {
   const { data: settings } = useSettings();
   const theme = useUi((s) => s.theme);
@@ -347,6 +350,25 @@ function useThemeSync() {
       }),
     );
   }, [fontFamily]);
+
+  const higherDarkContrast = settings?.higherDarkContrast === true;
+  useLayoutEffect(() => {
+    document.documentElement.toggleAttribute("data-higher-dark-contrast", higherDarkContrast);
+  }, [higherDarkContrast]);
+
+  const zoom = zoomPercent(settings?.zoomPercent) / 100;
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) {
+      document.documentElement.style.zoom = String(zoom);
+      return;
+    }
+    void getCurrentWebview().setZoom(zoom).catch((err) =>
+      useUi.getState().pushToast({
+        kind: "error",
+        message: i18n.t("settings:zoom.failed", { detail: errorMessage(err) }),
+      }),
+    );
+  }, [zoom]);
 
   // Follow the persisted language setting.
   useEffect(() => {

@@ -797,6 +797,15 @@
     },
     "custom": "Màu tùy chỉnh"
   },
+  "zoom": {
+    "label": "Thu phóng",
+    "hint": "Thay đổi kích thước giao diện và chữ trong thư.",
+    "failed": "Không thể áp dụng mức thu phóng: {{detail}}"
+  },
+  "darkContrast": {
+    "label": "Tăng độ tương phản chữ trong chế độ tối",
+    "hint": "Làm sáng chữ trên nền tối."
+  },
   "font": {
     "hint": "Phông chữ dùng trong Comail. Nội dung thư giữ phông chữ riêng.",
     "system": "Hệ thống",
