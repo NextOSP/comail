@@ -24,6 +24,12 @@ Grab the installer for your platform from the
 - **Windows** - `.msi` or setup `.exe`
 - **Linux** - `.deb` or `.AppImage`
 
+On macOS you can also install it with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask nextosp/comail/comail
+```
+
 Comail keeps itself up to date: it checks for new releases on launch and
 installs them in place after asking you. See what changed in each version in
 the [changelog](CHANGELOG.md).
