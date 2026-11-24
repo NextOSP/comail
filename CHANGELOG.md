@@ -9,14 +9,57 @@ Installers for every release are on the
 
 ## [Unreleased]
 
+## [0.2.45] - 2026-11-24
+
 ### Added
 
+- **Custom keyboard shortcuts.** Settings > Shortcuts lists every command
+  with its keys. Record new keys or sequences, add or remove keys, and
+  reset a row or everything. Comail asks before taking a key another command
+  uses, and your keys show up in the ? help, the palette and tooltips
+  ([#105](https://github.com/NextOSP/comail/issues/105)).
+- **Contacts from CardDAV.** Connect an address book server per account in
+  Settings > Calendar > Contacts (CardDAV), reusing a CalDAV sign-in on the
+  same server. Contacts feed autocomplete, contact search and sender names,
+  and the contact pane shows title, organization, other addresses and phone
+  numbers. Read-only for now
+  ([#106](https://github.com/NextOSP/comail/issues/106)).
+- **HTML signatures.** The signature editor has a Rich text / HTML switch,
+  and pasted HTML signatures keep their layout
+  ([#102](https://github.com/NextOSP/comail/issues/102)).
+- **Zoom and brighter dark-mode text.** Settings > Appearance sets the zoom
+  from 90% to 150%, also with Cmd/Ctrl +, - and 0, and an option makes text
+  brighter in the dark theme (#110, thanks @ravitejarapolu).
+- **Tab counts.** Settings > Inbox layout chooses what the number beside each
+  tab shows: unread conversations, every conversation, or nothing
+  ([#108](https://github.com/NextOSP/comail/issues/108)).
 - **Bundles mixed into the list.** In the avatar inbox, a new "Mix bundles
   into the list" setting places each bundle among your Important mail by its
   newest message instead of pinning bundles on top. Clicking a bundle opens
   it in place, J/K walks into it, and its row previews the newest subjects
   in the bundle's label color. The tab bar is hidden on Important while it
-  is on.
+  is on (#86, thanks @andy-n).
+
+### Changed
+
+- Adding a category label such as News, by hand or by a rule, moves the
+  conversation into that tab and keeps it there. Removing the label sends it
+  back to where your rules put it
+  ([#103](https://github.com/NextOSP/comail/issues/103)).
+- Run automations applies your rules to mail already in the inbox, not only
+  to new mail. If a rule archives, trashes, marks read or uses an AI check,
+  Comail asks first.
+
+### Fixed
+
+- Ctrl+, opens Settings, as its tooltip says
+  ([#104](https://github.com/NextOSP/comail/issues/104)).
+- Mouse back/forward buttons work while the pointer is over an email
+  ([#107](https://github.com/NextOSP/comail/issues/107)).
+- CalDAV and CardDAV servers that write empty elements with end tags (such as
+  go-webdav servers) no longer fail with "no calendars found on the server"
+  (#113, thanks @chrisgoddard).
+
 ## [0.2.44] - 2026-11-18
 
 ### Fixed
@@ -650,7 +693,8 @@ Installers for every release are on the
 
 - OAuth issues. Logs now persist, and the setup guide has been overhauled.
 
-[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.44...HEAD
+[Unreleased]: https://github.com/NextOSP/comail/compare/v0.2.45...HEAD
+[0.2.45]: https://github.com/NextOSP/comail/releases/tag/v0.2.45
 [0.2.44]: https://github.com/NextOSP/comail/releases/tag/v0.2.44
 [0.2.43]: https://github.com/NextOSP/comail/releases/tag/v0.2.43
 [0.2.42]: https://github.com/NextOSP/comail/releases/tag/v0.2.42
