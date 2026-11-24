@@ -2,23 +2,18 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   flattenThreads,
-  splitCount,
-  tabCount,
   useAccounts,
   useFolders,
-  useInboxBundles,
   useLabels,
   useSettings,
   useSplits,
-  useTabTotals,
   useThreads,
-  useUnreadCounts,
 } from "../../queries/hooks";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../../stores/ui";
 import { accountColor, accountShortName } from "../../lib/format";
 import { folderLeafName } from "../../lib/folders";
-import { inboxTabOrder } from "../../lib/splitOrder";
-import type { Bundle, BundleTab } from "../../lib/listItems";
+import { inlineThreadOrder, type Bundle } from "../../lib/listItems";
+import { useBundles } from "../../lib/useBundles";
 import { ReauthBanner } from "../common/ReauthBanner";
 import { InboxZero } from "./InboxZero";
 import { SplitTabs } from "./SplitTabs";
@@ -93,63 +88,33 @@ export function InboxScreen() {
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Avatar inbox UI: every other tab collapses into a bundle row at the top of
-  // the Important list (Settings → Show other tabs at the top turns it off).
   const avatarUi = settings?.inboxUi === "avatar";
-  const showBundles =
-    avatarUi &&
-    settings?.showBundles !== false &&
-    view === "inbox" &&
-    splitId === SPLIT_IMPORTANT &&
-    labelFilter == null &&
-    folderFilter == null;
-  const autoLabelsEnabled = settings?.autoLabelsEnabled !== false;
-  const bundleTabs = useMemo<BundleTab[]>(() => {
-    if (!showBundles) return [];
-    return inboxTabOrder(splits, labels, autoLabelsEnabled).flatMap((item): BundleTab[] => {
-      if (item.kind === "important") return [];
-      if (item.kind === "other") return [{ key: "other", name: t("inbox:split.other"), splitId: SPLIT_OTHER }];
-      if (item.kind === "split") return [{ key: `s${item.id}`, name: item.name, splitId: item.id }];
-      return [{ key: `l${item.id}`, name: item.name, labelId: item.id }];
-    });
-  }, [showBundles, splits, labels, autoLabelsEnabled, t]);
-  const bundleData = useInboxBundles(bundleTabs, accountFilter, showBundles);
-  const { data: counts } = useUnreadCounts(accountFilter, showBundles);
-  // Bundle rows show the same number as their tab (Settings → Tab counts).
-  const countMode = settings?.tabCounts ?? "unread";
-  const { data: totals } = useTabTotals(accountFilter, showBundles && countMode === "all");
-  const bundles = useMemo<Bundle[]>(
-    () =>
-      bundleTabs.flatMap((tab, i) => {
-        const page = bundleData[i];
-        if (!page || page.threads.length === 0) return [];
-        const unreadBadge =
-          tab.labelId != null ? counts?.labels[String(tab.labelId)] : splitCount(counts, tab.splitId ?? null);
-        // A count-all split's badge includes read mail, so it can't say whether
-        // anything is unread; the loaded threads can.
-        const countAll = splits?.find((s) => s.id === tab.splitId)?.countAll === true;
-        const unread = countAll
-          ? page.threads.some((th) => th.unreadCount > 0)
-          : (unreadBadge ?? 0) > 0;
-        const count = tabCount(countMode, tab, counts, totals);
-        return [{ ...tab, count, unread, threads: page.threads }];
-      }),
-    [bundleTabs, bundleData, counts, totals, countMode, splits],
+  const { bundles, show: showBundles, inline } = useBundles();
+  const expandedBundles = useUi((s) => s.expandedBundles);
+  const toggleBundle = useUi((s) => s.toggleBundle);
+  // Inline: expanded bundles' threads join the list, in display order, so the
+  // cursor, selection and J/K treat them like any other row.
+  const listThreads = useMemo(
+    () => (inline ? inlineThreadOrder(threads, bundles, expandedBundles) : threads),
+    [inline, threads, bundles, expandedBundles],
   );
-  const openBundle = useCallback((b: Bundle) => selectInboxTab(b), [selectInboxTab]);
+  const openBundle = useCallback(
+    (b: Bundle) => (inline ? toggleBundle(b.key) : selectInboxTab(b)),
+    [inline, toggleBundle, selectInboxTab],
+  );
 
   const empty = !query.isLoading && threads.length === 0 && bundles.length === 0;
 
   return (
     <div className="relative z-10 flex min-h-0 flex-1 flex-col">
       <ReauthBanner />
-      {view === "inbox" && <SplitTabs />}
+      {view === "inbox" && !inline && <SplitTabs />}
 
       {empty ? (
         <InboxZero viewTitle={emptyTitle} />
       ) : (
         <ThreadList
-          threads={threads}
+          threads={listThreads}
           selfEmails={selfEmails}
           labelMap={labelMap}
           accountMeta={accountFilter == null ? accountMeta : undefined}
@@ -159,7 +124,9 @@ export function InboxScreen() {
           layout={settings?.inboxUi}
           photos={avatarUi && (settings?.showSenderPhotos ?? true)}
           bundles={showBundles ? bundles : undefined}
+          inlineBundles={inline ? expandedBundles : undefined}
           onOpenBundle={openBundle}
+          onShowAllBundle={selectInboxTab}
         />
       )}
       {view === "inbox" && <TipsBar />}

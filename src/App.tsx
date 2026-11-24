@@ -47,6 +47,8 @@ import { applyAccent, DEFAULT_ACCENT } from "./lib/accent";
 import { applyFont } from "./lib/font";
 import { initSounds } from "./lib/sound";
 import { zoomPercent } from "./lib/zoom";
+import { inlineThreadOrder } from "./lib/listItems";
+import { useBundles } from "./lib/useBundles";
 import { useDockBadge } from "./queries/dockBadge";
 import { useBackendEvents } from "./queries/events";
 import { flattenThreads, useAccounts, useSearch, useSettings, useThreads } from "./queries/hooks";
@@ -295,13 +297,16 @@ function ThreadOrderSync() {
     folderFilter,
   );
   const searchResults = useSearch(searchOpen ? searchQuery : "", accountFilter);
+  const { bundles, inline } = useBundles();
+  const expandedBundles = useUi((s) => s.expandedBundles);
 
   const ids = useMemo(() => {
     if (searchOpen && searchQuery.trim()) {
       return (searchResults.data?.threads ?? []).map((t) => t.id);
     }
-    return flattenThreads(threadsQuery.data).map((t) => t.id);
-  }, [searchOpen, searchQuery, searchResults.data, threadsQuery.data]);
+    const threads = flattenThreads(threadsQuery.data);
+    return (inline ? inlineThreadOrder(threads, bundles, expandedBundles) : threads).map((t) => t.id);
+  }, [searchOpen, searchQuery, searchResults.data, threadsQuery.data, inline, bundles, expandedBundles]);
 
   useEffect(() => {
     const cur = useUi.getState().visibleThreadIds;

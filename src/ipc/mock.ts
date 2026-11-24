@@ -1479,6 +1479,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   showSenderPhotos: true,
   showBundles: true,
   tabCounts: "unread",
+  inlineBundles: false,
   undoSendSeconds: 10,
   loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",

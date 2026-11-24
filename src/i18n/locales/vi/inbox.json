@@ -10,6 +10,9 @@
     "important": "Quan trọng",
     "other": "Khác"
   },
+  "bundle": {
+    "showAll": "Xem tất cả trong {{name}}"
+  },
   "splitPopover": {
     "title": "Tab mới",
     "fromSender": "Thư từ {{email}}",

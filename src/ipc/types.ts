@@ -493,6 +493,9 @@ export interface Settings {
   /** Number beside inbox tabs and bundle rows: unread conversations, every
    *  conversation the tab holds (hidden on the open tab), or none. */
   tabCounts: "unread" | "all" | "off";
+  /** Avatar inbox UI: bundles sit among Important mail by their newest message
+   *  and open in place; the tab bar is hidden on Important. */
+  inlineBundles: boolean;
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;

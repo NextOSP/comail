@@ -10,6 +10,9 @@
     "important": "重要",
     "other": "其他"
   },
+  "bundle": {
+    "showAll": "在{{name}}中查看全部"
+  },
   "splitPopover": {
     "title": "新建分栏",
     "fromSender": "来自 {{email}} 的邮件",

@@ -101,6 +101,7 @@ const DEFAULT_SETTINGS: Settings = {
   showSenderPhotos: true,
   showBundles: true,
   tabCounts: "unread",
+  inlineBundles: false,
   undoSendSeconds: 10,
   loadRemoteImages: false,
   aiBaseUrl: "",
@@ -830,6 +831,18 @@ export function SettingsPanel() {
                   label={t("settings:showBundles.label")}
                   checked={s.showBundles}
                   onChange={(showBundles) => void updateSettings({ showBundles })}
+                />
+              </SettingRow>
+            )}
+            {s.inboxUi === "avatar" && s.showBundles && (
+              <SettingRow
+                label={t("settings:inlineBundles.label")}
+                hint={t("settings:inlineBundles.hint")}
+              >
+                <Toggle
+                  label={t("settings:inlineBundles.label")}
+                  checked={s.inlineBundles}
+                  onChange={(inlineBundles) => void updateSettings({ inlineBundles })}
                 />
               </SettingRow>
             )}
