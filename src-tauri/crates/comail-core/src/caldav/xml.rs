@@ -5,7 +5,7 @@
 
 use crate::error::Result;
 use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesStart, Event};
 
 use super::err;
 
@@ -101,38 +101,13 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
                     }
                     _ => {}
                 }
+                mark_marker(&e, &name, &path, cur.as_mut());
                 path.push(name);
                 text.clear();
             }
             Event::Empty(e) => {
                 let name = local_name(e.name().as_ref());
-                match name.as_str() {
-                    "calendar" if path.last().is_some_and(|p| p == "resourcetype") => {
-                        if let Some(item) = cur.as_mut() {
-                            item.is_calendar = true;
-                        }
-                    }
-                    "addressbook" | "collection"
-                        if path.last().is_some_and(|p| p == "resourcetype") =>
-                    {
-                        if let Some(item) = cur.as_mut() {
-                            mark_resourcetype(item, &name);
-                        }
-                    }
-                    "comp" => {
-                        // <C:comp name="VEVENT"/>
-                        if let Some(item) = cur.as_mut() {
-                            for attr in e.attributes().flatten() {
-                                if local_name(attr.key.as_ref()) == "name"
-                                    && attr.value.eq_ignore_ascii_case(b"VEVENT")
-                                {
-                                    item.supports_vevent = true;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+                mark_marker(&e, &name, &path, cur.as_mut());
             }
             Event::Text(t) => {
                 text.push_str(&t.decode().map_err(|e| err(format!("xml text: {e}")))?);
@@ -254,6 +229,29 @@ pub fn parse_multistatus(body: &str) -> Result<Multistatus> {
         buf.clear();
     }
     Ok(out)
+}
+
+/// Markers that carry meaning by presence (`<C:calendar/>` inside
+/// resourcetype, `<C:comp name="VEVENT"/>`). Servers may write them
+/// self-closed or with an explicit end tag (Go's encoding/xml does the
+/// latter), so this runs for both Empty and Start events.
+fn mark_marker(e: &BytesStart<'_>, name: &str, path: &[String], cur: Option<&mut DavItem>) {
+    let Some(item) = cur else { return };
+    let in_resourcetype = path.last().is_some_and(|p| p == "resourcetype");
+    match name {
+        "calendar" if in_resourcetype => item.is_calendar = true,
+        "addressbook" | "collection" if in_resourcetype => mark_resourcetype(item, name),
+        "comp" => {
+            for attr in e.attributes().flatten() {
+                if local_name(attr.key.as_ref()) == "name"
+                    && attr.value.eq_ignore_ascii_case(b"VEVENT")
+                {
+                    item.supports_vevent = true;
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn mark_resourcetype(item: &mut DavItem, local_name: &str) {
@@ -663,5 +661,18 @@ END:VCARD</C:address-data></D:prop>
                 buf.clear();
             }
         }
+    }
+
+    #[test]
+    fn markers_with_explicit_end_tags() {
+        // Go's encoding/xml (go-webdav, e.g. carbonate) never self-closes.
+        let body = r#"<?xml version="1.0" encoding="UTF-8"?><multistatus xmlns="DAV:"><response xmlns="DAV:"><href>/caldav/principal/calendars/</href><propstat xmlns="DAV:"><prop xmlns="DAV:"><resourcetype xmlns="DAV:"><collection xmlns="DAV:"></collection></resourcetype></prop><status>HTTP/1.1 200 OK</status></propstat></response><response xmlns="DAV:"><href>/caldav/principal/calendars/abc/</href><propstat xmlns="DAV:"><prop xmlns="DAV:"><resourcetype xmlns="DAV:"><collection xmlns="DAV:"></collection><calendar xmlns="urn:ietf:params:xml:ns:caldav"></calendar></resourcetype><displayname xmlns="DAV:">Work</displayname><supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp xmlns="urn:ietf:params:xml:ns:caldav" name="VEVENT"></comp></supported-calendar-component-set></prop><status>HTTP/1.1 200 OK</status></propstat></response></multistatus>"#;
+        let ms = parse_multistatus(body).unwrap();
+        assert_eq!(ms.items.len(), 2);
+        assert!(!ms.items[0].is_vevent_calendar());
+        assert!(ms.items[1].is_collection);
+        assert!(ms.items[1].is_calendar);
+        assert!(ms.items[1].supports_vevent);
+        assert!(ms.items[1].is_vevent_calendar());
     }
 }
