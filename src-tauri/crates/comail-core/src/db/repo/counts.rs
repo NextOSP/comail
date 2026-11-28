@@ -1,10 +1,8 @@
-//! Exact unread counts for split tabs and sidebar rows: a handful of scalar
-//! COUNT queries sharing the predicate shapes of `threads::list`. Kept out of
-//! threads.rs so the two evolve independently.
+//! Exact inbox tab and sidebar badge counts.
 
 use crate::error::Result;
-use crate::models::{Label, SplitRule, TabTotals, UnreadCounts, roles};
-use rusqlite::Connection;
+use crate::models::{Label, SplitRule, TabTotals, UnreadCounts};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 
 /// Composable COUNT(*) query over threads (+ snoozes join, like SUMMARY_SELECT).
@@ -48,76 +46,6 @@ impl Q {
         self
     }
 
-    /// Membership as `t.id IN (…)` rather than a correlated `EXISTS`: SQLite
-    /// builds the folder's thread set once through the folder index, instead
-    /// of probing every thread in the database (the inbox holds dozens of
-    /// threads; the database can hold 100k+). Same rows either way.
-    fn role_exists(&mut self, role: &str) -> String {
-        self.bind.push(Box::new(role.to_string()));
-        format!(
-            "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
-                      WHERE f.role = ?{} AND m.thread_id IS NOT NULL)",
-            self.bind.len()
-        )
-    }
-
-    fn inbox(mut self) -> Self {
-        let c = self.role_exists(roles::INBOX);
-        self.clauses.push(c);
-        if self.unread_only {
-            self.clauses.push("t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND f.role='inbox')".into());
-            self.unread_only = false;
-        }
-        self.clauses.push("s.thread_id IS NULL".into());
-        self
-    }
-
-    /// Important (`automated=false`) / Other (`automated=true`) default buckets:
-    /// forced by a routing rule, or unrouted mail split by the newest incoming
-    /// message. Mirrors the bucket clauses in `threads::list`.
-    fn bucket(mut self, automated: bool) -> Self {
-        let (want, forced) = if automated {
-            (1, "other")
-        } else {
-            (0, "important")
-        };
-        self.clauses.push(format!(
-            "(t.routed_tab = '{forced}'
-              OR ((t.routed_tab IS NULL OR t.routed_tab = 'pending')
-                  AND (SELECT m.is_automated FROM visible_messages m
-                       WHERE m.thread_id = t.id AND m.is_draft = 0 AND m.is_outgoing = 0
-                       ORDER BY m.date DESC, m.id DESC LIMIT 1) = {want}))"
-        ));
-        self
-    }
-
-    /// A custom split tab: threads routed to `split:<id>`.
-    fn routed_split(mut self, id: i64) -> Self {
-        self.bind.push(Box::new(format!("split:{id}")));
-        self.clauses
-            .push(format!("t.routed_tab = ?{}", self.bind.len()));
-        self
-    }
-
-    /// An auto-category tab: threads routed to `label:<id>`.
-    fn routed_label(mut self, id: i64) -> Self {
-        self.bind.push(Box::new(format!("label:{id}")));
-        self.clauses
-            .push(format!("t.routed_tab = ?{}", self.bind.len()));
-        self
-    }
-
-    /// A manual (user) label: a cross-cutting membership filter, not a routed tab.
-    fn label(mut self, label_id: i64) -> Self {
-        self.bind.push(Box::new(label_id));
-        self.clauses.push(format!(
-            "EXISTS (SELECT 1 FROM message_labels ml JOIN visible_messages m ON m.id = ml.message_id
-                     WHERE m.thread_id = t.id AND ml.label_id = ?{})",
-            self.bind.len()
-        ));
-        self
-    }
-
     fn run(mut self, conn: &Connection) -> Result<i64> {
         if self.unread_only {
             self.clauses.push("t.id IN (SELECT m.thread_id FROM visible_messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
@@ -136,42 +64,126 @@ impl Q {
     }
 }
 
+// SQLite can scan every message for each inbox folder. Use the folder index
+// for membership and let visible_messages exclude pending deletes by row ID.
+const INBOX_COUNTS_SQL: &str = r#"
+    WITH inbox AS MATERIALIZED (
+        SELECT t.id, t.routed_tab, MAX(m.is_read = 0) AS unread
+        FROM folders f
+        CROSS JOIN messages member INDEXED BY idx_messages_folder_uid ON member.folder_id = f.id
+        CROSS JOIN visible_messages m ON m.id = member.id
+        CROSS JOIN threads t ON t.id = m.thread_id
+        LEFT JOIN snoozes s ON s.thread_id = t.id
+        WHERE f.role = 'inbox' AND s.thread_id IS NULL
+          AND (?1 IS NULL OR t.account_id = ?1)
+          AND (?3 OR m.is_read = 0)
+        GROUP BY t.id
+    ),
+    routed AS (
+        SELECT unread,
+               CASE WHEN routed_tab IS NOT NULL AND routed_tab <> 'pending' THEN routed_tab
+                    ELSE CASE (
+                        SELECT m.is_automated FROM visible_messages m
+                        WHERE m.thread_id = i.id AND m.is_draft = 0 AND m.is_outgoing = 0
+                        ORDER BY m.date DESC, m.id DESC LIMIT 1
+                    )
+                    WHEN 0 THEN 'important' WHEN 1 THEN 'other'
+                    END
+               END AS route
+        FROM inbox i
+    ),
+    manual AS (
+        SELECT DISTINCT i.id, ml.label_id, i.unread
+        FROM inbox i
+        CROSS JOIN visible_messages m ON m.thread_id = i.id
+        JOIN message_labels ml ON ml.message_id = m.id
+        WHERE ?2
+    )
+    SELECT NULL, route, COUNT(*), SUM(unread) FROM routed GROUP BY route
+    UNION ALL
+    SELECT label_id, NULL, COUNT(*), SUM(unread) FROM manual GROUP BY label_id
+"#;
+
+#[derive(Clone, Copy, Default)]
+struct Count {
+    total: i64,
+    unread: i64,
+}
+
+#[derive(Default)]
+struct InboxCounts {
+    inbox: Count,
+    routes: HashMap<String, Count>,
+    manual: HashMap<i64, Count>,
+}
+
+impl InboxCounts {
+    fn load(
+        conn: &Connection,
+        account_id: Option<i64>,
+        labels: &[Label],
+        include_read: bool,
+    ) -> Result<Self> {
+        let has_manual_labels = labels.iter().any(|label| !label.is_auto);
+        let mut stmt = conn.prepare_cached(INBOX_COUNTS_SQL)?;
+        let mut rows = stmt.query(params![account_id, has_manual_labels, include_read])?;
+        let mut counts = Self::default();
+        while let Some(row) = rows.next()? {
+            let manual_label_id: Option<i64> = row.get(0)?;
+            let count = Count {
+                total: row.get(2)?,
+                unread: row.get(3)?,
+            };
+            if let Some(id) = manual_label_id {
+                counts.manual.insert(id, count);
+            } else {
+                counts.inbox.total += count.total;
+                counts.inbox.unread += count.unread;
+                if let Some(route) = row.get(1)? {
+                    counts.routes.insert(route, count);
+                }
+            }
+        }
+        Ok(counts)
+    }
+
+    fn route(&self, route: &str) -> Count {
+        self.routes.get(route).copied().unwrap_or_default()
+    }
+
+    fn label(&self, label: &Label) -> Count {
+        if label.is_auto {
+            self.route(&format!("label:{}", label.id))
+        } else {
+            self.manual.get(&label.id).copied().unwrap_or_default()
+        }
+    }
+}
+
 pub fn unread_counts(
     conn: &Connection,
     account_id: Option<i64>,
     splits: &[SplitRule],
     labels: &[Label],
 ) -> Result<UnreadCounts> {
-    let inbox = Q::unread(account_id).inbox().run(conn)?;
-    let important = Q::unread(account_id).inbox().bucket(false).run(conn)?;
-    let other = Q::unread(account_id).inbox().bucket(true).run(conn)?;
-
-    let mut splits_map = HashMap::new();
-    for sp in splits {
-        // A split can opt out of the unread filter so its badge shows how much
-        // the tab holds even once everything in it has been read. Every other
-        // tab, and every split by default, still badges unread only.
-        let base = if sp.count_all {
-            Q::any(account_id)
-        } else {
-            Q::unread(account_id)
-        };
-        let n = base.inbox().routed_split(sp.id).run(conn)?;
-        splits_map.insert(sp.id.to_string(), n);
-    }
-
-    // Auto-category tabs read the single resolved tab; manual labels stay a
-    // membership filter.
-    let mut labels_map = HashMap::new();
-    for l in labels {
-        let q = Q::unread(account_id).inbox();
-        let n = if l.is_auto {
-            q.routed_label(l.id).run(conn)?
-        } else {
-            q.label(l.id).run(conn)?
-        };
-        labels_map.insert(l.id.to_string(), n);
-    }
+    let include_read = splits.iter().any(|split| split.count_all);
+    let counts = InboxCounts::load(conn, account_id, labels, include_read)?;
+    let splits = splits
+        .iter()
+        .map(|sp| {
+            let count = counts.route(&format!("split:{}", sp.id));
+            let badge = if sp.count_all {
+                count.total
+            } else {
+                count.unread
+            };
+            (sp.id.to_string(), badge)
+        })
+        .collect();
+    let labels = labels
+        .iter()
+        .map(|label| (label.id.to_string(), counts.label(label).unread))
+        .collect();
 
     let mut views = HashMap::new();
     views.insert(
@@ -204,11 +216,11 @@ pub fn unread_counts(
     );
 
     Ok(UnreadCounts {
-        inbox,
-        important,
-        other,
-        splits: splits_map,
-        labels: labels_map,
+        inbox: counts.inbox.unread,
+        important: counts.route("important").unread,
+        other: counts.route("other").unread,
+        splits,
+        labels,
         views,
     })
 }
@@ -223,33 +235,22 @@ pub fn tab_totals(
     splits: &[SplitRule],
     labels: &[Label],
 ) -> Result<TabTotals> {
-    let inbox = Q::any(account_id).inbox().run(conn)?;
-    let important = Q::any(account_id).inbox().bucket(false).run(conn)?;
-    let other = Q::any(account_id).inbox().bucket(true).run(conn)?;
-
-    let mut splits_map = HashMap::new();
-    for sp in splits {
-        let n = Q::any(account_id).inbox().routed_split(sp.id).run(conn)?;
-        splits_map.insert(sp.id.to_string(), n);
-    }
-
-    let mut labels_map = HashMap::new();
-    for l in labels {
-        let q = Q::any(account_id).inbox();
-        let n = if l.is_auto {
-            q.routed_label(l.id).run(conn)?
-        } else {
-            q.label(l.id).run(conn)?
-        };
-        labels_map.insert(l.id.to_string(), n);
-    }
-
+    let counts = InboxCounts::load(conn, account_id, labels, true)?;
     Ok(TabTotals {
-        inbox,
-        important,
-        other,
-        splits: splits_map,
-        labels: labels_map,
+        inbox: counts.inbox.total,
+        important: counts.route("important").total,
+        other: counts.route("other").total,
+        splits: splits
+            .iter()
+            .map(|sp| {
+                let count = counts.route(&format!("split:{}", sp.id));
+                (sp.id.to_string(), count.total)
+            })
+            .collect(),
+        labels: labels
+            .iter()
+            .map(|label| (label.id.to_string(), counts.label(label).total))
+            .collect(),
     })
 }
 
@@ -526,5 +527,83 @@ mod tests {
         assert_eq!(none.inbox, 0);
         assert_eq!(none.important, 0);
         assert_eq!(none.splits["7"], 0);
+    }
+    #[test]
+    fn grouped_counts_keep_inbox_visibility_and_manual_label_membership() {
+        let conn = test_db();
+        seed_thread(&conn, 1, 1, false);
+        seed_thread(&conn, 2, 0, true);
+        seed_thread(&conn, 3, 1, false);
+        seed_thread(&conn, 4, 1, false);
+        seed_thread(&conn, 5, 1, false);
+        conn.execute_batch(
+            "INSERT INTO accounts (id, email, provider, auth_kind, username,
+                   imap_host, imap_port, smtp_host, smtp_port, created_at)
+             VALUES (2,'second@x.com','imap','password','t','h',993,'h',587,0);
+             INSERT INTO folders (id, account_id, imap_name, role)
+             VALUES (2,1,'Archive','archive'), (3,2,'INBOX','inbox');
+             INSERT INTO threads (id, account_id, routed_tab) VALUES (6,2,'label:9');
+             INSERT INTO messages (id, account_id, thread_id, folder_id, date)
+             VALUES (6,2,6,3,1000);
+
+             UPDATE threads SET routed_tab = 'pending' WHERE id = 1;
+             UPDATE threads SET routed_tab = 'important' WHERE id = 2;
+             UPDATE messages SET is_starred = 1 WHERE thread_id = 2;
+             UPDATE messages SET is_outgoing = 1 WHERE thread_id = 3;
+             INSERT INTO snoozes (thread_id, account_id, wake_at) VALUES (5,1,9999999999999);
+
+             INSERT INTO messages (id, account_id, thread_id, folder_id, date, is_automated, is_outgoing)
+             VALUES (20,1,1,2,1000,1,0), (21,1,1,2,2000,0,0), (22,1,1,2,3000,0,1),
+                    (23,1,2,2,2000,0,0), (24,1,4,2,2000,0,0);
+             INSERT INTO pending_actions (account_id, kind, message_id, state, created_at)
+             VALUES (1,'delete_permanently',4,'pending',0),
+                    (1,'delete_permanently',21,'inflight',0);
+
+             INSERT INTO labels (id, name, keyword, is_auto)
+             VALUES (5,'Shared','Shared',0), (7,'Archive-only','Archived',0),
+                    (8,'Hidden','Hidden',0), (9,'Auto','Auto',1);
+             INSERT INTO message_labels (message_id, label_id)
+             VALUES (1,5), (20,5), (20,7), (21,8), (23,5), (24,5), (5,5), (6,5);",
+        )
+        .unwrap();
+
+        let labels = [5, 7, 8, 9].map(|id| Label {
+            id,
+            name: String::new(),
+            color: String::new(),
+            keyword: String::new(),
+            position: 0,
+            is_auto: id == 9,
+        });
+        let unread = unread_counts(&conn, Some(1), &[], &labels).unwrap();
+        let totals = tab_totals(&conn, Some(1), &[], &labels).unwrap();
+
+        assert_eq!((unread.inbox, unread.important, unread.other), (2, 0, 1));
+        assert_eq!((totals.inbox, totals.important, totals.other), (3, 1, 1));
+        assert_eq!(unread.views["starred"], 1);
+        assert_eq!(unread.views["snoozed"], 1);
+        assert_eq!(
+            unread.labels,
+            HashMap::from([
+                ("5".into(), 1),
+                ("7".into(), 1),
+                ("8".into(), 0),
+                ("9".into(), 0)
+            ])
+        );
+        assert_eq!(
+            totals.labels,
+            HashMap::from([
+                ("5".into(), 2),
+                ("7".into(), 1),
+                ("8".into(), 0),
+                ("9".into(), 0)
+            ])
+        );
+
+        let all = unread_counts(&conn, None, &[], &labels).unwrap();
+        assert_eq!(all.inbox, 3);
+        assert_eq!(all.labels["5"], 2);
+        assert_eq!(all.labels["9"], 1);
     }
 }
